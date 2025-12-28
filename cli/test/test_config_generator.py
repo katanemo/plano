@@ -1,15 +1,7 @@
 import json
 import pytest
 from unittest import mock
-import sys
 from planoai.config_generator import validate_and_render_schema
-
-# Patch sys.path to allow import from cli/
-import os
-
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cli"))
-)
 
 
 @pytest.fixture(autouse=True)

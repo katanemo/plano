@@ -24,12 +24,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Build and publish to PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Install build dependencies
         run: |
-          uv build
-          uv publish
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package with twine
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
