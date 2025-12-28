@@ -4,6 +4,7 @@ permissions:
   contents: read
 
 on:
+  pull_request:
   release:
     types: [published]
 
@@ -31,6 +32,16 @@ jobs:
 
       - name: Build package
         run: uv build
+
+      - name: Debug token (REMOVE THIS)
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$UV_PUBLISH_TOKEN" ]; then
+            echo "Token is empty!"
+          else
+            echo "Token is set (length: ${#UV_PUBLISH_TOKEN})"
+          fi
 
       - name: Publish to PyPI
         env:
