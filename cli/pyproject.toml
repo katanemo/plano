@@ -34,7 +34,7 @@ packages = ["planoai"]
 [tool.pytest.ini_options]
 addopts = ["-v"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.4.2",
 ]
