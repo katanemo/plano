@@ -19,7 +19,7 @@ source venv/bin/activate
 
 ### Step 3: Run the build script
 ```bash
-pip install planoai==0.4.1
+pip install planoai==0.4.0
 ```
 
 ## Uninstall Instructions: plano CLI

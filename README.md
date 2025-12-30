@@ -67,7 +67,7 @@ Plano's CLI allows you to manage and interact with the Plano gateway efficiently
 **Option 1: Install planoai with uv (Recommended)**
 
 ```console
-$ uv tool install planoai==0.4.1
+$ uv tool install planoai==0.4.0
 ```
 
 **Option 2: Install with pip (Traditional)**
@@ -75,7 +75,7 @@ $ uv tool install planoai==0.4.1
 ```console
 $ python3.12 -m venv venv
 $ source venv/bin/activate   # On Windows, use: venv\Scripts\activate
-$ pip install planoai==0.4.1
+$ pip install planoai==0.4.0
 ```
 
 ### Use Plano as a LLM Router
@@ -247,7 +247,7 @@ endpoints:
 
 ```sh
 $ planoai up plano_config.yaml
-2024-12-05 16:56:27,979 - planoai.main - INFO - Starting plano cli version: 0.4.1
+2024-12-05 16:56:27,979 - planoai.main - INFO - Starting plano cli version: 0.4.0
 2024-12-05 16:56:28,485 - planoai.utils - INFO - Schema validation successful!
 2024-12-05 16:56:28,485 - planoai.main - INFO - Starting plano model server and plano gateway
 2024-12-05 16:56:51,647 - planoai.core - INFO - Container is healthy!
