@@ -94,8 +94,8 @@ impl StreamContext {
     fn request_identifier(&self) -> String {
         self.request_id
             .as_ref()
-            .filter(|id| !id.is_empty()) // Filter out empty strings
-            .map(|id| id.clone())
+            .filter(|id| !id.is_empty())
+            .cloned()
             .unwrap_or_else(|| "NO_REQUEST_ID".to_string())
     }
     fn llm_provider(&self) -> &LlmProvider {
@@ -504,7 +504,7 @@ impl StreamContext {
                 // Get accumulated bytes from buffer and return
                 match self.sse_buffer.as_mut() {
                     Some(buffer) => {
-                        let bytes = buffer.into_bytes();
+                        let bytes = buffer.to_bytes();
                         if !bytes.is_empty() {
                             let content = String::from_utf8_lossy(&bytes);
                             debug!(
@@ -623,7 +623,7 @@ impl StreamContext {
         // Get accumulated bytes from buffer and return
         match self.sse_buffer.as_mut() {
             Some(buffer) => {
-                let bytes = buffer.into_bytes();
+                let bytes = buffer.to_bytes();
                 if !bytes.is_empty() {
                     let content = String::from_utf8_lossy(&bytes);
                     debug!(

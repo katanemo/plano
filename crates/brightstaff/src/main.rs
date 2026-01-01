@@ -4,13 +4,15 @@ use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
 use brightstaff::router::llm_router::RouterService;
 use brightstaff::router::plano_orchestrator::OrchestratorService;
-use brightstaff::state::StateStorage;
-use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::memory::MemoryConversationalStorage;
+use brightstaff::state::postgresql::PostgreSQLConversationStorage;
+use brightstaff::state::StateStorage;
 use brightstaff::utils::tracing::init_tracer;
 use bytes::Bytes;
 use common::configuration::{Agent, Configuration};
-use common::consts::{CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME};
+use common::consts::{
+    CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
+};
 use common::traces::TraceCollector;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
@@ -105,7 +107,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         PLANO_ORCHESTRATOR_MODEL_NAME.to_string(),
     ));
 
-
     let model_aliases = Arc::new(arch_config.model_aliases.clone());
 
     // Initialize trace collector and start background flusher
@@ -127,33 +128,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Configurable via arch_config.yaml state_storage section
     // If not configured, state management is disabled
     // Environment variables are substituted by envsubst before config is read
-    let state_storage: Option<Arc<dyn StateStorage>> = if let Some(storage_config) = &arch_config.state_storage {
-        let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
-            common::configuration::StateStorageType::Memory => {
-                info!("Initialized conversation state storage: Memory");
-                Arc::new(MemoryConversationalStorage::new())
-            }
-            common::configuration::StateStorageType::Postgres => {
-                let connection_string = storage_config
-                    .connection_string
-                    .as_ref()
-                    .expect("connection_string is required for postgres state_storage");
+    let state_storage: Option<Arc<dyn StateStorage>> =
+        if let Some(storage_config) = &arch_config.state_storage {
+            let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
+                common::configuration::StateStorageType::Memory => {
+                    info!("Initialized conversation state storage: Memory");
+                    Arc::new(MemoryConversationalStorage::new())
+                }
+                common::configuration::StateStorageType::Postgres => {
+                    let connection_string = storage_config
+                        .connection_string
+                        .as_ref()
+                        .expect("connection_string is required for postgres state_storage");
 
-                debug!("Postgres connection string (full): {}", connection_string);
-                info!("Initializing conversation state storage: Postgres");
-                Arc::new(
-                    PostgreSQLConversationStorage::new(connection_string.clone())
-                        .await
-                        .expect("Failed to initialize Postgres state storage"),
-                )
-            }
+                    debug!("Postgres connection string (full): {}", connection_string);
+                    info!("Initializing conversation state storage: Postgres");
+                    Arc::new(
+                        PostgreSQLConversationStorage::new(connection_string.clone())
+                            .await
+                            .expect("Failed to initialize Postgres state storage"),
+                    )
+                }
+            };
+            Some(storage)
+        } else {
+            info!("No state_storage configured - conversation state management disabled");
+            None
         };
-        Some(storage)
-    } else {
-        info!("No state_storage configured - conversation state management disabled");
-        None
-    };
-
 
     loop {
         let (stream, _) = listener.accept().await?;
@@ -208,12 +209,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
                 }
                 match (req.method(), path) {
-                    (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
-                        let fully_qualified_url =
-                            format!("{}{}", llm_provider_url, path);
-                        llm_chat(req, router_service, fully_qualified_url, model_aliases, llm_providers, trace_collector, state_storage)
-                            .with_context(parent_cx)
-                            .await
+                    (
+                        &Method::POST,
+                        CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH,
+                    ) => {
+                        let fully_qualified_url = format!("{}{}", llm_provider_url, path);
+                        llm_chat(
+                            req,
+                            router_service,
+                            fully_qualified_url,
+                            model_aliases,
+                            llm_providers,
+                            trace_collector,
+                            state_storage,
+                        )
+                        .with_context(parent_cx)
+                        .await
                     }
                     (&Method::POST, "/function_calling") => {
                         let fully_qualified_url =

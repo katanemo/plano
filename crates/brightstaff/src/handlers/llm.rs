@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use common::configuration::{LlmProvider, ModelAlias};
-use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER};
+use common::consts::{
+    ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
+};
 use common::traces::TraceCollector;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
@@ -14,13 +16,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::router::llm_router::RouterService;
-use crate::handlers::utils::{create_streaming_response, ObservableStreamProcessor, truncate_message};
 use crate::handlers::router_chat::router_chat_get_upstream_model;
+use crate::handlers::utils::{
+    create_streaming_response, truncate_message, ObservableStreamProcessor,
+};
+use crate::router::llm_router::RouterService;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
-    StateStorage, StateStorageError,
-    extract_input_items, retrieve_and_combine_input
+    extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
 use crate::tracing::operation_component;
 
@@ -39,7 +42,6 @@ pub async fn llm_chat(
     trace_collector: Arc<TraceCollector>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
     let request_id = request_headers
@@ -74,8 +76,14 @@ pub async fn llm_chat(
     )) {
         Ok(request) => request,
         Err(err) => {
-            warn!("[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request as ProviderRequestType: {}", request_id, err);
-            let err_msg = format!("[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request: {}", request_id, err);
+            warn!(
+                "[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request as ProviderRequestType: {}",
+                request_id, err
+            );
+            let err_msg = format!(
+                "[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request: {}",
+                request_id, err
+            );
             let mut bad_request = Response::new(full(err_msg));
             *bad_request.status_mut() = StatusCode::BAD_REQUEST;
             return Ok(bad_request);
@@ -85,7 +93,10 @@ pub async fn llm_chat(
     // === v1/responses state management: Extract input items early ===
     let mut original_input_items = Vec::new();
     let client_api = SupportedAPIsFromClient::from_endpoint(request_path.as_str());
-    let is_responses_api_client = matches!(client_api, Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_)));
+    let is_responses_api_client = matches!(
+        client_api,
+        Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
+    );
 
     // Model alias resolution: update model field in client_request immediately
     // This ensures all downstream objects use the resolved model
@@ -96,7 +107,8 @@ pub async fn llm_chat(
 
     // Extract tool names and user message preview for span attributes
     let tool_names = client_request.get_tool_names();
-    let user_message_preview = client_request.get_recent_user_message()
+    let user_message_preview = client_request
+        .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
 
     // Extract messages for signal analysis (clone before moving client_request)
@@ -104,15 +116,22 @@ pub async fn llm_chat(
 
     client_request.set_model(resolved_model.clone());
     if client_request.remove_metadata_key("archgw_preference_config") {
-        debug!("[PLANO_REQ_ID:{}] Removed archgw_preference_config from metadata", request_id);
+        debug!(
+            "[PLANO_REQ_ID:{}] Removed archgw_preference_config from metadata",
+            request_id
+        );
     }
 
     // === v1/responses state management: Determine upstream API and combine input if needed ===
     // Do this BEFORE routing since routing consumes the request
     // Only process state if state_storage is configured
     let mut should_manage_state = false;
-    if is_responses_api_client && state_storage.is_some() {
-        if let ProviderRequestType::ResponsesAPIRequest(ref mut responses_req) = client_request {
+    if is_responses_api_client {
+        if let (
+            ProviderRequestType::ResponsesAPIRequest(ref mut responses_req),
+            Some(ref state_store),
+        ) = (&mut client_request, &state_storage)
+        {
             // Extract original input once
             original_input_items = extract_input_items(&responses_req.input);
 
@@ -123,18 +142,22 @@ pub async fn llm_chat(
                 &request_path,
                 &resolved_model,
                 is_streaming_request,
-            ).await;
+            )
+            .await;
 
             let upstream_api = SupportedUpstreamAPIs::from_endpoint(&upstream_path);
 
             // Only manage state if upstream is NOT OpenAIResponsesAPI (needs translation)
-            should_manage_state = !matches!(upstream_api, Some(SupportedUpstreamAPIs::OpenAIResponsesAPI(_)));
+            should_manage_state = !matches!(
+                upstream_api,
+                Some(SupportedUpstreamAPIs::OpenAIResponsesAPI(_))
+            );
 
             if should_manage_state {
                 // Retrieve and combine conversation history if previous_response_id exists
                 if let Some(ref prev_resp_id) = responses_req.previous_response_id {
                     match retrieve_and_combine_input(
-                        state_storage.as_ref().unwrap().clone(),
+                        state_store.clone(),
                         prev_resp_id,
                         original_input_items, // Pass ownership instead of cloning
                     )
@@ -169,7 +192,10 @@ pub async fn llm_chat(
                     }
                 }
             } else {
-                debug!("[PLANO_REQ_ID:{}] | BRIGHT_STAFF | Upstream supports ResponsesAPI natively.", request_id);
+                debug!(
+                    "[PLANO_REQ_ID:{}] | BRIGHT_STAFF | Upstream supports ResponsesAPI natively.",
+                    request_id
+                );
             }
         }
     }
@@ -180,7 +206,7 @@ pub async fn llm_chat(
     // Determine routing using the dedicated router_chat module
     let routing_result = match router_chat_get_upstream_model(
         router_service,
-        client_request,  // Pass the original request - router_chat will convert it
+        client_request, // Pass the original request - router_chat will convert it
         &request_headers,
         trace_collector.clone(),
         &traceparent,
@@ -260,7 +286,8 @@ pub async fn llm_chat(
         user_message_preview,
         temperature,
         &llm_providers,
-    ).await;
+    )
+    .await;
 
     // Create base processor for metrics and tracing
     let mut base_processor = ObservableStreamProcessor::new(
@@ -277,7 +304,11 @@ pub async fn llm_chat(
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===
     // Only wrap if we need to manage state (client is ResponsesAPI AND upstream is NOT ResponsesAPI AND state_storage is configured)
-    let streaming_response = if should_manage_state && !original_input_items.is_empty() && state_storage.is_some() {
+    let streaming_response = if let (true, false, Some(state_store)) = (
+        should_manage_state,
+        original_input_items.is_empty(),
+        state_storage,
+    ) {
         // Extract Content-Encoding header to handle decompression for state parsing
         let content_encoding = response_headers
             .get("content-encoding")
@@ -287,7 +318,7 @@ pub async fn llm_chat(
         // Wrap with state management processor to store state after response completes
         let state_processor = ResponsesStateProcessor::new(
             base_processor,
-            state_storage.unwrap(),
+            state_store,
             original_input_items,
             resolved_model.clone(),
             model_name.clone(),
@@ -332,6 +363,7 @@ fn resolve_model_alias(
 }
 
 /// Builds the LLM span with all required and optional attributes.
+#[allow(clippy::too_many_arguments)]
 async fn build_llm_span(
     traceparent: &str,
     request_path: &str,
@@ -345,8 +377,8 @@ async fn build_llm_span(
     temperature: Option<f32>,
     llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
 ) -> common::traces::Span {
-    use common::traces::{SpanBuilder, SpanKind, parse_traceparent};
     use crate::tracing::{http, llm, OperationNameBuilder};
+    use common::traces::{parse_traceparent, SpanBuilder, SpanKind};
 
     // Calculate the upstream path based on provider configuration
     let upstream_path = get_upstream_path(
@@ -355,13 +387,14 @@ async fn build_llm_span(
         request_path,
         resolved_model,
         is_streaming,
-    ).await;
+    )
+    .await;
 
     // Build operation name showing path transformation if different
     let operation_name = if request_path != upstream_path {
         OperationNameBuilder::new()
             .with_method("POST")
-            .with_path(&format!("{} >> {}", request_path, upstream_path))
+            .with_path(format!("{} >> {}", request_path, upstream_path))
             .with_target(resolved_model)
             .build()
     } else {
@@ -396,7 +429,8 @@ async fn build_llm_span(
     }
 
     if let Some(tools) = tool_names {
-        let formatted_tools = tools.iter()
+        let formatted_tools = tools
+            .iter()
             .map(|name| format!("{}(...)", name))
             .collect::<Vec<_>>()
             .join("\n");
@@ -444,14 +478,21 @@ async fn get_provider_info(
 
     // First, try to find by model name or provider name
     let provider = providers_lock.iter().find(|p| {
-        p.model.as_ref().map(|m| m == model_name).unwrap_or(false)
-            || p.name == model_name
+        p.model.as_ref().map(|m| m == model_name).unwrap_or(false) || p.name == model_name
     });
 
     if let Some(provider) = provider {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
         return (provider_id, prefix);
+    }
+
+    let default_provider = providers_lock.iter().find(|p| p.default.unwrap_or(false));
+
+    if let Some(provider) = default_provider {
+        let provider_id = provider.provider_interface.to_provider_id();
+        let prefix = provider.base_url_path_prefix.clone();
+        (provider_id, prefix)
     } else {
         // Last resort: use OpenAI as hardcoded fallback
         warn!("No default provider found, falling back to OpenAI");
@@ -461,11 +502,11 @@ async fn get_provider_info(
 
 /// Extract messages from ProviderRequestType for signal analysis
 /// Returns None for non-ChatCompletions requests
-fn extract_messages_for_signals(request: &ProviderRequestType) -> Option<Vec<hermesllm::apis::openai::Message>> {
+fn extract_messages_for_signals(
+    request: &ProviderRequestType,
+) -> Option<Vec<hermesllm::apis::openai::Message>> {
     match request {
-        ProviderRequestType::ChatCompletionsRequest(chat_req) => {
-            Some(chat_req.messages.clone())
-        }
+        ProviderRequestType::ChatCompletionsRequest(chat_req) => Some(chat_req.messages.clone()),
         _ => None,
     }
 }

@@ -1,5 +1,5 @@
-use crate::apis::streaming_shapes::sse::{SseEvent, SseStreamBufferTrait};
 use crate::apis::anthropic::MessagesStreamEvent;
+use crate::apis::streaming_shapes::sse::{SseEvent, SseStreamBufferTrait};
 use crate::providers::streaming_response::ProviderStreamResponseType;
 use std::collections::HashSet;
 
@@ -29,6 +29,12 @@ pub struct AnthropicMessagesStreamBuffer {
 
     /// Model name to use when generating message_start events
     model: Option<String>,
+}
+
+impl Default for AnthropicMessagesStreamBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AnthropicMessagesStreamBuffer {
@@ -154,7 +160,8 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
                         // Inject message_start if needed
                         if !self.message_started {
                             let model = self.model.as_deref().unwrap_or("unknown");
-                            let message_start = AnthropicMessagesStreamBuffer::create_message_start_event(model);
+                            let message_start =
+                                AnthropicMessagesStreamBuffer::create_message_start_event(model);
                             self.buffered_events.push(message_start);
                             self.message_started = true;
                         }
@@ -169,7 +176,8 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
                         // Inject message_start if needed
                         if !self.message_started {
                             let model = self.model.as_deref().unwrap_or("unknown");
-                            let message_start = AnthropicMessagesStreamBuffer::create_message_start_event(model);
+                            let message_start =
+                                AnthropicMessagesStreamBuffer::create_message_start_event(model);
                             self.buffered_events.push(message_start);
                             self.message_started = true;
                         }
@@ -177,7 +185,8 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
                         // Check if ContentBlockStart was sent for this index
                         if !self.has_content_block_start_been_sent(index) {
                             // Inject ContentBlockStart before delta
-                            let content_block_start = AnthropicMessagesStreamBuffer::create_content_block_start_event();
+                            let content_block_start =
+                                AnthropicMessagesStreamBuffer::create_content_block_start_event();
                             self.buffered_events.push(content_block_start);
                             self.set_content_block_start_sent(index);
                             self.needs_content_block_stop = true;
@@ -189,7 +198,8 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
                     MessagesStreamEvent::MessageDelta { usage, .. } => {
                         // Inject ContentBlockStop before message_delta
                         if self.needs_content_block_stop {
-                            let content_block_stop = AnthropicMessagesStreamBuffer::create_content_block_stop_event();
+                            let content_block_stop =
+                                AnthropicMessagesStreamBuffer::create_content_block_stop_event();
                             self.buffered_events.push(content_block_stop);
                             self.needs_content_block_stop = false;
                         }
@@ -199,10 +209,10 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
                         if let Some(last_event) = self.buffered_events.last_mut() {
                             if let Some(ProviderStreamResponseType::MessagesStreamEvent(
                                 MessagesStreamEvent::MessageDelta {
-                                    usage: last_usage,
-                                    ..
-                                }
-                            )) = &mut last_event.provider_stream_response {
+                                    usage: last_usage, ..
+                                },
+                            )) = &mut last_event.provider_stream_response
+                            {
                                 // Merge: take stop_reason from first, usage from second (if non-zero)
                                 if usage.input_tokens > 0 || usage.output_tokens > 0 {
                                     *last_usage = usage.clone();
@@ -243,7 +253,7 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
         }
     }
 
-    fn into_bytes(&mut self) -> Vec<u8> {
+    fn to_bytes(&mut self) -> Vec<u8> {
         // Convert all accumulated events to bytes and clear buffer
         // NOTE: We do NOT inject ContentBlockStop here because it's injected when we see MessageDelta
         // or MessageStop. Injecting it here causes premature ContentBlockStop in the middle of streaming.
@@ -276,10 +286,10 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
     use crate::apis::anthropic::AnthropicApi;
     use crate::apis::openai::OpenAIApi;
     use crate::apis::streaming_shapes::sse::SseStreamIter;
+    use crate::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
     #[test]
     fn test_openai_to_anthropic_complete_transformation() {
@@ -308,11 +318,12 @@ data: [DONE]"#;
         let mut buffer = AnthropicMessagesStreamBuffer::new();
 
         for raw_event in stream_iter {
-            let transformed_event = SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
+            let transformed_event =
+                SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
             buffer.add_transformed_event(transformed_event);
         }
 
-        let output_bytes = buffer.into_bytes();
+        let output_bytes = buffer.to_bytes();
         let output = String::from_utf8_lossy(&output_bytes);
 
         println!("\nTRANSFORMED OUTPUT (Anthropic Messages API):");
@@ -321,25 +332,54 @@ data: [DONE]"#;
 
         // Assertions
         assert!(!output_bytes.is_empty(), "Should have output");
-        assert!(output.contains("event: message_start"), "Should have message_start");
-        assert!(output.contains("event: content_block_start"), "Should have content_block_start (injected)");
+        assert!(
+            output.contains("event: message_start"),
+            "Should have message_start"
+        );
+        assert!(
+            output.contains("event: content_block_start"),
+            "Should have content_block_start (injected)"
+        );
 
         let delta_count = output.matches("event: content_block_delta").count();
-        assert_eq!(delta_count, 2, "Should have exactly 2 content_block_delta events");
+        assert_eq!(
+            delta_count, 2,
+            "Should have exactly 2 content_block_delta events"
+        );
 
         // Verify both pieces of content are present
-        assert!(output.contains("\"text\":\"Hello\""), "Should have first content delta 'Hello'");
-        assert!(output.contains("\"text\":\" world\""), "Should have second content delta ' world'");
+        assert!(
+            output.contains("\"text\":\"Hello\""),
+            "Should have first content delta 'Hello'"
+        );
+        assert!(
+            output.contains("\"text\":\" world\""),
+            "Should have second content delta ' world'"
+        );
 
-        assert!(output.contains("event: content_block_stop"), "Should have content_block_stop (injected)");
-        assert!(output.contains("event: message_delta"), "Should have message_delta");
-        assert!(output.contains("event: message_stop"), "Should have message_stop");
+        assert!(
+            output.contains("event: content_block_stop"),
+            "Should have content_block_stop (injected)"
+        );
+        assert!(
+            output.contains("event: message_delta"),
+            "Should have message_delta"
+        );
+        assert!(
+            output.contains("event: message_stop"),
+            "Should have message_stop"
+        );
 
         println!("\nVALIDATION SUMMARY:");
         println!("{}", "-".repeat(80));
         println!("✓ Complete transformation: OpenAI ChatCompletions → Anthropic Messages API");
-        println!("✓ Injected lifecycle events: message_start, content_block_start, content_block_stop");
-        println!("✓ Content deltas: {} events (BOTH 'Hello' and ' world' preserved!)", delta_count);
+        println!(
+            "✓ Injected lifecycle events: message_start, content_block_start, content_block_stop"
+        );
+        println!(
+            "✓ Content deltas: {} events (BOTH 'Hello' and ' world' preserved!)",
+            delta_count
+        );
         println!("✓ Complete stream with message_stop");
         println!("✓ Proper Anthropic protocol sequencing\n");
     }
@@ -369,11 +409,12 @@ data: {"id":"chatcmpl-456","object":"chat.completion.chunk","created":1234567890
         let mut buffer = AnthropicMessagesStreamBuffer::new();
 
         for raw_event in stream_iter {
-            let transformed_event = SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
+            let transformed_event =
+                SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
             buffer.add_transformed_event(transformed_event);
         }
 
-        let output_bytes = buffer.into_bytes();
+        let output_bytes = buffer.to_bytes();
         let output = String::from_utf8_lossy(&output_bytes);
 
         println!("\nTRANSFORMED OUTPUT (Anthropic Messages API):");
@@ -382,31 +423,61 @@ data: {"id":"chatcmpl-456","object":"chat.completion.chunk","created":1234567890
 
         // Assertions
         assert!(!output_bytes.is_empty(), "Should have output");
-        assert!(output.contains("event: message_start"), "Should have message_start");
-        assert!(output.contains("event: content_block_start"), "Should have content_block_start (injected)");
+        assert!(
+            output.contains("event: message_start"),
+            "Should have message_start"
+        );
+        assert!(
+            output.contains("event: content_block_start"),
+            "Should have content_block_start (injected)"
+        );
 
         let delta_count = output.matches("event: content_block_delta").count();
-        assert_eq!(delta_count, 3, "Should have exactly 3 content_block_delta events");
+        assert_eq!(
+            delta_count, 3,
+            "Should have exactly 3 content_block_delta events"
+        );
 
         // Verify all three pieces of content are present
-        assert!(output.contains("\"text\":\"The weather\""), "Should have first content delta");
-        assert!(output.contains("\"text\":\" in San Francisco\""), "Should have second content delta");
-        assert!(output.contains("\"text\":\" is\""), "Should have third content delta");
+        assert!(
+            output.contains("\"text\":\"The weather\""),
+            "Should have first content delta"
+        );
+        assert!(
+            output.contains("\"text\":\" in San Francisco\""),
+            "Should have second content delta"
+        );
+        assert!(
+            output.contains("\"text\":\" is\""),
+            "Should have third content delta"
+        );
 
         // For partial streams (no finish_reason, no [DONE]), we do NOT inject content_block_stop
         // because the stream may continue. This is correct behavior - only inject lifecycle events
         // when we have explicit signals from upstream (finish_reason, [DONE], etc.)
-        assert!(!output.contains("event: content_block_stop"), "Should NOT have content_block_stop for partial stream");
+        assert!(
+            !output.contains("event: content_block_stop"),
+            "Should NOT have content_block_stop for partial stream"
+        );
 
         // Should NOT have completion events
-        assert!(!output.contains("event: message_delta"), "Should NOT have message_delta");
-        assert!(!output.contains("event: message_stop"), "Should NOT have message_stop");
+        assert!(
+            !output.contains("event: message_delta"),
+            "Should NOT have message_delta"
+        );
+        assert!(
+            !output.contains("event: message_stop"),
+            "Should NOT have message_stop"
+        );
 
         println!("\nVALIDATION SUMMARY:");
         println!("{}", "-".repeat(80));
         println!("✓ Partial transformation: OpenAI → Anthropic (stream interrupted)");
         println!("✓ Injected: message_start, content_block_start at beginning");
-        println!("✓ Incremental deltas: {} events (ALL content preserved!)", delta_count);
+        println!(
+            "✓ Incremental deltas: {} events (ALL content preserved!)",
+            delta_count
+        );
         println!("✓ NO completion events (partial stream, no [DONE])");
         println!("✓ Buffer maintains Anthropic protocol for active streams\n");
     }
@@ -452,11 +523,12 @@ data: [DONE]"#;
         let mut buffer = AnthropicMessagesStreamBuffer::new();
 
         for raw_event in stream_iter {
-            let transformed_event = SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
+            let transformed_event =
+                SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
             buffer.add_transformed_event(transformed_event);
         }
 
-        let output_bytes = buffer.into_bytes();
+        let output_bytes = buffer.to_bytes();
         let output = String::from_utf8_lossy(&output_bytes);
 
         println!("\nTRANSFORMED OUTPUT (Anthropic Messages API):");
@@ -467,32 +539,71 @@ data: [DONE]"#;
         assert!(!output_bytes.is_empty(), "Should have output");
 
         // Should have lifecycle events (injected by buffer)
-        assert!(output.contains("event: message_start"), "Should have message_start (injected)");
-        assert!(output.contains("event: content_block_start"), "Should have content_block_start");
-        assert!(output.contains("event: content_block_stop"), "Should have content_block_stop (injected)");
-        assert!(output.contains("event: message_delta"), "Should have message_delta");
-        assert!(output.contains("event: message_stop"), "Should have message_stop");
+        assert!(
+            output.contains("event: message_start"),
+            "Should have message_start (injected)"
+        );
+        assert!(
+            output.contains("event: content_block_start"),
+            "Should have content_block_start"
+        );
+        assert!(
+            output.contains("event: content_block_stop"),
+            "Should have content_block_stop (injected)"
+        );
+        assert!(
+            output.contains("event: message_delta"),
+            "Should have message_delta"
+        );
+        assert!(
+            output.contains("event: message_stop"),
+            "Should have message_stop"
+        );
 
         // Should have tool_use content block
-        assert!(output.contains("\"type\":\"tool_use\""), "Should have tool_use type");
-        assert!(output.contains("\"name\":\"get_weather\""), "Should have correct function name");
-        assert!(output.contains("\"id\":\"call_2Uzw0AEZQeOex2CP2TKjcLKc\""), "Should have correct tool call ID");
+        assert!(
+            output.contains("\"type\":\"tool_use\""),
+            "Should have tool_use type"
+        );
+        assert!(
+            output.contains("\"name\":\"get_weather\""),
+            "Should have correct function name"
+        );
+        assert!(
+            output.contains("\"id\":\"call_2Uzw0AEZQeOex2CP2TKjcLKc\""),
+            "Should have correct tool call ID"
+        );
 
         // Count input_json_delta events - should match the number of argument chunks
         let delta_count = output.matches("event: content_block_delta").count();
-        assert!(delta_count >= 8, "Should have at least 8 input_json_delta events");
+        assert!(
+            delta_count >= 8,
+            "Should have at least 8 input_json_delta events"
+        );
 
         // Verify argument deltas are present
-        assert!(output.contains("\"type\":\"input_json_delta\""), "Should have input_json_delta type");
-        assert!(output.contains("\"partial_json\":"), "Should have partial_json field");
+        assert!(
+            output.contains("\"type\":\"input_json_delta\""),
+            "Should have input_json_delta type"
+        );
+        assert!(
+            output.contains("\"partial_json\":"),
+            "Should have partial_json field"
+        );
 
         // Verify the accumulated arguments contain the location
         assert!(output.contains("San"), "Arguments should contain 'San'");
-        assert!(output.contains("Francisco"), "Arguments should contain 'Francisco'");
+        assert!(
+            output.contains("Francisco"),
+            "Arguments should contain 'Francisco'"
+        );
         assert!(output.contains("CA"), "Arguments should contain 'CA'");
 
         // Verify stop reason is tool_use
-        assert!(output.contains("\"stop_reason\":\"tool_use\""), "Should have stop_reason as tool_use");
+        assert!(
+            output.contains("\"stop_reason\":\"tool_use\""),
+            "Should have stop_reason as tool_use"
+        );
 
         println!("\nVALIDATION SUMMARY:");
         println!("{}", "-".repeat(80));

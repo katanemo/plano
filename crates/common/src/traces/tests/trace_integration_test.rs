@@ -36,9 +36,12 @@ fn extract_spans(payloads: &[Value]) -> Vec<&Value> {
     for payload in payloads {
         if let Some(resource_spans) = payload.get("resourceSpans").and_then(|v| v.as_array()) {
             for resource_span in resource_spans {
-                if let Some(scope_spans) = resource_span.get("scopeSpans").and_then(|v| v.as_array()) {
+                if let Some(scope_spans) =
+                    resource_span.get("scopeSpans").and_then(|v| v.as_array())
+                {
                     for scope_span in scope_spans {
-                        if let Some(span_list) = scope_span.get("spans").and_then(|v| v.as_array()) {
+                        if let Some(span_list) = scope_span.get("spans").and_then(|v| v.as_array())
+                        {
                             spans.extend(span_list.iter());
                         }
                     }
@@ -54,9 +57,9 @@ fn get_string_attr<'a>(span: &'a Value, key: &str) -> Option<&'a str> {
     span.get("attributes")
         .and_then(|attrs| attrs.as_array())
         .and_then(|attrs| {
-            attrs.iter().find(|attr| {
-                attr.get("key").and_then(|k| k.as_str()) == Some(key)
-            })
+            attrs
+                .iter()
+                .find(|attr| attr.get("key").and_then(|k| k.as_str()) == Some(key))
         })
         .and_then(|attr| attr.get("value"))
         .and_then(|v| v.get("stringValue"))
@@ -70,7 +73,10 @@ async fn test_llm_span_contains_basic_attributes() {
     let mock_collector = MockOtelCollector::start().await;
 
     // Create TraceCollector pointing to mock with 500ms flush intervalc
-    std::env::set_var("OTEL_COLLECTOR_URL", format!("{}/v1/traces", mock_collector.address()));
+    std::env::set_var(
+        "OTEL_COLLECTOR_URL",
+        format!("{}/v1/traces", mock_collector.address()),
+    );
     std::env::set_var("OTEL_TRACING_ENABLED", "true");
     std::env::set_var("TRACE_FLUSH_INTERVAL_MS", "500");
     let trace_collector = Arc::new(TraceCollector::new(Some(true)));
@@ -102,7 +108,10 @@ async fn test_llm_span_contains_basic_attributes() {
     let span = spans[0];
     // Validate HTTP attributes
     assert_eq!(get_string_attr(span, "http.method"), Some("POST"));
-    assert_eq!(get_string_attr(span, "http.target"), Some("/v1/chat/completions"));
+    assert_eq!(
+        get_string_attr(span, "http.target"),
+        Some("/v1/chat/completions")
+    );
 
     // Validate LLM attributes
     assert_eq!(get_string_attr(span, "llm.model"), Some("gpt-4o"));
@@ -115,7 +124,10 @@ async fn test_llm_span_contains_basic_attributes() {
 #[serial]
 async fn test_llm_span_contains_tool_information() {
     let mock_collector = MockOtelCollector::start().await;
-    std::env::set_var("OTEL_COLLECTOR_URL", format!("{}/v1/traces", mock_collector.address()));
+    std::env::set_var(
+        "OTEL_COLLECTOR_URL",
+        format!("{}/v1/traces", mock_collector.address()),
+    );
     std::env::set_var("OTEL_TRACING_ENABLED", "true");
     std::env::set_var("TRACE_FLUSH_INTERVAL_MS", "500");
     let trace_collector = Arc::new(TraceCollector::new(Some(true)));
@@ -144,19 +156,26 @@ async fn test_llm_span_contains_tool_information() {
     assert!(tools.unwrap().contains("get_weather(...)"));
     assert!(tools.unwrap().contains("search_web(...)"));
     assert!(tools.unwrap().contains("calculate(...)"));
-    assert!(tools.unwrap().contains('\n'), "Tools should be newline-separated");
+    assert!(
+        tools.unwrap().contains('\n'),
+        "Tools should be newline-separated"
+    );
 }
 
 #[tokio::test]
 #[serial]
 async fn test_llm_span_contains_user_message_preview() {
     let mock_collector = MockOtelCollector::start().await;
-    std::env::set_var("OTEL_COLLECTOR_URL", format!("{}/v1/traces", mock_collector.address()));
+    std::env::set_var(
+        "OTEL_COLLECTOR_URL",
+        format!("{}/v1/traces", mock_collector.address()),
+    );
     std::env::set_var("OTEL_TRACING_ENABLED", "true");
     std::env::set_var("TRACE_FLUSH_INTERVAL_MS", "500");
     let trace_collector = Arc::new(TraceCollector::new(Some(true)));
 
-    let long_message = "This is a very long user message that should be truncated to 50 characters in the span";
+    let long_message =
+        "This is a very long user message that should be truncated to 50 characters in the span";
     let preview = if long_message.len() > 50 {
         format!("{}...", &long_message[..50])
     } else {
@@ -187,7 +206,10 @@ async fn test_llm_span_contains_user_message_preview() {
 #[serial]
 async fn test_llm_span_contains_time_to_first_token() {
     let mock_collector = MockOtelCollector::start().await;
-    std::env::set_var("OTEL_COLLECTOR_URL", format!("{}/v1/traces", mock_collector.address()));
+    std::env::set_var(
+        "OTEL_COLLECTOR_URL",
+        format!("{}/v1/traces", mock_collector.address()),
+    );
     std::env::set_var("OTEL_TRACING_ENABLED", "true");
     std::env::set_var("TRACE_FLUSH_INTERVAL_MS", "500");
     let trace_collector = Arc::new(TraceCollector::new(Some(true)));
@@ -217,7 +239,10 @@ async fn test_llm_span_contains_time_to_first_token() {
 #[serial]
 async fn test_llm_span_contains_upstream_path() {
     let mock_collector = MockOtelCollector::start().await;
-    std::env::set_var("OTEL_COLLECTOR_URL", format!("{}/v1/traces", mock_collector.address()));
+    std::env::set_var(
+        "OTEL_COLLECTOR_URL",
+        format!("{}/v1/traces", mock_collector.address()),
+    );
     std::env::set_var("OTEL_TRACING_ENABLED", "true");
     std::env::set_var("TRACE_FLUSH_INTERVAL_MS", "500");
     let trace_collector = Arc::new(TraceCollector::new(Some(true)));
@@ -241,7 +266,10 @@ async fn test_llm_span_contains_upstream_path() {
     // Operation name should show the transformation
     let name = span.get("name").and_then(|v| v.as_str());
     assert!(name.is_some());
-    assert!(name.unwrap().contains(">>"), "Operation name should show path transformation");
+    assert!(
+        name.unwrap().contains(">>"),
+        "Operation name should show path transformation"
+    );
 
     // Check upstream target attribute
     let upstream = get_string_attr(span, "http.upstream_target");
@@ -252,7 +280,10 @@ async fn test_llm_span_contains_upstream_path() {
 #[serial]
 async fn test_llm_span_multiple_services() {
     let mock_collector = MockOtelCollector::start().await;
-    std::env::set_var("OTEL_COLLECTOR_URL", format!("{}/v1/traces", mock_collector.address()));
+    std::env::set_var(
+        "OTEL_COLLECTOR_URL",
+        format!("{}/v1/traces", mock_collector.address()),
+    );
     std::env::set_var("OTEL_TRACING_ENABLED", "true");
     std::env::set_var("TRACE_FLUSH_INTERVAL_MS", "500");
     let trace_collector = Arc::new(TraceCollector::new(Some(true)));
@@ -285,7 +316,10 @@ async fn test_tracing_disabled_produces_no_spans() {
     let mock_collector = MockOtelCollector::start().await;
 
     // Create TraceCollector with tracing DISABLED
-    std::env::set_var("OTEL_COLLECTOR_URL", format!("{}/v1/traces", mock_collector.address()));
+    std::env::set_var(
+        "OTEL_COLLECTOR_URL",
+        format!("{}/v1/traces", mock_collector.address()),
+    );
     std::env::set_var("OTEL_TRACING_ENABLED", "false");
     std::env::set_var("TRACE_FLUSH_INTERVAL_MS", "500");
     let trace_collector = Arc::new(TraceCollector::new(Some(false)));
@@ -300,5 +334,9 @@ async fn test_tracing_disabled_produces_no_spans() {
 
     let payloads = mock_collector.get_traces().await;
     let all_spans = extract_spans(&payloads);
-    assert_eq!(all_spans.len(), 0, "No spans should be captured when tracing is disabled");
+    assert_eq!(
+        all_spans.len(),
+        0,
+        "No spans should be captured when tracing is disabled"
+    );
 }

@@ -24,8 +24,8 @@ jobs:
 
       - name: build arch docker image
         run: |
-          docker build  -f arch/Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.0
+          docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.0
 
       - name: validate arch config
         run: |
-          bash arch/validate_plano_config.sh
+          bash config/validate_plano_config.sh

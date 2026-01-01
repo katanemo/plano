@@ -1,9 +1,9 @@
 // Original tracing types (OTEL structures)
 mod shapes;
 // New tracing utilities
-mod span_builder;
-mod resource_span_builder;
 mod constants;
+mod resource_span_builder;
+mod span_builder;
 
 #[cfg(feature = "trace-collection")]
 mod collector;
@@ -13,14 +13,14 @@ mod tests;
 
 // Re-export original types
 pub use shapes::{
-    Span, Event, Traceparent, TraceparentNewError,
-    ResourceSpan, Resource, ScopeSpan, Scope, Attribute, AttributeValue,
+    Attribute, AttributeValue, Event, Resource, ResourceSpan, Scope, ScopeSpan, Span, Traceparent,
+    TraceparentNewError,
 };
 
 // Re-export new utilities
-pub use span_builder::{SpanBuilder, SpanKind, generate_random_span_id};
-pub use resource_span_builder::ResourceSpanBuilder;
 pub use constants::*;
+pub use resource_span_builder::ResourceSpanBuilder;
+pub use span_builder::{generate_random_span_id, SpanBuilder, SpanKind};
 
 #[cfg(feature = "trace-collection")]
-pub use collector::{TraceCollector, parse_traceparent};
+pub use collector::{parse_traceparent, TraceCollector};

@@ -11,10 +11,10 @@ pub trait ExtractText {
 /// Trait for utility functions on content collections
 pub trait ContentUtils<T> {
     fn extract_tool_calls(&self) -> Result<Option<Vec<ToolCall>>, TransformError>;
-    fn split_for_openai(
-        &self,
-    ) -> Result<(Vec<ContentPart>, Vec<ToolCall>, Vec<(String, String, bool)>), TransformError>;
+    fn split_for_openai(&self) -> Result<SplitForOpenAIResult, TransformError>;
 }
+
+pub type SplitForOpenAIResult = (Vec<ContentPart>, Vec<ToolCall>, Vec<(String, String, bool)>);
 
 /// Helper to create a current unix timestamp
 pub fn current_timestamp() -> u64 {

@@ -149,13 +149,12 @@ impl StateStorage for PostgreSQLConversationStorage {
                 let provider: String = row.get("provider");
 
                 // Deserialize input_items from JSONB
-                let input_items =
-                    serde_json::from_value(input_items_json).map_err(|e| {
-                        StateStorageError::StorageError(format!(
-                            "Failed to deserialize input_items: {}",
-                            e
-                        ))
-                    })?;
+                let input_items = serde_json::from_value(input_items_json).map_err(|e| {
+                    StateStorageError::StorageError(format!(
+                        "Failed to deserialize input_items: {}",
+                        e
+                    ))
+                })?;
 
                 Ok(OpenAIConversationState {
                     response_id,
@@ -230,7 +229,9 @@ Run that SQL file against your database before using this storage backend.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hermesllm::apis::openai_responses::{InputContent, InputItem, InputMessage, MessageContent, MessageRole};
+    use hermesllm::apis::openai_responses::{
+        InputContent, InputItem, InputMessage, MessageContent, MessageRole,
+    };
 
     fn create_test_state(response_id: &str) -> OpenAIConversationState {
         OpenAIConversationState {
@@ -320,7 +321,10 @@ mod tests {
 
         let result = storage.get("nonexistent_id").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StateStorageError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            StateStorageError::NotFound(_)
+        ));
     }
 
     #[tokio::test]
@@ -372,7 +376,10 @@ mod tests {
 
         let result = storage.delete("nonexistent_id").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StateStorageError::NotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            StateStorageError::NotFound(_)
+        ));
     }
 
     #[tokio::test]
@@ -423,9 +430,13 @@ mod tests {
 
         println!("✅ Data written to Supabase!");
         println!("Check your Supabase dashboard:");
-        println!("  SELECT * FROM conversation_states WHERE response_id = 'manual_test_verification';");
+        println!(
+            "  SELECT * FROM conversation_states WHERE response_id = 'manual_test_verification';"
+        );
         println!("\nTo cleanup, run:");
-        println!("  DELETE FROM conversation_states WHERE response_id = 'manual_test_verification';");
+        println!(
+            "  DELETE FROM conversation_states WHERE response_id = 'manual_test_verification';"
+        );
 
         // DON'T cleanup - leave it for manual verification
     }

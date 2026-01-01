@@ -31,36 +31,44 @@ pip uninstall planoai
 
 This guide will walk you through the steps to set up the plano cli on your local machine when you want to develop the plano CLI
 
-### Step 1: Create a Python virtual environment
+### Step 1: Install uv
 
-In the tools directory, create a Python virtual environment by running:
+Install uv if you haven't already:
 
 ```bash
-python -m venv venv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Step 2: Activate the virtual environment
+### Step 2: Create a Python virtual environment and install dependencies
+
+In the cli directory, run:
+
+```bash
+uv sync
+```
+
+This will create a virtual environment and install all dependencies.
+
+### Step 3: Activate the virtual environment (optional)
+
+uv will automatically use the virtual environment, but if you need to activate it manually:
+
 * On Linux/MacOS:
 
 ```bash
-source venv/bin/activate
-```
-
-### Step 3: Run the build script
-```bash
-poetry install
+source .venv/bin/activate
 ```
 
 ### Step 4: build Arch
 ```bash
-planoai build
+uv run planoai build
 ```
 
 ### Logs
 `plano` command can also view logs from the gateway. Use following command to view logs,
 
 ```bash
-planoai logs --follow
+uv run planoai logs --follow
 ```
 
 ## Uninstall Instructions: plano CLI

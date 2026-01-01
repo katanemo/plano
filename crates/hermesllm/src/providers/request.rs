@@ -10,6 +10,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum ProviderRequestType {
     ChatCompletionsRequest(ChatCompletionsRequest),
@@ -197,7 +198,9 @@ impl ProviderRequest for ProviderRequestType {
 impl TryFrom<(&[u8], &SupportedAPIsFromClient)> for ProviderRequestType {
     type Error = std::io::Error;
 
-    fn try_from((bytes, client_api): (&[u8], &SupportedAPIsFromClient)) -> Result<Self, Self::Error> {
+    fn try_from(
+        (bytes, client_api): (&[u8], &SupportedAPIsFromClient),
+    ) -> Result<Self, Self::Error> {
         // Use SupportedApi to determine the appropriate request type
         match client_api {
             SupportedAPIsFromClient::OpenAIChatCompletions(_) => {
@@ -882,7 +885,7 @@ mod tests {
             ProviderRequestType::BedrockConverse(bedrock_req) => {
                 assert_eq!(bedrock_req.model_id, "gpt-4o");
                 // Bedrock receives the converted request through ChatCompletions
-                assert!(!bedrock_req.messages.is_none());
+                assert!(bedrock_req.messages.is_some());
             }
             _ => panic!("Expected BedrockConverse variant"),
         }
@@ -913,7 +916,9 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.message.contains("ResponsesAPI can only be used as a client API"));
+        assert!(err
+            .message
+            .contains("ResponsesAPI can only be used as a client API"));
     }
 
     #[test]
@@ -953,7 +958,9 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.message.contains("ResponsesAPI can only be used as a client API"));
+        assert!(err
+            .message
+            .contains("ResponsesAPI can only be used as a client API"));
     }
 
     #[test]
@@ -1023,9 +1030,7 @@ mod tests {
                 role: MessagesRole::User,
                 content: MessagesMessageContent::Single("Hello!".to_string()),
             }],
-            system: Some(MessagesSystemPrompt::Single(
-                "You are helpful".to_string(),
-            )),
+            system: Some(MessagesSystemPrompt::Single("You are helpful".to_string())),
             max_tokens: 100,
             container: None,
             mcp_servers: None,
@@ -1046,14 +1051,8 @@ mod tests {
 
         // Should have system message + user message
         assert_eq!(messages.len(), 2);
-        assert_eq!(
-            messages[0].role,
-            crate::apis::openai::Role::System
-        );
-        assert_eq!(
-            messages[1].role,
-            crate::apis::openai::Role::User
-        );
+        assert_eq!(messages[0].role, crate::apis::openai::Role::System);
+        assert_eq!(messages[1].role, crate::apis::openai::Role::User);
     }
 
     #[test]
@@ -1094,13 +1093,7 @@ mod tests {
 
         // Should have system message (instructions) + user message (input)
         assert_eq!(messages.len(), 2);
-        assert_eq!(
-            messages[0].role,
-            crate::apis::openai::Role::System
-        );
-        assert_eq!(
-            messages[1].role,
-            crate::apis::openai::Role::User
-        );
+        assert_eq!(messages[0].role, crate::apis::openai::Role::System);
+        assert_eq!(messages[1].role, crate::apis::openai::Role::User);
     }
 }

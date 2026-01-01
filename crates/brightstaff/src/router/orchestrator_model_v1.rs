@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use common::configuration::{AgentUsagePreference, OrchestrationPreference};
 use hermesllm::apis::openai::{ChatCompletionsRequest, Message, MessageContent, Role};
-use serde::{Deserialize, Serialize, ser::Serialize as SerializeTrait};
+use serde::{ser::Serialize as SerializeTrait, Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use super::orchestrator_model::{OrchestratorModel, OrchestratorModelError};
@@ -144,7 +144,7 @@ impl OrchestratorModelV1 {
         // Format routes: each route as JSON on its own line with standard spacing
         let agent_orchestration_json_str = agent_orchestration_values
             .iter()
-            .map(|pref| to_spaced_json(pref))
+            .map(to_spaced_json)
             .collect::<Vec<String>>()
             .join("\n");
         let agent_orchestration_to_model_map: HashMap<String, String> = agent_orchestrations
@@ -238,24 +238,26 @@ impl OrchestratorModel for OrchestratorModelV1 {
         let selected_conversation_list = selected_messages_list_reversed
             .iter()
             .rev()
-            .map(|message| {
-                Message {
-                    role: message.role.clone(),
-                    content: MessageContent::Text(message.content.to_string()),
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
-                }
+            .map(|message| Message {
+                role: message.role.clone(),
+                content: MessageContent::Text(message.content.to_string()),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
             })
             .collect::<Vec<Message>>();
 
         // Generate the orchestrator request message based on the usage preferences.
         // If preferences are passed in request then we use them;
         // Otherwise, we use the default orchestration modelpreferences.
-        let orchestrator_message = match convert_to_orchestrator_preferences(usage_preferences_from_request) {
-            Some(prefs) => generate_orchestrator_message(&prefs, &selected_conversation_list),
-            None => generate_orchestrator_message(&self.agent_orchestration_json_str, &selected_conversation_list),
-        };
+        let orchestrator_message =
+            match convert_to_orchestrator_preferences(usage_preferences_from_request) {
+                Some(prefs) => generate_orchestrator_message(&prefs, &selected_conversation_list),
+                None => generate_orchestrator_message(
+                    &self.agent_orchestration_json_str,
+                    &selected_conversation_list,
+                ),
+            };
 
         ChatCompletionsRequest {
             model: self.orchestration_model.clone(),
@@ -280,7 +282,8 @@ impl OrchestratorModel for OrchestratorModelV1 {
             return Ok(None);
         }
         let orchestrator_resp_fixed = fix_json_response(content);
-        let orchestrator_response: AgentOrchestratorResponse = serde_json::from_str(orchestrator_resp_fixed.as_str())?;
+        let orchestrator_response: AgentOrchestratorResponse =
+            serde_json::from_str(orchestrator_resp_fixed.as_str())?;
 
         let selected_routes = orchestrator_response.route.unwrap_or_default();
 
@@ -320,7 +323,11 @@ impl OrchestratorModel for OrchestratorModelV1 {
         } else {
             // If no usage preferences are passed in request then use the default orchestration model preferences
             for selected_route in valid_routes {
-                if let Some(model) = self.agent_orchestration_to_model_map.get(&selected_route).cloned() {
+                if let Some(model) = self
+                    .agent_orchestration_to_model_map
+                    .get(&selected_route)
+                    .cloned()
+                {
                     result.push((selected_route, model));
                 } else {
                     warn!(
@@ -375,7 +382,7 @@ fn convert_to_orchestrator_preferences(
         // Format routes: each route as JSON on its own line with standard spacing
         let routes_str = orchestration_preferences
             .iter()
-            .map(|pref| to_spaced_json(pref))
+            .map(to_spaced_json)
             .collect::<Vec<String>>()
             .join("\n");
 
@@ -425,7 +432,10 @@ mod tests {
         // CRITICAL: Test that colons inside string values are NOT modified
         let with_colon = serde_json::json!({"name": "foo:bar", "url": "http://example.com"});
         let result = to_spaced_json(&with_colon);
-        assert_eq!(result, r#"{"name": "foo:bar", "url": "http://example.com"}"#);
+        assert_eq!(
+            result,
+            r#"{"name": "foo:bar", "url": "http://example.com"}"#
+        );
 
         // Test empty object and array
         let empty_obj = serde_json::json!({});
@@ -446,7 +456,8 @@ mod tests {
         });
         let result = to_spaced_json(&complex);
         // Verify URLs with colons are preserved correctly
-        assert!(result.contains(r#""urls": ["https://api.example.com:8080/path", "file:///local/path"]"#));
+        assert!(result
+            .contains(r#""urls": ["https://api.example.com:8080/path", "file:///local/path"]"#));
         // Verify spacing format
         assert!(result.contains(r#""type": "object""#));
         assert!(result.contains(r#""properties": {}"#));
@@ -497,10 +508,16 @@ If no routes are needed, return an empty list for `route`.
             ]
         }
         "#;
-        let agent_orchestrations =
-            serde_json::from_str::<HashMap<String, Vec<OrchestrationPreference>>>(orchestrations_str).unwrap();
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
         let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), usize::MAX);
+        let orchestrator = OrchestratorModelV1::new(
+            agent_orchestrations,
+            orchestration_model.clone(),
+            usize::MAX,
+        );
 
         let conversation_str = r#"
                     [
@@ -568,7 +585,11 @@ If no routes are needed, return an empty list for `route`.
         // Empty orchestrations map - not used when usage_preferences are provided
         let agent_orchestrations: HashMap<String, Vec<OrchestrationPreference>> = HashMap::new();
         let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), usize::MAX);
+        let orchestrator = OrchestratorModelV1::new(
+            agent_orchestrations,
+            orchestration_model.clone(),
+            usize::MAX,
+        );
 
         let conversation_str = r#"
                     [
@@ -640,10 +661,13 @@ If no routes are needed, return an empty list for `route`.
             ]
         }
         "#;
-        let agent_orchestrations =
-            serde_json::from_str::<HashMap<String, Vec<OrchestrationPreference>>>(orchestrations_str).unwrap();
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
         let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 235);
+        let orchestrator =
+            OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 235);
 
         let conversation_str = r#"
                     [
@@ -709,11 +733,14 @@ If no routes are needed, return an empty list for `route`.
             ]
         }
         "#;
-        let agent_orchestrations =
-            serde_json::from_str::<HashMap<String, Vec<OrchestrationPreference>>>(orchestrations_str).unwrap();
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
 
         let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 200);
+        let orchestrator =
+            OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 200);
 
         let conversation_str = r#"
                     [
@@ -787,10 +814,13 @@ If no routes are needed, return an empty list for `route`.
             ]
         }
         "#;
-        let agent_orchestrations =
-            serde_json::from_str::<HashMap<String, Vec<OrchestrationPreference>>>(orchestrations_str).unwrap();
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
         let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 230);
+        let orchestrator =
+            OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 230);
 
         let conversation_str = r#"
                     [
@@ -871,10 +901,16 @@ If no routes are needed, return an empty list for `route`.
             ]
         }
         "#;
-        let agent_orchestrations =
-            serde_json::from_str::<HashMap<String, Vec<OrchestrationPreference>>>(orchestrations_str).unwrap();
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
         let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), usize::MAX);
+        let orchestrator = OrchestratorModelV1::new(
+            agent_orchestrations,
+            orchestration_model.clone(),
+            usize::MAX,
+        );
 
         let conversation_str = r#"
                     [
@@ -957,10 +993,16 @@ If no routes are needed, return an empty list for `route`.
             ]
         }
         "#;
-        let agent_orchestrations =
-            serde_json::from_str::<HashMap<String, Vec<OrchestrationPreference>>>(orchestrations_str).unwrap();
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
         let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), usize::MAX);
+        let orchestrator = OrchestratorModelV1::new(
+            agent_orchestrations,
+            orchestration_model.clone(),
+            usize::MAX,
+        );
 
         let conversation_str = r#"
                                                 [
@@ -1034,10 +1076,13 @@ If no routes are needed, return an empty list for `route`.
             ]
         }
         "#;
-        let agent_orchestrations =
-            serde_json::from_str::<HashMap<String, Vec<OrchestrationPreference>>>(orchestrations_str).unwrap();
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
 
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, "test-model".to_string(), 2000);
+        let orchestrator =
+            OrchestratorModelV1::new(agent_orchestrations, "test-model".to_string(), 2000);
 
         // Case 1: Valid JSON with single route in array
         let input = r#"{"route": ["Image generation"]}"#;

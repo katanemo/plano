@@ -1,6 +1,6 @@
 import json
 import os
-from cli.utils import convert_legacy_listeners
+from planoai.utils import convert_legacy_listeners
 from jinja2 import Environment, FileSystemLoader
 import yaml
 from jsonschema import validate

@@ -1,7 +1,6 @@
 use crate::apis::amazon_bedrock::{ConverseOutput, ConverseResponse, StopReason};
 use crate::apis::anthropic::{
-    MessagesContentBlock, MessagesResponse,
-    MessagesRole, MessagesStopReason, MessagesUsage,
+    MessagesContentBlock, MessagesResponse, MessagesRole, MessagesStopReason, MessagesUsage,
 };
 use crate::apis::openai::ChatCompletionsResponse;
 use crate::clients::TransformError;
@@ -114,7 +113,6 @@ impl TryFrom<ConverseResponse> for MessagesResponse {
         })
     }
 }
-
 
 /// Convert Bedrock Message to Anthropic content blocks
 ///

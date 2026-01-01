@@ -1,22 +1,23 @@
-[tool.poetry]
+[project]
 name = "model-choice-newsletter-code-snippets"
 version = "0.1.0"
 description = "Benchmarking model alias routing with Arch Gateway."
-authors = ["Your Name <your@email.com>"]
-license = "Apache 2.0"
+authors = [{name = "Your Name", email = "your@email.com"}]
+license = {text = "Apache 2.0"}
 readme = "README.md"
-package-mode = false
+requires-python = ">=3.10,<3.13.3"
+dependencies = [
+    "pydantic>=2.0",
+    "openai>=1.0",
+    "pyyaml>=6.0",
+    "plano>=0.4.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.13.3"
-pydantic = "^2.0"
-openai = "^1.0"
-pyyaml = "^6.0"
-plano = "^0.4.0"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.3"
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -30,7 +30,7 @@ jobs:
 
       - name: build arch docker image
         run: |
-          cd ../../ && docker build -f arch/Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.0 -t katanemo/plano:latest
+          cd ../../ && docker build -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.0 -t katanemo/plano:latest
 
       - name: start plano
         env:
@@ -48,19 +48,16 @@ jobs:
         run: |
           source common.sh && wait_for_healthz http://localhost:10000/healthz
 
-      - name: install poetry
-        run: |
-          export POETRY_VERSION=2.2.1
-          curl -sSL https://install.python-poetry.org | python3 -
-          export PATH="$HOME/.local/bin:$PATH"
+      - name: install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: install test dependencies
         run: |
-          poetry install
+          uv sync
 
       - name: run plano tests
         run: |
-          poetry run pytest || tail -100 plano.logs
+          uv run pytest || tail -100 plano.logs
 
       - name: stop plano docker container
         env:

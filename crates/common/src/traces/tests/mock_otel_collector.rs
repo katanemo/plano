@@ -21,10 +21,7 @@ use tokio::sync::RwLock;
 type SharedTraces = Arc<RwLock<Vec<Value>>>;
 
 /// POST /v1/traces - capture incoming OTLP payload
-async fn post_traces(
-    State(traces): State<SharedTraces>,
-    Json(payload): Json<Value>,
-) -> StatusCode {
+async fn post_traces(State(traces): State<SharedTraces>, Json(payload): Json<Value>) -> StatusCode {
     traces.write().await.push(payload);
     StatusCode::OK
 }
@@ -67,9 +64,7 @@ impl MockOtelCollector {
         let address = format!("http://127.0.0.1:{}", addr.port());
 
         let server_handle = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .expect("Server failed");
+            axum::serve(listener, app).await.expect("Server failed");
         });
 
         // Give server a moment to start

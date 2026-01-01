@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use common::configuration::{
-    Agent, AgentFilterChain, Listener, AgentUsagePreference, OrchestrationPreference,
+    Agent, AgentFilterChain, AgentUsagePreference, Listener, OrchestrationPreference,
 };
 use hermesllm::apis::openai::Message;
 use tracing::{debug, warn};

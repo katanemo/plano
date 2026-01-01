@@ -14,7 +14,8 @@ use crate::apis::openai::{
 };
 
 use crate::apis::openai_responses::{
-    ResponsesAPIRequest, InputContent, InputItem, InputParam, MessageRole, Modality, ReasoningEffort, Tool as ResponsesTool, ToolChoice as ResponsesToolChoice
+    InputContent, InputItem, InputParam, MessageRole, Modality, ReasoningEffort,
+    ResponsesAPIRequest, Tool as ResponsesTool, ToolChoice as ResponsesToolChoice,
 };
 use crate::clients::TransformError;
 use crate::transforms::lib::ExtractText;
@@ -27,9 +28,9 @@ type AnthropicMessagesRequest = MessagesRequest;
 // MAIN REQUEST TRANSFORMATIONS
 // ============================================================================
 
-impl Into<MessagesSystemPrompt> for Message {
-    fn into(self) -> MessagesSystemPrompt {
-        let system_text = match self.content {
+impl From<Message> for MessagesSystemPrompt {
+    fn from(val: Message) -> Self {
+        let system_text = match val.content {
             MessageContent::Text(text) => text,
             MessageContent::Parts(parts) => parts.extract_text(),
         };
@@ -163,7 +164,7 @@ impl TryFrom<Message> for BedrockMessage {
                 let has_tool_calls = message
                     .tool_calls
                     .as_ref()
-                    .map_or(false, |calls| !calls.is_empty());
+                    .is_some_and(|calls| !calls.is_empty());
 
                 // Add text content if it's non-empty, or if we have no tool calls (to avoid empty content)
                 if !text_content.is_empty() {
@@ -252,7 +253,6 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
     type Error = TransformError;
 
     fn try_from(req: ResponsesAPIRequest) -> Result<Self, Self::Error> {
-
         // Convert input to messages
         let messages = match req.input {
             InputParam::Text(text) => {
@@ -282,50 +282,27 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
 
                 // Convert each input item
                 for item in items {
-                    match item {
-                        InputItem::Message(input_msg) => {
-                            let role = match input_msg.role {
-                                MessageRole::User => Role::User,
-                                MessageRole::Assistant => Role::Assistant,
-                                MessageRole::System => Role::System,
-                                MessageRole::Developer => Role::System, // Map developer to system
-                            };
+                    if let InputItem::Message(input_msg) = item {
+                        let role = match input_msg.role {
+                            MessageRole::User => Role::User,
+                            MessageRole::Assistant => Role::Assistant,
+                            MessageRole::System => Role::System,
+                            MessageRole::Developer => Role::System, // Map developer to system
+                        };
 
-                            // Convert content based on MessageContent type
-                            let content = match &input_msg.content {
-                                crate::apis::openai_responses::MessageContent::Text(text) => {
-                                    // Simple text content
-                                    MessageContent::Text(text.clone())
-                                }
-                                crate::apis::openai_responses::MessageContent::Items(content_items) => {
-                                    // Check if it's a single text item (can use simple text format)
-                                    if content_items.len() == 1 {
-                                        if let InputContent::InputText { text } = &content_items[0] {
-                                            MessageContent::Text(text.clone())
-                                        } else {
-                                            // Single non-text item - use parts format
-                                            MessageContent::Parts(
-                                                content_items.iter()
-                                                    .filter_map(|c| match c {
-                                                        InputContent::InputText { text } => {
-                                                            Some(crate::apis::openai::ContentPart::Text { text: text.clone() })
-                                                        }
-                                                        InputContent::InputImage { image_url, .. } => {
-                                                            Some(crate::apis::openai::ContentPart::ImageUrl {
-                                                                image_url: crate::apis::openai::ImageUrl {
-                                                                    url: image_url.clone(),
-                                                                    detail: None,
-                                                                }
-                                                            })
-                                                        }
-                                                        InputContent::InputFile { .. } => None, // Skip files for now
-                                                        InputContent::InputAudio { .. } => None, // Skip audio for now
-                                                    })
-                                                    .collect()
-                                            )
-                                        }
+                        // Convert content based on MessageContent type
+                        let content = match &input_msg.content {
+                            crate::apis::openai_responses::MessageContent::Text(text) => {
+                                // Simple text content
+                                MessageContent::Text(text.clone())
+                            }
+                            crate::apis::openai_responses::MessageContent::Items(content_items) => {
+                                // Check if it's a single text item (can use simple text format)
+                                if content_items.len() == 1 {
+                                    if let InputContent::InputText { text } = &content_items[0] {
+                                        MessageContent::Text(text.clone())
                                     } else {
-                                        // Multiple content items - convert to parts
+                                        // Single non-text item - use parts format
                                         MessageContent::Parts(
                                             content_items.iter()
                                                 .filter_map(|c| match c {
@@ -346,20 +323,41 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
                                                 .collect()
                                         )
                                     }
+                                } else {
+                                    // Multiple content items - convert to parts
+                                    MessageContent::Parts(
+                                        content_items
+                                            .iter()
+                                            .filter_map(|c| match c {
+                                                InputContent::InputText { text } => {
+                                                    Some(crate::apis::openai::ContentPart::Text {
+                                                        text: text.clone(),
+                                                    })
+                                                }
+                                                InputContent::InputImage { image_url, .. } => Some(
+                                                    crate::apis::openai::ContentPart::ImageUrl {
+                                                        image_url: crate::apis::openai::ImageUrl {
+                                                            url: image_url.clone(),
+                                                            detail: None,
+                                                        },
+                                                    },
+                                                ),
+                                                InputContent::InputFile { .. } => None, // Skip files for now
+                                                InputContent::InputAudio { .. } => None, // Skip audio for now
+                                            })
+                                            .collect(),
+                                    )
                                 }
-                            };
+                            }
+                        };
 
-                            converted_messages.push(Message {
-                                role,
-                                content,
-                                name: None,
-                                tool_call_id: None,
-                                tool_calls: None,
-                            });
-                        }
-                        // Skip non-message items (references, outputs) for now
-                        // These would need special handling in chat completions format
-                        _ => {}
+                        converted_messages.push(Message {
+                            role,
+                            content,
+                            name: None,
+                            tool_call_id: None,
+                            tool_calls: None,
+                        });
                     }
                 }
 
@@ -474,7 +472,7 @@ impl TryFrom<ChatCompletionsRequest> for AnthropicMessagesRequest {
         }
 
         // Convert tools and tool choice
-        let anthropic_tools = req.tools.map(|tools| convert_openai_tools(tools));
+        let anthropic_tools = req.tools.map(convert_openai_tools);
         let anthropic_tool_choice =
             convert_openai_tool_choice(req.tool_choice, req.parallel_tool_calls);
 

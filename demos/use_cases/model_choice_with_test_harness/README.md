@@ -46,7 +46,7 @@ See `bench.py` for a complete example. It:
 
 Example usage:
 ```sh
-poetry install
+uv sync
 python bench.py
 ```
 
@@ -79,16 +79,16 @@ See `config.yaml` for a sample configuration mapping aliases to provider models.
 
 ## How to Run This Demo
 
-1. **Install Poetry** (if not already installed):
+1. **Install uv** (if not already installed):
    ```sh
-   curl -sSL https://install.python-poetry.org | python3 -
+   curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
 2. **Install dependencies:**
   - Install all dependencies as described in the main Arch README ([link](https://github.com/katanemo/arch/?tab=readme-ov-file#prerequisites))
   - Then run
     ```sh
-    poetry install
+    uv sync
     ```
 
 3. **Start Arch Gateway**
@@ -107,7 +107,7 @@ See `config.yaml` for a sample configuration mapping aliases to provider models.
 
 - `bench.py` — Minimal Python test harness
 - `evals_summarize.yaml` — Example test fixtures
-- `pyproject.toml` — Poetry environment file
+- `pyproject.toml` — Python project configuration
 - `config.yaml` — Sample plano config (if present)
 
 ---

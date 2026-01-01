@@ -1,15 +1,7 @@
 import json
 import pytest
 from unittest import mock
-import sys
-from cli.config_generator import validate_and_render_schema
-
-# Patch sys.path to allow import from cli/
-import os
-
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cli"))
-)
+from planoai.config_generator import validate_and_render_schema
 
 
 @pytest.fixture(autouse=True)
@@ -59,13 +51,13 @@ tracing:
   random_sampling: 100
 """
     arch_config_schema = ""
-    with open("../arch_config_schema.yaml", "r") as file:
+    with open("../config/arch_config_schema.yaml", "r") as file:
         arch_config_schema = file.read()
 
     m_open = mock.mock_open()
     # Provide enough file handles for all open() calls in validate_and_render_schema
     m_open.side_effect = [
-        mock.mock_open(read_data="").return_value,
+        # Removed empty read - was causing validation failures
         mock.mock_open(read_data=arch_config).return_value,  # ARCH_CONFIG_FILE
         mock.mock_open(
             read_data=arch_config_schema
@@ -78,7 +70,7 @@ tracing:
         mock.mock_open().return_value,  # ARCH_CONFIG_FILE_RENDERED (write)
     ]
     with mock.patch("builtins.open", m_open):
-        with mock.patch("config_generator.Environment"):
+        with mock.patch("planoai.config_generator.Environment"):
             validate_and_render_schema()
 
 
@@ -108,7 +100,7 @@ agents:
 listeners:
   - name: tmobile
     type: agent
-    router: arch_agent_v2
+    router: plano_orchestrator_v1
     agents:
       - name: simple_tmobile_rag_agent
         description: t-mobile virtual assistant for device contracts.
@@ -132,13 +124,13 @@ listeners:
         model: openai/gpt-4o
 """
     arch_config_schema = ""
-    with open("../arch_config_schema.yaml", "r") as file:
+    with open("../config/arch_config_schema.yaml", "r") as file:
         arch_config_schema = file.read()
 
     m_open = mock.mock_open()
     # Provide enough file handles for all open() calls in validate_and_render_schema
     m_open.side_effect = [
-        mock.mock_open(read_data="").return_value,
+        # Removed empty read - was causing validation failures
         mock.mock_open(read_data=arch_config).return_value,  # ARCH_CONFIG_FILE
         mock.mock_open(
             read_data=arch_config_schema
@@ -151,7 +143,7 @@ listeners:
         mock.mock_open().return_value,  # ARCH_CONFIG_FILE_RENDERED (write)
     ]
     with mock.patch("builtins.open", m_open):
-        with mock.patch("cli.config_generator.Environment"):
+        with mock.patch("planoai.config_generator.Environment"):
             validate_and_render_schema()
 
 
@@ -319,26 +311,29 @@ def test_validate_and_render_schema_tests(monkeypatch, arch_config_test_case):
     expected_error = arch_config_test_case.get("expected_error")
 
     arch_config_schema = ""
-    with open("../arch_config_schema.yaml", "r") as file:
+    with open("../config/arch_config_schema.yaml", "r") as file:
         arch_config_schema = file.read()
 
     m_open = mock.mock_open()
     # Provide enough file handles for all open() calls in validate_and_render_schema
     m_open.side_effect = [
-        mock.mock_open(read_data="").return_value,
-        mock.mock_open(read_data=arch_config).return_value,  # ARCH_CONFIG_FILE
+        mock.mock_open(
+            read_data=arch_config
+        ).return_value,  # validate_prompt_config: ARCH_CONFIG_FILE
         mock.mock_open(
             read_data=arch_config_schema
-        ).return_value,  # ARCH_CONFIG_SCHEMA_FILE
-        mock.mock_open(read_data=arch_config).return_value,  # ARCH_CONFIG_FILE
+        ).return_value,  # validate_prompt_config: ARCH_CONFIG_SCHEMA_FILE
+        mock.mock_open(
+            read_data=arch_config
+        ).return_value,  # validate_and_render_schema: ARCH_CONFIG_FILE
         mock.mock_open(
             read_data=arch_config_schema
-        ).return_value,  # ARCH_CONFIG_SCHEMA_FILE
+        ).return_value,  # validate_and_render_schema: ARCH_CONFIG_SCHEMA_FILE
         mock.mock_open().return_value,  # ENVOY_CONFIG_FILE_RENDERED (write)
         mock.mock_open().return_value,  # ARCH_CONFIG_FILE_RENDERED (write)
     ]
     with mock.patch("builtins.open", m_open):
-        with mock.patch("config_generator.Environment"):
+        with mock.patch("planoai.config_generator.Environment"):
             if expected_error:
                 # Test expects an error
                 with pytest.raises(Exception) as excinfo:
@@ -350,7 +345,7 @@ def test_validate_and_render_schema_tests(monkeypatch, arch_config_test_case):
 
 
 def test_convert_legacy_llm_providers():
-    from cli.utils import convert_legacy_listeners
+    from planoai.utils import convert_legacy_listeners
 
     listeners = {
         "ingress_traffic": {
@@ -420,7 +415,7 @@ def test_convert_legacy_llm_providers():
 
 
 def test_convert_legacy_llm_providers_no_prompt_gateway():
-    from cli.utils import convert_legacy_listeners
+    from planoai.utils import convert_legacy_listeners
 
     listeners = {
         "egress_traffic": {

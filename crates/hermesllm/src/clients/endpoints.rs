@@ -135,7 +135,10 @@ impl SupportedAPIsFromClient {
                 ProviderId::AzureOpenAI => {
                     if request_path.starts_with("/v1/") {
                         let suffix = endpoint_suffix.trim_start_matches('/');
-                        build_endpoint("/openai/deployments", &format!("/{}/{}?api-version=2025-01-01-preview", model_id, suffix))
+                        build_endpoint(
+                            "/openai/deployments",
+                            &format!("/{}/{}?api-version=2025-01-01-preview", model_id, suffix),
+                        )
                     } else {
                         build_endpoint("/v1", endpoint_suffix)
                     }
@@ -163,19 +166,21 @@ impl SupportedAPIsFromClient {
         };
 
         match self {
-            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages) => match provider_id {
-                ProviderId::Anthropic => build_endpoint("/v1", "/messages"),
-                ProviderId::AmazonBedrock => {
-                    if request_path.starts_with("/v1/") && !is_streaming {
-                        build_endpoint("", &format!("/model/{}/converse", model_id))
-                    } else if request_path.starts_with("/v1/") && is_streaming {
-                        build_endpoint("", &format!("/model/{}/converse-stream", model_id))
-                    } else {
-                        build_endpoint("/v1", "/chat/completions")
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages) => {
+                match provider_id {
+                    ProviderId::Anthropic => build_endpoint("/v1", "/messages"),
+                    ProviderId::AmazonBedrock => {
+                        if request_path.starts_with("/v1/") && !is_streaming {
+                            build_endpoint("", &format!("/model/{}/converse", model_id))
+                        } else if request_path.starts_with("/v1/") && is_streaming {
+                            build_endpoint("", &format!("/model/{}/converse-stream", model_id))
+                        } else {
+                            build_endpoint("/v1", "/chat/completions")
+                        }
                     }
+                    _ => build_endpoint("/v1", "/chat/completions"),
                 }
-                _ => build_endpoint("/v1", "/chat/completions"),
-            },
+            }
             SupportedAPIsFromClient::OpenAIResponsesAPI(_) => {
                 // For Responses API, check if provider supports it, otherwise translate to chat/completions
                 match provider_id {
@@ -192,7 +197,6 @@ impl SupportedAPIsFromClient {
         }
     }
 }
-
 
 impl SupportedUpstreamAPIs {
     /// Create a SupportedUpstreamApi from an endpoint path
@@ -216,16 +220,16 @@ impl SupportedUpstreamAPIs {
                     return Some(SupportedUpstreamAPIs::AmazonBedrockConverse(bedrock_api))
                 }
                 AmazonBedrockApi::ConverseStream => {
-                    return Some(SupportedUpstreamAPIs::AmazonBedrockConverseStream(bedrock_api))
+                    return Some(SupportedUpstreamAPIs::AmazonBedrockConverseStream(
+                        bedrock_api,
+                    ))
                 }
             }
         }
 
         None
     }
-
 }
-
 
 /// Get all supported endpoint paths
 pub fn supported_endpoints() -> Vec<&'static str> {
@@ -269,9 +273,9 @@ mod tests {
         assert!(SupportedAPIsFromClient::from_endpoint("/v1/messages").is_some());
 
         // Unsupported endpoints
-        assert!(!SupportedAPIsFromClient::from_endpoint("/v1/unknown").is_some());
-        assert!(!SupportedAPIsFromClient::from_endpoint("/v2/chat").is_some());
-        assert!(!SupportedAPIsFromClient::from_endpoint("").is_some());
+        assert!(SupportedAPIsFromClient::from_endpoint("/v1/unknown").is_none());
+        assert!(SupportedAPIsFromClient::from_endpoint("/v2/chat").is_none());
+        assert!(SupportedAPIsFromClient::from_endpoint("").is_none());
     }
 
     #[test]

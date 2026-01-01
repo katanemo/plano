@@ -13,18 +13,14 @@ use crate::apis::openai_responses::{
 pub fn convert_responses_output_to_input_items(output: &OutputItem) -> Option<InputItem> {
     match output {
         // Convert output messages to input messages
-        OutputItem::Message {
-            role, content, ..
-        } => {
+        OutputItem::Message { role, content, .. } => {
             let input_content: Vec<InputContent> = content
                 .iter()
                 .filter_map(|c| match c {
-                    OutputContent::OutputText { text, .. } => Some(InputContent::InputText {
-                        text: text.clone(),
-                    }),
-                    OutputContent::OutputAudio {
-                        data, ..
-                    } => Some(InputContent::InputAudio {
+                    OutputContent::OutputText { text, .. } => {
+                        Some(InputContent::InputText { text: text.clone() })
+                    }
+                    OutputContent::OutputAudio { data, .. } => Some(InputContent::InputAudio {
                         data: data.clone(),
                         format: None, // Format not preserved in output
                     }),
@@ -84,7 +80,7 @@ pub fn outputs_to_inputs(outputs: &[OutputItem]) -> Vec<InputItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::apis::openai_responses::{OutputItemStatus};
+    use crate::apis::openai_responses::OutputItemStatus;
 
     #[test]
     fn test_output_message_to_input() {
@@ -135,14 +131,12 @@ mod tests {
             InputItem::Message(msg) => {
                 assert!(matches!(msg.role, MessageRole::Assistant));
                 match &msg.content {
-                    MessageContent::Items(items) => {
-                        match &items[0] {
-                            InputContent::InputText { text } => {
-                                assert!(text.contains("get_weather"));
-                            }
-                            _ => panic!("Expected InputText"),
+                    MessageContent::Items(items) => match &items[0] {
+                        InputContent::InputText { text } => {
+                            assert!(text.contains("get_weather"));
                         }
-                    }
+                        _ => panic!("Expected InputText"),
+                    },
                     _ => panic!("Expected MessageContent::Items"),
                 }
             }

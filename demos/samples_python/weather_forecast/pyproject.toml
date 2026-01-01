@@ -1,23 +1,26 @@
-[tool.poetry]
+[project]
 name = "api-server"
 version = "0.1.0"
 description = ""
-authors = ["Adil Hafeez <info@katanemo.com>"]
+authors = [{name = "Adil Hafeez", email = "info@katanemo.com"}]
 readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
+    "fastapi>=0.115.4",
+    "pyyaml>=6.0.2",
+    "uvicorn>=0.32.0",
+    "opentelemetry-api>=1.28.0",
+    "opentelemetry-sdk>=1.28.0",
+    "opentelemetry-exporter-otlp>=1.28.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-opentelemetry-instrumentation-fastapi = "^0.49b0"
-fastapi = "^0.115.4"
-pyyaml = "^6.0.2"
-uvicorn = "^0.32.0"
-opentelemetry-api = "^1.28.0"
-opentelemetry-sdk = "^1.28.0"
-opentelemetry-exporter-otlp = "^1.28.0"
+[project.scripts]
+api-server = "main:app"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.poetry.scripts]
-api-server = "api_server.main:app"
+[tool.hatch.build.targets.wheel]
+packages = ["."]

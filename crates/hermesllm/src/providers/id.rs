@@ -59,10 +59,9 @@ impl ProviderId {
             (ProviderId::Anthropic, SupportedAPIsFromClient::AnthropicMessagesAPI(_)) => {
                 SupportedUpstreamAPIs::AnthropicMessagesAPI(AnthropicApi::Messages)
             }
-            (
-                ProviderId::Anthropic,
-                SupportedAPIsFromClient::OpenAIChatCompletions(_),
-            ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
+            (ProviderId::Anthropic, SupportedAPIsFromClient::OpenAIChatCompletions(_)) => {
+                SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
+            }
 
             // Anthropic doesn't support Responses API, fall back to chat completions
             (ProviderId::Anthropic, SupportedAPIsFromClient::OpenAIResponsesAPI(_)) => {

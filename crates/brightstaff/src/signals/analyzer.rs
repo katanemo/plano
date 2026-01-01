@@ -6,8 +6,8 @@
 //! message arrays.
 
 use serde::{Deserialize, Serialize};
-use strsim::jaro_winkler;
 use std::collections::HashSet;
+use strsim::jaro_winkler;
 
 use hermesllm::apis::openai::{Message, Role};
 
@@ -41,12 +41,9 @@ impl NormalizedMessage {
 
         // Normalize unicode punctuation to ASCII equivalents
         let normalized_unicode = text
-            .replace('\u{2019}', "'")  // U+2019 RIGHT SINGLE QUOTATION MARK
-            .replace('\u{2018}', "'")  // U+2018 LEFT SINGLE QUOTATION MARK
-            .replace('\u{201C}', "\"") // U+201C LEFT DOUBLE QUOTATION MARK
-            .replace('\u{201D}', "\"") // U+201D RIGHT DOUBLE QUOTATION MARK
-            .replace('\u{2013}', "-")  // U+2013 EN DASH
-            .replace('\u{2014}', "-"); // U+2014 EM DASH
+            .replace(['\u{2019}', '\u{2018}'], "'") // U+2019/U+2018 SINGLE QUOTATION MARKs
+            .replace(['\u{201C}', '\u{201D}'], "\"") // U+201C/U+201D DOUBLE QUOTATION MARKs
+            .replace(['\u{2013}', '\u{2014}'], "-"); // U+2013/U+2014 EN/EM DASHes
 
         // Normalize: lowercase, collapse whitespace
         let normalized = normalized_unicode
@@ -99,12 +96,12 @@ impl NormalizedMessage {
         }
 
         // Multi-word phrase: check for sequence in tokens
-        self.tokens
-            .windows(phrase_tokens.len())
-            .any(|window| {
-                window.iter().zip(phrase_tokens.iter())
-                    .all(|(token, phrase_token)| token == phrase_token)
-            })
+        self.tokens.windows(phrase_tokens.len()).any(|window| {
+            window
+                .iter()
+                .zip(phrase_tokens.iter())
+                .all(|(token, phrase_token)| token == phrase_token)
+        })
     }
 
     /// Check if phrase exists using fuzzy matching (for typo tolerance)
@@ -419,9 +416,8 @@ impl SignalAnalyzer {
             .iter()
             .enumerate()
             .filter_map(|(i, msg)| {
-                Self::extract_text(&msg.content).map(|text| {
-                    (i, msg.role.clone(), NormalizedMessage::from_text(&text))
-                })
+                Self::extract_text(&msg.content)
+                    .map(|text| (i, msg.role.clone(), NormalizedMessage::from_text(&text)))
             })
             .collect();
 
@@ -485,9 +481,7 @@ impl SignalAnalyzer {
         let is_excessive = total_turns > 12;
 
         // Calculate efficiency score (exponential decay after baseline)
-        let efficiency_score = if total_turns == 0 {
-            1.0
-        } else if total_turns <= self.baseline_turns {
+        let efficiency_score = if total_turns == 0 || total_turns <= self.baseline_turns {
             1.0
         } else {
             let excess = total_turns - self.baseline_turns;
@@ -505,7 +499,10 @@ impl SignalAnalyzer {
     }
 
     /// Analyze follow-up and repair frequency
-    fn analyze_follow_up(&self, normalized_messages: &[(usize, Role, NormalizedMessage)]) -> FollowUpSignal {
+    fn analyze_follow_up(
+        &self,
+        normalized_messages: &[(usize, Role, NormalizedMessage)],
+    ) -> FollowUpSignal {
         let repair_patterns = [
             // Explicit corrections
             "i meant",
@@ -577,7 +574,9 @@ impl SignalAnalyzer {
                     repair_phrases.push(format!("Turn {}: '{}'", i + 1, pattern));
                     found_in_turn = true;
                     break;
-                } else if Self::should_use_fuzzy_matching(pattern) && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold) {
+                } else if Self::should_use_fuzzy_matching(pattern)
+                    && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold)
+                {
                     repair_count += 1;
                     repair_phrases.push(format!("Turn {}: '{}' (fuzzy)", i + 1, pattern));
                     found_in_turn = true;
@@ -593,7 +592,8 @@ impl SignalAnalyzer {
                     if *prev_role == Role::User {
                         if self.is_similar_rephrase(norm_msg, prev_norm_msg) {
                             repair_count += 1;
-                            repair_phrases.push(format!("Turn {}: Similar rephrase detected", i + 1));
+                            repair_phrases
+                                .push(format!("Turn {}: Similar rephrase detected", i + 1));
                         }
                         break;
                     }
@@ -618,7 +618,10 @@ impl SignalAnalyzer {
     }
 
     /// Analyze user frustration indicators
-    fn analyze_frustration(&self, normalized_messages: &[(usize, Role, NormalizedMessage)]) -> FrustrationSignal {
+    fn analyze_frustration(
+        &self,
+        normalized_messages: &[(usize, Role, NormalizedMessage)],
+    ) -> FrustrationSignal {
         let mut indicators = Vec::new();
 
         // Complaint phrases - removed ultra-generic single words that cause false positives
@@ -721,15 +724,7 @@ impl SignalAnalyzer {
 
         // Profanity list - only as standalone tokens, not substrings
         let profanity_tokens = [
-            "damn",
-            "damnit",
-            "crap",
-            "wtf",
-            "ffs",
-            "bullshit",
-            "shit",
-            "fuck",
-            "fucking",
+            "damn", "damnit", "crap", "wtf", "ffs", "bullshit", "shit", "fuck", "fucking",
         ];
 
         for (i, role, norm_msg) in normalized_messages {
@@ -773,7 +768,9 @@ impl SignalAnalyzer {
                         snippet: pattern.to_string(),
                     });
                     break;
-                } else if Self::should_use_fuzzy_matching(pattern) && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold) {
+                } else if Self::should_use_fuzzy_matching(pattern)
+                    && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold)
+                {
                     indicators.push(FrustrationIndicator {
                         indicator_type: FrustrationType::DirectComplaint,
                         message_index: *i,
@@ -831,7 +828,10 @@ impl SignalAnalyzer {
     }
 
     /// Analyze repetition and looping behavior
-    fn analyze_repetition(&self, normalized_messages: &[(usize, Role, NormalizedMessage)]) -> RepetitionSignal {
+    fn analyze_repetition(
+        &self,
+        normalized_messages: &[(usize, Role, NormalizedMessage)],
+    ) -> RepetitionSignal {
         let mut repetitions = Vec::new();
 
         // Collect assistant messages with normalized content
@@ -896,7 +896,11 @@ impl SignalAnalyzer {
     }
 
     /// Calculate bigram similarity using cached bigram sets
-    fn calculate_bigram_similarity(&self, norm_msg1: &NormalizedMessage, norm_msg2: &NormalizedMessage) -> f64 {
+    fn calculate_bigram_similarity(
+        &self,
+        norm_msg1: &NormalizedMessage,
+        norm_msg2: &NormalizedMessage,
+    ) -> f64 {
         // Use pre-cached bigram sets for O(1) lookups
         let set1 = &norm_msg1.bigram_set;
         let set2 = &norm_msg2.bigram_set;
@@ -920,7 +924,10 @@ impl SignalAnalyzer {
     }
 
     /// Analyze positive feedback indicators
-    fn analyze_positive_feedback(&self, normalized_messages: &[(usize, Role, NormalizedMessage)]) -> PositiveFeedbackSignal {
+    fn analyze_positive_feedback(
+        &self,
+        normalized_messages: &[(usize, Role, NormalizedMessage)],
+    ) -> PositiveFeedbackSignal {
         let mut indicators = Vec::new();
 
         let gratitude_patterns = [
@@ -1075,7 +1082,9 @@ impl SignalAnalyzer {
                     });
                     found_in_turn = true;
                     break;
-                } else if Self::should_use_fuzzy_matching(pattern) && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold) {
+                } else if Self::should_use_fuzzy_matching(pattern)
+                    && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold)
+                {
                     indicators.push(PositiveIndicator {
                         indicator_type: PositiveType::Gratitude,
                         message_index: *i,
@@ -1143,7 +1152,10 @@ impl SignalAnalyzer {
     }
 
     /// Analyze user escalation requests
-    fn analyze_escalation(&self, normalized_messages: &[(usize, Role, NormalizedMessage)]) -> EscalationSignal {
+    fn analyze_escalation(
+        &self,
+        normalized_messages: &[(usize, Role, NormalizedMessage)],
+    ) -> EscalationSignal {
         let mut requests = Vec::new();
 
         let human_agent_patterns = [
@@ -1262,7 +1274,9 @@ impl SignalAnalyzer {
                         escalation_type: EscalationType::HumanAgent,
                     });
                     break;
-                } else if Self::should_use_fuzzy_matching(pattern) && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold) {
+                } else if Self::should_use_fuzzy_matching(pattern)
+                    && norm_msg.fuzzy_contains_phrase(pattern, self.fuzzy_threshold)
+                {
                     requests.push(EscalationRequest {
                         message_index: *i,
                         snippet: format!("{} (fuzzy)", pattern),
@@ -1312,7 +1326,11 @@ impl SignalAnalyzer {
     // ========================================================================
 
     /// Check if two messages are similar rephrases
-    fn is_similar_rephrase(&self, norm_msg1: &NormalizedMessage, norm_msg2: &NormalizedMessage) -> bool {
+    fn is_similar_rephrase(
+        &self,
+        norm_msg1: &NormalizedMessage,
+        norm_msg2: &NormalizedMessage,
+    ) -> bool {
         // Skip if too short
         if norm_msg1.tokens.len() < 3 || norm_msg2.tokens.len() < 3 {
             return false;
@@ -1320,16 +1338,23 @@ impl SignalAnalyzer {
 
         // Common stopwords to downweight
         let stopwords: HashSet<&str> = [
-            "i", "me", "my", "you", "the", "a", "an", "is", "are", "was", "were",
-            "to", "with", "for", "of", "at", "by", "in", "on", "it", "this", "that",
-            "can", "could", "do", "does", "did", "will", "would", "should", "be",
-        ].iter().cloned().collect();
+            "i", "me", "my", "you", "the", "a", "an", "is", "are", "was", "were", "to", "with",
+            "for", "of", "at", "by", "in", "on", "it", "this", "that", "can", "could", "do",
+            "does", "did", "will", "would", "should", "be",
+        ]
+        .iter()
+        .cloned()
+        .collect();
 
         // Filter out stopwords for meaningful overlap
-        let tokens1: HashSet<_> = norm_msg1.tokens.iter()
+        let tokens1: HashSet<_> = norm_msg1
+            .tokens
+            .iter()
             .filter(|t| !stopwords.contains(t.as_str()))
             .collect();
-        let tokens2: HashSet<_> = norm_msg2.tokens.iter()
+        let tokens2: HashSet<_> = norm_msg2
+            .tokens
+            .iter()
             .filter(|t| !stopwords.contains(t.as_str()))
             .collect();
 
@@ -1403,6 +1428,7 @@ impl SignalAnalyzer {
     }
 
     /// Generate human-readable summary
+    #[allow(clippy::too_many_arguments)]
     fn generate_summary(
         &self,
         turn_count: &TurnCountSignal,
@@ -1415,10 +1441,7 @@ impl SignalAnalyzer {
     ) -> String {
         let mut summary_parts = Vec::new();
 
-        summary_parts.push(format!(
-            "Overall Quality: {:?}",
-            quality
-        ));
+        summary_parts.push(format!("Overall Quality: {:?}", quality));
 
         summary_parts.push(format!(
             "Turn Count: {} turns (efficiency: {:.1}%)",
@@ -1478,7 +1501,7 @@ impl Default for SignalAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hermesllm::apis::openai::{MessageContent};
+    use hermesllm::apis::openai::MessageContent;
     use std::time::Instant;
 
     fn create_message(role: Role, content: &str) -> Message {
@@ -1529,7 +1552,11 @@ mod tests {
         let mut messages = Vec::new();
         for i in 0..15 {
             messages.push(create_message(
-                if i % 2 == 0 { Role::User } else { Role::Assistant },
+                if i % 2 == 0 {
+                    Role::User
+                } else {
+                    Role::Assistant
+                },
                 &format!("Message {}", i),
             ));
         }
@@ -1593,7 +1620,10 @@ mod tests {
         assert!(signal.has_positive_feedback);
         assert!(signal.positive_count >= 1);
         assert!(signal.confidence > 0.5);
-        println!("test_positive_feedback_detection took: {:?}", start.elapsed());
+        println!(
+            "test_positive_feedback_detection took: {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
@@ -1619,7 +1649,10 @@ mod tests {
         let analyzer = SignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "What's the weather?"),
-            create_message(Role::Assistant, "I can help you with the weather information"),
+            create_message(
+                Role::Assistant,
+                "I can help you with the weather information",
+            ),
             create_message(Role::User, "Show me the forecast"),
             create_message(Role::Assistant, "Sure, I can help you with the forecast"),
             create_message(Role::User, "Stop repeating yourself"),
@@ -1631,8 +1664,10 @@ mod tests {
         // Debug output to see what was detected
         println!("Detected {} repetitions:", signal.repetition_count);
         for rep in &signal.repetitions {
-            println!("  - Messages {:?}, similarity: {:.3}, type: {:?}",
-                     rep.message_indices, rep.similarity, rep.repetition_type);
+            println!(
+                "  - Messages {:?}, similarity: {:.3}, type: {:?}",
+                rep.message_indices, rep.similarity, rep.repetition_type
+            );
         }
 
         assert!(signal.repetition_count > 0,
@@ -1762,21 +1797,22 @@ mod tests {
 
         // Very strict threshold should not match heavily garbled text
         let messages = vec![
-            create_message(Role::User, "xyz abc"),  // Completely unrelated to any gratitude pattern
+            create_message(Role::User, "xyz abc"), // Completely unrelated to any gratitude pattern
         ];
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_positive_feedback(&normalized_messages);
         assert_eq!(signal.positive_count, 0);
-        println!("test_fuzzy_threshold_configuration took: {:?}", start.elapsed());
+        println!(
+            "test_fuzzy_threshold_configuration took: {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
     fn test_exact_match_priority() {
         let start = Instant::now();
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "thank you so much"),
-        ];
+        let messages = vec![create_message(Role::User, "thank you so much")];
 
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_positive_feedback(&normalized_messages);
@@ -1794,63 +1830,79 @@ mod tests {
     #[test]
     fn test_hello_not_profanity() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "hello there"),
-        ];
+        let messages = vec![create_message(Role::User, "hello there")];
 
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized_messages);
-        assert!(!signal.has_frustration, "\"hello\" should not trigger profanity detection");
+        assert!(
+            !signal.has_frustration,
+            "\"hello\" should not trigger profanity detection"
+        );
     }
 
     #[test]
     fn test_prepare_not_escalation() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "Can you help me prepare for the meeting?"),
-        ];
+        let messages = vec![create_message(
+            Role::User,
+            "Can you help me prepare for the meeting?",
+        )];
 
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_escalation(&normalized_messages);
-        assert!(!signal.escalation_requested, "\"prepare\" should not trigger escalation (rep pattern removed)");
+        assert!(
+            !signal.escalation_requested,
+            "\"prepare\" should not trigger escalation (rep pattern removed)"
+        );
     }
 
     #[test]
     fn test_unicode_apostrophe_confusion() {
         let analyzer = SignalAnalyzer::new();
         let messages = vec![
-            create_message(Role::User, "I'm confused"),  // Unicode apostrophe
+            create_message(Role::User, "I'm confused"), // Unicode apostrophe
         ];
 
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized_messages);
-        assert!(signal.has_frustration, "Unicode apostrophe 'I'm confused' should trigger confusion");
+        assert!(
+            signal.has_frustration,
+            "Unicode apostrophe 'I'm confused' should trigger confusion"
+        );
     }
 
     #[test]
     fn test_unicode_quotes_work() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "\u{201C}doesn\u{2019}t work\u{201D} with unicode quotes"),
-        ];
+        let messages = vec![create_message(
+            Role::User,
+            "\u{201C}doesn\u{2019}t work\u{201D} with unicode quotes",
+        )];
 
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized_messages);
-        assert!(signal.has_frustration, "Unicode quotes should be normalized and match patterns");
+        assert!(
+            signal.has_frustration,
+            "Unicode quotes should be normalized and match patterns"
+        );
     }
 
     #[test]
     fn test_absolute_not_profanity() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "That's absolute nonsense"),
-        ];
+        let messages = vec![create_message(Role::User, "That's absolute nonsense")];
 
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized_messages);
         // Should match on "nonsense" logic, not on "bs" substring
-        let has_bs_match = signal.indicators.iter().any(|ind| ind.snippet.contains("bs"));
-        assert!(!has_bs_match, "\"absolute\" should not trigger 'bs' profanity match");
+        let has_bs_match = signal
+            .indicators
+            .iter()
+            .any(|ind| ind.snippet.contains("bs"));
+        assert!(
+            !has_bs_match,
+            "\"absolute\" should not trigger 'bs' profanity match"
+        );
     }
 
     #[test]
@@ -1865,7 +1917,10 @@ mod tests {
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_follow_up(&normalized_messages);
         // Should not detect as rephrase since only stopwords overlap
-        assert_eq!(signal.repair_count, 0, "Messages with only stopword overlap should not be rephrases");
+        assert_eq!(
+            signal.repair_count, 0,
+            "Messages with only stopword overlap should not be rephrases"
+        );
     }
 
     #[test]
@@ -1873,25 +1928,26 @@ mod tests {
         let start = Instant::now();
         let analyzer = SignalAnalyzer::new();
 
-        use hermesllm::apis::openai::{ToolCall, FunctionCall};
+        use hermesllm::apis::openai::{FunctionCall, ToolCall};
 
         // Helper to create a message with tool calls
-        let create_assistant_with_tools = |content: &str, tool_id: &str, tool_name: &str, args: &str| -> Message {
-            Message {
-                role: Role::Assistant,
-                content: MessageContent::Text(content.to_string()),
-                name: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: tool_id.to_string(),
-                    call_type: "function".to_string(),
-                    function: FunctionCall {
-                        name: tool_name.to_string(),
-                        arguments: args.to_string(),
-                    },
-                }]),
-                tool_call_id: None,
-            }
-        };
+        let create_assistant_with_tools =
+            |content: &str, tool_id: &str, tool_name: &str, args: &str| -> Message {
+                Message {
+                    role: Role::Assistant,
+                    content: MessageContent::Text(content.to_string()),
+                    name: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: tool_id.to_string(),
+                        call_type: "function".to_string(),
+                        function: FunctionCall {
+                            name: tool_name.to_string(),
+                            arguments: args.to_string(),
+                        },
+                    }]),
+                    tool_call_id: None,
+                }
+            };
 
         // Helper to create a tool response message
         let create_tool_message = |tool_call_id: &str, content: &str| -> Message {
@@ -1906,44 +1962,83 @@ mod tests {
 
         // Scenario: User DOES mention New York in first message, making "I already told you" legitimate
         let messages = vec![
-            create_message(Role::User, "I need to book a flight from New York to Paris for December 20th"),
+            create_message(
+                Role::User,
+                "I need to book a flight from New York to Paris for December 20th",
+            ),
             create_assistant_with_tools(
                 "I'll help you search for flights to Paris.",
                 "call_123",
                 "search_flights",
-                r#"{"origin": "NYC", "destination": "Paris", "date": "2025-12-20"}"#
+                r#"{"origin": "NYC", "destination": "Paris", "date": "2025-12-20"}"#,
             ),
             create_tool_message("call_123", r#"{"flights": []}"#),
-            create_message(Role::Assistant, "I couldn't find any flights. Could you provide your departure city?"),
+            create_message(
+                Role::Assistant,
+                "I couldn't find any flights. Could you provide your departure city?",
+            ),
             create_message(Role::User, "I already told you, from New York!"),
             create_assistant_with_tools(
                 "Let me try again.",
                 "call_456",
                 "search_flights",
-                r#"{"origin": "New York", "destination": "Paris", "date": "2025-12-20"}"#
+                r#"{"origin": "New York", "destination": "Paris", "date": "2025-12-20"}"#,
             ),
             create_tool_message("call_456", r#"{"flights": []}"#),
-            create_message(Role::Assistant, "I'm still not finding results. Let me check the system."),
-            create_message(Role::User, "THIS IS RIDICULOUS!!! The tool doesn't work at all. Why do you keep calling it?"),
-            create_message(Role::Assistant, "I sincerely apologize for the frustration with the search tool."),
-            create_message(Role::User, "Forget it. I need to speak to a human agent. This is a waste of time."),
+            create_message(
+                Role::Assistant,
+                "I'm still not finding results. Let me check the system.",
+            ),
+            create_message(
+                Role::User,
+                "THIS IS RIDICULOUS!!! The tool doesn't work at all. Why do you keep calling it?",
+            ),
+            create_message(
+                Role::Assistant,
+                "I sincerely apologize for the frustration with the search tool.",
+            ),
+            create_message(
+                Role::User,
+                "Forget it. I need to speak to a human agent. This is a waste of time.",
+            ),
         ];
 
         let report = analyzer.analyze(&messages);
 
         // Tool messages should be filtered out, so we should only analyze text messages
         // That's 4 user messages + 5 assistant text messages = 9 turns
-        assert_eq!(report.turn_count.total_turns, 9, "Should count 9 text messages (tool messages filtered out)");
-        assert!(report.turn_count.is_concerning, "Should flag concerning turn count");
+        assert_eq!(
+            report.turn_count.total_turns, 9,
+            "Should count 9 text messages (tool messages filtered out)"
+        );
+        assert!(
+            report.turn_count.is_concerning,
+            "Should flag concerning turn count"
+        );
 
         // Should detect frustration (all caps, complaints)
-        assert!(report.frustration.has_frustration, "Should detect frustration");
-        assert!(report.frustration.frustration_count >= 2, "Should detect multiple frustration indicators");
-        assert!(report.frustration.severity >= 2, "Should have moderate or higher frustration severity");
+        assert!(
+            report.frustration.has_frustration,
+            "Should detect frustration"
+        );
+        assert!(
+            report.frustration.frustration_count >= 2,
+            "Should detect multiple frustration indicators"
+        );
+        assert!(
+            report.frustration.severity >= 2,
+            "Should have moderate or higher frustration severity"
+        );
 
         // Should detect escalation request
-        assert!(report.escalation.escalation_requested, "Should detect escalation to human agent");
-        assert!(report.escalation.escalation_count >= 1, "Should detect at least one escalation");
+        assert!(
+            report.escalation.escalation_requested,
+            "Should detect escalation to human agent"
+        );
+        assert!(
+            report.escalation.escalation_count >= 1,
+            "Should detect at least one escalation"
+        );
 
         // Overall quality should be Poor or Severe
         assert!(
@@ -1955,7 +2050,10 @@ mod tests {
             report.overall_quality
         );
 
-        println!("test_frustrated_user_with_legitimate_repair took: {:?}", start.elapsed());
+        println!(
+            "test_frustrated_user_with_legitimate_repair took: {:?}",
+            start.elapsed()
+        );
     }
 
     #[test]
@@ -1963,25 +2061,26 @@ mod tests {
         let start = Instant::now();
         let analyzer = SignalAnalyzer::new();
 
-        use hermesllm::apis::openai::{ToolCall, FunctionCall};
+        use hermesllm::apis::openai::{FunctionCall, ToolCall};
 
         // Helper to create a message with tool calls
-        let create_assistant_with_tools = |content: &str, tool_id: &str, tool_name: &str, args: &str| -> Message {
-            Message {
-                role: Role::Assistant,
-                content: MessageContent::Text(content.to_string()),
-                name: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: tool_id.to_string(),
-                    call_type: "function".to_string(),
-                    function: FunctionCall {
-                        name: tool_name.to_string(),
-                        arguments: args.to_string(),
-                    },
-                }]),
-                tool_call_id: None,
-            }
-        };
+        let create_assistant_with_tools =
+            |content: &str, tool_id: &str, tool_name: &str, args: &str| -> Message {
+                Message {
+                    role: Role::Assistant,
+                    content: MessageContent::Text(content.to_string()),
+                    name: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: tool_id.to_string(),
+                        call_type: "function".to_string(),
+                        function: FunctionCall {
+                            name: tool_name.to_string(),
+                            arguments: args.to_string(),
+                        },
+                    }]),
+                    tool_call_id: None,
+                }
+            };
 
         // Helper to create a tool response message
         let create_tool_message = |tool_call_id: &str, content: &str| -> Message {
@@ -1997,44 +2096,83 @@ mod tests {
         // Scenario: User NEVER mentions New York in first message but claims "I already told you"
         // This represents realistic frustrated user behavior - exaggeration/misremembering
         let messages = vec![
-            create_message(Role::User, "I need to book a flight to Paris for December 20th"),
+            create_message(
+                Role::User,
+                "I need to book a flight to Paris for December 20th",
+            ),
             create_assistant_with_tools(
                 "I'll help you search for flights to Paris.",
                 "call_123",
                 "search_flights",
-                r#"{"destination": "Paris", "date": "2025-12-20"}"#
+                r#"{"destination": "Paris", "date": "2025-12-20"}"#,
             ),
             create_tool_message("call_123", r#"{"error": "origin required"}"#),
-            create_message(Role::Assistant, "I couldn't find any flights. Could you provide your departure city?"),
-            create_message(Role::User, "I already told you, from New York!"),  // False claim - never mentioned it
+            create_message(
+                Role::Assistant,
+                "I couldn't find any flights. Could you provide your departure city?",
+            ),
+            create_message(Role::User, "I already told you, from New York!"), // False claim - never mentioned it
             create_assistant_with_tools(
                 "Let me try again.",
                 "call_456",
                 "search_flights",
-                r#"{"origin": "New York", "destination": "Paris", "date": "2025-12-20"}"#
+                r#"{"origin": "New York", "destination": "Paris", "date": "2025-12-20"}"#,
             ),
             create_tool_message("call_456", r#"{"flights": []}"#),
-            create_message(Role::Assistant, "I'm still not finding results. Let me check the system."),
-            create_message(Role::User, "THIS IS RIDICULOUS!!! The tool doesn't work at all. Why do you keep calling it?"),
-            create_message(Role::Assistant, "I sincerely apologize for the frustration with the search tool."),
-            create_message(Role::User, "Forget it. I need to speak to a human agent. This is a waste of time."),
+            create_message(
+                Role::Assistant,
+                "I'm still not finding results. Let me check the system.",
+            ),
+            create_message(
+                Role::User,
+                "THIS IS RIDICULOUS!!! The tool doesn't work at all. Why do you keep calling it?",
+            ),
+            create_message(
+                Role::Assistant,
+                "I sincerely apologize for the frustration with the search tool.",
+            ),
+            create_message(
+                Role::User,
+                "Forget it. I need to speak to a human agent. This is a waste of time.",
+            ),
         ];
 
         let report = analyzer.analyze(&messages);
 
         // Tool messages should be filtered out, so we should only analyze text messages
         // That's 4 user messages + 5 assistant text messages = 9 turns
-        assert_eq!(report.turn_count.total_turns, 9, "Should count 9 text messages (tool messages filtered out)");
-        assert!(report.turn_count.is_concerning, "Should flag concerning turn count");
+        assert_eq!(
+            report.turn_count.total_turns, 9,
+            "Should count 9 text messages (tool messages filtered out)"
+        );
+        assert!(
+            report.turn_count.is_concerning,
+            "Should flag concerning turn count"
+        );
 
         // Should detect frustration (all caps, complaints, false claims)
-        assert!(report.frustration.has_frustration, "Should detect frustration");
-        assert!(report.frustration.frustration_count >= 2, "Should detect multiple frustration indicators");
-        assert!(report.frustration.severity >= 2, "Should have moderate or higher frustration severity");
+        assert!(
+            report.frustration.has_frustration,
+            "Should detect frustration"
+        );
+        assert!(
+            report.frustration.frustration_count >= 2,
+            "Should detect multiple frustration indicators"
+        );
+        assert!(
+            report.frustration.severity >= 2,
+            "Should have moderate or higher frustration severity"
+        );
 
         // Should detect escalation request
-        assert!(report.escalation.escalation_requested, "Should detect escalation to human agent");
-        assert!(report.escalation.escalation_count >= 1, "Should detect at least one escalation");
+        assert!(
+            report.escalation.escalation_requested,
+            "Should detect escalation to human agent"
+        );
+        assert!(
+            report.escalation.escalation_count >= 1,
+            "Should detect at least one escalation"
+        );
 
         // Note: May detect false positive "positive feedback" due to fuzzy matching
         // e.g., "I already told YOU" matches "you rock", "THIS is RIDICULOUS" matches "this helps"
@@ -2050,7 +2188,10 @@ mod tests {
             report.overall_quality
         );
 
-        println!("test_frustrated_user_false_claim took: {:?}", start.elapsed());
+        println!(
+            "test_frustrated_user_false_claim took: {:?}",
+            start.elapsed()
+        );
         println!("Full signal analysis completed in {:?}", start.elapsed());
     }
 
@@ -2064,30 +2205,40 @@ mod tests {
         ];
         let normalized = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized);
-        assert!(signal.has_frustration, "Polite dissatisfaction should be detected");
+        assert!(
+            signal.has_frustration,
+            "Polite dissatisfaction should be detected"
+        );
     }
-
 
     #[test]
     fn test_dissatisfaction_giving_up_without_escalation() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "Never mind, I'll figure it out myself."),
-        ];
+        let messages = vec![create_message(
+            Role::User,
+            "Never mind, I'll figure it out myself.",
+        )];
         let normalized = preprocess_messages(&messages);
         let signal = analyzer.analyze_escalation(&normalized);
-        assert!(signal.escalation_requested, "Giving up should count as escalation/quit intent");
+        assert!(
+            signal.escalation_requested,
+            "Giving up should count as escalation/quit intent"
+        );
     }
 
     #[test]
     fn test_dissatisfaction_same_problem_again() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "I'm running into the same issue again."),
-        ];
+        let messages = vec![create_message(
+            Role::User,
+            "I'm running into the same issue again.",
+        )];
         let normalized = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized);
-        assert!(signal.has_frustration, "'same issue again' should be detected");
+        assert!(
+            signal.has_frustration,
+            "'same issue again' should be detected"
+        );
     }
 
     #[test]
@@ -2096,13 +2247,19 @@ mod tests {
         let messages = vec![create_message(Role::User, "This feels incomplete.")];
         let normalized = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized);
-        assert!(signal.has_frustration, "Should detect 'incomplete' dissatisfaction");
+        assert!(
+            signal.has_frustration,
+            "Should detect 'incomplete' dissatisfaction"
+        );
     }
 
     #[test]
     fn test_low_mood_overwhelming() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![create_message(Role::User, "This is overwhelming and I'm not sure what to do.")];
+        let messages = vec![create_message(
+            Role::User,
+            "This is overwhelming and I'm not sure what to do.",
+        )];
         let normalized = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized);
         assert!(signal.has_frustration, "Should detect overwhelmed language");
@@ -2111,10 +2268,16 @@ mod tests {
     #[test]
     fn test_low_mood_exhausted_trying() {
         let analyzer = SignalAnalyzer::new();
-        let messages = vec![create_message(Role::User, "I'm exhausted trying to get this working.")];
+        let messages = vec![create_message(
+            Role::User,
+            "I'm exhausted trying to get this working.",
+        )];
         let normalized = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized);
-        assert!(signal.has_frustration, "Should detect exhaustion/struggle language");
+        assert!(
+            signal.has_frustration,
+            "Should detect exhaustion/struggle language"
+        );
     }
 
     #[test]
@@ -2122,12 +2285,24 @@ mod tests {
         let analyzer = SignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "I'm trying to set up SSH keys for GitHub."),
-            create_message(Role::Assistant, "Sure. First generate a key using ssh-keygen."),
+            create_message(
+                Role::Assistant,
+                "Sure. First generate a key using ssh-keygen.",
+            ),
             create_message(Role::User, "I did that already."),
-            create_message(Role::Assistant, "Then add the key to your GitHub account settings."),
+            create_message(
+                Role::Assistant,
+                "Then add the key to your GitHub account settings.",
+            ),
             create_message(Role::User, "I've done that too."),
-            create_message(Role::Assistant, "After that, make sure your SSH agent is running."),
-            create_message(Role::User, "Okay, but this still doesn't seem to fix the issue."),
+            create_message(
+                Role::Assistant,
+                "After that, make sure your SSH agent is running.",
+            ),
+            create_message(
+                Role::User,
+                "Okay, but this still doesn't seem to fix the issue.",
+            ),
             create_message(Role::Assistant, "What error message are you seeing?"),
             create_message(Role::User, "It's just not connecting the way I expected."),
         ];
@@ -2151,13 +2326,22 @@ mod tests {
     fn test_common_resigned_giving_up_quietly() {
         let analyzer = SignalAnalyzer::new();
         let messages = vec![
-            create_message(Role::User, "Can you explain how to deploy this with Docker?"),
-            create_message(Role::Assistant, "You need to write a Dockerfile and build an image."),
+            create_message(
+                Role::User,
+                "Can you explain how to deploy this with Docker?",
+            ),
+            create_message(
+                Role::Assistant,
+                "You need to write a Dockerfile and build an image.",
+            ),
             create_message(Role::User, "I tried that."),
             create_message(Role::Assistant, "Then you can run docker-compose up."),
             create_message(Role::User, "I did, but it didn’t really help."),
             create_message(Role::Assistant, "What error are you getting?"),
-            create_message(Role::User, "Honestly, never mind. I’ll just try something else."),
+            create_message(
+                Role::User,
+                "Honestly, never mind. I’ll just try something else.",
+            ),
         ];
 
         let report = analyzer.analyze(&messages);
@@ -2169,8 +2353,10 @@ mod tests {
         );
 
         assert!(
-            matches!(report.overall_quality, InteractionQuality::Poor | InteractionQuality::Severe)
-                || report.escalation.escalation_requested
+            matches!(
+                report.overall_quality,
+                InteractionQuality::Poor | InteractionQuality::Severe
+            ) || report.escalation.escalation_requested
                 || report.frustration.has_frustration,
             "Giving up should not be classified as a high-quality interaction"
         );
@@ -2181,14 +2367,23 @@ mod tests {
         let analyzer = SignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "I'm trying to understand backpropagation."),
-            create_message(Role::Assistant, "It's a way to compute gradients efficiently."),
+            create_message(
+                Role::Assistant,
+                "It's a way to compute gradients efficiently.",
+            ),
             create_message(Role::User, "I’ve read that explanation already."),
             create_message(Role::Assistant, "Would you like a mathematical derivation?"),
             create_message(Role::User, "Maybe, but I’m still having trouble following."),
             create_message(Role::Assistant, "I can walk through a simple example."),
-            create_message(Role::User, "That might help, but honestly this is pretty overwhelming."),
+            create_message(
+                Role::User,
+                "That might help, but honestly this is pretty overwhelming.",
+            ),
             create_message(Role::Assistant, "Let’s slow it down step by step."),
-            create_message(Role::User, "Yeah… I’m just feeling kind of discouraged right now."),
+            create_message(
+                Role::User,
+                "Yeah… I’m just feeling kind of discouraged right now.",
+            ),
         ];
 
         let report = analyzer.analyze(&messages);
@@ -2210,12 +2405,21 @@ mod tests {
         let analyzer = SignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "How do I optimize this SQL query?"),
-            create_message(Role::Assistant, "You can add indexes to improve performance."),
+            create_message(
+                Role::Assistant,
+                "You can add indexes to improve performance.",
+            ),
             create_message(Role::User, "I already have indexes."),
             create_message(Role::Assistant, "Then you could consider query caching."),
             create_message(Role::User, "That’s not really what I was asking about."),
-            create_message(Role::Assistant, "What specifically are you trying to optimize?"),
-            create_message(Role::User, "The execution plan — this answer doesn’t address that."),
+            create_message(
+                Role::Assistant,
+                "What specifically are you trying to optimize?",
+            ),
+            create_message(
+                Role::User,
+                "The execution plan — this answer doesn’t address that.",
+            ),
         ];
 
         let report = analyzer.analyze(&messages);
@@ -2242,7 +2446,10 @@ mod tests {
             create_message(Role::Assistant, "Did it work?"),
             create_message(Role::User, "Not quite — it matches more than it should."),
             create_message(Role::Assistant, "You can refine it with a lookahead."),
-            create_message(Role::User, "I see… this is more complicated than I expected."),
+            create_message(
+                Role::User,
+                "I see… this is more complicated than I expected.",
+            ),
         ];
 
         let report = analyzer.analyze(&messages);
@@ -2258,5 +2465,4 @@ mod tests {
             "Polite disappointment should not be classified as Excellent"
         );
     }
-
 }

@@ -1,1 +1,3 @@
-pub mod signals;
+mod analyzer;
+
+pub use analyzer::*;

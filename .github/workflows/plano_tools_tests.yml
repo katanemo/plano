@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest-m
     defaults:
       run:
-        working-directory: ./arch/tools
+        working-directory: ./cli
 
     steps:
       - name: Checkout code
@@ -25,16 +25,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: install poetry
-        run: |
-          export POETRY_VERSION=2.2.1
-          curl -sSL https://install.python-poetry.org | python3 -
-          export PATH="$HOME/.local/bin:$PATH"
+      - name: install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: install plano tools
         run: |
-          poetry install
+          uv sync --extra dev
 
       - name: run tests
         run: |
-          poetry run pytest
+          uv run pytest

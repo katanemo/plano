@@ -38,7 +38,7 @@ impl TryFrom<AnthropicMessagesRequest> for ChatCompletionsRequest {
         }
 
         // Convert tools and tool choice
-        let openai_tools = req.tools.map(|tools| convert_anthropic_tools(tools));
+        let openai_tools = req.tools.map(convert_anthropic_tools);
         let (openai_tool_choice, parallel_tool_calls) =
             convert_anthropic_tool_choice(req.tool_choice);
 
@@ -218,18 +218,18 @@ impl TryFrom<MessagesMessage> for Vec<Message> {
 }
 
 // Role Conversions
-impl Into<Role> for MessagesRole {
-    fn into(self) -> Role {
-        match self {
+impl From<MessagesRole> for Role {
+    fn from(val: MessagesRole) -> Self {
+        match val {
             MessagesRole::User => Role::User,
             MessagesRole::Assistant => Role::Assistant,
         }
     }
 }
 
-impl Into<MessagesStopReason> for FinishReason {
-    fn into(self) -> MessagesStopReason {
-        match self {
+impl From<FinishReason> for MessagesStopReason {
+    fn from(val: FinishReason) -> Self {
+        match val {
             FinishReason::Stop => MessagesStopReason::EndTurn,
             FinishReason::Length => MessagesStopReason::MaxTokens,
             FinishReason::ToolCalls => MessagesStopReason::ToolUse,
@@ -239,11 +239,11 @@ impl Into<MessagesStopReason> for FinishReason {
     }
 }
 
-impl Into<MessagesUsage> for Usage {
-    fn into(self) -> MessagesUsage {
+impl From<Usage> for MessagesUsage {
+    fn from(val: Usage) -> Self {
         MessagesUsage {
-            input_tokens: self.prompt_tokens,
-            output_tokens: self.completion_tokens,
+            input_tokens: val.prompt_tokens,
+            output_tokens: val.completion_tokens,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
         }
@@ -251,9 +251,9 @@ impl Into<MessagesUsage> for Usage {
 }
 
 // System Prompt Conversions
-impl Into<Message> for MessagesSystemPrompt {
-    fn into(self) -> Message {
-        let system_content = match self {
+impl From<MessagesSystemPrompt> for Message {
+    fn from(val: MessagesSystemPrompt) -> Self {
+        let system_content = match val {
             MessagesSystemPrompt::Single(text) => MessageContent::Text(text),
             MessagesSystemPrompt::Blocks(blocks) => MessageContent::Text(blocks.extract_text()),
         };
@@ -384,12 +384,8 @@ impl TryFrom<MessagesMessage> for BedrockMessage {
                                 ToolResultContent::Blocks(blocks) => {
                                     let mut result_blocks = Vec::new();
                                     for result_block in blocks {
-                                        match result_block {
-                                            crate::apis::anthropic::MessagesContentBlock::Text { text, .. } => {
-                                                result_blocks.push(ToolResultContentBlock::Text { text });
-                                            }
-                                            // For now, skip other content types in tool results
-                                            _ => {}
+                                        if let crate::apis::anthropic::MessagesContentBlock::Text { text, .. } = result_block {
+                                            result_blocks.push(ToolResultContentBlock::Text { text });
                                         }
                                     }
                                     result_blocks

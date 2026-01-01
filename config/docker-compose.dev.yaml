@@ -12,7 +12,7 @@ services:
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
       - ./envoy.template.yaml:/app/envoy.template.yaml
       - ./arch_config_schema.yaml:/app/arch_config_schema.yaml
-      - ./tools/cli/config_generator.py:/app/config_generator.py
+      - ../cli/planoai/config_generator.py:/app/planoai/config_generator.py
       - ../crates/target/wasm32-wasip1/release/llm_gateway.wasm:/etc/envoy/proxy-wasm-plugins/llm_gateway.wasm
       - ../crates/target/wasm32-wasip1/release/prompt_gateway.wasm:/etc/envoy/proxy-wasm-plugins/prompt_gateway.wasm
       - ~/archgw_logs:/var/log/

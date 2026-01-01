@@ -1,7 +1,3 @@
-use serde::Serialize;
-use std::convert::TryFrom;
-use std::error::Error;
-use std::fmt;
 use crate::apis::amazon_bedrock::ConverseResponse;
 use crate::apis::anthropic::MessagesResponse;
 use crate::apis::openai::ChatCompletionsResponse;
@@ -9,14 +5,17 @@ use crate::apis::openai_responses::ResponsesAPIResponse;
 use crate::clients::endpoints::SupportedAPIsFromClient;
 use crate::clients::endpoints::SupportedUpstreamAPIs;
 use crate::providers::id::ProviderId;
-
+use serde::Serialize;
+use std::convert::TryFrom;
+use std::error::Error;
+use std::fmt;
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum ProviderResponseType {
     ChatCompletionsResponse(ChatCompletionsResponse),
     MessagesResponse(MessagesResponse),
-    ResponsesAPIResponse(ResponsesAPIResponse),
+    ResponsesAPIResponse(Box<ResponsesAPIResponse>),
 }
 
 /// Trait for token usage information
@@ -42,7 +41,9 @@ impl ProviderResponse for ProviderResponseType {
         match self {
             ProviderResponseType::ChatCompletionsResponse(resp) => resp.usage(),
             ProviderResponseType::MessagesResponse(resp) => resp.usage(),
-            ProviderResponseType::ResponsesAPIResponse(resp) => resp.usage.as_ref().map(|u| u as &dyn TokenUsage),
+            ProviderResponseType::ResponsesAPIResponse(resp) => {
+                resp.usage.as_ref().map(|u| u as &dyn TokenUsage)
+            }
         }
     }
 
@@ -50,11 +51,13 @@ impl ProviderResponse for ProviderResponseType {
         match self {
             ProviderResponseType::ChatCompletionsResponse(resp) => resp.extract_usage_counts(),
             ProviderResponseType::MessagesResponse(resp) => resp.extract_usage_counts(),
-            ProviderResponseType::ResponsesAPIResponse(resp) => {
-                resp.usage.as_ref().map(|u| {
-                    (u.input_tokens as usize, u.output_tokens as usize, u.total_tokens as usize)
-                })
-            }
+            ProviderResponseType::ResponsesAPIResponse(resp) => resp.usage.as_ref().map(|u| {
+                (
+                    u.input_tokens as usize,
+                    u.output_tokens as usize,
+                    u.total_tokens as usize,
+                )
+            }),
         }
     }
 }
@@ -156,40 +159,44 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient, &ProviderId)> for ProviderRespons
             ) => {
                 let resp: ResponsesAPIResponse = ResponsesAPIResponse::try_from(bytes)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                Ok(ProviderResponseType::ResponsesAPIResponse(resp))
+                Ok(ProviderResponseType::ResponsesAPIResponse(Box::new(resp)))
             }
             (
                 SupportedUpstreamAPIs::OpenAIChatCompletions(_),
                 SupportedAPIsFromClient::OpenAIResponsesAPI(_),
             ) => {
-                let chat_completions_response: ChatCompletionsResponse = ChatCompletionsResponse::try_from(bytes)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let chat_completions_response: ChatCompletionsResponse =
+                    ChatCompletionsResponse::try_from(bytes)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
                 // Transform to ResponsesAPI format using the transformer
-                let responses_resp: ResponsesAPIResponse = chat_completions_response.try_into().map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Transformation error: {}", e),
-                    )
-                })?;
-                Ok(ProviderResponseType::ResponsesAPIResponse(responses_resp))
+                let responses_resp: ResponsesAPIResponse =
+                    chat_completions_response.try_into().map_err(|e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Transformation error: {}", e),
+                        )
+                    })?;
+                Ok(ProviderResponseType::ResponsesAPIResponse(Box::new(
+                    responses_resp,
+                )))
             }
             (
                 SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
                 SupportedAPIsFromClient::OpenAIResponsesAPI(_),
             ) => {
-
                 //Chain transform: Anthropic Messages -> OpenAI ChatCompletions -> ResponsesAPI
                 let anthropic_resp: MessagesResponse = serde_json::from_slice(bytes)
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
                 // Transform to ChatCompletions format using the transformer
-                let chat_resp: ChatCompletionsResponse = anthropic_resp.try_into().map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Transformation error: {}", e),
-                    )
-                })?;
+                let chat_resp: ChatCompletionsResponse =
+                    anthropic_resp.try_into().map_err(|e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Transformation error: {}", e),
+                        )
+                    })?;
 
                 let response_api: ResponsesAPIResponse = chat_resp.try_into().map_err(|e| {
                     std::io::Error::new(
@@ -197,7 +204,9 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient, &ProviderId)> for ProviderRespons
                         format!("Transformation error: {}", e),
                     )
                 })?;
-                Ok(ProviderResponseType::ResponsesAPIResponse(response_api))
+                Ok(ProviderResponseType::ResponsesAPIResponse(Box::new(
+                    response_api,
+                )))
             }
             (
                 SupportedUpstreamAPIs::AmazonBedrockConverse(_),
@@ -219,10 +228,15 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient, &ProviderId)> for ProviderRespons
                 let response_api: ResponsesAPIResponse = chat_resp.try_into().map_err(|e| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        format!("ChatCompletions to ResponsesAPI transformation error: {}", e),
+                        format!(
+                            "ChatCompletions to ResponsesAPI transformation error: {}",
+                            e
+                        ),
                     )
                 })?;
-                Ok(ProviderResponseType::ResponsesAPIResponse(response_api))
+                Ok(ProviderResponseType::ResponsesAPIResponse(Box::new(
+                    response_api,
+                )))
             }
             _ => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -255,8 +269,8 @@ impl Error for ProviderResponseError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::apis::openai::OpenAIApi;
     use crate::apis::anthropic::AnthropicApi;
+    use crate::apis::openai::OpenAIApi;
     use crate::clients::endpoints::SupportedAPIsFromClient;
     use crate::providers::id::ProviderId;
     use serde_json::json;

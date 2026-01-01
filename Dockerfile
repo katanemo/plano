@@ -1,12 +1,12 @@
 # build docker image for arch gateway
-FROM rust:1.82.0 AS builder
+FROM rust:1.92.0 AS builder
 RUN rustup -v target add wasm32-wasip1
 WORKDIR /arch
 COPY crates .
 RUN cargo build --release --target wasm32-wasip1 -p prompt_gateway -p llm_gateway
 RUN cargo build --release -p brightstaff
 
-FROM docker.io/envoyproxy/envoy:v1.34-latest AS envoy
+FROM docker.io/envoyproxy/envoy:v1.36.4  AS envoy
 
 FROM python:3.13.6-slim AS arch
 # Purge PAM to avoid CVE-2025-6020 and install needed tools
@@ -30,14 +30,22 @@ COPY --from=builder /arch/target/release/brightstaff /app/brightstaff
 COPY --from=envoy /usr/local/bin/envoy /usr/local/bin/envoy
 
 WORKDIR /app
-COPY arch/requirements.txt .
-RUN pip install -r requirements.txt
-COPY arch/tools .
-COPY arch/envoy.template.yaml .
-COPY arch/arch_config_schema.yaml .
-COPY arch/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-RUN pip install requests
+# Install uv using pip
+RUN pip install --no-cache-dir uv
+
+# Copy Python dependency files
+COPY cli/pyproject.toml ./
+COPY cli/uv.lock ./
+COPY cli/README.md ./
+
+RUN uv run pip install --no-cache-dir .
+
+# Copy the rest of the application
+COPY cli .
+COPY config/envoy.template.yaml .
+COPY config/arch_config_schema.yaml .
+COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN mkdir -p /var/log/supervisor && touch /var/log/envoy.log /var/log/supervisor/supervisord.log
 
 RUN mkdir -p /var/log && \

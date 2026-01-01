@@ -376,21 +376,22 @@ impl StreamContext {
 
         // Parse arguments JSON string into HashMap
         // Note: convert from serde_json::Value to serde_yaml::Value for compatibility
-        let tool_params: Option<HashMap<String, serde_yaml::Value>> = match serde_json::from_str::<HashMap<String, serde_json::Value>>(tool_params_str) {
-            Ok(json_params) => {
-                let yaml_params: HashMap<String, serde_yaml::Value> = json_params
-                    .into_iter()
-                    .filter_map(|(k, v)| {
-                        serde_yaml::to_value(&v).ok().map(|yaml_v| (k, yaml_v))
-                    })
-                    .collect();
-                Some(yaml_params)
-            },
-            Err(e) => {
-                warn!("Failed to parse tool call arguments: {}", e);
-                None
-            }
-        };
+        let tool_params: Option<HashMap<String, serde_yaml::Value>> =
+            match serde_json::from_str::<HashMap<String, serde_json::Value>>(tool_params_str) {
+                Ok(json_params) => {
+                    let yaml_params: HashMap<String, serde_yaml::Value> = json_params
+                        .into_iter()
+                        .filter_map(|(k, v)| {
+                            serde_yaml::to_value(&v).ok().map(|yaml_v| (k, yaml_v))
+                        })
+                        .collect();
+                    Some(yaml_params)
+                }
+                Err(e) => {
+                    warn!("Failed to parse tool call arguments: {}", e);
+                    None
+                }
+            };
 
         let endpoint_details = prompt_target.endpoint.as_ref().unwrap();
         let endpoint_path: String = endpoint_details
@@ -629,10 +630,10 @@ impl StreamContext {
             }
         };
 
-        if system_prompt.is_some() {
+        if let Some(system_prompt_text) = system_prompt {
             let system_prompt_message = Message {
                 role: SYSTEM_ROLE.to_string(),
-                content: Some(ContentType::Text(system_prompt.unwrap())),
+                content: Some(ContentType::Text(system_prompt_text)),
                 model: None,
                 tool_calls: None,
                 tool_call_id: None,

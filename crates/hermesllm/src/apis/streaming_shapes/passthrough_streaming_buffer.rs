@@ -6,6 +6,12 @@ pub struct PassthroughStreamBuffer {
     buffered_events: Vec<SseEvent>,
 }
 
+impl Default for PassthroughStreamBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PassthroughStreamBuffer {
     pub fn new() -> Self {
         Self {
@@ -30,7 +36,7 @@ impl SseStreamBufferTrait for PassthroughStreamBuffer {
         self.buffered_events.push(event);
     }
 
-    fn into_bytes(&mut self) -> Vec<u8> {
+    fn to_bytes(&mut self) -> Vec<u8> {
         // No finalization needed for passthrough - just convert accumulated events to bytes
         let mut buffer = Vec::new();
         for event in self.buffered_events.drain(..) {
@@ -44,7 +50,7 @@ impl SseStreamBufferTrait for PassthroughStreamBuffer {
 #[cfg(test)]
 mod tests {
     use crate::apis::streaming_shapes::passthrough_streaming_buffer::PassthroughStreamBuffer;
-    use crate::apis::streaming_shapes::sse::{SseStreamIter, SseStreamBufferTrait};
+    use crate::apis::streaming_shapes::sse::{SseStreamBufferTrait, SseStreamIter};
 
     #[test]
     fn test_chat_completions_passthrough_buffer() {
@@ -73,7 +79,7 @@ mod tests {
             buffer.add_transformed_event(event);
         }
 
-        let output_bytes = buffer.into_bytes();
+        let output_bytes = buffer.to_bytes();
         let output = String::from_utf8_lossy(&output_bytes);
 
         println!("\nTRANSFORMED OUTPUT (ChatCompletions - Passthrough):");
@@ -84,7 +90,11 @@ mod tests {
         assert!(!output_bytes.is_empty());
         assert!(output.contains("chatcmpl-123"));
         assert!(output.contains("[DONE]"));
-        assert_eq!(raw_input.trim(), output.trim(), "Passthrough should preserve input");
+        assert_eq!(
+            raw_input.trim(),
+            output.trim(),
+            "Passthrough should preserve input"
+        );
 
         println!("\nVALIDATION SUMMARY:");
         println!("{}", "-".repeat(80));

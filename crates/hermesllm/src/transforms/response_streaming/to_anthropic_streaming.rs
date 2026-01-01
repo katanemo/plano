@@ -1,12 +1,9 @@
-use crate::apis::amazon_bedrock::{
-    ContentBlockDelta, ConverseStreamEvent,
-};
+use crate::apis::amazon_bedrock::{ContentBlockDelta, ConverseStreamEvent};
 use crate::apis::anthropic::{
-    MessagesContentBlock, MessagesContentDelta, MessagesMessageDelta,
-    MessagesRole, MessagesStopReason, MessagesStreamEvent, MessagesStreamMessage, MessagesUsage,
+    MessagesContentBlock, MessagesContentDelta, MessagesMessageDelta, MessagesRole,
+    MessagesStopReason, MessagesStreamEvent, MessagesStreamMessage, MessagesUsage,
 };
-use crate::apis::openai::{ ChatCompletionsStreamResponse, ToolCallDelta,
-};
+use crate::apis::openai::{ChatCompletionsStreamResponse, ToolCallDelta};
 use crate::clients::TransformError;
 use serde_json::Value;
 
@@ -86,10 +83,10 @@ impl TryFrom<ChatCompletionsStreamResponse> for MessagesStreamEvent {
     }
 }
 
-impl Into<String> for MessagesStreamEvent {
-    fn into(self) -> String {
-        let transformed_json = serde_json::to_string(&self).unwrap_or_default();
-        let event_type = match &self {
+impl From<MessagesStreamEvent> for String {
+    fn from(val: MessagesStreamEvent) -> Self {
+        let transformed_json = serde_json::to_string(&val).unwrap_or_default();
+        let event_type = match &val {
             MessagesStreamEvent::MessageStart { .. } => "message_start",
             MessagesStreamEvent::ContentBlockStart { .. } => "content_block_start",
             MessagesStreamEvent::ContentBlockDelta { .. } => "content_block_delta",
@@ -194,10 +191,18 @@ impl TryFrom<ConverseStreamEvent> for MessagesStreamEvent {
                 let anthropic_stop_reason = match stop_event.stop_reason {
                     crate::apis::amazon_bedrock::StopReason::EndTurn => MessagesStopReason::EndTurn,
                     crate::apis::amazon_bedrock::StopReason::ToolUse => MessagesStopReason::ToolUse,
-                    crate::apis::amazon_bedrock::StopReason::MaxTokens => MessagesStopReason::MaxTokens,
-                    crate::apis::amazon_bedrock::StopReason::StopSequence => MessagesStopReason::EndTurn,
-                    crate::apis::amazon_bedrock::StopReason::GuardrailIntervened => MessagesStopReason::Refusal,
-                    crate::apis::amazon_bedrock::StopReason::ContentFiltered => MessagesStopReason::Refusal,
+                    crate::apis::amazon_bedrock::StopReason::MaxTokens => {
+                        MessagesStopReason::MaxTokens
+                    }
+                    crate::apis::amazon_bedrock::StopReason::StopSequence => {
+                        MessagesStopReason::EndTurn
+                    }
+                    crate::apis::amazon_bedrock::StopReason::GuardrailIntervened => {
+                        MessagesStopReason::Refusal
+                    }
+                    crate::apis::amazon_bedrock::StopReason::ContentFiltered => {
+                        MessagesStopReason::Refusal
+                    }
                 };
 
                 Ok(MessagesStreamEvent::MessageDelta {

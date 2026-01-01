@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::providers::request::{ProviderRequest, ProviderRequestError};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
-use crate::providers::request::{ProviderRequest, ProviderRequestError};
+use std::collections::HashMap;
 
 impl TryFrom<&[u8]> for ResponsesAPIRequest {
     type Error = serde_json::Error;
@@ -172,18 +172,14 @@ pub enum MessageRole {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InputContent {
     /// Text input
-    InputText {
-        text: String,
-    },
+    InputText { text: String },
     /// Image input via URL
     InputImage {
         image_url: String,
         detail: Option<String>,
     },
     /// File input via URL
-    InputFile {
-        file_url: String,
-    },
+    InputFile { file_url: String },
     /// Audio input
     InputAudio {
         data: Option<String>,
@@ -222,9 +218,7 @@ pub struct TextConfig {
 pub enum TextFormat {
     Text,
     JsonObject,
-    JsonSchema {
-        json_schema: serde_json::Value,
-    },
+    JsonSchema { json_schema: serde_json::Value },
 }
 
 /// Reasoning effort levels
@@ -608,9 +602,7 @@ pub enum OutputContent {
         transcript: Option<String>,
     },
     /// Refusal output
-    Refusal {
-        refusal: String,
-    },
+    Refusal { refusal: String },
 }
 
 /// Annotations for output text
@@ -663,13 +655,9 @@ pub struct FileSearchResult {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CodeInterpreterOutput {
     /// Text output
-    Text {
-        text: String,
-    },
+    Text { text: String },
     /// Image output
-    Image {
-        image: String,
-    },
+    Image { image: String },
 }
 
 /// Response usage statistics
@@ -951,9 +939,7 @@ pub enum ResponsesAPIStreamEvent {
     },
 
     /// Done event (end of stream)
-    Done {
-        sequence_number: i32,
-    },
+    Done { sequence_number: i32 },
 }
 
 // ============================================================================
@@ -1052,12 +1038,19 @@ impl ProviderRequest for ResponsesAPIRequest {
                                 MessageContent::Text(text) => text.clone(),
                                 MessageContent::Items(content_items) => {
                                     content_items.iter().fold(String::new(), |acc, content| {
-                                        acc + " " + &match content {
-                                            InputContent::InputText { text } => text.clone(),
-                                            InputContent::InputImage { .. } => "[Image]".to_string(),
-                                            InputContent::InputFile { .. } => "[File]".to_string(),
-                                            InputContent::InputAudio { .. } => "[Audio]".to_string(),
-                                        }
+                                        acc + " "
+                                            + &match content {
+                                                InputContent::InputText { text } => text.clone(),
+                                                InputContent::InputImage { .. } => {
+                                                    "[Image]".to_string()
+                                                }
+                                                InputContent::InputFile { .. } => {
+                                                    "[File]".to_string()
+                                                }
+                                                InputContent::InputAudio { .. } => {
+                                                    "[Audio]".to_string()
+                                                }
+                                            }
                                     })
                                 }
                             };
@@ -1082,11 +1075,9 @@ impl ProviderRequest for ResponsesAPIRequest {
                             match &msg.content {
                                 MessageContent::Text(text) => Some(text.clone()),
                                 MessageContent::Items(content_items) => {
-                                    content_items.iter().find_map(|content| {
-                                        match content {
-                                            InputContent::InputText { text } => Some(text.clone()),
-                                            _ => None,
-                                        }
+                                    content_items.iter().find_map(|content| match content {
+                                        InputContent::InputText { text } => Some(text.clone()),
+                                        _ => None,
                                     })
                                 }
                             }
@@ -1176,9 +1167,12 @@ impl ProviderRequest for ResponsesAPIRequest {
 
                             // Extract text from message content
                             let content = match &msg.content {
-                                crate::apis::openai_responses::MessageContent::Text(text) => text.clone(),
+                                crate::apis::openai_responses::MessageContent::Text(text) => {
+                                    text.clone()
+                                }
                                 crate::apis::openai_responses::MessageContent::Items(items) => {
-                                    items.iter()
+                                    items
+                                        .iter()
                                         .filter_map(|c| {
                                             if let InputContent::InputText { text } = c {
                                                 Some(text.clone())
@@ -1214,7 +1208,8 @@ impl ProviderRequest for ResponsesAPIRequest {
     fn set_messages(&mut self, messages: &[crate::apis::openai::Message]) {
         // For ResponsesAPI, we need to convert messages back to input format
         // Extract system messages as instructions
-        let system_text = messages.iter()
+        let system_text = messages
+            .iter()
             .filter(|msg| msg.role == crate::apis::openai::Role::System)
             .filter_map(|msg| {
                 if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
@@ -1233,23 +1228,27 @@ impl ProviderRequest for ResponsesAPIRequest {
         // Convert user/assistant messages to InputParam
         // For simplicity, we'll use the last user message as the input
         // or combine all non-system messages
-        let input_messages: Vec<_> = messages.iter()
+        let input_messages: Vec<_> = messages
+            .iter()
             .filter(|msg| msg.role != crate::apis::openai::Role::System)
             .collect();
 
         if !input_messages.is_empty() {
             // If there's only one message, use Text format
             if input_messages.len() == 1 {
-                if let crate::apis::openai::MessageContent::Text(text) = &input_messages[0].content {
+                if let crate::apis::openai::MessageContent::Text(text) = &input_messages[0].content
+                {
                     self.input = crate::apis::openai_responses::InputParam::Text(text.clone());
                 }
             } else {
                 // Multiple messages - combine them as text for now
                 // A more sophisticated approach would use InputParam::Items
-                let combined_text = input_messages.iter()
+                let combined_text = input_messages
+                    .iter()
                     .filter_map(|msg| {
                         if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
-                            Some(format!("{}: {}",
+                            Some(format!(
+                                "{}: {}",
                                 match msg.role {
                                     crate::apis::openai::Role::User => "User",
                                     crate::apis::openai::Role::Assistant => "Assistant",
@@ -1274,10 +1273,10 @@ impl ProviderRequest for ResponsesAPIRequest {
 // Into<String> Implementation for SSE Formatting
 // ============================================================================
 
-impl Into<String> for ResponsesAPIStreamEvent {
-    fn into(self) -> String {
-        let transformed_json = serde_json::to_string(&self).unwrap_or_default();
-        let event_type = match &self {
+impl From<ResponsesAPIStreamEvent> for String {
+    fn from(val: ResponsesAPIStreamEvent) -> Self {
+        let transformed_json = serde_json::to_string(&val).unwrap_or_default();
+        let event_type = match &val {
             ResponsesAPIStreamEvent::ResponseCreated { .. } => "response.created",
             ResponsesAPIStreamEvent::ResponseInProgress { .. } => "response.in_progress",
             ResponsesAPIStreamEvent::ResponseCompleted { .. } => "response.completed",
@@ -1365,10 +1364,10 @@ impl crate::providers::streaming_response::ProviderStreamResponse for ResponsesA
 
     fn role(&self) -> Option<&str> {
         match self {
-            ResponsesAPIStreamEvent::ResponseOutputItemDone { item, .. } => match item {
-                OutputItem::Message { role, .. } => Some(role.as_str()),
-                _ => None,
-            },
+            ResponsesAPIStreamEvent::ResponseOutputItemDone {
+                item: OutputItem::Message { role, .. },
+                ..
+            } => Some(role.as_str()),
             _ => None,
         }
     }

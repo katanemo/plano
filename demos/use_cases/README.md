@@ -29,11 +29,12 @@ Start arch gateway,
 
 ```
 $ planoai up config.yaml
-2024-12-05 11:24:51,288 - cli.main - INFO - Starting plano cli version: 0.4.0
-2024-12-05 11:24:51,825 - cli.utils - INFO - Schema validation successful!
-2024-12-05 11:24:51,825 - cli.main - INFO - Starting arch model server and arch gateway
+# Or if installed with uv: uvx planoai up config.yaml
+2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.0
+2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
+2024-12-05 11:24:51,825 - planoai.main - INFO - Starting arch model server and arch gateway
 ...
-2024-12-05 11:25:16,131 - cli.core - INFO - Container is healthy!
+2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!
 ```
 
 ### Step 3: Interact with LLM

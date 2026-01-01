@@ -66,7 +66,7 @@ impl ApiDefinition for AmazonBedrockApi {
 
 /// Amazon Bedrock Converse request
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ConverseRequest {
     /// The model ID or ARN to invoke
     pub model_id: String,
@@ -91,7 +91,7 @@ pub struct ConverseRequest {
     pub additional_model_response_field_paths: Option<Vec<String>>,
     /// Performance configuration
     #[serde(rename = "performanceConfig")]
-    pub performance_config: Option<PerformanceConfiguration>,
+    pub performance_config: Option<InferenceConfiguration>,
     /// Prompt variables for Prompt management
     #[serde(rename = "promptVariables")]
     pub prompt_variables: Option<HashMap<String, PromptVariableValues>>,
@@ -103,26 +103,6 @@ pub struct ConverseRequest {
     /// Whether this request should use streaming endpoint (internal field, not serialized)
     #[serde(skip)]
     pub stream: bool,
-}
-
-impl Default for ConverseRequest {
-    fn default() -> Self {
-        Self {
-            model_id: String::new(),
-            messages: None,
-            system: None,
-            inference_config: None,
-            tool_config: None,
-            guardrail_config: None,
-            additional_model_request_fields: None,
-            additional_model_response_field_paths: None,
-            performance_config: None,
-            prompt_variables: None,
-            request_metadata: None,
-            metadata: None,
-            stream: false,
-        }
-    }
 }
 
 /// Amazon Bedrock ConverseStream request (same structure as Converse)
@@ -204,8 +184,8 @@ impl ProviderRequest for ConverseRequest {
         self.tool_config.as_ref()?.tools.as_ref().map(|tools| {
             tools
                 .iter()
-                .filter_map(|tool| match tool {
-                    Tool::ToolSpec { tool_spec } => Some(tool_spec.name.clone()),
+                .map(|tool| match tool {
+                    Tool::ToolSpec { tool_spec } => tool_spec.name.clone(),
                 })
                 .collect()
         })
@@ -242,17 +222,14 @@ impl ProviderRequest for ConverseRequest {
         // Add system messages if present
         if let Some(system) = &self.system {
             for sys_block in system {
-                match sys_block {
-                    SystemContentBlock::Text { text } => {
-                        openai_messages.push(Message {
-                            role: Role::System,
-                            content: MessageContent::Text(text.clone()),
-                            name: None,
-                            tool_calls: None,
-                            tool_call_id: None,
-                        });
-                    }
-                    _ => {} // Skip other system content types
+                if let SystemContentBlock::Text { text } = sys_block {
+                    openai_messages.push(Message {
+                        role: Role::System,
+                        content: MessageContent::Text(text.clone()),
+                        name: None,
+                        tool_calls: None,
+                        tool_call_id: None,
+                    });
                 }
             }
         }
@@ -266,7 +243,9 @@ impl ProviderRequest for ConverseRequest {
                 };
 
                 // Extract text from content blocks
-                let content = msg.content.iter()
+                let content = msg
+                    .content
+                    .iter()
                     .filter_map(|block| {
                         if let ContentBlock::Text { text } = block {
                             Some(text.clone())
@@ -311,16 +290,14 @@ impl ProviderRequest for ConverseRequest {
                         _ => continue,
                     };
 
-                    let content = if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
-                        vec![ContentBlock::Text { text: text.clone() }]
-                    } else {
-                        vec![]
-                    };
+                    let content =
+                        if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
+                            vec![ContentBlock::Text { text: text.clone() }]
+                        } else {
+                            vec![]
+                        };
 
-                    bedrock_messages.push(crate::apis::amazon_bedrock::Message {
-                        role,
-                        content,
-                    });
+                    bedrock_messages.push(crate::apis::amazon_bedrock::Message { role, content });
                 }
                 _ => {}
             }
@@ -369,7 +346,7 @@ pub enum ConverseStreamEvent {
     ContentBlockDelta(ContentBlockDeltaEvent),
     ContentBlockStop(ContentBlockStopEvent),
     MessageStop(MessageStopEvent),
-    Metadata(ConverseStreamMetadataEvent),
+    Metadata(Box<ConverseStreamMetadataEvent>),
     // Error events
     InternalServerException(BedrockException),
     ModelStreamErrorException(BedrockException),
@@ -1063,7 +1040,7 @@ impl TryFrom<&aws_smithy_eventstream::frame::DecodedFrame> for ConverseStreamEve
                 "metadata" => {
                     let event: ConverseStreamMetadataEvent =
                         serde_json::from_slice(payload).map_err(BedrockError::Serialization)?;
-                    Ok(ConverseStreamEvent::Metadata(event))
+                    Ok(ConverseStreamEvent::Metadata(Box::new(event)))
                 }
                 unknown => Err(BedrockError::Validation {
                     message: format!("Unknown event type: {}", unknown),
@@ -1106,10 +1083,10 @@ impl TryFrom<&aws_smithy_eventstream::frame::DecodedFrame> for ConverseStreamEve
     }
 }
 
-impl Into<String> for ConverseStreamEvent {
-    fn into(self) -> String {
-        let transformed_json = serde_json::to_string(&self).unwrap_or_default();
-        let event_type = match &self {
+impl From<ConverseStreamEvent> for String {
+    fn from(val: ConverseStreamEvent) -> String {
+        let transformed_json = serde_json::to_string(&val).unwrap_or_default();
+        let event_type = match &val {
             ConverseStreamEvent::MessageStart { .. } => "message_start",
             ConverseStreamEvent::ContentBlockStart { .. } => "content_block_start",
             ConverseStreamEvent::ContentBlockDelta { .. } => "content_block_delta",

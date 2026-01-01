@@ -63,8 +63,13 @@ export ANTHROPIC_API_KEY="your-anthropic-key-here"
 
 ### Step 3: Start Arch Gateway
 ```bash
-# Install and start the gateway
-pip install archgw
+# Install using uv (recommended)
+uv tool install planoai
+planoai up
+# Or if already installed with uv: uvx planoai up
+
+# Or install using pip (traditional)
+pip install planoai
 planoai up
 ```
 
@@ -72,6 +77,7 @@ planoai up
 ```bash
 # This will launch Claude Code with multi-model routing
 planoai cli-agent claude
+# Or if installed with uv: uvx planoai cli-agent claude
 ```
 ![claude code](claude_code.png)
 

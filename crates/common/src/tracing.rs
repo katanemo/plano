@@ -161,13 +161,12 @@ impl TraceData {
     }
 
     pub fn new_with_service_name(service_name: String) -> Self {
-        let mut resource_attributes = Vec::new();
-        resource_attributes.push(Attribute {
+        let resource_attributes = vec![Attribute {
             key: "service.name".to_string(),
             value: AttributeValue {
                 string_value: Some(service_name),
             },
-        });
+        }];
 
         let resource = Resource {
             attributes: resource_attributes,
@@ -194,7 +193,9 @@ impl TraceData {
 
     pub fn add_span(&mut self, span: Span) {
         if self.resource_spans.is_empty() {
-            let resource = Resource { attributes: Vec::new() };
+            let resource = Resource {
+                attributes: Vec::new(),
+            };
             let scope_span = ScopeSpan {
                 scope: Scope {
                     name: "default".to_string(),

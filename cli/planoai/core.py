@@ -5,13 +5,13 @@ import time
 import sys
 
 import yaml
-from cli.utils import convert_legacy_listeners, getLogger
-from cli.consts import (
+from planoai.utils import convert_legacy_listeners, getLogger
+from planoai.consts import (
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
 import subprocess
-from cli.docker_cli import (
+from planoai.docker_cli import (
     docker_container_status,
     docker_remove_container,
     docker_start_plano_detached,

@@ -34,10 +34,7 @@ where
     }
 
     pub fn decode_frame(&mut self) -> Option<DecodedFrame> {
-        match self.decoder.decode_frame(&mut self.buffer) {
-            Ok(frame) => Some(frame),
-            Err(_e) => None, // Fatal decode error
-        }
+        self.decoder.decode_frame(&mut self.buffer).ok()
     }
 
     pub fn buffer_mut(&mut self) -> &mut B {

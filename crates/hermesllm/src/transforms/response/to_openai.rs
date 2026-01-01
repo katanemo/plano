@@ -1,9 +1,5 @@
-use crate::apis::amazon_bedrock::{
-    ConverseOutput, ConverseResponse, StopReason,
-};
-use crate::apis::anthropic::{
-    MessagesContentBlock, MessagesResponse, MessagesUsage,
-};
+use crate::apis::amazon_bedrock::{ConverseOutput, ConverseResponse, StopReason};
+use crate::apis::anthropic::{MessagesContentBlock, MessagesResponse, MessagesUsage};
 use crate::apis::openai::{
     ChatCompletionsResponse, Choice, FinishReason, MessageContent, ResponseMessage, Role, Usage,
 };
@@ -16,12 +12,12 @@ use crate::transforms::lib::*;
 // ============================================================================
 
 // Usage Conversions
-impl Into<Usage> for MessagesUsage {
-    fn into(self) -> Usage {
+impl From<MessagesUsage> for Usage {
+    fn from(val: MessagesUsage) -> Self {
         Usage {
-            prompt_tokens: self.input_tokens,
-            completion_tokens: self.output_tokens,
-            total_tokens: self.input_tokens + self.output_tokens,
+            prompt_tokens: val.input_tokens,
+            completion_tokens: val.output_tokens,
+            total_tokens: val.input_tokens + val.output_tokens,
             prompt_tokens_details: None,
             completion_tokens_details: None,
         }
@@ -202,7 +198,6 @@ impl TryFrom<ChatCompletionsResponse> for ResponsesAPIResponse {
         })
     }
 }
-
 
 impl TryFrom<MessagesResponse> for ChatCompletionsResponse {
     type Error = TransformError;
@@ -414,7 +409,6 @@ fn convert_anthropic_content_to_openai(
 
     Ok(MessageContent::Text(text_parts.join("\n")))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -994,8 +988,15 @@ mod tests {
         let responses_api: ResponsesAPIResponse = chat_response.try_into().unwrap();
 
         // Response ID should be generated with resp_ prefix
-        assert!(responses_api.id.starts_with("resp_"), "Response ID should start with 'resp_'");
-        assert_eq!(responses_api.id.len(), 37, "Response ID should be resp_ + 32 char UUID");
+        assert!(
+            responses_api.id.starts_with("resp_"),
+            "Response ID should start with 'resp_'"
+        );
+        assert_eq!(
+            responses_api.id.len(),
+            37,
+            "Response ID should be resp_ + 32 char UUID"
+        );
         assert_eq!(responses_api.object, "response");
         assert_eq!(responses_api.model, "gpt-4");
 
@@ -1008,11 +1009,7 @@ mod tests {
         // Check output items
         assert_eq!(responses_api.output.len(), 1);
         match &responses_api.output[0] {
-            OutputItem::Message {
-                role,
-                content,
-                ..
-            } => {
+            OutputItem::Message { role, content, .. } => {
                 assert_eq!(role, "assistant");
                 assert_eq!(content.len(), 1);
                 match &content[0] {
@@ -1163,6 +1160,9 @@ mod tests {
         }
 
         // Verify status is Completed for tool_calls finish reason
-        assert!(matches!(responses_api.status, crate::apis::openai_responses::ResponseStatus::Completed));
+        assert!(matches!(
+            responses_api.status,
+            crate::apis::openai_responses::ResponseStatus::Completed
+        ));
     }
 }

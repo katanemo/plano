@@ -2,11 +2,9 @@
 ///
 /// This module defines standard attribute keys following OTEL semantic conventions.
 /// See: https://opentelemetry.io/docs/specs/semconv/
-
 // =============================================================================
 // Span Attributes - HTTP
 // =============================================================================
-
 /// Semantic conventions for HTTP-related span attributes
 pub mod http {
     /// HTTP request method

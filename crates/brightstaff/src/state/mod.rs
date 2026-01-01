@@ -1,14 +1,16 @@
 use async_trait::async_trait;
-use hermesllm::apis::openai_responses::{InputItem, InputMessage, InputContent, MessageContent, MessageRole, InputParam};
+use hermesllm::apis::openai_responses::{
+    InputContent, InputItem, InputMessage, InputParam, MessageContent, MessageRole,
+};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
-use tracing::{debug};
+use tracing::debug;
 
 pub mod memory;
-pub mod response_state_processor;
 pub mod postgresql;
+pub mod response_state_processor;
 
 /// Represents the conversational state for a v1/responses request
 /// Contains the complete input/output history that can be restored
@@ -47,7 +49,9 @@ pub enum StateStorageError {
 impl fmt::Display for StateStorageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StateStorageError::NotFound(id) => write!(f, "Conversation state not found for response_id: {}", id),
+            StateStorageError::NotFound(id) => {
+                write!(f, "Conversation state not found for response_id: {}", id)
+            }
             StateStorageError::StorageError(msg) => write!(f, "Storage error: {}", msg),
             StateStorageError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
         }
@@ -96,8 +100,6 @@ pub trait StateStorage: Send + Sync {
     }
 }
 
-
-
 /// Storage backend type enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageBackend {
@@ -106,7 +108,7 @@ pub enum StorageBackend {
 }
 
 impl StorageBackend {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_backend(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "memory" => Some(StorageBackend::Memory),
             "supabase" => Some(StorageBackend::Supabase),
@@ -139,7 +141,6 @@ pub async fn retrieve_and_combine_input(
     previous_response_id: &str,
     current_input: Vec<InputItem>,
 ) -> Result<Vec<InputItem>, StateStorageError> {
-
     // First get the previous state
     let prev_state = storage.get(previous_response_id).await?;
     let combined_input = storage.merge(&prev_state, current_input);

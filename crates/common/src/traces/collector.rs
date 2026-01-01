@@ -1,5 +1,5 @@
-use super::shapes::Span;
 use super::resource_span_builder::ResourceSpanBuilder;
+use super::shapes::Span;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -160,7 +160,11 @@ impl TraceCollector {
         }
 
         let total_spans: usize = service_batches.iter().map(|(_, spans)| spans.len()).sum();
-        debug!("Flushing {} spans across {} services to OTEL collector", total_spans, service_batches.len());
+        debug!(
+            "Flushing {} spans across {} services to OTEL collector",
+            total_spans,
+            service_batches.len()
+        );
 
         // Build canonical OTEL payload structure - one ResourceSpan per service
         let resource_spans = self.build_resource_spans(service_batches);
@@ -178,7 +182,10 @@ impl TraceCollector {
     }
 
     /// Build OTEL-compliant resource spans from collected spans, one ResourceSpan per service
-    fn build_resource_spans(&self, service_batches: Vec<(String, Vec<Span>)>) -> Vec<super::shapes::ResourceSpan> {
+    fn build_resource_spans(
+        &self,
+        service_batches: Vec<(String, Vec<Span>)>,
+    ) -> Vec<super::shapes::ResourceSpan> {
         service_batches
             .into_iter()
             .map(|(service_name, spans)| {

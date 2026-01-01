@@ -6,6 +6,12 @@ pub struct OpenAIChatCompletionsStreamBuffer {
     buffered_events: Vec<SseEvent>,
 }
 
+impl Default for OpenAIChatCompletionsStreamBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OpenAIChatCompletionsStreamBuffer {
     pub fn new() -> Self {
         Self {
@@ -26,7 +32,7 @@ impl SseStreamBufferTrait for OpenAIChatCompletionsStreamBuffer {
         self.buffered_events.push(event);
     }
 
-    fn into_bytes(&mut self) -> Vec<u8> {
+    fn to_bytes(&mut self) -> Vec<u8> {
         // No finalization needed for OpenAI Chat Completions
         // The [DONE] marker is already handled by the transformation layer
         let mut buffer = Vec::new();

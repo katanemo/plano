@@ -27,7 +27,20 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
 .. tip::
 
-   We recommend that developers create a new Python virtual environment to isolate dependencies before installing Plano. This ensures that ``plano`` and its dependencies do not interfere with other packages on your system.
+   We recommend using **uv** for fast, reliable Python package management. Install uv if you haven't already:
+
+   .. code-block:: console
+
+      $ curl -LsSf https://astral.sh/uv/install.sh | sh
+
+**Option 1: Install planoai with uv (Recommended)**
+
+.. code-block:: console
+
+   $ uv tool install planoai==0.4.0
+
+**Option 2: Install with pip (Traditional)**
+
 .. code-block:: console
 
    $ python -m venv venv
@@ -99,6 +112,8 @@ Run your ``flight_agent`` and ``hotel_agent`` services (see :ref:`Orchestration 
 .. code-block:: console
 
   $ planoai up plano_config.yaml
+  # Or if installed with uv tool:
+  $ uvx planoai up plano_config.yaml
 
 Plano will start the orchestrator and expose an agent listener on port ``8001``.
 
@@ -177,12 +192,13 @@ Step 2. Start plano with currency conversion config
 .. code-block:: sh
 
    $ planoai up plano_config.yaml
-   2024-12-05 16:56:27,979 - cli.main - INFO - Starting plano cli version: 0.1.5
+   # Or if installed with uv tool: uvx planoai up plano_config.yaml
+   2024-12-05 16:56:27,979 - planoai.main - INFO - Starting plano cli version: 0.1.5
    ...
-   2024-12-05 16:56:28,485 - cli.utils - INFO - Schema validation successful!
-   2024-12-05 16:56:28,485 - cli.main - INFO - Starting plano model server and plano gateway
+   2024-12-05 16:56:28,485 - planoai.utils - INFO - Schema validation successful!
+   2024-12-05 16:56:28,485 - planoai.main - INFO - Starting plano model server and plano gateway
    ...
-   2024-12-05 16:56:51,647 - cli.core - INFO - Container is healthy!
+   2024-12-05 16:56:51,647 - planoai.core - INFO - Container is healthy!
 
 Once the gateway is up, you can start interacting with it at port 10000 using the OpenAI chat completion API.
 
@@ -253,11 +269,12 @@ Start Plano:
 .. code-block:: console
 
    $ planoai up plano_config.yaml
-   2024-12-05 11:24:51,288 - cli.main - INFO - Starting plano cli version: 0.4.0
-   2024-12-05 11:24:51,825 - cli.utils - INFO - Schema validation successful!
-   2024-12-05 11:24:51,825 - cli.main - INFO - Starting plano
+   # Or if installed with uv tool: uvx planoai up plano_config.yaml
+   2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.0
+   2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
+   2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano
    ...
-   2024-12-05 11:25:16,131 - cli.core - INFO - Container is healthy!
+   2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!
 
 Step 3: Interact with LLM
 ~~~~~~~~~~~~~~~~~~~~~~~~~

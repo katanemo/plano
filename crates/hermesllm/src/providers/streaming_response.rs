@@ -1,18 +1,17 @@
 use serde::Serialize;
 use std::convert::TryFrom;
 
+use crate::apis::amazon_bedrock::ConverseStreamEvent;
+use crate::apis::anthropic::MessagesStreamEvent;
 use crate::apis::openai::ChatCompletionsStreamResponse;
 use crate::apis::openai_responses::ResponsesAPIStreamEvent;
 use crate::apis::streaming_shapes::sse::SseEvent;
-use crate::apis::amazon_bedrock::ConverseStreamEvent;
-use crate::apis::anthropic::MessagesStreamEvent;
 use crate::apis::streaming_shapes::sse::SseStreamBuffer;
 use crate::apis::streaming_shapes::{
-            anthropic_streaming_buffer::AnthropicMessagesStreamBuffer,
-            chat_completions_streaming_buffer::OpenAIChatCompletionsStreamBuffer,
-            passthrough_streaming_buffer::PassthroughStreamBuffer,
-            responses_api_streaming_buffer::ResponsesAPIStreamBuffer,
-        };
+    anthropic_streaming_buffer::AnthropicMessagesStreamBuffer,
+    chat_completions_streaming_buffer::OpenAIChatCompletionsStreamBuffer,
+    passthrough_streaming_buffer::PassthroughStreamBuffer,
+};
 
 use crate::clients::endpoints::SupportedAPIsFromClient;
 use crate::clients::endpoints::SupportedUpstreamAPIs;
@@ -28,9 +27,18 @@ pub fn needs_buffering(
 ) -> bool {
     match (client_api, upstream_api) {
         // Same APIs - no buffering needed
-        (SupportedAPIsFromClient::OpenAIChatCompletions(_), SupportedUpstreamAPIs::OpenAIChatCompletions(_)) => false,
-        (SupportedAPIsFromClient::AnthropicMessagesAPI(_), SupportedUpstreamAPIs::AnthropicMessagesAPI(_)) => false,
-        (SupportedAPIsFromClient::OpenAIResponsesAPI(_), SupportedUpstreamAPIs::OpenAIResponsesAPI(_)) => false,
+        (
+            SupportedAPIsFromClient::OpenAIChatCompletions(_),
+            SupportedUpstreamAPIs::OpenAIChatCompletions(_),
+        ) => false,
+        (
+            SupportedAPIsFromClient::AnthropicMessagesAPI(_),
+            SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
+        ) => false,
+        (
+            SupportedAPIsFromClient::OpenAIResponsesAPI(_),
+            SupportedUpstreamAPIs::OpenAIResponsesAPI(_),
+        ) => false,
 
         // Different APIs - buffering needed
         _ => true,
@@ -53,15 +61,12 @@ pub fn needs_buffering(
 /// // Flush to wire
 /// let bytes = buffer.into_bytes();
 /// ```
-impl TryFrom<(&SupportedAPIsFromClient, &SupportedUpstreamAPIs)>
-    for SseStreamBuffer
-{
+impl TryFrom<(&SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for SseStreamBuffer {
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     fn try_from(
         (client_api, upstream_api): (&SupportedAPIsFromClient, &SupportedUpstreamAPIs),
     ) -> Result<Self, Self::Error> {
-
         // If APIs match, use passthrough - no buffering/transformation needed
         if !needs_buffering(client_api, upstream_api) {
             return Ok(SseStreamBuffer::Passthrough(PassthroughStreamBuffer::new()));
@@ -69,14 +74,14 @@ impl TryFrom<(&SupportedAPIsFromClient, &SupportedUpstreamAPIs)>
 
         // APIs differ - use appropriate buffer for client API
         match client_api {
-            SupportedAPIsFromClient::OpenAIChatCompletions(_) => {
-                Ok(SseStreamBuffer::OpenAIChatCompletions(OpenAIChatCompletionsStreamBuffer::new()))
-            }
-            SupportedAPIsFromClient::AnthropicMessagesAPI(_) => {
-                Ok(SseStreamBuffer::AnthropicMessages(AnthropicMessagesStreamBuffer::new()))
-            }
+            SupportedAPIsFromClient::OpenAIChatCompletions(_) => Ok(
+                SseStreamBuffer::OpenAIChatCompletions(OpenAIChatCompletionsStreamBuffer::new()),
+            ),
+            SupportedAPIsFromClient::AnthropicMessagesAPI(_) => Ok(
+                SseStreamBuffer::AnthropicMessages(AnthropicMessagesStreamBuffer::new()),
+            ),
             SupportedAPIsFromClient::OpenAIResponsesAPI(_) => {
-                Ok(SseStreamBuffer::OpenAIResponses(ResponsesAPIStreamBuffer::new()))
+                Ok(SseStreamBuffer::OpenAIResponses(Box::default()))
             }
         }
     }
@@ -88,11 +93,12 @@ impl TryFrom<(&SupportedAPIsFromClient, &SupportedUpstreamAPIs)>
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum ProviderStreamResponseType {
     ChatCompletionsStreamResponse(ChatCompletionsStreamResponse),
     MessagesStreamEvent(MessagesStreamEvent),
     ConverseStreamEvent(ConverseStreamEvent),
-    ResponseAPIStreamEvent(ResponsesAPIStreamEvent)
+    ResponseAPIStreamEvent(Box<ResponsesAPIStreamEvent>),
 }
 
 pub trait ProviderStreamResponse: Send + Sync {
@@ -145,12 +151,11 @@ impl ProviderStreamResponse for ProviderStreamResponseType {
             ProviderStreamResponseType::ResponseAPIStreamEvent(resp) => resp.event_type(),
         }
     }
-
 }
 
-impl Into<String> for ProviderStreamResponseType {
-    fn into(self) -> String {
-        match self {
+impl From<ProviderStreamResponseType> for String {
+    fn from(val: ProviderStreamResponseType) -> String {
+        match val {
             ProviderStreamResponseType::MessagesStreamEvent(event) => {
                 // Use the Into<String> implementation for proper SSE formatting with event lines
                 event.into()
@@ -161,27 +166,36 @@ impl Into<String> for ProviderStreamResponseType {
             }
             ProviderStreamResponseType::ResponseAPIStreamEvent(event) => {
                 // Use the Into<String> implementation for proper SSE formatting with event lines
-                event.into()
+                // Clone to work around Box<T> ownership
+                let cloned = (*event).clone();
+                cloned.into()
             }
             ProviderStreamResponseType::ChatCompletionsStreamResponse(_) => {
                 // For OpenAI, use simple data line format
-                let json = serde_json::to_string(&self).unwrap_or_default();
+                let json = serde_json::to_string(&val).unwrap_or_default();
                 format!("data: {}\n\n", json)
             }
         }
     }
 }
 
-
 // Stream response transformation logic for client API compatibility
-impl TryFrom<(&[u8], &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for ProviderStreamResponseType {
+impl TryFrom<(&[u8], &SupportedAPIsFromClient, &SupportedUpstreamAPIs)>
+    for ProviderStreamResponseType
+{
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     fn try_from(
-        (bytes, client_api, upstream_api): (&[u8], &SupportedAPIsFromClient, &SupportedUpstreamAPIs),
+        (bytes, client_api, upstream_api): (
+            &[u8],
+            &SupportedAPIsFromClient,
+            &SupportedUpstreamAPIs,
+        ),
     ) -> Result<Self, Self::Error> {
         // Special case: Handle [DONE] marker for OpenAI -> Anthropic conversion
-        if bytes == b"[DONE]" && matches!(client_api, SupportedAPIsFromClient::AnthropicMessagesAPI(_)) {
+        if bytes == b"[DONE]"
+            && matches!(client_api, SupportedAPIsFromClient::AnthropicMessagesAPI(_))
+        {
             return Ok(ProviderStreamResponseType::MessagesStreamEvent(
                 crate::apis::anthropic::MessagesStreamEvent::MessageStop,
             ));
@@ -214,9 +228,9 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for Prov
             ) => {
                 let openai_resp: crate::apis::openai::ChatCompletionsStreamResponse =
                     serde_json::from_slice(bytes)?;
-                let responses_resp = openai_resp.try_into()?;
+                let responses_resp: ResponsesAPIStreamEvent = openai_resp.try_into()?;
                 Ok(ProviderStreamResponseType::ResponseAPIStreamEvent(
-                    responses_resp,
+                    Box::new(responses_resp),
                 ))
             }
 
@@ -267,10 +281,11 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for Prov
                 // Chain: Bedrock -> ChatCompletions -> ResponsesAPI
                 let bedrock_resp: crate::apis::amazon_bedrock::ConverseStreamEvent =
                     serde_json::from_slice(bytes)?;
-                let chat_resp: crate::apis::openai::ChatCompletionsStreamResponse = bedrock_resp.try_into()?;
-                let responses_resp = chat_resp.try_into()?;
+                let chat_resp: crate::apis::openai::ChatCompletionsStreamResponse =
+                    bedrock_resp.try_into()?;
+                let responses_resp: ResponsesAPIStreamEvent = chat_resp.try_into()?;
                 Ok(ProviderStreamResponseType::ResponseAPIStreamEvent(
-                    responses_resp,
+                    Box::new(responses_resp),
                 ))
             }
             _ => Err(std::io::Error::new(
@@ -287,7 +302,11 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     fn try_from(
-        (sse_event, client_api, upstream_api): (SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs),
+        (sse_event, client_api, upstream_api): (
+            SseEvent,
+            &SupportedAPIsFromClient,
+            &SupportedUpstreamAPIs,
+        ),
     ) -> Result<Self, Self::Error> {
         // Create a new transformed event based on the original
         let mut transformed_event = sse_event;
@@ -296,7 +315,11 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
         if transformed_event.is_done() {
             // For OpenAI client APIs (ChatCompletions and ResponsesAPI), keep [DONE] as-is
             // For Anthropic client API, it will be transformed via ProviderStreamResponseType
-            if matches!(client_api, SupportedAPIsFromClient::OpenAIChatCompletions(_) | SupportedAPIsFromClient::OpenAIResponsesAPI(_)) {
+            if matches!(
+                client_api,
+                SupportedAPIsFromClient::OpenAIChatCompletions(_)
+                    | SupportedAPIsFromClient::OpenAIResponsesAPI(_)
+            ) {
                 // Keep the [DONE] marker as-is for OpenAI clients
                 transformed_event.sse_transformed_lines = "data: [DONE]".to_string();
                 return Ok(transformed_event);
@@ -328,7 +351,7 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
                     // OpenAI clients don't expect separate event: lines
                     // Suppress upstream Anthropic event-only lines
                     if transformed_event.is_event_only() && transformed_event.event.is_some() {
-                        transformed_event.sse_transformed_lines = format!("\n");
+                        transformed_event.sse_transformed_lines = "\n".to_string();
                     }
                 }
                 _ => {
@@ -345,7 +368,8 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
                 (
                     SupportedAPIsFromClient::AnthropicMessagesAPI(_),
                     SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
-                ) | (
+                )
+                | (
                     SupportedAPIsFromClient::OpenAIResponsesAPI(_),
                     SupportedUpstreamAPIs::OpenAIResponsesAPI(_),
                 ) => {
@@ -415,7 +439,7 @@ impl
                             openai_event,
                         ))
                     }
-                                        (
+                    (
                         SupportedUpstreamAPIs::AmazonBedrockConverseStream(_),
                         SupportedAPIsFromClient::OpenAIResponsesAPI(_),
                     ) => {
@@ -428,7 +452,7 @@ impl
                             openai_chat_completions_event.try_into()?;
 
                         Ok(ProviderStreamResponseType::ResponseAPIStreamEvent(
-                            openai_responses_api_event,
+                            Box::new(openai_responses_api_event),
                         ))
                     }
                     _ => Err("Unsupported API combination for event-stream decoding".into()),
@@ -445,11 +469,11 @@ impl
 mod tests {
     use super::*;
     use crate::apis::streaming_shapes::amazon_bedrock_binary_frame::BedrockBinaryFrameDecoder;
-    use crate::clients::endpoints::SupportedAPIsFromClient;
     use crate::apis::streaming_shapes::sse::SseStreamIter;
+    use crate::clients::endpoints::SupportedAPIsFromClient;
     use serde_json::json;
 
-      #[test]
+    #[test]
     fn test_sse_event_parsing() {
         // Test valid SSE data line
         let line = "data: {\"id\":\"test\",\"object\":\"chat.completion.chunk\"}\n\n";
@@ -792,7 +816,7 @@ mod tests {
         // Simulate chunked network arrivals with realistic chunk sizes
         // Using varying chunk sizes to test partial frame handling
         let mut buffer = BytesMut::new();
-        let chunk_size_pattern = vec![500, 1000, 750, 1200, 800, 1500];
+        let chunk_size_pattern = [500, 1000, 750, 1200, 800, 1500];
         let mut offset = 0;
         let mut total_frames = 0;
         let mut chunk_num = 0;
@@ -837,7 +861,7 @@ mod tests {
         );
     }
 
-       #[test]
+    #[test]
     fn test_bedrock_decoded_frame_to_provider_response() {
         test_bedrock_conversion(false);
     }
@@ -879,8 +903,9 @@ mod tests {
 
         let mut decoder = BedrockBinaryFrameDecoder::new(&mut buffer);
 
-        let client_api =
-            SupportedAPIsFromClient::AnthropicMessagesAPI(crate::apis::anthropic::AnthropicApi::Messages);
+        let client_api = SupportedAPIsFromClient::AnthropicMessagesAPI(
+            crate::apis::anthropic::AnthropicApi::Messages,
+        );
         let upstream_api = SupportedUpstreamAPIs::AmazonBedrockConverseStream(
             crate::apis::amazon_bedrock::AmazonBedrockApi::ConverseStream,
         );
@@ -966,8 +991,9 @@ mod tests {
 
         let mut decoder = BedrockBinaryFrameDecoder::new(&mut buffer);
 
-        let client_api =
-            SupportedAPIsFromClient::AnthropicMessagesAPI(crate::apis::anthropic::AnthropicApi::Messages);
+        let client_api = SupportedAPIsFromClient::AnthropicMessagesAPI(
+            crate::apis::anthropic::AnthropicApi::Messages,
+        );
         let upstream_api = SupportedUpstreamAPIs::AmazonBedrockConverseStream(
             crate::apis::amazon_bedrock::AmazonBedrockApi::ConverseStream,
         );
@@ -1051,7 +1077,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_sse_event_transformation_openai_to_anthropic_message_delta() {
         use crate::apis::anthropic::AnthropicApi;
@@ -1079,8 +1104,8 @@ mod tests {
         let sse_event = SseEvent {
             data: Some(openai_stream_chunk.to_string()),
             event: None,
-            raw_line: format!("data: {}", openai_stream_chunk.to_string()),
-            sse_transformed_lines: format!("data: {}", openai_stream_chunk.to_string()),
+            raw_line: format!("data: {}", openai_stream_chunk),
+            sse_transformed_lines: format!("data: {}", openai_stream_chunk),
             provider_stream_response: None,
         };
 
@@ -1101,7 +1126,8 @@ mod tests {
         // Verify the event was transformed to Anthropic format
         // This should contain message_delta with stop_reason and usage
         assert!(
-            buffer.contains("event: message_delta") || buffer.contains("\"type\":\"message_delta\""),
+            buffer.contains("event: message_delta")
+                || buffer.contains("\"type\":\"message_delta\""),
             "Should contain message_delta in transformed event"
         );
 
@@ -1134,8 +1160,8 @@ mod tests {
         let sse_event = SseEvent {
             data: Some(openai_stream_chunk.to_string()),
             event: None,
-            raw_line: format!("data: {}", openai_stream_chunk.to_string()),
-            sse_transformed_lines: format!("data: {}", openai_stream_chunk.to_string()),
+            raw_line: format!("data: {}", openai_stream_chunk),
+            sse_transformed_lines: format!("data: {}", openai_stream_chunk),
             provider_stream_response: None,
         };
 
@@ -1223,8 +1249,8 @@ mod tests {
         let sse_event = SseEvent {
             data: Some(anthropic_event.to_string()),
             event: None,
-            raw_line: format!("data: {}", anthropic_event.to_string()),
-            sse_transformed_lines: format!("data: {}", anthropic_event.to_string()),
+            raw_line: format!("data: {}", anthropic_event),
+            sse_transformed_lines: format!("data: {}", anthropic_event),
             provider_stream_response: None,
         };
 
@@ -1314,8 +1340,8 @@ mod tests {
         let sse_event = SseEvent {
             data: Some(openai_stream_chunk.to_string()),
             event: None,
-            raw_line: format!("data: {}", openai_stream_chunk.to_string()),
-            sse_transformed_lines: format!("data: {}", openai_stream_chunk.to_string()),
+            raw_line: format!("data: {}", openai_stream_chunk),
+            sse_transformed_lines: format!("data: {}", openai_stream_chunk),
             provider_stream_response: None,
         };
 

@@ -1,6 +1,6 @@
 use common::configuration::ModelUsagePreference;
-use common::consts::{REQUEST_ID_HEADER};
-use common::traces::{TraceCollector, SpanKind, SpanBuilder, parse_traceparent};
+use common::consts::REQUEST_ID_HEADER;
+use common::traces::{parse_traceparent, SpanBuilder, SpanKind, TraceCollector};
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use hyper::StatusCode;
@@ -9,10 +9,10 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::router::llm_router::RouterService;
-use crate::tracing::{OperationNameBuilder, operation_component, http, routing};
+use crate::tracing::{http, operation_component, routing, OperationNameBuilder};
 
 pub struct RoutingResult {
-    pub model_name: String
+    pub model_name: String,
 }
 
 pub struct RoutingError {
@@ -24,7 +24,7 @@ impl RoutingError {
     pub fn internal_error(message: String) -> Self {
         Self {
             message,
-            status_code: StatusCode::INTERNAL_SERVER_ERROR
+            status_code: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -52,9 +52,7 @@ pub async fn router_chat_get_upstream_model(
     // Convert to ChatCompletionsRequest for routing (regardless of input type)
     let chat_request = match ProviderRequestType::try_from((
         client_request,
-        &SupportedUpstreamAPIs::OpenAIChatCompletions(
-            hermesllm::apis::OpenAIApi::ChatCompletions,
-        ),
+        &SupportedUpstreamAPIs::OpenAIChatCompletions(hermesllm::apis::OpenAIApi::ChatCompletions),
     )) {
         Ok(ProviderRequestType::ChatCompletionsRequest(req)) => req,
         Ok(
@@ -69,7 +67,10 @@ pub async fn router_chat_get_upstream_model(
             ));
         }
         Err(err) => {
-            warn!("Failed to convert request to ChatCompletionsRequest: {}", err);
+            warn!(
+                "Failed to convert request to ChatCompletionsRequest: {}",
+                err
+            );
             return Err(RoutingError::internal_error(format!(
                 "Failed to convert request: {}",
                 err
@@ -151,9 +152,7 @@ pub async fn router_chat_get_upstream_model(
                 )
                 .await;
 
-                Ok(RoutingResult {
-                    model_name
-                })
+                Ok(RoutingResult { model_name })
             }
             None => {
                 // No route determined, use default model from request
@@ -176,7 +175,7 @@ pub async fn router_chat_get_upstream_model(
                 .await;
 
                 Ok(RoutingResult {
-                    model_name: default_model
+                    model_name: default_model,
                 })
             }
         },
@@ -194,9 +193,10 @@ pub async fn router_chat_get_upstream_model(
             )
             .await;
 
-            Err(RoutingError::internal_error(
-                format!("Failed to determine route: {}", err)
-            ))
+            Err(RoutingError::internal_error(format!(
+                "Failed to determine route: {}",
+                err
+            )))
         }
     }
 }
@@ -230,7 +230,10 @@ async fn record_routing_span(
         .with_end_time(std::time::SystemTime::now())
         .with_attribute(http::METHOD, "POST")
         .with_attribute(http::TARGET, routing_api_path.to_string())
-        .with_attribute(routing::ROUTE_DETERMINATION_MS, start_time.elapsed().as_millis().to_string());
+        .with_attribute(
+            routing::ROUTE_DETERMINATION_MS,
+            start_time.elapsed().as_millis().to_string(),
+        );
 
     // Only set parent span ID if it exists (not a root span)
     if let Some(parent) = parent_span_id {

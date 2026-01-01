@@ -1,32 +1,24 @@
 {
 	"folders": [
     {
-      "name": "root",
+      "name": "plano",
       "path": "."
     },
     {
-      "name": "crates",
+      "name": "rust_crates",
       "path": "crates"
     },
     {
-      "name": "archgw_cli",
-      "path": "arch/tools"
+      "name": "cli",
+      "path": "cli"
     },
     {
-      "name": "tests_e2e",
-      "path": "tests/e2e"
+      "name": "docs",
+      "path": "docs"
     },
     {
-      "name": "tests_archgw",
-      "path": "tests/archgw"
-    },
-    {
-      "name": "chatbot_ui",
-      "path": "demos/shared/chatbot_ui"
-    },
-    {
-      "name": "java_demo",
-      "path": "demos/samples_java/weather_forcecast_service"
+      "name": "website",
+      "path": "apps/www"
     }
   ],
   "settings": {

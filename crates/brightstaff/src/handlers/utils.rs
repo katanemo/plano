@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::traces::{Span, Attribute, AttributeValue, TraceCollector, Event};
+use common::traces::{Attribute, AttributeValue, Event, Span, TraceCollector};
 use http_body_util::combinators::BoxBody;
 use http_body_util::StreamBody;
 use hyper::body::Frame;
@@ -11,8 +11,8 @@ use tokio_stream::StreamExt;
 use tracing::warn;
 
 // Import tracing constants and signals
-use crate::tracing::{llm, error, signals as signal_constants};
-use crate::signals::signals::{SignalAnalyzer, InteractionQuality, FLAG_MARKER};
+use crate::signals::{InteractionQuality, SignalAnalyzer, FLAG_MARKER};
+use crate::tracing::{error, llm, signals as signal_constants};
 use hermesllm::apis::openai::Message;
 
 /// Trait for processing streaming chunks
@@ -107,7 +107,6 @@ impl StreamProcessor for ObservableStreamProcessor {
             },
         });
 
-
         self.span.attributes.push(Attribute {
             key: llm::DURATION_MS.to_string(),
             value: AttributeValue {
@@ -129,11 +128,9 @@ impl StreamProcessor for ObservableStreamProcessor {
             if let Ok(start_time_nanos) = self.span.start_time_unix_nano.parse::<u128>() {
                 // Convert ttft from milliseconds to nanoseconds and add to start time
                 let event_timestamp = start_time_nanos + (ttft * 1_000_000);
-                let mut event = Event::new(llm::TIME_TO_FIRST_TOKEN_MS.to_string(), event_timestamp);
-                event.add_attribute(
-                    llm::TIME_TO_FIRST_TOKEN_MS.to_string(),
-                    ttft.to_string(),
-                );
+                let mut event =
+                    Event::new(llm::TIME_TO_FIRST_TOKEN_MS.to_string(), event_timestamp);
+                event.add_attribute(llm::TIME_TO_FIRST_TOKEN_MS.to_string(), ttft.to_string());
 
                 // Initialize events vector if needed
                 if self.span.events.is_none() {
@@ -235,7 +232,8 @@ impl StreamProcessor for ObservableStreamProcessor {
         }
 
         // Record the finalized span
-        self.collector.record_span(&self.service_name, self.span.clone());
+        self.collector
+            .record_span(&self.service_name, self.span.clone());
     }
 
     fn on_error(&mut self, error_msg: &str) {
@@ -271,7 +269,8 @@ impl StreamProcessor for ObservableStreamProcessor {
         });
 
         // Record the error span
-        self.collector.record_span(&self.service_name, self.span.clone());
+        self.collector
+            .record_span(&self.service_name, self.span.clone());
     }
 }
 

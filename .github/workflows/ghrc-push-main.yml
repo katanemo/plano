@@ -30,7 +30,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./arch/Dockerfile
+          file: ./Dockerfile
           platforms: linux/arm64
           push: true
           # produce ghcr.io/<owner>/plano:latest-arm64
@@ -58,7 +58,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./arch/Dockerfile
+          file: ./Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}-amd64

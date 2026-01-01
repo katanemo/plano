@@ -1,7 +1,6 @@
 /// OpenTelemetry semantic convention constants for tracing
 ///
 /// These constants ensure consistency across the codebase and prevent typos
-
 /// Resource attribute keys following OTEL semantic conventions
 pub mod resource {
     /// Logical name of the service

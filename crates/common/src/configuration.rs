@@ -295,11 +295,14 @@ impl serde::Serialize for OrchestrationPreference {
         let mut state = serializer.serialize_struct("OrchestrationPreference", 3)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("description", &self.description)?;
-        state.serialize_field("parameters", &serde_json::json!({
-            "type": "object",
-            "properties": {},
-            "required": []
-        }))?;
+        state.serialize_field(
+            "parameters",
+            &serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        )?;
         state.end()
     }
 }
@@ -489,7 +492,10 @@ mod test {
         assert_eq!(config.version, "v0.3.0");
 
         if let Some(prompt_targets) = &config.prompt_targets {
-            assert!(!prompt_targets.is_empty(), "prompt_targets should not be empty if present");
+            assert!(
+                !prompt_targets.is_empty(),
+                "prompt_targets should not be empty if present"
+            );
         }
 
         if let Some(tracing) = config.tracing.as_ref() {
@@ -510,19 +516,48 @@ mod test {
         .expect("reference config file not found");
         let config: super::Configuration = serde_yaml::from_str(&ref_config).unwrap();
         if let Some(prompt_targets) = &config.prompt_targets {
-            if let Some(prompt_target) = prompt_targets.iter().find(|p| p.name == "reboot_network_device") {
+            if let Some(prompt_target) = prompt_targets
+                .iter()
+                .find(|p| p.name == "reboot_network_device")
+            {
                 let chat_completion_tool: super::ChatCompletionTool = prompt_target.into();
                 assert_eq!(chat_completion_tool.tool_type, ToolType::Function);
                 assert_eq!(chat_completion_tool.function.name, "reboot_network_device");
-                assert_eq!(chat_completion_tool.function.description, "Reboot a specific network device");
+                assert_eq!(
+                    chat_completion_tool.function.description,
+                    "Reboot a specific network device"
+                );
                 assert_eq!(chat_completion_tool.function.parameters.properties.len(), 2);
-                assert!(chat_completion_tool.function.parameters.properties.contains_key("device_id"));
-                let device_id_param = chat_completion_tool.function.parameters.properties.get("device_id").unwrap();
-                assert_eq!(device_id_param.parameter_type, crate::api::open_ai::ParameterType::String);
-                assert_eq!(device_id_param.description, "Identifier of the network device to reboot.".to_string());
+                assert!(chat_completion_tool
+                    .function
+                    .parameters
+                    .properties
+                    .contains_key("device_id"));
+                let device_id_param = chat_completion_tool
+                    .function
+                    .parameters
+                    .properties
+                    .get("device_id")
+                    .unwrap();
+                assert_eq!(
+                    device_id_param.parameter_type,
+                    crate::api::open_ai::ParameterType::String
+                );
+                assert_eq!(
+                    device_id_param.description,
+                    "Identifier of the network device to reboot.".to_string()
+                );
                 assert_eq!(device_id_param.required, Some(true));
-                let confirmation_param = chat_completion_tool.function.parameters.properties.get("confirmation").unwrap();
-                assert_eq!(confirmation_param.parameter_type, crate::api::open_ai::ParameterType::Bool);
+                let confirmation_param = chat_completion_tool
+                    .function
+                    .parameters
+                    .properties
+                    .get("confirmation")
+                    .unwrap();
+                assert_eq!(
+                    confirmation_param.parameter_type,
+                    crate::api::open_ai::ParameterType::Bool
+                );
             }
         }
     }

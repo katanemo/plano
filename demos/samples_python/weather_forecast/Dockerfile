@@ -1,21 +1,20 @@
-# took inspiration from https://medium.com/@albertazzir/blazing-fast-python-docker-builds-with-poetry-a78a66f5aed0
+# Blazing fast Python Docker builds with uv
 
 # The builder image, used to build the virtual environment
 FROM python:3.12 as builder
 
-RUN pip install poetry==1.8.3
+# Install uv
+RUN pip install --no-cache-dir uv
 
-ENV POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    POETRY_VIRTUALENVS_CREATE=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
-
+# Set working directory
 WORKDIR /code
 
-COPY pyproject.toml poetry.lock ./
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
 RUN touch README.md
 
-RUN poetry install --no-root && rm -rf $POETRY_CACHE_DIR
+# Install dependencies using uv
+RUN uv sync --frozen --no-dev
 
 # The runtime image, used to just run the code provided its virtual environment
 FROM python:3.12-slim as runtime

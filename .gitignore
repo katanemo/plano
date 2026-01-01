@@ -108,8 +108,8 @@ venv.bak/
 # =========================================
 
 # Arch
-arch/tools/config
-arch/tools/build
+cli/config
+cli/build
 
 # Archgw - Docs
 docs/build/
@@ -145,3 +145,5 @@ apps/*/out/
 apps/*/dist/
 ./node_modules
 .vercel
+
+*.logs

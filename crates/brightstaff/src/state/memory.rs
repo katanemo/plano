@@ -85,13 +85,19 @@ impl StateStorage for MemoryConversationalStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hermesllm::apis::openai_responses::{InputItem, InputMessage, MessageRole, InputContent, MessageContent};
+    use hermesllm::apis::openai_responses::{
+        InputContent, InputItem, InputMessage, MessageContent, MessageRole,
+    };
 
     fn create_test_state(response_id: &str, num_messages: usize) -> OpenAIConversationState {
         let mut input_items = Vec::new();
         for i in 0..num_messages {
             input_items.push(InputItem::Message(InputMessage {
-                role: if i % 2 == 0 { MessageRole::User } else { MessageRole::Assistant },
+                role: if i % 2 == 0 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
                 content: MessageContent::Items(vec![InputContent::InputText {
                     text: format!("Message {}", i),
                 }]),
@@ -252,7 +258,9 @@ mod tests {
         let merged = storage.merge(&prev_state, current_input);
 
         // Verify order: prev messages first, then current
-        let InputItem::Message(msg) = &merged[0] else { panic!("Expected Message") };
+        let InputItem::Message(msg) = &merged[0] else {
+            panic!("Expected Message")
+        };
         match &msg.content {
             MessageContent::Items(items) => match &items[0] {
                 InputContent::InputText { text } => assert_eq!(text, "Message 0"),
@@ -261,7 +269,9 @@ mod tests {
             _ => panic!("Expected MessageContent::Items"),
         }
 
-        let InputItem::Message(msg) = &merged[2] else { panic!("Expected Message") };
+        let InputItem::Message(msg) = &merged[2] else {
+            panic!("Expected Message")
+        };
         match &msg.content {
             MessageContent::Items(items) => match &items[0] {
                 InputContent::InputText { text } => assert_eq!(text, "Message 2"),
@@ -404,7 +414,8 @@ mod tests {
         let current_input = vec![InputItem::Message(InputMessage {
             role: MessageRole::User,
             content: MessageContent::Items(vec![InputContent::InputText {
-                text: "Function result: {\"temperature\": 72, \"condition\": \"sunny\"}".to_string(),
+                text: "Function result: {\"temperature\": 72, \"condition\": \"sunny\"}"
+                    .to_string(),
             }]),
         })];
 
@@ -415,7 +426,9 @@ mod tests {
         assert_eq!(merged.len(), 3);
 
         // Verify the order and content
-        let InputItem::Message(msg1) = &merged[0] else { panic!("Expected Message") };
+        let InputItem::Message(msg1) = &merged[0] else {
+            panic!("Expected Message")
+        };
         assert!(matches!(msg1.role, MessageRole::User));
         match &msg1.content {
             MessageContent::Items(items) => match &items[0] {
@@ -427,7 +440,9 @@ mod tests {
             _ => panic!("Expected MessageContent::Items"),
         }
 
-        let InputItem::Message(msg2) = &merged[1] else { panic!("Expected Message") };
+        let InputItem::Message(msg2) = &merged[1] else {
+            panic!("Expected Message")
+        };
         assert!(matches!(msg2.role, MessageRole::Assistant));
         match &msg2.content {
             MessageContent::Items(items) => match &items[0] {
@@ -439,7 +454,9 @@ mod tests {
             _ => panic!("Expected MessageContent::Items"),
         }
 
-        let InputItem::Message(msg3) = &merged[2] else { panic!("Expected Message") };
+        let InputItem::Message(msg3) = &merged[2] else {
+            panic!("Expected Message")
+        };
         assert!(matches!(msg3.role, MessageRole::User));
         match &msg3.content {
             MessageContent::Items(items) => match &items[0] {
@@ -508,11 +525,15 @@ mod tests {
         assert_eq!(merged.len(), 5);
 
         // Verify first item is original user message
-        let InputItem::Message(first) = &merged[0] else { panic!("Expected Message") };
+        let InputItem::Message(first) = &merged[0] else {
+            panic!("Expected Message")
+        };
         assert!(matches!(first.role, MessageRole::User));
 
         // Verify last two are function outputs
-        let InputItem::Message(second_last) = &merged[3] else { panic!("Expected Message") };
+        let InputItem::Message(second_last) = &merged[3] else {
+            panic!("Expected Message")
+        };
         assert!(matches!(second_last.role, MessageRole::User));
         match &second_last.content {
             MessageContent::Items(items) => match &items[0] {
@@ -522,7 +543,9 @@ mod tests {
             _ => panic!("Expected MessageContent::Items"),
         }
 
-        let InputItem::Message(last) = &merged[4] else { panic!("Expected Message") };
+        let InputItem::Message(last) = &merged[4] else {
+            panic!("Expected Message")
+        };
         assert!(matches!(last.role, MessageRole::User));
         match &last.content {
             MessageContent::Items(items) => match &items[0] {
@@ -590,7 +613,9 @@ mod tests {
         assert_eq!(merged.len(), 5);
 
         // Verify the entire conversation flow is preserved
-        let InputItem::Message(first) = &merged[0] else { panic!("Expected Message") };
+        let InputItem::Message(first) = &merged[0] else {
+            panic!("Expected Message")
+        };
         match &first.content {
             MessageContent::Items(items) => match &items[0] {
                 InputContent::InputText { text } => assert!(text.contains("What's the weather")),
@@ -599,7 +624,9 @@ mod tests {
             _ => panic!("Expected MessageContent::Items"),
         }
 
-        let InputItem::Message(last) = &merged[4] else { panic!("Expected Message") };
+        let InputItem::Message(last) = &merged[4] else {
+            panic!("Expected Message")
+        };
         match &last.content {
             MessageContent::Items(items) => match &items[0] {
                 InputContent::InputText { text } => assert!(text.contains("umbrella")),

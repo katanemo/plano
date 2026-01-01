@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  # Build ARM64 image on native ARM64 runner
+  # Build ARM64 image on native ARM64 runner.
   build-arm64:
     runs-on: [linux-arm64]
     steps:
@@ -34,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./arch/Dockerfile
+          file: ./Dockerfile
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}-arm64
@@ -64,7 +64,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./arch/Dockerfile
+          file: ./Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}-amd64

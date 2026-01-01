@@ -1,8 +1,10 @@
-use crate::apis::amazon_bedrock::{ ConverseStreamEvent, StopReason};
+use crate::apis::amazon_bedrock::{ConverseStreamEvent, StopReason};
 use crate::apis::anthropic::{
-    MessagesContentBlock, MessagesContentDelta, MessagesStopReason, MessagesStreamEvent};
-use crate::apis::openai::{ ChatCompletionsStreamResponse,FinishReason,
-    FunctionCallDelta, MessageDelta, Role, StreamChoice, ToolCallDelta, Usage,
+    MessagesContentBlock, MessagesContentDelta, MessagesStopReason, MessagesStreamEvent,
+};
+use crate::apis::openai::{
+    ChatCompletionsStreamResponse, FinishReason, FunctionCallDelta, MessageDelta, Role,
+    StreamChoice, ToolCallDelta, Usage,
 };
 use crate::apis::openai_responses::ResponsesAPIStreamEvent;
 
@@ -58,11 +60,14 @@ impl TryFrom<MessagesStreamEvent> for ChatCompletionsStreamResponse {
                 None,
             )),
 
-            MessagesStreamEvent::ContentBlockStart { content_block, index } => {
-                convert_content_block_start(content_block, index)
-            }
+            MessagesStreamEvent::ContentBlockStart {
+                content_block,
+                index,
+            } => convert_content_block_start(content_block, index),
 
-            MessagesStreamEvent::ContentBlockDelta { delta, index } => convert_content_delta(delta, index),
+            MessagesStreamEvent::ContentBlockDelta { delta, index } => {
+                convert_content_delta(delta, index)
+            }
 
             MessagesStreamEvent::ContentBlockStop { .. } => Ok(create_empty_openai_chunk()),
 
@@ -427,9 +432,9 @@ fn create_empty_openai_chunk() -> ChatCompletionsStreamResponse {
 }
 
 // Stop Reason Conversions
-impl Into<FinishReason> for MessagesStopReason {
-    fn into(self) -> FinishReason {
-        match self {
+impl From<MessagesStopReason> for FinishReason {
+    fn from(val: MessagesStopReason) -> Self {
+        match val {
             MessagesStopReason::EndTurn => FinishReason::Stop,
             MessagesStopReason::MaxTokens => FinishReason::Length,
             MessagesStopReason::StopSequence => FinishReason::Stop,
@@ -456,34 +461,37 @@ impl TryFrom<ChatCompletionsStreamResponse> for ResponsesAPIStreamEvent {
                 if let Some(tool_call) = tool_calls.first() {
                     // Extract call_id and name if available (metadata from initial event)
                     let call_id = tool_call.id.clone();
-                    let function_name = tool_call.function.as_ref()
-                        .and_then(|f| f.name.clone());
+                    let function_name = tool_call.function.as_ref().and_then(|f| f.name.clone());
 
                     // Check if we have function metadata (name, id)
                     if let Some(function) = &tool_call.function {
                         // If we have arguments delta, return that
                         if let Some(args) = &function.arguments {
-                            return Ok(ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta {
-                                output_index: choice.index as i32,
-                                item_id: "".to_string(), // Buffer will fill this
-                                delta: args.clone(),
-                                sequence_number: 0, // Buffer will fill this
-                                call_id,
-                                name: function_name,
-                            });
+                            return Ok(
+                                ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta {
+                                    output_index: choice.index as i32,
+                                    item_id: "".to_string(), // Buffer will fill this
+                                    delta: args.clone(),
+                                    sequence_number: 0, // Buffer will fill this
+                                    call_id,
+                                    name: function_name,
+                                },
+                            );
                         }
 
                         // If we have function name but no arguments yet (initial tool call event)
                         // Return an empty arguments delta so the buffer knows to create the item
                         if function.name.is_some() {
-                            return Ok(ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta {
-                                output_index: choice.index as i32,
-                                item_id: "".to_string(), // Buffer will fill this
-                                delta: "".to_string(), // Empty delta signals this is the initial event
-                                sequence_number: 0, // Buffer will fill this
-                                call_id,
-                                name: function_name,
-                            });
+                            return Ok(
+                                ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta {
+                                    output_index: choice.index as i32,
+                                    item_id: "".to_string(), // Buffer will fill this
+                                    delta: "".to_string(), // Empty delta signals this is the initial event
+                                    sequence_number: 0,    // Buffer will fill this
+                                    call_id,
+                                    name: function_name,
+                                },
+                            );
                         }
                     }
                 }

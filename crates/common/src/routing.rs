@@ -41,7 +41,8 @@ pub fn get_llm_provider(
     llm_providers
         .iter()
         .filter(|(_, provider)| {
-            provider.model
+            provider
+                .model
                 .as_ref()
                 .map(|m| !m.starts_with("Arch"))
                 .unwrap_or(true)

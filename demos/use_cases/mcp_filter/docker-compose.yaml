@@ -14,7 +14,7 @@ services:
   plano:
     build:
       context: ../../../
-      dockerfile: arch/Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "12000:12000"
       - "8001:8001"

@@ -1,9 +1,9 @@
-use crate::providers::streaming_response::ProviderStreamResponse;
-use crate::providers::streaming_response::ProviderStreamResponseType;
-use crate::apis::streaming_shapes::chat_completions_streaming_buffer::OpenAIChatCompletionsStreamBuffer;
 use crate::apis::streaming_shapes::anthropic_streaming_buffer::AnthropicMessagesStreamBuffer;
+use crate::apis::streaming_shapes::chat_completions_streaming_buffer::OpenAIChatCompletionsStreamBuffer;
 use crate::apis::streaming_shapes::passthrough_streaming_buffer::PassthroughStreamBuffer;
 use crate::apis::streaming_shapes::responses_api_streaming_buffer::ResponsesAPIStreamBuffer;
+use crate::providers::streaming_response::ProviderStreamResponse;
+use crate::providers::streaming_response::ProviderStreamResponseType;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt;
@@ -37,7 +37,7 @@ pub trait SseStreamBufferTrait: Send + Sync {
     ///
     /// # Returns
     /// Bytes ready for wire transmission (may be empty if no events were accumulated)
-    fn into_bytes(&mut self) -> Vec<u8>;
+    fn to_bytes(&mut self) -> Vec<u8>;
 }
 
 /// Unified SSE Stream Buffer enum that provides a zero-cost abstraction
@@ -45,7 +45,7 @@ pub enum SseStreamBuffer {
     Passthrough(PassthroughStreamBuffer),
     OpenAIChatCompletions(OpenAIChatCompletionsStreamBuffer),
     AnthropicMessages(AnthropicMessagesStreamBuffer),
-    OpenAIResponses(ResponsesAPIStreamBuffer),
+    OpenAIResponses(Box<ResponsesAPIStreamBuffer>),
 }
 
 impl SseStreamBufferTrait for SseStreamBuffer {
@@ -58,12 +58,12 @@ impl SseStreamBufferTrait for SseStreamBuffer {
         }
     }
 
-    fn into_bytes(&mut self) -> Vec<u8> {
+    fn to_bytes(&mut self) -> Vec<u8> {
         match self {
-            Self::Passthrough(buffer) => buffer.into_bytes(),
-            Self::OpenAIChatCompletions(buffer) => buffer.into_bytes(),
-            Self::AnthropicMessages(buffer) => buffer.into_bytes(),
-            Self::OpenAIResponses(buffer) => buffer.into_bytes(),
+            Self::Passthrough(buffer) => buffer.to_bytes(),
+            Self::OpenAIChatCompletions(buffer) => buffer.to_bytes(),
+            Self::AnthropicMessages(buffer) => buffer.to_bytes(),
+            Self::OpenAIResponses(buffer) => buffer.to_bytes(),
         }
     }
 }
@@ -99,7 +99,7 @@ impl SseEvent {
         let sse_string: String = response.clone().into();
 
         SseEvent {
-            data: None, // Data is embedded in sse_transformed_lines
+            data: None,  // Data is embedded in sse_transformed_lines
             event: None, // Event type is embedded in sse_transformed_lines
             raw_line: sse_string.clone(),
             sse_transformed_lines: sse_string,
@@ -149,10 +149,8 @@ impl FromStr for SseEvent {
             });
         }
 
-        if trimmed_line.starts_with("data: ") {
-            let data: String = trimmed_line[6..].to_string(); // Remove "data: " prefix
-            // Allow empty data content after "data: " prefix
-            // This handles cases like "data: " followed by newline
+        if let Some(stripped) = trimmed_line.strip_prefix("data: ") {
+            let data: String = stripped.to_string();
             if data.trim().is_empty() {
                 return Err(SseParseError {
                     message: "Empty data field after 'data: ' prefix".to_string(),
@@ -166,8 +164,8 @@ impl FromStr for SseEvent {
                 sse_transformed_lines: line.to_string(),
                 provider_stream_response: None,
             })
-        } else if trimmed_line.starts_with("event: ") {
-            let event_type = trimmed_line[7..].to_string();
+        } else if let Some(stripped) = trimmed_line.strip_prefix("event: ") {
+            let event_type = stripped.to_string();
             if event_type.is_empty() {
                 return Err(SseParseError {
                     message: "Empty event field is not a valid SSE event".to_string(),
@@ -183,7 +181,10 @@ impl FromStr for SseEvent {
             })
         } else {
             Err(SseParseError {
-                message: format!("Line does not start with 'data: ' or 'event: ': {}", trimmed_line),
+                message: format!(
+                    "Line does not start with 'data: ' or 'event: ': {}",
+                    trimmed_line
+                ),
             })
         }
     }
@@ -196,16 +197,16 @@ impl fmt::Display for SseEvent {
 }
 
 // Into implementation to convert SseEvent to bytes for response buffer
-impl Into<Vec<u8>> for SseEvent {
-    fn into(self) -> Vec<u8> {
+impl From<SseEvent> for Vec<u8> {
+    fn from(val: SseEvent) -> Self {
         // For generated events (like ResponsesAPI), sse_transformed_lines already includes trailing \n\n
         // For parsed events (like passthrough), we need to add the \n\n separator
-        if self.sse_transformed_lines.ends_with("\n\n") {
+        if val.sse_transformed_lines.ends_with("\n\n") {
             // Already properly formatted with trailing newlines
-            self.sse_transformed_lines.into_bytes()
+            val.sse_transformed_lines.into_bytes()
         } else {
             // Add SSE event separator
-            format!("{}\n\n", self.sse_transformed_lines).into_bytes()
+            format!("{}\n\n", val.sse_transformed_lines).into_bytes()
         }
     }
 }

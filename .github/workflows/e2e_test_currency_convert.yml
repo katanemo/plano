@@ -24,12 +24,10 @@ jobs:
 
       - name: build plano docker image
         run: |
-          docker build  -f arch/Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.0
+          docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.0
 
-      - name: install poetry
-        run: |
-          export POETRY_VERSION=2.2.1
-          curl -sSL https://install.python-poetry.org | python3 -
+      - name: install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: setup python venv
         run: |
@@ -43,8 +41,8 @@ jobs:
       - name: install arch gateway and test dependencies
         run: |
           source venv/bin/activate
-          cd arch/tools && echo "installing plano cli" && poetry install
-          cd ../../demos/shared/test_runner && echo "installing test dependencies" && poetry install
+          cd cli && echo "installing plano cli" && uv sync && uv tool install .
+          cd ../demos/shared/test_runner && echo "installing test dependencies" && uv sync
 
       - name: run demo tests
         env:

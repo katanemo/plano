@@ -34,10 +34,7 @@ pub enum OrchestrationError {
 pub type Result<T> = std::result::Result<T, OrchestrationError>;
 
 impl OrchestratorService {
-    pub fn new(
-        orchestrator_url: String,
-        orchestration_model_name: String,
-    ) -> Self {
+    pub fn new(orchestrator_url: String, orchestration_model_name: String) -> Self {
         // Empty agent orchestrations - will be provided via usage_preferences in requests
         let agent_orchestrations: HashMap<String, Vec<OrchestrationPreference>> = HashMap::new();
 

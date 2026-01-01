@@ -82,6 +82,7 @@ impl PipelineProcessor {
     }
 
     /// Record a span for filter execution
+    #[allow(clippy::too_many_arguments)]
     fn record_filter_span(
         &self,
         collector: &std::sync::Arc<common::traces::TraceCollector>,
@@ -132,6 +133,7 @@ impl PipelineProcessor {
     }
 
     /// Record a span for MCP protocol interactions
+    #[allow(clippy::too_many_arguments)]
     fn record_agent_filter_span(
         &self,
         collector: &std::sync::Arc<common::traces::TraceCollector>,
@@ -156,12 +158,12 @@ impl PipelineProcessor {
             .build();
 
         let mut span_builder = SpanBuilder::new(&operation_name)
-            .with_span_id(span_id.unwrap_or_else(|| generate_random_span_id()))
+            .with_span_id(span_id.unwrap_or_else(generate_random_span_id))
             .with_kind(SpanKind::Client)
             .with_start_time(start_time)
             .with_end_time(end_time)
             .with_attribute(http::METHOD, "POST")
-            .with_attribute(http::TARGET, &format!("/mcp ({})", operation.to_string()))
+            .with_attribute(http::TARGET, format!("/mcp ({})", operation))
             .with_attribute("mcp.operation", operation.to_string())
             .with_attribute("mcp.agent_id", agent_id.to_string())
             .with_attribute(
@@ -188,6 +190,7 @@ impl PipelineProcessor {
     }
 
     /// Process the filter chain of agents (all except the terminal agent)
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_filter_chain(
         &mut self,
         chat_history: &[Message],
@@ -1023,7 +1026,7 @@ mod tests {
             }
         });
 
-        let sse_body = format!("event: message\ndata: {}\n\n", rpc_body.to_string());
+        let sse_body = format!("event: message\ndata: {}\n\n", rpc_body);
 
         let mut server = Server::new_async().await;
         let _m = server
@@ -1061,10 +1064,10 @@ mod tests {
             .await;
 
         match result {
-                Err(PipelineError::ClientError { status, body, .. }) => {
-                    assert_eq!(status, 400);
-                    assert_eq!(body, "bad tool call");
-                }
+            Err(PipelineError::ClientError { status, body, .. }) => {
+                assert_eq!(status, 400);
+                assert_eq!(body, "bad tool call");
+            }
             _ => panic!("Expected client error when isError flag is set"),
         }
     }

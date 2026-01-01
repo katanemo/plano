@@ -5,26 +5,27 @@ import subprocess
 import multiprocessing
 import importlib.metadata
 import json
-from cli import targets
-from cli.docker_cli import (
+from planoai import targets
+from planoai.docker_cli import (
     docker_validate_plano_schema,
     stream_gateway_logs,
     docker_container_status,
 )
-from cli.utils import (
+from planoai.utils import (
     getLogger,
     get_llm_provider_access_keys,
     has_ingress_listener,
     load_env_file_to_dict,
     stream_access_logs,
     find_config_file,
+    find_repo_root,
 )
-from cli.core import (
+from planoai.core import (
     start_arch,
     stop_docker_container,
     start_cli_agent,
 )
-from cli.consts import (
+from planoai.consts import (
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
     SERVICE_NAME_ARCHGW,
@@ -44,15 +45,22 @@ ______ _
 """
 
 # Command to build plano Docker images
-ARCHGW_DOCKERFILE = "./arch/Dockerfile"
+ARCHGW_DOCKERFILE = "./Dockerfile"
 
 
 def get_version():
     try:
-        version = importlib.metadata.version("plano")
+        # First try to get version from package metadata (for installed packages)
+        version = importlib.metadata.version("planoai")
         return version
     except importlib.metadata.PackageNotFoundError:
-        return "version not found"
+        # Fallback to version defined in __init__.py (for development)
+        try:
+            from planoai import __version__
+
+            return __version__
+        except ImportError:
+            return "version not found"
 
 
 @click.group(invoke_without_command=True)
@@ -73,35 +81,41 @@ def main(ctx, version):
 
 @click.command()
 def build():
-    """Build Arch from source. Must be in root of cloned repo."""
+    """Build Arch from source. Works from any directory within the repo."""
 
-    # Check if /arch/Dockerfile exists
-    if os.path.exists(ARCHGW_DOCKERFILE):
-        if os.path.exists(ARCHGW_DOCKERFILE):
-            click.echo("Building plano image...")
-            try:
-                subprocess.run(
-                    [
-                        "docker",
-                        "build",
-                        "-f",
-                        ARCHGW_DOCKERFILE,
-                        "-t",
-                        f"{PLANO_DOCKER_IMAGE}",
-                        ".",
-                        "--add-host=host.docker.internal:host-gateway",
-                    ],
-                    check=True,
-                )
-                click.echo("archgw image built successfully.")
-            except subprocess.CalledProcessError as e:
-                click.echo(f"Error building plano image: {e}")
-                sys.exit(1)
-        else:
-            click.echo("Error: Dockerfile not found in /arch")
-            sys.exit(1)
+    # Find the repo root
+    repo_root = find_repo_root()
+    if not repo_root:
+        click.echo(
+            "Error: Could not find repository root. Make sure you're inside the plano repository."
+        )
+        sys.exit(1)
 
-    click.echo("archgw image built successfully.")
+    dockerfile_path = os.path.join(repo_root, "Dockerfile")
+
+    if not os.path.exists(dockerfile_path):
+        click.echo(f"Error: Dockerfile not found at {dockerfile_path}")
+        sys.exit(1)
+
+    click.echo(f"Building plano image from {repo_root}...")
+    try:
+        subprocess.run(
+            [
+                "docker",
+                "build",
+                "-f",
+                dockerfile_path,
+                "-t",
+                f"{PLANO_DOCKER_IMAGE}",
+                repo_root,
+                "--add-host=host.docker.internal:host-gateway",
+            ],
+            check=True,
+        )
+        click.echo("archgw image built successfully.")
+    except subprocess.CalledProcessError as e:
+        click.echo(f"Error building plano image: {e}")
+        sys.exit(1)
 
 
 @click.command()

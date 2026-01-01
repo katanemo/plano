@@ -10,6 +10,6 @@ pub mod ratelimit;
 pub mod routing;
 pub mod stats;
 pub mod tokenizer;
-pub mod tracing;
 pub mod traces;
+pub mod tracing;
 pub mod utils;

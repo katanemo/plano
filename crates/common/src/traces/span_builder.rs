@@ -1,4 +1,4 @@
-use super::shapes::{Span, Attribute, AttributeValue};
+use super::shapes::{Attribute, AttributeValue, Span};
 use std::collections::HashMap;
 use std::time::SystemTime;
 
@@ -116,10 +116,11 @@ impl SpanBuilder {
         let end_nanos = system_time_to_nanos(end_time);
 
         // Generate trace_id if not provided
-        let trace_id = self.trace_id.unwrap_or_else(|| generate_random_trace_id());
+        let trace_id = self.trace_id.unwrap_or_else(generate_random_trace_id);
 
         // Create attributes in OTEL format
-        let attributes: Vec<Attribute> = self.attributes
+        let attributes: Vec<Attribute> = self
+            .attributes
             .into_iter()
             .map(|(key, value)| Attribute {
                 key,
@@ -132,7 +133,7 @@ impl SpanBuilder {
         // Build span directly without going through Span::new()
         Span {
             trace_id,
-            span_id: self.span_id.unwrap_or_else(|| generate_random_span_id()),
+            span_id: self.span_id.unwrap_or_else(generate_random_span_id),
             parent_span_id: self.parent_span_id,
             name: self.name,
             start_time_unix_nano: format!("{}", start_nanos),

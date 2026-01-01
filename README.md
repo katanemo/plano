@@ -58,7 +58,19 @@ Before you begin, ensure you have the following:
 Plano's CLI allows you to manage and interact with the Plano gateway efficiently. To install the CLI, simply run the following command:
 
 > [!TIP]
-> We recommend that developers create a new Python virtual environment to isolate dependencies before installing Plano. This ensures that plano and its dependencies do not interfere with other packages on your system.
+> We recommend using **uv** for fast, reliable Python package management. Install uv if you haven't already:
+>
+> ```console
+> $ curl -LsSf https://astral.sh/uv/install.sh | sh
+> ```
+
+**Option 1: Install planoai with uv (Recommended)**
+
+```console
+$ uv tool install planoai==0.4.0
+```
+
+**Option 2: Install with pip (Traditional)**
 
 ```console
 $ python3.12 -m venv venv
@@ -161,6 +173,8 @@ Run your `flight_agent` and `hotel_agent` services (see the [Orchestration guide
 
 ```console
 $ planoai up plano_config.yaml
+# Or if installed with uv tool:
+$ uvx planoai up plano_config.yaml
 ```
 
 Plano will start the orchestrator and expose an agent listener on port `8001`.
@@ -233,10 +247,10 @@ endpoints:
 
 ```sh
 $ planoai up plano_config.yaml
-2024-12-05 16:56:27,979 - cli.main - INFO - Starting plano cli version: 0.4.0
-2024-12-05 16:56:28,485 - cli.utils - INFO - Schema validation successful!
-2024-12-05 16:56:28,485 - cli.main - INFO - Starting plano model server and plano gateway
-2024-12-05 16:56:51,647 - cli.core - INFO - Container is healthy!
+2024-12-05 16:56:27,979 - planoai.main - INFO - Starting plano cli version: 0.4.0
+2024-12-05 16:56:28,485 - planoai.utils - INFO - Schema validation successful!
+2024-12-05 16:56:28,485 - planoai.main - INFO - Starting plano model server and plano gateway
+2024-12-05 16:56:51,647 - planoai.core - INFO - Container is healthy!
 ```
 
 Once the gateway is up you can start interacting with it at port `10000` using the OpenAI chat completion API.

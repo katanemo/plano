@@ -61,6 +61,7 @@ In a new terminal:
 ```bash
 cd /path/to/travel_agents
 planoai up config.yaml
+# Or if installed with uv: uvx planoai up config.yaml
 ```
 
 The gateway will start on port 8001 and route requests to the appropriate agents.

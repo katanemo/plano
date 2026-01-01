@@ -4,6 +4,7 @@ import subprocess
 import sys
 import yaml
 import logging
+from planoai.consts import PLANO_DOCKER_NAME
 
 
 logging.basicConfig(
@@ -19,6 +20,33 @@ def getLogger(name="cli"):
 
 
 log = getLogger(__name__)
+
+
+def find_repo_root(start_path=None):
+    """Find the repository root by looking for Dockerfile or .git directory."""
+    if start_path is None:
+        start_path = os.getcwd()
+
+    current = os.path.abspath(start_path)
+
+    while current != os.path.dirname(current):  # Stop at filesystem root
+        # Check for markers that indicate repo root
+        if (
+            os.path.exists(os.path.join(current, "Dockerfile"))
+            and os.path.exists(os.path.join(current, "crates"))
+            and os.path.exists(os.path.join(current, "config"))
+        ):
+            return current
+
+        # Also check for .git as fallback
+        if os.path.exists(os.path.join(current, ".git")):
+            # Verify it's the right repo by checking for expected structure
+            if os.path.exists(os.path.join(current, "crates")):
+                return current
+
+        current = os.path.dirname(current)
+
+    return None
 
 
 def has_ingress_listener(arch_config_file):
@@ -221,7 +249,7 @@ def stream_access_logs(follow):
     stream_command = [
         "docker",
         "exec",
-        "archgw",
+        PLANO_DOCKER_NAME,
         "sh",
         "-c",
         f"tail {follow_arg} /var/log/access_*.log",

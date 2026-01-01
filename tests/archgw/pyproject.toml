@@ -1,24 +1,31 @@
-[tool.poetry]
+[project]
 name = "archgw_mock_tests"
 version = "0.0.1"
 description = "archgw mock tests"
-authors = ["Katanemo Labs, Inc <info@katanemo.com>"]
-license = "Apache 2.0"
-readme = "README.md"
-package-mode = false
+authors = [{name = "Katanemo Labs, Inc", email = "info@katanemo.com"}]
+license = {text = "Apache 2.0"}
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8.3.3",
+    "requests>=2.29.0",
+    "selenium>=4.11.2",
+    "pytest-sugar>=1.0.0",
+    "deepdiff>=8.0.1",
+    "pytest-retry>=1.6.3",
+    "pytest-httpserver>=1.1.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-pytest = "^8.3.3"
-requests = "^2.29.0"
-selenium = "^4.11.2"
-pytest-sugar = "^1.0.0"
-deepdiff = "^8.0.1"
-pytest-retry = "^1.6.3"
-pytest-httpserver = "^1.1.0"
+[project.optional-dependencies]
+dev = [
+    "pytest-cov>=4.1.0",
+]
 
-[tool.poetry.dev-dependencies]
-pytest-cov = "^4.1.0"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
 
 [tool.pytest.ini_options]
 python_files = ["test*.py"]

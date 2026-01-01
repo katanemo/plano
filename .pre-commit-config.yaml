@@ -3,7 +3,7 @@ repos:
     rev: v4.6.0
     hooks:
       - id: check-yaml
-        exclude: arch/envoy.template*
+        exclude: config/envoy.template*
       - id: end-of-file-fixer
       - id: trailing-whitespace
   - repo: local
@@ -13,19 +13,22 @@ repos:
         name: cargo-fmt
         language: system
         types: [file, rust]
-        entry: bash -c "cd crates/llm_gateway && cargo fmt"
+        entry: bash -c "cd crates && cargo fmt --all -- --check"
+        pass_filenames: false
 
       - id: cargo-clippy
         name: cargo-clippy
         language: system
         types: [file, rust]
-        entry: bash -c "cd crates/llm_gateway && cargo clippy --all"
+        entry: bash -c "cd crates && cargo clippy --locked --offline --all-targets --all-features -- -D warnings || cargo clippy --locked --all-targets --all-features -- -D warnings"
+        pass_filenames: false
 
       - id: cargo-test
         name: cargo-test
         language: system
         types: [file, rust]
         entry: bash -c "cd crates && cargo test --lib"
+        pass_filenames: false
 
   - repo: https://github.com/psf/black
     rev: 23.1.0

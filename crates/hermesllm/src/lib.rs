@@ -12,11 +12,9 @@ pub use aws_smithy_eventstream::frame::DecodedFrame;
 pub use providers::id::ProviderId;
 pub use providers::request::{ProviderRequest, ProviderRequestError, ProviderRequestType};
 pub use providers::response::{
-    ProviderResponse, ProviderResponseType, TokenUsage, ProviderResponseError
+    ProviderResponse, ProviderResponseError, ProviderResponseType, TokenUsage,
 };
-pub use providers::streaming_response::{
-    ProviderStreamResponse, ProviderStreamResponseType
-};
+pub use providers::streaming_response::{ProviderStreamResponse, ProviderStreamResponseType};
 
 //TODO: Refactor such that commons doesn't depend on Hermes. For now this will clean up strings
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
@@ -87,11 +85,17 @@ mod tests {
         let done_event = streaming_iter.next();
         assert!(done_event.is_some(), "Should get [DONE] event");
         let done_event = done_event.unwrap();
-        assert!(done_event.is_done(), "[DONE] event should be marked as done");
+        assert!(
+            done_event.is_done(),
+            "[DONE] event should be marked as done"
+        );
 
         // After [DONE], iterator should return None
         let final_event = streaming_iter.next();
-        assert!(final_event.is_none(), "Iterator should return None after [DONE]");
+        assert!(
+            final_event.is_none(),
+            "Iterator should return None after [DONE]"
+        );
     }
 
     /// Test AWS Event Stream decoding for Bedrock ConverseStream responses.
@@ -130,7 +134,7 @@ mod tests {
         let mut content_chunks = Vec::new();
 
         // Simulate chunked network arrivals - process as data comes in
-        let chunk_sizes = vec![50, 100, 75, 200, 150, 300, 500, 1000];
+        let chunk_sizes = [50, 100, 75, 200, 150, 300, 500, 1000];
         let mut offset = 0;
         let mut chunk_num = 0;
 

@@ -10,6 +10,12 @@ pub struct SseChunkProcessor {
     incomplete_event_buffer: Vec<u8>,
 }
 
+impl Default for SseChunkProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SseChunkProcessor {
     pub fn new() -> Self {
         Self {
@@ -93,8 +99,8 @@ impl SseChunkProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
     use crate::apis::openai::OpenAIApi;
+    use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
     #[test]
     fn test_complete_events_process_immediately() {
@@ -104,7 +110,9 @@ mod tests {
 
         let chunk1 = b"data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n";
 
-        let events = processor.process_chunk(chunk1, &client_api, &upstream_api).unwrap();
+        let events = processor
+            .process_chunk(chunk1, &client_api, &upstream_api)
+            .unwrap();
 
         assert_eq!(events.len(), 1);
         assert!(!processor.has_buffered_data());
@@ -119,18 +127,28 @@ mod tests {
         // First chunk with incomplete JSON
         let chunk1 = b"data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chu";
 
-        let events1 = processor.process_chunk(chunk1, &client_api, &upstream_api).unwrap();
+        let events1 = processor
+            .process_chunk(chunk1, &client_api, &upstream_api)
+            .unwrap();
 
         assert_eq!(events1.len(), 0, "Incomplete event should not be processed");
-        assert!(processor.has_buffered_data(), "Incomplete data should be buffered");
+        assert!(
+            processor.has_buffered_data(),
+            "Incomplete data should be buffered"
+        );
 
         // Second chunk completes the JSON
         let chunk2 = b"nk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n";
 
-        let events2 = processor.process_chunk(chunk2, &client_api, &upstream_api).unwrap();
+        let events2 = processor
+            .process_chunk(chunk2, &client_api, &upstream_api)
+            .unwrap();
 
         assert_eq!(events2.len(), 1, "Complete event should be processed");
-        assert!(!processor.has_buffered_data(), "Buffer should be cleared after completion");
+        assert!(
+            !processor.has_buffered_data(),
+            "Buffer should be cleared after completion"
+        );
     }
 
     #[test]
@@ -142,10 +160,15 @@ mod tests {
         // Chunk with 2 complete events and 1 incomplete
         let chunk = b"data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"A\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-124\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"B\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-125\",\"object\":\"chat.completion.chu";
 
-        let events = processor.process_chunk(chunk, &client_api, &upstream_api).unwrap();
+        let events = processor
+            .process_chunk(chunk, &client_api, &upstream_api)
+            .unwrap();
 
         assert_eq!(events.len(), 2, "Two complete events should be processed");
-        assert!(processor.has_buffered_data(), "Incomplete third event should be buffered");
+        assert!(
+            processor.has_buffered_data(),
+            "Incomplete third event should be buffered"
+        );
     }
 
     #[test]
@@ -171,11 +194,23 @@ data: {"type":"content_block_stop","index":0}
             Ok(events) => {
                 println!("Successfully processed {} events", events.len());
                 for (i, event) in events.iter().enumerate() {
-                    println!("Event {}: event={:?}, has_data={}", i, event.event, event.data.is_some());
+                    println!(
+                        "Event {}: event={:?}, has_data={}",
+                        i,
+                        event.event,
+                        event.data.is_some()
+                    );
                 }
                 // Should successfully process both events (signature_delta + content_block_stop)
-                assert!(events.len() >= 2, "Should process at least 2 complete events (signature_delta + stop), got {}", events.len());
-                assert!(!processor.has_buffered_data(), "Complete events should not be buffered");
+                assert!(
+                    events.len() >= 2,
+                    "Should process at least 2 complete events (signature_delta + stop), got {}",
+                    events.len()
+                );
+                assert!(
+                    !processor.has_buffered_data(),
+                    "Complete events should not be buffered"
+                );
             }
             Err(e) => {
                 panic!("Failed to process signature_delta chunk - this means SignatureDelta is not properly handled: {}", e);
@@ -194,12 +229,21 @@ data: {"type":"content_block_stop","index":0}
         // Second event is valid and should be processed
         let chunk = b"data: {\"id\":\"chatcmpl-123\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"unsupported_field_causing_validation_error\":true},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-124\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n";
 
-        let events = processor.process_chunk(chunk, &client_api, &upstream_api).unwrap();
+        let events = processor
+            .process_chunk(chunk, &client_api, &upstream_api)
+            .unwrap();
 
         // Should skip the invalid event and process the valid one
         // (If we were buffering all errors, we'd get 0 events and have buffered data)
-        assert!(events.len() >= 1, "Should process at least the valid event, got {} events", events.len());
-        assert!(!processor.has_buffered_data(), "Invalid (non-incomplete) events should not be buffered");
+        assert!(
+            !events.is_empty(),
+            "Should process at least the valid event, got {} events",
+            events.len()
+        );
+        assert!(
+            !processor.has_buffered_data(),
+            "Invalid (non-incomplete) events should not be buffered"
+        );
     }
 
     #[test]
@@ -227,14 +271,27 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
 
         match result {
             Ok(events) => {
-                println!("Processed {} events (unsupported event should be skipped)", events.len());
+                println!(
+                    "Processed {} events (unsupported event should be skipped)",
+                    events.len()
+                );
                 // Should process the 2 valid text_delta events and skip the unsupported one
                 // We expect at least 2 events (the valid ones), unsupported should be skipped
-                assert!(events.len() >= 2, "Should process at least 2 valid events, got {}", events.len());
-                assert!(!processor.has_buffered_data(), "Unsupported events should be skipped, not buffered");
+                assert!(
+                    events.len() >= 2,
+                    "Should process at least 2 valid events, got {}",
+                    events.len()
+                );
+                assert!(
+                    !processor.has_buffered_data(),
+                    "Unsupported events should be skipped, not buffered"
+                );
             }
             Err(e) => {
-                panic!("Should not fail on unsupported delta type, should skip it: {}", e);
+                panic!(
+                    "Should not fail on unsupported delta type, should skip it: {}",
+                    e
+                );
             }
         }
     }

@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use log::debug;
 use crate::apis::openai_responses::{
-    ResponsesAPIStreamEvent, ResponsesAPIResponse, OutputItem, OutputItemStatus,
-    ResponseStatus, TextConfig, TextFormat, Reasoning,
+    OutputItem, OutputItemStatus, Reasoning, ResponseStatus, ResponsesAPIResponse,
+    ResponsesAPIStreamEvent, TextConfig, TextFormat,
 };
 use crate::apis::streaming_shapes::sse::{SseEvent, SseStreamBufferTrait};
+use log::debug;
+use std::collections::HashMap;
 
 /// Helper to convert ResponseAPIStreamEvent to SseEvent
 fn event_to_sse(event: ResponsesAPIStreamEvent) -> SseEvent {
@@ -16,10 +16,17 @@ fn event_to_sse(event: ResponsesAPIStreamEvent) -> SseEvent {
         ResponsesAPIStreamEvent::ResponseOutputItemDone { .. } => "response.output_item.done",
         ResponsesAPIStreamEvent::ResponseOutputTextDelta { .. } => "response.output_text.delta",
         ResponsesAPIStreamEvent::ResponseOutputTextDone { .. } => "response.output_text.done",
-        ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta { .. } => "response.function_call_arguments.delta",
-        ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDone { .. } => "response.function_call_arguments.done",
+        ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta { .. } => {
+            "response.function_call_arguments.delta"
+        }
+        ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDone { .. } => {
+            "response.function_call_arguments.done"
+        }
         unknown => {
-            debug!("Unknown ResponsesAPIStreamEvent type encountered: {:?}", unknown);
+            debug!(
+                "Unknown ResponsesAPIStreamEvent type encountered: {:?}",
+                unknown
+            );
             "unknown"
         }
     };
@@ -85,6 +92,12 @@ pub struct ResponsesAPIStreamBuffer {
     buffered_events: Vec<SseEvent>,
 }
 
+impl Default for ResponsesAPIStreamBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResponsesAPIStreamBuffer {
     pub fn new() -> Self {
         Self {
@@ -112,7 +125,11 @@ impl ResponsesAPIStreamBuffer {
     }
 
     fn generate_item_id(prefix: &str) -> String {
-        format!("{}_{}", prefix, uuid::Uuid::new_v4().to_string().replace("-", ""))
+        format!(
+            "{}_{}",
+            prefix,
+            uuid::Uuid::new_v4().to_string().replace("-", "")
+        )
     }
 
     fn get_or_create_item_id(&mut self, output_index: i32, prefix: &str) -> String {
@@ -160,7 +177,13 @@ impl ResponsesAPIStreamBuffer {
     }
 
     /// Create output_item.added event for tool call
-    fn create_tool_call_added_event(&mut self, output_index: i32, item_id: &str, call_id: &str, name: &str) -> SseEvent {
+    fn create_tool_call_added_event(
+        &mut self,
+        output_index: i32,
+        item_id: &str,
+        call_id: &str,
+        name: &str,
+    ) -> SseEvent {
         let event = ResponsesAPIStreamEvent::ResponseOutputItemAdded {
             output_index,
             item: OutputItem::FunctionCall {
@@ -237,9 +260,15 @@ impl ResponsesAPIStreamBuffer {
         // Emit done events for all accumulated content
 
         // Text content done events
-        let text_items: Vec<_> = self.text_content.iter().map(|(id, content)| (id.clone(), content.clone())).collect();
+        let text_items: Vec<_> = self
+            .text_content
+            .iter()
+            .map(|(id, content)| (id.clone(), content.clone()))
+            .collect();
         for (item_id, content) in text_items {
-            let output_index = self.output_items_added.iter()
+            let output_index = self
+                .output_items_added
+                .iter()
                 .find(|(_, id)| **id == item_id)
                 .map(|(idx, _)| *idx)
                 .unwrap_or(0);
@@ -270,9 +299,15 @@ impl ResponsesAPIStreamBuffer {
         }
 
         // Function call done events
-        let func_items: Vec<_> = self.function_arguments.iter().map(|(id, args)| (id.clone(), args.clone())).collect();
+        let func_items: Vec<_> = self
+            .function_arguments
+            .iter()
+            .map(|(id, args)| (id.clone(), args.clone()))
+            .collect();
         for (item_id, arguments) in func_items {
-            let output_index = self.output_items_added.iter()
+            let output_index = self
+                .output_items_added
+                .iter()
                 .find(|(_, id)| **id == item_id)
                 .map(|(idx, _)| *idx)
                 .unwrap_or(0);
@@ -286,9 +321,16 @@ impl ResponsesAPIStreamBuffer {
             };
             events.push(event_to_sse(args_done_event));
 
-            let (call_id, name) = self.tool_call_metadata.get(&output_index)
+            let (call_id, name) = self
+                .tool_call_metadata
+                .get(&output_index)
                 .cloned()
-                .unwrap_or_else(|| (format!("call_{}", uuid::Uuid::new_v4()), "unknown".to_string()));
+                .unwrap_or_else(|| {
+                    (
+                        format!("call_{}", uuid::Uuid::new_v4()),
+                        "unknown".to_string(),
+                    )
+                });
 
             let seq2 = self.next_sequence_number();
             let item_done_event = ResponsesAPIStreamEvent::ResponseOutputItemDone {
@@ -315,9 +357,16 @@ impl ResponsesAPIStreamBuffer {
             if let Some(item_id) = self.output_items_added.get(&output_index) {
                 // Check if this is a function call
                 if let Some(arguments) = self.function_arguments.get(item_id) {
-                    let (call_id, name) = self.tool_call_metadata.get(&output_index)
+                    let (call_id, name) = self
+                        .tool_call_metadata
+                        .get(&output_index)
                         .cloned()
-                        .unwrap_or_else(|| (format!("call_{}", uuid::Uuid::new_v4()), "unknown".to_string()));
+                        .unwrap_or_else(|| {
+                            (
+                                format!("call_{}", uuid::Uuid::new_v4()),
+                                "unknown".to_string(),
+                            )
+                        });
 
                     output_items.push(OutputItem::FunctionCall {
                         id: item_id.clone(),
@@ -397,9 +446,9 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
         let mut events = Vec::new();
 
         // Capture upstream metadata from ResponseCreated or ResponseInProgress if present
-        match stream_event {
-            ResponsesAPIStreamEvent::ResponseCreated { response, .. } |
-            ResponsesAPIStreamEvent::ResponseInProgress { response, .. } => {
+        match stream_event.as_ref() {
+            ResponsesAPIStreamEvent::ResponseCreated { response, .. }
+            | ResponsesAPIStreamEvent::ResponseInProgress { response, .. } => {
                 if self.upstream_response_metadata.is_none() {
                     // Store the full upstream response as our metadata template
                     self.upstream_response_metadata = Some(response.clone());
@@ -418,11 +467,16 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
         if !self.created_emitted {
             // Initialize metadata from first event if needed
             if self.response_id.is_none() {
-                self.response_id = Some(format!("resp_{}", uuid::Uuid::new_v4().to_string().replace("-", "")));
-                self.created_at = Some(std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() as i64);
+                self.response_id = Some(format!(
+                    "resp_{}",
+                    uuid::Uuid::new_v4().to_string().replace("-", "")
+                ));
+                self.created_at = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() as i64,
+                );
                 self.model = Some("unknown".to_string()); // Will be set by caller if available
             }
 
@@ -436,58 +490,95 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
         }
 
         // Process the delta event
-        match stream_event {
-            ResponsesAPIStreamEvent::ResponseOutputTextDelta { output_index, delta, .. } => {
+        match stream_event.as_ref() {
+            ResponsesAPIStreamEvent::ResponseOutputTextDelta {
+                output_index,
+                delta,
+                ..
+            } => {
                 let item_id = self.get_or_create_item_id(*output_index, "msg");
 
                 // Emit output_item.added if this is the first time we see this output index
                 if !self.output_items_added.contains_key(output_index) {
-                    self.output_items_added.insert(*output_index, item_id.clone());
+                    self.output_items_added
+                        .insert(*output_index, item_id.clone());
                     events.push(self.create_output_item_added_event(*output_index, &item_id));
                 }
 
                 // Accumulate text content
-                self.text_content.entry(item_id.clone())
+                self.text_content
+                    .entry(item_id.clone())
                     .and_modify(|content| content.push_str(delta))
                     .or_insert_with(|| delta.clone());
 
                 // Emit text delta with filled-in item_id and sequence_number
-                let mut delta_event = stream_event.clone();
-                if let ResponsesAPIStreamEvent::ResponseOutputTextDelta { item_id: ref mut id, sequence_number: ref mut seq, .. } = delta_event {
+                let mut delta_event = stream_event.as_ref().clone();
+                if let ResponsesAPIStreamEvent::ResponseOutputTextDelta {
+                    item_id: ref mut id,
+                    sequence_number: ref mut seq,
+                    ..
+                } = &mut delta_event
+                {
                     *id = item_id;
                     *seq = self.next_sequence_number();
                 }
                 events.push(event_to_sse(delta_event));
             }
-            ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta { output_index, delta, call_id, name, .. } => {
+            ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta {
+                output_index,
+                delta,
+                call_id,
+                name,
+                ..
+            } => {
                 let item_id = self.get_or_create_item_id(*output_index, "fc");
 
                 // Store metadata if provided (from initial tool call event)
                 if let (Some(cid), Some(n)) = (call_id, name) {
-                    self.tool_call_metadata.insert(*output_index, (cid.clone(), n.clone()));
+                    self.tool_call_metadata
+                        .insert(*output_index, (cid.clone(), n.clone()));
                 }
 
                 // Emit output_item.added if this is the first time we see this tool call
                 if !self.output_items_added.contains_key(output_index) {
-                    self.output_items_added.insert(*output_index, item_id.clone());
+                    self.output_items_added
+                        .insert(*output_index, item_id.clone());
 
                     // For tool calls, we need call_id and name from metadata
                     // These should now be populated from the event itself
-                    let (call_id, name) = self.tool_call_metadata.get(output_index)
+                    let (call_id, name) = self
+                        .tool_call_metadata
+                        .get(output_index)
                         .cloned()
-                        .unwrap_or_else(|| (format!("call_{}", uuid::Uuid::new_v4()), "unknown".to_string()));
+                        .unwrap_or_else(|| {
+                            (
+                                format!("call_{}", uuid::Uuid::new_v4()),
+                                "unknown".to_string(),
+                            )
+                        });
 
-                    events.push(self.create_tool_call_added_event(*output_index, &item_id, &call_id, &name));
+                    events.push(self.create_tool_call_added_event(
+                        *output_index,
+                        &item_id,
+                        &call_id,
+                        &name,
+                    ));
                 }
 
                 // Accumulate function arguments
-                self.function_arguments.entry(item_id.clone())
+                self.function_arguments
+                    .entry(item_id.clone())
                     .and_modify(|args| args.push_str(delta))
                     .or_insert_with(|| delta.clone());
 
                 // Emit function call arguments delta with filled-in item_id and sequence_number
-                let mut delta_event = stream_event.clone();
-                if let ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta { item_id: ref mut id, sequence_number: ref mut seq, .. } = delta_event {
+                let mut delta_event = stream_event.as_ref().clone();
+                if let ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta {
+                    item_id: ref mut id,
+                    sequence_number: ref mut seq,
+                    ..
+                } = &mut delta_event
+                {
                     *id = item_id;
                     *seq = self.next_sequence_number();
                 }
@@ -495,7 +586,7 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
             }
             _ => {
                 // For other event types, just pass through with sequence number
-                let other_event = stream_event.clone();
+                let other_event = stream_event.as_ref().clone();
                 // TODO: Add sequence number to other event types if needed
                 events.push(event_to_sse(other_event));
             }
@@ -505,8 +596,7 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
         self.buffered_events.extend(events);
     }
 
-
-    fn into_bytes(&mut self) -> Vec<u8> {
+    fn to_bytes(&mut self) -> Vec<u8> {
         // For Responses API, we need special handling:
         // - Most events are already in buffered_events from add_transformed_event
         // - We should NOT finalize here - finalization happens when we detect [DONE] or end of stream
@@ -525,9 +615,9 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
     use crate::apis::openai::OpenAIApi;
     use crate::apis::streaming_shapes::sse::SseStreamIter;
+    use crate::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
     #[test]
     fn test_chat_completions_to_responses_api_transformation() {
@@ -557,11 +647,12 @@ mod tests {
 
         for raw_event in stream_iter {
             // Transform the event using the client/upstream APIs
-            let transformed_event = SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
+            let transformed_event =
+                SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
             buffer.add_transformed_event(transformed_event);
         }
 
-        let output_bytes = buffer.into_bytes();
+        let output_bytes = buffer.to_bytes();
         let output = String::from_utf8_lossy(&output_bytes);
 
         println!("\nTRANSFORMED OUTPUT (ResponsesAPI):");
@@ -570,13 +661,34 @@ mod tests {
 
         // Assertions
         assert!(!output_bytes.is_empty(), "Should have output");
-        assert!(output.contains("response.created"), "Should have response.created");
-        assert!(output.contains("response.in_progress"), "Should have response.in_progress");
-        assert!(output.contains("response.output_item.added"), "Should have output_item.added");
-        assert!(output.contains("response.output_text.delta"), "Should have text deltas");
-        assert!(output.contains("response.output_text.done"), "Should have text.done");
-        assert!(output.contains("response.output_item.done"), "Should have output_item.done");
-        assert!(output.contains("response.completed"), "Should have response.completed");
+        assert!(
+            output.contains("response.created"),
+            "Should have response.created"
+        );
+        assert!(
+            output.contains("response.in_progress"),
+            "Should have response.in_progress"
+        );
+        assert!(
+            output.contains("response.output_item.added"),
+            "Should have output_item.added"
+        );
+        assert!(
+            output.contains("response.output_text.delta"),
+            "Should have text deltas"
+        );
+        assert!(
+            output.contains("response.output_text.done"),
+            "Should have text.done"
+        );
+        assert!(
+            output.contains("response.output_item.done"),
+            "Should have output_item.done"
+        );
+        assert!(
+            output.contains("response.completed"),
+            "Should have response.completed"
+        );
 
         println!("\nVALIDATION SUMMARY:");
         println!("{}", "-".repeat(80));
@@ -616,7 +728,7 @@ mod tests {
             buffer.add_transformed_event(transformed);
         }
 
-        let output_bytes = buffer.into_bytes();
+        let output_bytes = buffer.to_bytes();
         let output = String::from_utf8_lossy(&output_bytes);
 
         println!("\nTRANSFORMED OUTPUT (ResponsesAPI):");
@@ -624,24 +736,55 @@ mod tests {
         println!("{}", output);
 
         // Assertions
-        assert!(output.contains("response.created"), "Should have response.created");
-        assert!(output.contains("response.in_progress"), "Should have response.in_progress");
-        assert!(output.contains("response.output_item.added"), "Should have output_item.added");
-        assert!(output.contains("\"type\":\"function_call\""), "Should be function_call type");
-        assert!(output.contains("\"name\":\"get_weather\""), "Should have function name");
-        assert!(output.contains("\"call_id\":\"call_mD5ggLKk3SMKGPFqFdcpKg6q\""), "Should have correct call_id");
+        assert!(
+            output.contains("response.created"),
+            "Should have response.created"
+        );
+        assert!(
+            output.contains("response.in_progress"),
+            "Should have response.in_progress"
+        );
+        assert!(
+            output.contains("response.output_item.added"),
+            "Should have output_item.added"
+        );
+        assert!(
+            output.contains("\"type\":\"function_call\""),
+            "Should be function_call type"
+        );
+        assert!(
+            output.contains("\"name\":\"get_weather\""),
+            "Should have function name"
+        );
+        assert!(
+            output.contains("\"call_id\":\"call_mD5ggLKk3SMKGPFqFdcpKg6q\""),
+            "Should have correct call_id"
+        );
 
-        let delta_count = output.matches("event: response.function_call_arguments.delta").count();
+        let delta_count = output
+            .matches("event: response.function_call_arguments.delta")
+            .count();
         assert_eq!(delta_count, 4, "Should have 4 delta events");
 
-        assert!(!output.contains("response.function_call_arguments.done"), "Should NOT have arguments.done");
-        assert!(!output.contains("response.output_item.done"), "Should NOT have output_item.done");
-        assert!(!output.contains("response.completed"), "Should NOT have response.completed");
+        assert!(
+            !output.contains("response.function_call_arguments.done"),
+            "Should NOT have arguments.done"
+        );
+        assert!(
+            !output.contains("response.output_item.done"),
+            "Should NOT have output_item.done"
+        );
+        assert!(
+            !output.contains("response.completed"),
+            "Should NOT have response.completed"
+        );
 
         println!("\nVALIDATION SUMMARY:");
         println!("{}", "-".repeat(80));
         println!("✓ Lifecycle events: response.created, response.in_progress");
-        println!("✓ Function call metadata: name='get_weather', call_id='call_mD5ggLKk3SMKGPFqFdcpKg6q'");
+        println!(
+            "✓ Function call metadata: name='get_weather', call_id='call_mD5ggLKk3SMKGPFqFdcpKg6q'"
+        );
         println!("✓ Incremental deltas: 4 events (1 initial + 3 argument chunks)");
         println!("✓ NO completion events (partial stream, no [DONE])");
         println!("✓ Arguments accumulated: '{{\"location\":\"'\n");

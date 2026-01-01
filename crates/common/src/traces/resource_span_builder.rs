@@ -1,5 +1,5 @@
-use super::shapes::{ResourceSpan, Resource, ScopeSpan, Scope, Span, Attribute, AttributeValue};
 use super::constants::{resource, scope};
+use super::shapes::{Attribute, AttributeValue, Resource, ResourceSpan, Scope, ScopeSpan, Span};
 use std::collections::HashMap;
 
 /// Builder for creating OTEL ResourceSpan structures
@@ -26,7 +26,11 @@ impl ResourceSpanBuilder {
     }
 
     /// Add a resource attribute (e.g., deployment.environment, host.name)
-    pub fn with_resource_attribute(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_resource_attribute(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
         self.resource_attributes.insert(key.into(), value.into());
         self
     }
@@ -58,14 +62,12 @@ impl ResourceSpanBuilder {
     /// Build the ResourceSpan
     pub fn build(self) -> ResourceSpan {
         // Build resource attributes
-        let mut attributes = vec![
-            Attribute {
-                key: resource::SERVICE_NAME.to_string(),
-                value: AttributeValue {
-                    string_value: Some(self.service_name),
-                },
-            }
-        ];
+        let mut attributes = vec![Attribute {
+            key: resource::SERVICE_NAME.to_string(),
+            value: AttributeValue {
+                string_value: Some(self.service_name),
+            },
+        }];
 
         // Add custom resource attributes
         for (key, value) in self.resource_attributes {

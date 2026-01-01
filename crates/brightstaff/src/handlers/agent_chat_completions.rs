@@ -3,7 +3,7 @@ use std::time::{Instant, SystemTime};
 
 use bytes::Bytes;
 use common::consts::TRACE_PARENT_HEADER;
-use common::traces::{SpanBuilder, SpanKind, parse_traceparent, generate_random_span_id};
+use common::traces::{generate_random_span_id, parse_traceparent, SpanBuilder, SpanKind};
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
@@ -18,7 +18,7 @@ use super::agent_selector::{AgentSelectionError, AgentSelector};
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
 use super::response_handler::ResponseHandler;
 use crate::router::plano_orchestrator::OrchestratorService;
-use crate::tracing::{OperationNameBuilder, operation_component, http};
+use crate::tracing::{http, operation_component, OperationNameBuilder};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
@@ -61,7 +61,6 @@ pub async fn agent_chat(
                 body,
             }) = &err
             {
-
                 warn!(
                     "Client error from agent '{}' (HTTP {}): {}",
                     agent, status, body
@@ -77,8 +76,8 @@ pub async fn agent_chat(
 
                 let json_string = error_json.to_string();
                 let mut response = Response::new(ResponseHandler::create_full_body(json_string));
-                *response.status_mut() = hyper::StatusCode::from_u16(*status)
-                    .unwrap_or(hyper::StatusCode::BAD_REQUEST);
+                *response.status_mut() =
+                    hyper::StatusCode::from_u16(*status).unwrap_or(hyper::StatusCode::BAD_REQUEST);
                 response.headers_mut().insert(
                     hyper::header::CONTENT_TYPE,
                     "application/json".parse().unwrap(),
@@ -234,8 +233,18 @@ async fn handle_agent_chat(
         .with_attribute(http::TARGET, "/agents/select")
         .with_attribute("selection.listener", listener.name.clone())
         .with_attribute("selection.agent_count", selected_agents.len().to_string())
-        .with_attribute("selection.agents", selected_agents.iter().map(|a| a.id.as_str()).collect::<Vec<_>>().join(","))
-        .with_attribute("duration_ms", format!("{:.2}", selection_elapsed.as_secs_f64() * 1000.0));
+        .with_attribute(
+            "selection.agents",
+            selected_agents
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+        .with_attribute(
+            "duration_ms",
+            format!("{:.2}", selection_elapsed.as_secs_f64() * 1000.0),
+        );
 
     if !trace_id.is_empty() {
         selection_span_builder = selection_span_builder.with_trace_id(trace_id.clone());
@@ -318,8 +327,14 @@ async fn handle_agent_chat(
             .with_attribute(http::METHOD, "POST")
             .with_attribute(http::TARGET, full_path)
             .with_attribute("agent.name", agent_name.clone())
-            .with_attribute("agent.sequence", format!("{}/{}", agent_index + 1, agent_count))
-            .with_attribute("duration_ms", format!("{:.2}", agent_elapsed.as_secs_f64() * 1000.0));
+            .with_attribute(
+                "agent.sequence",
+                format!("{}/{}", agent_index + 1, agent_count),
+            )
+            .with_attribute(
+                "duration_ms",
+                format!("{:.2}", agent_elapsed.as_secs_f64() * 1000.0),
+            );
 
         if !trace_id.is_empty() {
             span_builder = span_builder.with_trace_id(trace_id.clone());
@@ -333,7 +348,10 @@ async fn handle_agent_chat(
 
         // If this is the last agent, return the streaming response
         if is_last_agent {
-            info!("Completed agent chain, returning response from last agent: {}", agent_name);
+            info!(
+                "Completed agent chain, returning response from last agent: {}",
+                agent_name
+            );
             return response_handler
                 .create_streaming_response(llm_response)
                 .await
@@ -341,7 +359,10 @@ async fn handle_agent_chat(
         }
 
         // For intermediate agents, collect the full response and pass to next agent
-        debug!("Collecting response from intermediate agent: {}", agent_name);
+        debug!(
+            "Collecting response from intermediate agent: {}",
+            agent_name
+        );
         let response_text = response_handler.collect_full_response(llm_response).await?;
 
         info!(
@@ -364,7 +385,6 @@ async fn handle_agent_chat(
         });
 
         current_messages.push(last_message);
-
     }
 
     // This should never be reached since we return in the last agent iteration

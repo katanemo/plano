@@ -3,11 +3,11 @@ import json
 import sys
 import requests
 
-from cli.consts import (
+from planoai.consts import (
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
-from cli.utils import getLogger
+from planoai.utils import getLogger
 
 log = getLogger(__name__)
 
@@ -127,7 +127,7 @@ def docker_validate_plano_schema(arch_config_file):
             "python",
             PLANO_DOCKER_IMAGE,
             "-m",
-            "cli.config_generator",
+            "planoai.config_generator",
         ],
         capture_output=True,
         text=True,
