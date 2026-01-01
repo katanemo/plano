@@ -36,6 +36,7 @@ Built by contributors to the widely adopted `Envoy Proxy <https://www.envoyproxy
       concepts/filter_chain
       concepts/llm_providers/llm_providers
       concepts/prompt_target
+      concepts/signals
 
   .. tab-item:: Guides
 

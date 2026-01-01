@@ -1,10 +1,10 @@
 .. -*- coding: utf-8 -*-
 
 ================
-Agentic Signals
+Agentic Signals™
 ================
 
-Agentic signals are behavioral quality indicators that act as early warning signs of agent performance—highlighting both brilliant successes and **severe failures**. These signals are computed directly from conversation traces without requiring manual labeling or domain expertise, making them practical for production observability at scale.
+Agentic Signals are behavioral quality indicators that act as early warning signs of agent performance—highlighting both brilliant successes and **severe failures**. These signals are computed directly from conversation traces without requiring manual labeling or domain expertise, making them practical for production observability at scale.
 
 The Problem: Knowing What's "Good"
 ==================================
@@ -348,6 +348,7 @@ Mitigation strategies:
 See Also
 ========
 
-- :doc:`tracing` - Distributed tracing for agent systems
-- :doc:`monitoring` - Metrics and dashboards
-- :doc:`access_logging` - Request/response logging
+- :doc:`../guides/observability/tracing` - Distributed tracing for agent systems
+- :doc:`../guides/observability/monitoring` - Metrics and dashboards
+- :doc:`../guides/observability/access_logging` - Request/response logging
+- :doc:`../guides/observability/observability` - Complete observability guide

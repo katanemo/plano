@@ -28,6 +28,120 @@ tools.
    :align: center
 
 
+Understanding Plano Traces
+--------------------------
+
+Plano creates structured traces that capture the complete flow of requests through your AI system. Each trace consists of multiple spans representing different stages of processing.
+
+Inbound Request Handling
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When a request enters Plano, it creates an **inbound span** (``plano(inbound)``) that represents the initial request reception and processing. This span captures:
+
+- HTTP request details (method, path, headers)
+- Request payload size
+- Initial validation and authentication
+
+Orchestration & Routing
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+For agent systems, Plano performs intelligent routing through orchestration spans:
+
+- **Agent Orchestration** (``plano(orchestrator)``): When multiple agents are available, Plano uses an LLM to analyze the user's intent and select the most appropriate agent. This span captures the orchestration decision-making process.
+
+- **LLM Routing** (``plano(routing)``): For direct LLM requests, Plano determines the optimal endpoint based on your routing strategy (round-robin, least-latency, cost-optimized). This span includes:
+
+  - Routing strategy used
+  - Selected upstream endpoint
+  - Route determination time
+  - Fallback indicators (if applicable)
+
+Agent Processing
+~~~~~~~~~~~~~~~~
+
+When requests are routed to agents, Plano creates spans for agent execution:
+
+- **Agent Filter Chains** (``plano(filter)``): If filters are configured (guardrails, context enrichment, query rewriting), each filter execution is captured in its own span, showing the transformation pipeline.
+
+- **Agent Execution** (``plano(agent)``): The main agent processing span that captures the agent's work, including any tools invoked and intermediate reasoning steps.
+
+Outbound LLM Calls
+~~~~~~~~~~~~~~~~~~
+
+All LLM calls—whether from Plano's routing layer or from agents—are traced with **LLM spans** (``plano(llm)``) that capture:
+
+- Model name and provider (e.g., ``gpt-4``, ``claude-3-sonnet``)
+- Request parameters (temperature, max_tokens, top_p)
+- Token usage (prompt_tokens, completion_tokens)
+- Streaming indicators and time-to-first-token
+- Response metadata
+
+**Example Span Attributes**::
+
+    # LLM call span
+    llm.model = "gpt-4"
+    llm.provider = "openai"
+    llm.usage.prompt_tokens = 150
+    llm.usage.completion_tokens = 75
+    llm.duration_ms = 1250
+    llm.time_to_first_token = 320
+
+Handoff to Upstream Services
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When Plano forwards requests to upstream services (agents, APIs, or LLM providers), it creates **handoff spans** (``plano(handoff)``) that capture:
+
+- Upstream endpoint URL
+- Request/response sizes
+- HTTP status codes
+- Upstream response times
+
+This creates a complete end-to-end trace showing the full request lifecycle through all system components.
+
+Behavioral Signals in Traces
+----------------------------
+
+Plano automatically enriches OpenTelemetry traces with :doc:`../../concepts/signals` — behavioral quality indicators computed from conversation patterns. These signals are attached as span attributes, providing immediate visibility into interaction quality.
+
+**What Signals Provide**
+
+Signals act as early warning indicators embedded in your traces:
+
+- **Quality Assessment**: Overall interaction quality (Excellent/Good/Neutral/Poor/Severe)
+- **Efficiency Metrics**: Turn count, efficiency scores, repair frequency
+- **User Sentiment**: Frustration indicators, positive feedback, escalation requests
+- **Agent Behavior**: Repetition detection, looping patterns
+
+**Visual Flag Markers**
+
+When concerning signals are detected (frustration, looping, escalation, or poor/severe quality), Plano automatically appends a flag marker **🚩** to the span's operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.
+
+**Example Span with Signals**::
+
+    # Span name: "POST /v1/chat/completions gpt-4 🚩"
+    # Standard LLM attributes:
+    llm.model = "gpt-4"
+    llm.usage.total_tokens = 225
+
+    # Behavioral signal attributes:
+    signals.quality = "Severe"
+    signals.turn_count = 15
+    signals.efficiency_score = 0.234
+    signals.frustration.severity = 3
+    signals.escalation.requested = "true"
+
+**Querying Signal Data**
+
+In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter traces by signal attributes:
+
+- Find severe interactions: ``signals.quality = "Severe"``
+- Find frustrated users: ``signals.frustration.severity >= 2``
+- Find inefficient flows: ``signals.efficiency_score < 0.5``
+- Find escalations: ``signals.escalation.requested = "true"``
+
+For complete details on all available signals, detection methods, and best practices, see the :doc:`../../concepts/signals` guide.
+
+
 Benefits of Using ``Traceparent`` Headers
 -----------------------------------------
 
