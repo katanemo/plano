@@ -5,9 +5,9 @@ Quickstart
 
 Follow this guide to learn how to quickly set up Plano and integrate it into your generative AI applications. You can:
 
+- :ref:`Use Plano as a model proxy (Gateway) <llm_routing_quickstart>` to standardize access to multiple LLM providers.
 - :ref:`Build agents <quickstart_agents>` for multi-step workflows (e.g., travel assistants with flights and hotels).
 - :ref:`Call deterministic APIs via prompt targets <quickstart_prompt_targets>` to turn instructions directly into function calls.
-- :ref:`Use Plano as a model proxy (Gateway) <llm_routing_quickstart>` to standardize access to multiple LLM providers.
 
 .. note::
   This quickstart assumes basic familiarity with agents and prompt targets from the Concepts section. For background, see :ref:`Agents <agents>` and :ref:`Prompt Target <prompt_target>`.
@@ -46,6 +46,109 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
    $ python -m venv venv
    $ source venv/bin/activate   # On Windows, use: venv\Scripts\activate
    $ pip install planoai==0.4.1
+
+
+.. _llm_routing_quickstart:
+
+Use Plano as a Model Proxy (Gateway)
+------------------------------------
+
+Step 1. Create plano config file
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Plano operates based on a configuration file where you can define LLM providers, prompt targets, guardrails, etc. Below is an example configuration that defines OpenAI and Anthropic LLM providers.
+
+Create ``plano_config.yaml`` file with the following content:
+
+.. code-block:: yaml
+
+  version: v0.3.0
+
+  listeners:
+    - type: model
+      name: model_1
+      address: 0.0.0.0
+      port: 12000
+
+  model_providers:
+
+    - access_key: $OPENAI_API_KEY
+      model: openai/gpt-4o
+      default: true
+
+    - access_key: $ANTHROPIC_API_KEY
+      model: anthropic/claude-sonnet-4-5
+
+Step 2. Start plano
+~~~~~~~~~~~~~~~~~~~
+
+Once the config file is created, ensure that you have environment variables set up for ``ANTHROPIC_API_KEY`` and ``OPENAI_API_KEY`` (or these are defined in a ``.env`` file).
+
+Start Plano:
+
+.. code-block:: console
+
+   $ planoai up plano_config.yaml
+   # Or if installed with uv tool: uvx planoai up plano_config.yaml
+   2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.1
+   2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
+   2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano
+   ...
+   2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!
+
+Step 3: Interact with LLM
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Step 3.1: Using curl command
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+   $ curl --header 'Content-Type: application/json' \
+     --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}' \
+     http://localhost:12000/v1/chat/completions
+
+   {
+     ...
+     "model": "gpt-4o-2024-08-06",
+     "choices": [
+       {
+         ...
+         "messages": {
+           "role": "assistant",
+           "content": "The capital of France is Paris.",
+         },
+       }
+     ],
+   }
+
+.. note::
+   When the requested model is not found in the configuration, Plano will randomly select an available model from the configured providers. In this example, we use ``"model": "none"`` and Plano selects the default model ``openai/gpt-4o``.
+
+Step 3.2: Using OpenAI Python client
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Make outbound calls via the Plano gateway:
+
+.. code-block:: python
+
+   from openai import OpenAI
+
+   # Use the OpenAI client as usual
+   client = OpenAI(
+     # No need to set a specific openai.api_key since it's configured in Plano's gateway
+     api_key='--',
+     # Set the OpenAI API base URL to the Plano gateway endpoint
+     base_url="http://127.0.0.1:12000/v1"
+   )
+
+   response = client.chat.completions.create(
+       # we select model from plano_config file
+       model="--",
+       messages=[{"role": "user", "content": "What is the capital of France?"}],
+   )
+
+   print("OpenAI Response:", response.choices[0].message.content)
 
 
 Build Agentic Apps with Plano
@@ -227,105 +330,6 @@ And to get the list of supported currencies:
 
    "Here is a list of the currencies that are supported for conversion from USD, along with their symbols:\n\n1. AUD - Australian Dollar\n2. BGN - Bulgarian Lev\n3. BRL - Brazilian Real\n4. CAD - Canadian Dollar\n5. CHF - Swiss Franc\n6. CNY - Chinese Renminbi Yuan\n7. CZK - Czech Koruna\n8. DKK - Danish Krone\n9. EUR - Euro\n10. GBP - British Pound\n11. HKD - Hong Kong Dollar\n12. HUF - Hungarian Forint\n13. IDR - Indonesian Rupiah\n14. ILS - Israeli New Sheqel\n15. INR - Indian Rupee\n16. ISK - Icelandic Króna\n17. JPY - Japanese Yen\n18. KRW - South Korean Won\n19. MXN - Mexican Peso\n20. MYR - Malaysian Ringgit\n21. NOK - Norwegian Krone\n22. NZD - New Zealand Dollar\n23. PHP - Philippine Peso\n24. PLN - Polish Złoty\n25. RON - Romanian Leu\n26. SEK - Swedish Krona\n27. SGD - Singapore Dollar\n28. THB - Thai Baht\n29. TRY - Turkish Lira\n30. USD - United States Dollar\n31. ZAR - South African Rand\n\nIf you want to convert USD to any of these currencies, you can select the one you are interested in."
 
-
-.. _llm_routing_quickstart:
-
-Use Plano as a Model Proxy (Gateway)
-------------------------------------
-
-Step 1. Create plano config file
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Plano operates based on a configuration file where you can define LLM providers, prompt targets, guardrails, etc. Below is an example configuration that defines OpenAI and Anthropic LLM providers.
-
-Create ``plano_config.yaml`` file with the following content:
-
-.. code-block:: yaml
-
-  version: v0.3.0
-
-  listeners:
-    - type: model
-      name: model_1
-      address: 0.0.0.0
-      port: 12000
-
-  model_providers:
-
-    - access_key: $OPENAI_API_KEY
-      model: openai/gpt-4o
-      default: true
-
-    - access_key: $ANTHROPIC_API_KEY
-      model: anthropic/claude-sonnet-4-5
-
-Step 2. Start plano
-~~~~~~~~~~~~~~~~~~~
-
-Once the config file is created, ensure that you have environment variables set up for ``ANTHROPIC_API_KEY`` and ``OPENAI_API_KEY`` (or these are defined in a ``.env`` file).
-
-Start Plano:
-
-.. code-block:: console
-
-   $ planoai up plano_config.yaml
-   # Or if installed with uv tool: uvx planoai up plano_config.yaml
-   2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.1
-   2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
-   2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano
-   ...
-   2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!
-
-Step 3: Interact with LLM
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Step 3.1: Using OpenAI Python client
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Make outbound calls via the Plano gateway:
-
-.. code-block:: python
-
-   from openai import OpenAI
-
-   # Use the OpenAI client as usual
-   client = OpenAI(
-     # No need to set a specific openai.api_key since it's configured in Plano's gateway
-     api_key='--',
-     # Set the OpenAI API base URL to the Plano gateway endpoint
-     base_url="http://127.0.0.1:12000/v1"
-   )
-
-   response = client.chat.completions.create(
-       # we select model from plano_config file
-       model="--",
-       messages=[{"role": "user", "content": "What is the capital of France?"}],
-   )
-
-   print("OpenAI Response:", response.choices[0].message.content)
-
-Step 3.2: Using curl command
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: bash
-
-   $ curl --header 'Content-Type: application/json' \
-     --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}' \
-     http://localhost:12000/v1/chat/completions
-
-   {
-     ...
-     "model": "gpt-4o-2024-08-06",
-     "choices": [
-       {
-         ...
-         "messages": {
-           "role": "assistant",
-           "content": "The capital of France is Paris.",
-         },
-       }
-     ],
-   }
 
 Next Steps
 ==========
