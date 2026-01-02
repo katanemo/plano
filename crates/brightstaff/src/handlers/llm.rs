@@ -112,7 +112,7 @@ pub async fn llm_chat(
         .map(|msg| truncate_message(&msg, 50));
 
     // Extract messages for signal analysis (clone before moving client_request)
-    let messages_for_signals = extract_messages_for_signals(&client_request);
+    let messages_for_signals = client_request.get_messages();
 
     client_request.set_model(resolved_model.clone());
     if client_request.remove_metadata_key("archgw_preference_config") {
@@ -298,8 +298,8 @@ pub async fn llm_chat(
     );
 
     // Add messages for signal analysis if available
-    if let Some(messages) = messages_for_signals {
-        base_processor = base_processor.with_messages(messages);
+    if !messages_for_signals.is_empty() {
+        base_processor = base_processor.with_messages(messages_for_signals);
     }
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===
@@ -497,16 +497,5 @@ async fn get_provider_info(
         // Last resort: use OpenAI as hardcoded fallback
         warn!("No default provider found, falling back to OpenAI");
         (hermesllm::ProviderId::OpenAI, None)
-    }
-}
-
-/// Extract messages from ProviderRequestType for signal analysis
-/// Returns None for non-ChatCompletions requests
-fn extract_messages_for_signals(
-    request: &ProviderRequestType,
-) -> Option<Vec<hermesllm::apis::openai::Message>> {
-    match request {
-        ProviderRequestType::ChatCompletionsRequest(chat_req) => Some(chat_req.messages.clone()),
-        _ => None,
     }
 }

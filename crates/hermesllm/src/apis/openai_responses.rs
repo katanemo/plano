@@ -1127,82 +1127,16 @@ impl ProviderRequest for ResponsesAPIRequest {
     }
 
     fn get_messages(&self) -> Vec<crate::apis::openai::Message> {
-        use crate::apis::openai::{Message, MessageContent, Role};
+        use crate::transforms::request::from_openai::ResponsesInputConverter;
 
-        let mut openai_messages = Vec::new();
+        // Use the shared converter to get the full conversion with image support
+        let converter = ResponsesInputConverter {
+            input: self.input.clone(),
+            instructions: self.instructions.clone(),
+        };
 
-        // Add instructions as system message if present
-        if let Some(instructions) = &self.instructions {
-            openai_messages.push(Message {
-                role: Role::System,
-                content: MessageContent::Text(instructions.clone()),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
-            });
-        }
-
-        // Convert input to messages
-        match &self.input {
-            InputParam::Text(text) => {
-                openai_messages.push(Message {
-                    role: Role::User,
-                    content: MessageContent::Text(text.clone()),
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
-                });
-            }
-            InputParam::Items(items) => {
-                for item in items {
-                    match item {
-                        InputItem::Message(msg) => {
-                            // Convert message role
-                            let role = match msg.role {
-                                MessageRole::User => Role::User,
-                                MessageRole::Assistant => Role::Assistant,
-                                MessageRole::System => Role::System,
-                                MessageRole::Developer => Role::System, // Map developer to system
-                            };
-
-                            // Extract text from message content
-                            let content = match &msg.content {
-                                crate::apis::openai_responses::MessageContent::Text(text) => {
-                                    text.clone()
-                                }
-                                crate::apis::openai_responses::MessageContent::Items(items) => {
-                                    items
-                                        .iter()
-                                        .filter_map(|c| {
-                                            if let InputContent::InputText { text } = c {
-                                                Some(text.clone())
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join("\n")
-                                }
-                            };
-
-                            openai_messages.push(Message {
-                                role,
-                                content: MessageContent::Text(content),
-                                name: None,
-                                tool_calls: None,
-                                tool_call_id: None,
-                            });
-                        }
-                        // Skip other input item types for now
-                        InputItem::ItemReference { .. } | InputItem::FunctionCallOutput { .. } => {
-                            // These are not yet supported in agent framework
-                        }
-                    }
-                }
-            }
-        }
-
-        openai_messages
+        // Convert and return, falling back to empty vec on error
+        converter.try_into().unwrap_or_else(|_| Vec::new())
     }
 
     fn set_messages(&mut self, messages: &[crate::apis::openai::Message]) {
