@@ -1,6 +1,6 @@
 [project]
 name = "planoai"
-version = "0.4.0"
+version = "0.4.1"
 description = "Python-based CLI tool to manage Plano."
 authors = [{name = "Katanemo Labs, Inc."}]
 readme = "README.md"

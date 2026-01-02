@@ -24,7 +24,7 @@ jobs:
 
       - name: build arch docker image
         run: |
-          docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.0
+          docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.1
 
       - name: install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
