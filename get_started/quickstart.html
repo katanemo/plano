@@ -160,9 +160,9 @@
 <span id="id1"></span><h1>Quickstart<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#quickstart"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h1>
 <p>Follow this guide to learn how to quickly set up Plano and integrate it into your generative AI applications. You can:</p>
 <ul class="simple">
+<li><p><a class="reference internal" href="#llm-routing-quickstart"><span class="std std-ref">Use Plano as a model proxy (Gateway)</span></a> to standardize access to multiple LLM providers.</p></li>
 <li><p><a class="reference internal" href="#quickstart-agents"><span class="std std-ref">Build agents</span></a> for multi-step workflows (e.g., travel assistants with flights and hotels).</p></li>
 <li><p><a class="reference internal" href="#quickstart-prompt-targets"><span class="std std-ref">Call deterministic APIs via prompt targets</span></a> to turn instructions directly into function calls.</p></li>
-<li><p><a class="reference internal" href="#llm-routing-quickstart"><span class="std std-ref">Use Plano as a model proxy (Gateway)</span></a> to standardize access to multiple LLM providers.</p></li>
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
@@ -195,6 +195,98 @@
 </span><span id="line-3"><span class="gp">$ </span>pip<span class="w"> </span>install<span class="w"> </span><span class="nv">planoai</span><span class="o">==</span><span class="m">0</span>.4.1
 </span></code></pre></div>
 </div>
+</section>
+<section id="use-plano-as-a-model-proxy-gateway">
+<span id="llm-routing-quickstart"></span><h2>Use Plano as a Model Proxy (Gateway)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#use-plano-as-a-model-proxy-gateway" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#use-plano-as-a-model-proxy-gateway'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<section id="step-1-create-plano-config-file">
+<h3>Step 1. Create plano config file<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-1-create-plano-config-file" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#step-1-create-plano-config-file'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>Plano operates based on a configuration file where you can define LLM providers, prompt targets, guardrails, etc. Below is an example configuration that defines OpenAI and Anthropic LLM providers.</p>
+<p>Create <code class="docutils literal notranslate"><span class="pre">plano_config.yaml</span></code> file with the following content:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v0.3.0</span>
+</span><span id="line-2">
+</span><span id="line-3"><span class="nt">listeners</span><span class="p">:</span>
+</span><span id="line-4"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model</span>
+</span><span id="line-5"><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model_1</span>
+</span><span id="line-6"><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
+</span><span id="line-7"><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12000</span>
+</span><span id="line-8">
+</span><span id="line-9"><span class="nt">model_providers</span><span class="p">:</span>
+</span><span id="line-10">
+</span><span id="line-11"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$OPENAI_API_KEY</span>
+</span><span id="line-12"><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
+</span><span id="line-13"><span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-14">
+</span><span id="line-15"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$ANTHROPIC_API_KEY</span>
+</span><span id="line-16"><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anthropic/claude-sonnet-4-5</span>
+</span></code></pre></div>
+</div>
+</section>
+<section id="step-2-start-plano">
+<h3>Step 2. Start plano<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-2-start-plano" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#step-2-start-plano'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>Once the config file is created, ensure that you have environment variables set up for <code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code> and <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code> (or these are defined in a <code class="docutils literal notranslate"><span class="pre">.env</span></code> file).</p>
+<p>Start Plano:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml
+</span><span id="line-2"><span class="gp"># </span>Or<span class="w"> </span><span class="k">if</span><span class="w"> </span>installed<span class="w"> </span>with<span class="w"> </span>uv<span class="w"> </span>tool:<span class="w"> </span>uvx<span class="w"> </span>planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml
+</span><span id="line-3"><span class="go">2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.1</span>
+</span><span id="line-4"><span class="go">2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!</span>
+</span><span id="line-5"><span class="go">2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano</span>
+</span><span id="line-6"><span class="go">...</span>
+</span><span id="line-7"><span class="go">2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!</span>
+</span></code></pre></div>
+</div>
+</section>
+<section id="step-3-interact-with-llm">
+<h3>Step 3: Interact with LLM<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-3-interact-with-llm" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#step-3-interact-with-llm'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<section id="step-3-1-using-curl-command">
+<h4>Step 3.1: Using curl command<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-3-1-using-curl-command"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h4>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">$<span class="w"> </span>curl<span class="w"> </span>--header<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="line-2"><span class="w">  </span>--data<span class="w"> </span><span class="s1">'{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}'</span><span class="w"> </span><span class="se">\</span>
+</span><span id="line-3"><span class="w">  </span>http://localhost:12000/v1/chat/completions
+</span><span id="line-4">
+</span><span id="line-5"><span class="o">{</span>
+</span><span id="line-6"><span class="w">  </span>...
+</span><span id="line-7"><span class="w">  </span><span class="s2">"model"</span>:<span class="w"> </span><span class="s2">"gpt-4o-2024-08-06"</span>,
+</span><span id="line-8"><span class="w">  </span><span class="s2">"choices"</span>:<span class="w"> </span><span class="o">[</span>
+</span><span id="line-9"><span class="w">    </span><span class="o">{</span>
+</span><span id="line-10"><span class="w">      </span>...
+</span><span id="line-11"><span class="w">      </span><span class="s2">"messages"</span>:<span class="w"> </span><span class="o">{</span>
+</span><span id="line-12"><span class="w">        </span><span class="s2">"role"</span>:<span class="w"> </span><span class="s2">"assistant"</span>,
+</span><span id="line-13"><span class="w">        </span><span class="s2">"content"</span>:<span class="w"> </span><span class="s2">"The capital of France is Paris."</span>,
+</span><span id="line-14"><span class="w">      </span><span class="o">}</span>,
+</span><span id="line-15"><span class="w">    </span><span class="o">}</span>
+</span><span id="line-16"><span class="w">  </span><span class="o">]</span>,
+</span><span id="line-17"><span class="o">}</span>
+</span></code></pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>When the requested model is not found in the configuration, Plano will randomly select an available model from the configured providers. In this example, we use <code class="docutils literal notranslate"><span class="pre">"model":</span> <span class="pre">"none"</span></code> and Plano selects the default model <code class="docutils literal notranslate"><span class="pre">openai/gpt-4o</span></code>.</p>
+</div>
+</section>
+<section id="step-3-2-using-openai-python-client">
+<h4>Step 3.2: Using OpenAI Python client<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-3-2-using-openai-python-client"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h4>
+<p>Make outbound calls via the Plano gateway:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+</span><span id="line-2">
+</span><span id="line-3"><span class="c1"># Use the OpenAI client as usual</span>
+</span><span id="line-4"><span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span>
+</span><span id="line-5">  <span class="c1"># No need to set a specific openai.api_key since it's configured in Plano's gateway</span>
+</span><span id="line-6">  <span class="n">api_key</span><span class="o">=</span><span class="s1">'--'</span><span class="p">,</span>
+</span><span id="line-7">  <span class="c1"># Set the OpenAI API base URL to the Plano gateway endpoint</span>
+</span><span id="line-8">  <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://127.0.0.1:12000/v1"</span>
+</span><span id="line-9"><span class="p">)</span>
+</span><span id="line-10">
+</span><span id="line-11"><span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+</span><span id="line-12">    <span class="c1"># we select model from plano_config file</span>
+</span><span id="line-13">    <span class="n">model</span><span class="o">=</span><span class="s2">"--"</span><span class="p">,</span>
+</span><span id="line-14">    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"What is the capital of France?"</span><span class="p">}],</span>
+</span><span id="line-15"><span class="p">)</span>
+</span><span id="line-16">
+</span><span id="line-17"><span class="nb">print</span><span class="p">(</span><span class="s2">"OpenAI Response:"</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+</span></code></pre></div>
+</div>
+</section>
+</section>
 </section>
 <section id="build-agentic-apps-with-plano">
 <h2>Build Agentic Apps with Plano<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#build-agentic-apps-with-plano" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#build-agentic-apps-with-plano'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -268,8 +360,8 @@
 <section id="deterministic-api-calls-with-prompt-targets">
 <span id="quickstart-prompt-targets"></span><h3>Deterministic API calls with prompt targets<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#deterministic-api-calls-with-prompt-targets" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#deterministic-api-calls-with-prompt-targets'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
 <p>Next, we’ll show Plano’s deterministic API calling using a single prompt target. We’ll build a currency exchange backend powered by <cite>https://api.frankfurter.dev/</cite>, assuming USD as the base currency.</p>
-<section id="step-1-create-plano-config-file">
-<h4>Step 1. Create plano config file<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-1-create-plano-config-file"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h4>
+<section id="id2">
+<h4>Step 1. Create plano config file<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id2"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h4>
 <p>Create <code class="docutils literal notranslate"><span class="pre">plano_config.yaml</span></code> file with the following content:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v0.1.0</span>
 </span><span id="line-2">
@@ -351,94 +443,6 @@
 </section>
 </section>
 </section>
-<section id="use-plano-as-a-model-proxy-gateway">
-<span id="llm-routing-quickstart"></span><h2>Use Plano as a Model Proxy (Gateway)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#use-plano-as-a-model-proxy-gateway" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#use-plano-as-a-model-proxy-gateway'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<section id="id2">
-<h3>Step 1. Create plano config file<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id2" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#id2'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<p>Plano operates based on a configuration file where you can define LLM providers, prompt targets, guardrails, etc. Below is an example configuration that defines OpenAI and Anthropic LLM providers.</p>
-<p>Create <code class="docutils literal notranslate"><span class="pre">plano_config.yaml</span></code> file with the following content:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v0.3.0</span>
-</span><span id="line-2">
-</span><span id="line-3"><span class="nt">listeners</span><span class="p">:</span>
-</span><span id="line-4"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model</span>
-</span><span id="line-5"><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model_1</span>
-</span><span id="line-6"><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
-</span><span id="line-7"><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12000</span>
-</span><span id="line-8">
-</span><span id="line-9"><span class="nt">model_providers</span><span class="p">:</span>
-</span><span id="line-10">
-</span><span id="line-11"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$OPENAI_API_KEY</span>
-</span><span id="line-12"><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
-</span><span id="line-13"><span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="line-14">
-</span><span id="line-15"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$ANTHROPIC_API_KEY</span>
-</span><span id="line-16"><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anthropic/claude-sonnet-4-5</span>
-</span></code></pre></div>
-</div>
-</section>
-<section id="step-2-start-plano">
-<h3>Step 2. Start plano<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-2-start-plano" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#step-2-start-plano'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<p>Once the config file is created, ensure that you have environment variables set up for <code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code> and <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code> (or these are defined in a <code class="docutils literal notranslate"><span class="pre">.env</span></code> file).</p>
-<p>Start Plano:</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml
-</span><span id="line-2"><span class="gp"># </span>Or<span class="w"> </span><span class="k">if</span><span class="w"> </span>installed<span class="w"> </span>with<span class="w"> </span>uv<span class="w"> </span>tool:<span class="w"> </span>uvx<span class="w"> </span>planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml
-</span><span id="line-3"><span class="go">2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.1</span>
-</span><span id="line-4"><span class="go">2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!</span>
-</span><span id="line-5"><span class="go">2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano</span>
-</span><span id="line-6"><span class="go">...</span>
-</span><span id="line-7"><span class="go">2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!</span>
-</span></code></pre></div>
-</div>
-</section>
-<section id="step-3-interact-with-llm">
-<h3>Step 3: Interact with LLM<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-3-interact-with-llm" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#step-3-interact-with-llm'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<section id="step-3-1-using-openai-python-client">
-<h4>Step 3.1: Using OpenAI Python client<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-3-1-using-openai-python-client"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h4>
-<p>Make outbound calls via the Plano gateway:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
-</span><span id="line-2">
-</span><span id="line-3"><span class="c1"># Use the OpenAI client as usual</span>
-</span><span id="line-4"><span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span>
-</span><span id="line-5">  <span class="c1"># No need to set a specific openai.api_key since it's configured in Plano's gateway</span>
-</span><span id="line-6">  <span class="n">api_key</span><span class="o">=</span><span class="s1">'--'</span><span class="p">,</span>
-</span><span id="line-7">  <span class="c1"># Set the OpenAI API base URL to the Plano gateway endpoint</span>
-</span><span id="line-8">  <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://127.0.0.1:12000/v1"</span>
-</span><span id="line-9"><span class="p">)</span>
-</span><span id="line-10">
-</span><span id="line-11"><span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
-</span><span id="line-12">    <span class="c1"># we select model from plano_config file</span>
-</span><span id="line-13">    <span class="n">model</span><span class="o">=</span><span class="s2">"--"</span><span class="p">,</span>
-</span><span id="line-14">    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"What is the capital of France?"</span><span class="p">}],</span>
-</span><span id="line-15"><span class="p">)</span>
-</span><span id="line-16">
-</span><span id="line-17"><span class="nb">print</span><span class="p">(</span><span class="s2">"OpenAI Response:"</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
-</span></code></pre></div>
-</div>
-</section>
-<section id="step-3-2-using-curl-command">
-<h4>Step 3.2: Using curl command<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-3-2-using-curl-command"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h4>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">$<span class="w"> </span>curl<span class="w"> </span>--header<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="line-2"><span class="w">  </span>--data<span class="w"> </span><span class="s1">'{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}'</span><span class="w"> </span><span class="se">\</span>
-</span><span id="line-3"><span class="w">  </span>http://localhost:12000/v1/chat/completions
-</span><span id="line-4">
-</span><span id="line-5"><span class="o">{</span>
-</span><span id="line-6"><span class="w">  </span>...
-</span><span id="line-7"><span class="w">  </span><span class="s2">"model"</span>:<span class="w"> </span><span class="s2">"gpt-4o-2024-08-06"</span>,
-</span><span id="line-8"><span class="w">  </span><span class="s2">"choices"</span>:<span class="w"> </span><span class="o">[</span>
-</span><span id="line-9"><span class="w">    </span><span class="o">{</span>
-</span><span id="line-10"><span class="w">      </span>...
-</span><span id="line-11"><span class="w">      </span><span class="s2">"messages"</span>:<span class="w"> </span><span class="o">{</span>
-</span><span id="line-12"><span class="w">        </span><span class="s2">"role"</span>:<span class="w"> </span><span class="s2">"assistant"</span>,
-</span><span id="line-13"><span class="w">        </span><span class="s2">"content"</span>:<span class="w"> </span><span class="s2">"The capital of France is Paris."</span>,
-</span><span id="line-14"><span class="w">      </span><span class="o">}</span>,
-</span><span id="line-15"><span class="w">    </span><span class="o">}</span>
-</span><span id="line-16"><span class="w">  </span><span class="o">]</span>,
-</span><span id="line-17"><span class="o">}</span>
-</span></code></pre></div>
-</div>
-</section>
-</section>
-</section>
 </section>
 <section id="next-steps">
 <h1>Next Steps<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#next-steps"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h1>
@@ -472,6 +476,16 @@
 <ul>
 <li><ul>
 <li><a :data-current="activeSection === '#prerequisites'" class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a :data-current="activeSection === '#use-plano-as-a-model-proxy-gateway'" class="reference internal" href="#use-plano-as-a-model-proxy-gateway">Use Plano as a Model Proxy (Gateway)</a><ul>
+<li><a :data-current="activeSection === '#step-1-create-plano-config-file'" class="reference internal" href="#step-1-create-plano-config-file">Step 1. Create plano config file</a></li>
+<li><a :data-current="activeSection === '#step-2-start-plano'" class="reference internal" href="#step-2-start-plano">Step 2. Start plano</a></li>
+<li><a :data-current="activeSection === '#step-3-interact-with-llm'" class="reference internal" href="#step-3-interact-with-llm">Step 3: Interact with LLM</a><ul>
+<li><a :data-current="activeSection === '#step-3-1-using-curl-command'" class="reference internal" href="#step-3-1-using-curl-command">Step 3.1: Using curl command</a></li>
+<li><a :data-current="activeSection === '#step-3-2-using-openai-python-client'" class="reference internal" href="#step-3-2-using-openai-python-client">Step 3.2: Using OpenAI Python client</a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li><a :data-current="activeSection === '#build-agentic-apps-with-plano'" class="reference internal" href="#build-agentic-apps-with-plano">Build Agentic Apps with Plano</a><ul>
 <li><a :data-current="activeSection === '#building-agents-with-plano-orchestration'" class="reference internal" href="#building-agents-with-plano-orchestration">Building agents with Plano orchestration</a><ul>
 <li><a :data-current="activeSection === '#step-1-minimal-orchestration-config'" class="reference internal" href="#step-1-minimal-orchestration-config">Step 1. Minimal orchestration config</a></li>
@@ -480,19 +494,9 @@
 </ul>
 </li>
 <li><a :data-current="activeSection === '#deterministic-api-calls-with-prompt-targets'" class="reference internal" href="#deterministic-api-calls-with-prompt-targets">Deterministic API calls with prompt targets</a><ul>
-<li><a :data-current="activeSection === '#step-1-create-plano-config-file'" class="reference internal" href="#step-1-create-plano-config-file">Step 1. Create plano config file</a></li>
+<li><a :data-current="activeSection === '#id2'" class="reference internal" href="#id2">Step 1. Create plano config file</a></li>
 <li><a :data-current="activeSection === '#step-2-start-plano-with-currency-conversion-config'" class="reference internal" href="#step-2-start-plano-with-currency-conversion-config">Step 2. Start plano with currency conversion config</a></li>
 <li><a :data-current="activeSection === '#step-3-interacting-with-gateway-using-curl-command'" class="reference internal" href="#step-3-interacting-with-gateway-using-curl-command">Step 3. Interacting with gateway using curl command</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a :data-current="activeSection === '#use-plano-as-a-model-proxy-gateway'" class="reference internal" href="#use-plano-as-a-model-proxy-gateway">Use Plano as a Model Proxy (Gateway)</a><ul>
-<li><a :data-current="activeSection === '#id2'" class="reference internal" href="#id2">Step 1. Create plano config file</a></li>
-<li><a :data-current="activeSection === '#step-2-start-plano'" class="reference internal" href="#step-2-start-plano">Step 2. Start plano</a></li>
-<li><a :data-current="activeSection === '#step-3-interact-with-llm'" class="reference internal" href="#step-3-interact-with-llm">Step 3: Interact with LLM</a><ul>
-<li><a :data-current="activeSection === '#step-3-1-using-openai-python-client'" class="reference internal" href="#step-3-1-using-openai-python-client">Step 3.1: Using OpenAI Python client</a></li>
-<li><a :data-current="activeSection === '#step-3-2-using-curl-command'" class="reference internal" href="#step-3-2-using-curl-command">Step 3.2: Using curl command</a></li>
 </ul>
 </li>
 </ul>
