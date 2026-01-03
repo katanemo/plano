@@ -22,6 +22,7 @@
   },
   "packageManager": "npm@10.0.0",
   "dependencies": {
+    "next": "^16.1.1",
     "react": "^19.2.3",
     "resend": "^6.6.0"
   }
