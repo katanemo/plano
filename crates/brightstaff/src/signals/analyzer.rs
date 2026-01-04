@@ -2465,4 +2465,128 @@ mod tests {
             "Polite disappointment should not be classified as Excellent"
         );
     }
+
+    #[test]
+    fn test_catastrophic_failure_looping_assistant() {
+        let analyzer = SignalAnalyzer::new();
+
+        // Catastrophic failure: assistant stuck in loop, user increasingly frustrated
+        let messages = vec![
+            // Turn 1: Initial request
+            create_message(Role::User, "I need to cancel my subscription"),
+            create_message(Role::Assistant, "I can help you with account management. What would you like to do today?"),
+
+            // Turn 3: First repair - repetition clarification
+            create_message(Role::User, "I just said I want to cancel my subscription"),
+            // Turn 4: Exact repetition from assistant
+            create_message(Role::Assistant, "I can help you with account management. What would you like to do today?"),
+
+            // Turn 5: Repair (negation) + frustration (ALL CAPS)
+            create_message(Role::User, "No, I meant CANCEL. My. Subscription."),
+            // Turn 6: Near-duplicate repetition
+            create_message(Role::Assistant, "I understand you need help with your account. Let me assist you with that."),
+
+            // Turn 7: Severe frustration (complaint + excessive punctuation + ALL CAPS)
+            create_message(Role::User, "This is not helpful!! I want to CANCEL my subscription!!!"),
+            // Turn 8: Exact repetition again (looping)
+            create_message(Role::Assistant, "I can help you with account management. What would you like to do today?"),
+
+            // Turn 9: Repair (explicit rephrase) + frustration (complaint)
+            create_message(Role::User, "This doesnt work. Let me rephrase: I need to terminate my account and stop being charged"),
+            // Turn 10: Near-duplicate repetition (looping continues)
+            create_message(Role::Assistant, "I understand you need help with your account. Let me assist you with that."),
+
+            // Turn 11: Escalation (multiple types) + frustration
+            create_message(Role::User, "I give up. Can I speak to a real person? This is a waste of time"),
+        ];
+
+        let report = analyzer.analyze(&messages);
+
+        // Validate turn count
+        assert_eq!(
+            report.turn_count.total_turns, 11,
+            "Should have 11 total turns"
+        );
+        assert_eq!(report.turn_count.user_turns, 6, "Should have 6 user turns");
+        assert_eq!(
+            report.turn_count.assistant_turns, 5,
+            "Should have 5 assistant turns"
+        );
+        assert!(
+            report.turn_count.is_concerning,
+            "11 turns should be concerning (>7)"
+        );
+        assert!(
+            !report.turn_count.is_excessive,
+            "11 turns should not be excessive (<=12)"
+        );
+        assert!(
+            report.turn_count.efficiency_score < 0.5,
+            "Efficiency should be low"
+        );
+
+        // Validate repair detection (USER signals - query reformulation)
+        // Detected repairs:
+        // 1. "I just said I want to cancel..." - pattern: "I just said"
+        // 2. "No, I meant CANCEL..." - pattern: "No, I meant"
+        // 3. "Let me rephrase: I need to terminate..." - pattern: "let me rephrase"
+        // Note: "This is not helpful!!" is frustration (not repair)
+        // Note: "I give up..." is escalation (not repair)
+        assert_eq!(
+            report.follow_up.repair_count, 3,
+            "Should detect exactly 3 repair attempts from user messages"
+        );
+        assert_eq!(
+            report.follow_up.repair_ratio, 0.5,
+            "Repair ratio should be 0.5 (3 repairs / 6 user messages)"
+        );
+        assert!(
+            report.follow_up.is_concerning,
+            "50% repair ratio should be highly concerning (threshold is 30%)"
+        );
+
+        // Validate frustration detection
+        assert!(
+            report.frustration.has_frustration,
+            "Should detect frustration"
+        );
+        assert!(
+            report.frustration.frustration_count >= 4,
+            "Should detect multiple frustration indicators"
+        );
+        assert!(
+            report.frustration.severity >= 2,
+            "Should be at least moderate frustration"
+        );
+
+        // Validate repetition/looping detection (ASSISTANT signals - not following instructions)
+        // The assistant repeats the same unhelpful responses multiple times:
+        // 1. "I can help you with account management..." appears 3 times (exact repetition)
+        // 2. "I understand you need help with your account..." appears 2 times (near-duplicate)
+        assert!(
+            report.repetition.repetition_count >= 4,
+            "Should detect at least 4 assistant repetitions (exact + near-duplicates)"
+        );
+        assert!(
+            report.repetition.has_looping,
+            "Should detect looping (>2 repetitions indicates stuck agent)"
+        );
+        assert!(
+            report.repetition.severity >= 2,
+            "Should be moderate to severe looping (assistant not adapting)"
+        );
+
+        // Validate escalation detection
+        assert!(
+            report.escalation.escalation_requested,
+            "Should detect escalation request"
+        );
+        assert!(
+            report.escalation.escalation_count >= 2,
+            "Should detect multiple escalation indicators: 'give up' + 'speak to a real person'"
+        );
+
+        // Validate overall quality
+        assert_eq!(report.overall_quality, InteractionQuality::Severe, "Should be classified as Severe due to escalation + excessive frustration + looping + high repair ratio");
+    }
 }

@@ -86,6 +86,11 @@ Example queries:
 - Find positive interactions: ``signals.positive_feedback.count >= 2``
 - Find escalations: ``signals.escalation.requested = "true"``
 
+.. image:: /_static/img/signals_trace.png
+   :width: 100%
+   :align: center
+
+
 Core Signal Types
 =================
 
@@ -115,10 +120,10 @@ Follow-Up & Repair Frequency
 ----------------------------
 
 **What it measures**
-    How often users clarify, correct, or rephrase requests.
+    How often users clarify, correct, or rephrase requests. This is a **user signal** tracking query reformulation behavior—when users must repair or rephrase their requests because the agent didn't understand or respond appropriately.
 
 **Why it matters**
-    High repair frequency is a proxy for misunderstanding or intent drift.
+    High repair frequency is a proxy for misunderstanding or intent drift. When users repeatedly rephrase the same request, it indicates the agent is failing to grasp or act on the user's intent.
 
 **Key metrics**
 
@@ -165,10 +170,10 @@ Repetition & Looping
 --------------------
 
 **What it measures**
-    Assistant repetition / degenerative loops.
+    Assistant repetition / degenerative loops. This is an **assistant signal** tracking when the agent repeats itself, fails to follow instructions, or gets stuck in loops—indicating the agent is not making progress or adapting its responses.
 
 **Why it matters**
-    Often indicates missing state tracking, broken tool integration, or prompt issues.
+    Often indicates missing state tracking, broken tool integration, prompt issues, or the agent ignoring user corrections. High repetition means the agent is not learning from the conversation context.
 
 **Detection method**
 
@@ -176,7 +181,7 @@ Repetition & Looping
 - Classify:
 
   - **Exact**: similarity >= 0.85
-  - **Near-duplicate**: similarity >= 0.60
+  - **Near-duplicate**: similarity >= 0.50
 
 - Looping is flagged when repetition instances exceed 2 in a session.
 
