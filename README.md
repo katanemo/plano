@@ -43,7 +43,7 @@ Plano pulls rote plumbing out of your framework so you can stay focused on what 
 
 ## Build Agentic Apps with Plano
 
-Skip the plumbing. Plano handles **routing, model management, and observability** so you can focus on your agent's core logic. Here's a multi-agent travel assistant with zero infrastructure code.
+Plano handles **orchestration, model management, and observability** as modular building blocks - letting you configure only what you need (edge proxying for agentic orchestration and guardrails, or LLM routing from your services, or both together) to fit cleanly into existing architectures. Below is a simple multi-agent travel agent built with Plano that showcases all three core capabilities
 
 > 📁 **Full working code:** See [`demos/use_cases/travel_agents/`](demos/use_cases/travel_agents/) for complete weather and flight agents you can run locally.
 
@@ -108,10 +108,11 @@ llm = AsyncOpenAI(base_url="http://localhost:12001/v1", api_key="EMPTY")
 async def chat(request: Request):
     body = await request.json()
     messages = body.get("messages", [])
+    days = 7
 
     # Your agent logic: fetch data, call APIs, run tools
     # See demos/use_cases/travel_agents/ for the full implementation
-    weather_data = await get_weather_for_city(messages)
+    weather_data = await get_weather_data(request, messages, days)
 
     # Stream the response back through Plano
     async def generate():
@@ -131,23 +132,20 @@ async def chat(request: Request):
 ```bash
 # Start Plano
 planoai up config.yaml
+...
 
-# Query - Plano routes to the right agent automatically
+# Query - Plano intelligently routes to both agents in a single conversation
 curl http://localhost:8001/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "What is the weather in Paris?"}]
+    "messages": [
+      {"role": "user", "content": "I want to travel from NYC to Paris next week. What is the weather like there, and can you find me some flights?"}
+    ]
   }'
-# → Routes to weather_agent ✓
-
-curl http://localhost:8001/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "Find me flights from NYC to Tokyo"}]
-  }'
-# → Routes to flight_agent ✓
+# → Plano routes to weather_agent for Paris weather ✓
+# → Then routes to flight_agent for NYC → Paris flights ✓
+# → Returns a complete travel plan with both weather info and flight options
 ```
 
 ### 4. Get Observability and Model Agility for Free
@@ -160,11 +158,10 @@ Every request is traced end-to-end with OpenTelemetry - no instrumentation code 
 
 | Infrastructure Concern | Without Plano | With Plano |
 |---------|---------------|------------|
-| **Agent Routing** | Write intent classifier + routing logic | Declare agent descriptions in YAML |
-| **Model Management** | Handle each provider's API quirks | Unified OpenAI-compatible interface |
-| **Model Switching** | Redeploy code for model changes | Change model name in request |
-| **Tracing** | Instrument every service with OTEL | Automatic end-to-end traces |
-| **Evaluation Data** | Build pipeline to capture/export spans | Built-in sampling & export |
+| **Agent Orchestration** | Write intent classifier + routing logic | Declare agent descriptions in YAML |
+| **Model Management** | Handle each provider's API quirks | Unified LLM APIs with state management |
+| **Rich Tracing** | Instrument every service with OTEL | Automatic end-to-end traces and logs |
+| **Learning Signals** | Build pipeline to capture/export spans | Zero-code agentic signals |
 | **Adding Agents** | Update routing code, test, redeploy | Add to config, restart |
 
 **Why it's efficient:** Plano uses purpose-built, lightweight LLMs (like our 4B-parameter orchestrator) instead of heavyweight frameworks or GPT-4 for routing - giving you production-grade routing at a fraction of the cost and latency.
@@ -181,10 +178,9 @@ Ready to try Plano? Check out our comprehensive documentation:
 - **[Quickstart Guide](https://docs.planoai.dev/get_started/quickstart.html)** - Get up and running in minutes
 - **[LLM Routing](https://docs.planoai.dev/guides/llm_router.html)** - Route by model name, alias, or intelligent preferences
 - **[Agent Orchestration](https://docs.planoai.dev/guides/orchestration.html)** - Build multi-agent workflows
+- **[Filter Chains](https://docs.planoai.dev/concepts/filter_chain.html)** - Add guardrails, moderation, and memory hooks
 - **[Prompt Targets](https://docs.planoai.dev/concepts/prompt_target.html)** - Turn prompts into deterministic API calls
 - **[Observability](https://docs.planoai.dev/guides/observability/observability.html)** - Traces, metrics, and logs
 
 ## Contribution
-We would love feedback on our [Roadmap](https://github.com/orgs/katanemo/projects/1) and we welcome contributions to **Plano**!
-Whether you're fixing bugs, adding new features, improving documentation, or creating tutorials, your help is much appreciated.
-Please visit our [Contribution Guide](CONTRIBUTING.md) for more details
+We would love feedback on our [Roadmap](https://github.com/orgs/katanemo/projects/1) and we welcome contributions to **Plano**! Whether you're fixing bugs, adding new features, improving documentation, or creating tutorials, your help is much appreciated. Please visit our [Contribution Guide](CONTRIBUTING.md) for more details
