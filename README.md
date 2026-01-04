@@ -3,12 +3,11 @@
 </div>
 <div align="center">
 
- _Plano is a models-native proxy server and data plane for agents._<br><br>
- Plano pulls out the rote plumbing work and decouples you from brittle framework abstractions, centralizing what shouldn’t be bespoke in every codebase - like agent routing and orchestration, rich agentic signals and traces for continuous improvement, guardrail filters for safety and moderation, and smart LLM routing APIs for UX and DX agility. Use any language or AI framework, and deliver agents faster to production.
+ _The AI-native proxy server and data plane for agentic apps._<br><br>
+ Plano pulls out the rote plumbing work and decouples you from brittle framework abstractions, centralizing what shouldn’t be bespoke in every codebase - like agent routing and orchestration, rich agentic signals and traces for continuous improvement, guardrail filters for safety and moderation, and smart LLM routing APIs for model agility. Use any language or AI framework, and deliver agents faster to production.
 
 
 [Quickstart](#Quickstart) •
-[Route LLMs](#use-plano-as-a-llm-router) •
 [Build Agentic Apps with Plano](#Build-Agentic-Apps-with-Plano) •
 [Documentation](https://docs.planoai.dev) •
 [Contact](#Contact)
@@ -39,6 +38,138 @@ Plano pulls rote plumbing out of your framework so you can stay focused on what 
 
 > [!IMPORTANT]
 > Plano and the Arch family of LLMs (like Plano-Orchestrator-4B, Arch-Router, etc) are hosted free of charge in the US-central region to give you a great first-run developer experience of Plano. To scale and run in production, you can either run these LLMs locally or contact us on [Discord](https://discord.gg/pGZf2gcwEc) for API keys.
+
+---
+
+## Build Agentic Apps with Plano
+
+Skip the plumbing. Plano handles **routing, model management, and observability** so you can focus on your agent's core logic. Here's a multi-agent travel assistant with zero infrastructure code.
+
+> 📁 **Full working code:** See [`demos/use_cases/travel_agents/`](demos/use_cases/travel_agents/) for complete weather and flight agents you can run locally.
+
+### 1. Define Your Agents in YAML
+
+```yaml
+# config.yaml
+version: v0.3.0
+
+# What you declare: Agent URLs and natural language descriptions
+# What you don't write: Intent classifiers, routing logic, model fallbacks, provider adapters, or tracing instrumentation
+
+agents:
+  - id: weather_agent
+    url: http://localhost:10510
+  - id: flight_agent
+    url: http://localhost:10520
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: anthropic/claude-3-5-sonnet
+    access_key: $ANTHROPIC_API_KEY
+
+listeners:
+  - type: agent
+    name: travel_assistant
+    port: 8001
+    router: plano_orchestrator_v1  # Powered by our 4B-parameter routing model. You can change this to different models
+    agents:
+      - id: weather_agent
+        description: |
+          Gets real-time weather and forecasts for any city worldwide.
+          Handles: "What's the weather in Paris?", "Will it rain in Tokyo?"
+
+      - id: flight_agent
+        description: |
+          Searches flights between airports with live status and schedules.
+          Handles: "Flights from NYC to LA", "Show me flights to Seattle"
+
+tracing:
+  random_sampling: 100  # Auto-capture traces for evaluation
+```
+
+### 2. Write Simple Agent Code
+
+Your agents are just HTTP servers that implement the OpenAI-compatible chat completions endpoint. Use any language or framework:
+
+```python
+# weather_agent.py
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+from openai import AsyncOpenAI
+
+app = FastAPI()
+
+# Point to Plano's LLM gateway - it handles model routing for you
+llm = AsyncOpenAI(base_url="http://localhost:12001/v1", api_key="EMPTY")
+
+@app.post("/v1/chat/completions")
+async def chat(request: Request):
+    body = await request.json()
+    messages = body.get("messages", [])
+
+    # Your agent logic: fetch data, call APIs, run tools
+    # See demos/use_cases/travel_agents/ for the full implementation
+    weather_data = await get_weather_for_city(messages)
+
+    # Stream the response back through Plano
+    async def generate():
+        stream = await llm.chat.completions.create(
+            model="openai/gpt-4o",
+            messages=[{"role": "system", "content": f"Weather: {weather_data}"}, *messages],
+            stream=True
+        )
+        async for chunk in stream:
+            yield f"data: {chunk.model_dump_json()}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
+
+### 3. Start Plano & Query Your Agents
+
+```bash
+# Start Plano
+planoai up config.yaml
+
+# Query - Plano routes to the right agent automatically
+curl http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "What is the weather in Paris?"}]
+  }'
+# → Routes to weather_agent ✓
+
+curl http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Find me flights from NYC to Tokyo"}]
+  }'
+# → Routes to flight_agent ✓
+```
+
+### 4. Get Observability and Model Agility for Free
+
+Every request is traced end-to-end with OpenTelemetry - no instrumentation code needed.
+
+![Atomatic Tracing](docs/source/_static/img/demo_tracing.png)
+
+### What You Didn't Have to Build
+
+| Infrastructure Concern | Without Plano | With Plano |
+|---------|---------------|------------|
+| **Agent Routing** | Write intent classifier + routing logic | Declare agent descriptions in YAML |
+| **Model Management** | Handle each provider's API quirks | Unified OpenAI-compatible interface |
+| **Model Switching** | Redeploy code for model changes | Change model name in request |
+| **Tracing** | Instrument every service with OTEL | Automatic end-to-end traces |
+| **Evaluation Data** | Build pipeline to capture/export spans | Built-in sampling & export |
+| **Adding Agents** | Update routing code, test, redeploy | Add to config, restart |
+
+**Why it's efficient:** Plano uses purpose-built, lightweight LLMs (like our 4B-parameter orchestrator) instead of heavyweight frameworks or GPT-4 for routing - giving you production-grade routing at a fraction of the cost and latency.
+
+---
 
 ## Contact
 To get in touch with us, please join our [discord server](https://discord.gg/pGZf2gcwEc). We actively monitor that and offer support there.
