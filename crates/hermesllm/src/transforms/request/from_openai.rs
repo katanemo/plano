@@ -25,6 +25,150 @@ use crate::transforms::*;
 type AnthropicMessagesRequest = MessagesRequest;
 
 // ============================================================================
+// RESPONSES API INPUT CONVERSION
+// ============================================================================
+
+/// Helper struct for converting ResponsesAPI input to OpenAI messages
+pub struct ResponsesInputConverter {
+    pub input: InputParam,
+    pub instructions: Option<String>,
+}
+
+impl TryFrom<ResponsesInputConverter> for Vec<Message> {
+    type Error = TransformError;
+
+    fn try_from(converter: ResponsesInputConverter) -> Result<Self, Self::Error> {
+        // Convert input to messages
+        match converter.input {
+            InputParam::Text(text) => {
+                // Simple text input becomes a user message
+                let mut messages = Vec::new();
+
+                // Add instructions as system message if present
+                if let Some(instructions) = converter.instructions {
+                    messages.push(Message {
+                        role: Role::System,
+                        content: MessageContent::Text(instructions),
+                        name: None,
+                        tool_call_id: None,
+                        tool_calls: None,
+                    });
+                }
+
+                // Add the user message
+                messages.push(Message {
+                    role: Role::User,
+                    content: MessageContent::Text(text),
+                    name: None,
+                    tool_call_id: None,
+                    tool_calls: None,
+                });
+
+                Ok(messages)
+            }
+            InputParam::Items(items) => {
+                // Convert input items to messages
+                let mut converted_messages = Vec::new();
+
+                // Add instructions as system message if present
+                if let Some(instructions) = converter.instructions {
+                    converted_messages.push(Message {
+                        role: Role::System,
+                        content: MessageContent::Text(instructions),
+                        name: None,
+                        tool_call_id: None,
+                        tool_calls: None,
+                    });
+                }
+
+                // Convert each input item
+                for item in items {
+                    if let InputItem::Message(input_msg) = item {
+                        let role = match input_msg.role {
+                            MessageRole::User => Role::User,
+                            MessageRole::Assistant => Role::Assistant,
+                            MessageRole::System => Role::System,
+                            MessageRole::Developer => Role::System, // Map developer to system
+                        };
+
+                        // Convert content based on MessageContent type
+                        let content = match &input_msg.content {
+                            crate::apis::openai_responses::MessageContent::Text(text) => {
+                                // Simple text content
+                                MessageContent::Text(text.clone())
+                            }
+                            crate::apis::openai_responses::MessageContent::Items(content_items) => {
+                                // Check if it's a single text item (can use simple text format)
+                                if content_items.len() == 1 {
+                                    if let InputContent::InputText { text } = &content_items[0] {
+                                        MessageContent::Text(text.clone())
+                                    } else {
+                                        // Single non-text item - use parts format
+                                        MessageContent::Parts(
+                                            content_items.iter()
+                                                .filter_map(|c| match c {
+                                                    InputContent::InputText { text } => {
+                                                        Some(crate::apis::openai::ContentPart::Text { text: text.clone() })
+                                                    }
+                                                    InputContent::InputImage { image_url, .. } => {
+                                                        Some(crate::apis::openai::ContentPart::ImageUrl {
+                                                            image_url: crate::apis::openai::ImageUrl {
+                                                                url: image_url.clone(),
+                                                                detail: None,
+                                                            }
+                                                        })
+                                                    }
+                                                    InputContent::InputFile { .. } => None, // Skip files for now
+                                                    InputContent::InputAudio { .. } => None, // Skip audio for now
+                                                })
+                                                .collect()
+                                        )
+                                    }
+                                } else {
+                                    // Multiple content items - convert to parts
+                                    MessageContent::Parts(
+                                        content_items
+                                            .iter()
+                                            .filter_map(|c| match c {
+                                                InputContent::InputText { text } => {
+                                                    Some(crate::apis::openai::ContentPart::Text {
+                                                        text: text.clone(),
+                                                    })
+                                                }
+                                                InputContent::InputImage { image_url, .. } => Some(
+                                                    crate::apis::openai::ContentPart::ImageUrl {
+                                                        image_url: crate::apis::openai::ImageUrl {
+                                                            url: image_url.clone(),
+                                                            detail: None,
+                                                        },
+                                                    },
+                                                ),
+                                                InputContent::InputFile { .. } => None, // Skip files for now
+                                                InputContent::InputAudio { .. } => None, // Skip audio for now
+                                            })
+                                            .collect(),
+                                    )
+                                }
+                            }
+                        };
+
+                        converted_messages.push(Message {
+                            role,
+                            content,
+                            name: None,
+                            tool_call_id: None,
+                            tool_calls: None,
+                        });
+                    }
+                }
+
+                Ok(converted_messages)
+            }
+        }
+    }
+}
+
+// ============================================================================
 // MAIN REQUEST TRANSFORMATIONS
 // ============================================================================
 
@@ -253,117 +397,12 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
     type Error = TransformError;
 
     fn try_from(req: ResponsesAPIRequest) -> Result<Self, Self::Error> {
-        // Convert input to messages
-        let messages = match req.input {
-            InputParam::Text(text) => {
-                // Simple text input becomes a user message
-                vec![Message {
-                    role: Role::User,
-                    content: MessageContent::Text(text),
-                    name: None,
-                    tool_call_id: None,
-                    tool_calls: None,
-                }]
-            }
-            InputParam::Items(items) => {
-                // Convert input items to messages
-                let mut converted_messages = Vec::new();
-
-                // Add instructions as system message if present
-                if let Some(instructions) = &req.instructions {
-                    converted_messages.push(Message {
-                        role: Role::System,
-                        content: MessageContent::Text(instructions.clone()),
-                        name: None,
-                        tool_call_id: None,
-                        tool_calls: None,
-                    });
-                }
-
-                // Convert each input item
-                for item in items {
-                    if let InputItem::Message(input_msg) = item {
-                        let role = match input_msg.role {
-                            MessageRole::User => Role::User,
-                            MessageRole::Assistant => Role::Assistant,
-                            MessageRole::System => Role::System,
-                            MessageRole::Developer => Role::System, // Map developer to system
-                        };
-
-                        // Convert content based on MessageContent type
-                        let content = match &input_msg.content {
-                            crate::apis::openai_responses::MessageContent::Text(text) => {
-                                // Simple text content
-                                MessageContent::Text(text.clone())
-                            }
-                            crate::apis::openai_responses::MessageContent::Items(content_items) => {
-                                // Check if it's a single text item (can use simple text format)
-                                if content_items.len() == 1 {
-                                    if let InputContent::InputText { text } = &content_items[0] {
-                                        MessageContent::Text(text.clone())
-                                    } else {
-                                        // Single non-text item - use parts format
-                                        MessageContent::Parts(
-                                            content_items.iter()
-                                                .filter_map(|c| match c {
-                                                    InputContent::InputText { text } => {
-                                                        Some(crate::apis::openai::ContentPart::Text { text: text.clone() })
-                                                    }
-                                                    InputContent::InputImage { image_url, .. } => {
-                                                        Some(crate::apis::openai::ContentPart::ImageUrl {
-                                                            image_url: crate::apis::openai::ImageUrl {
-                                                                url: image_url.clone(),
-                                                                detail: None,
-                                                            }
-                                                        })
-                                                    }
-                                                    InputContent::InputFile { .. } => None, // Skip files for now
-                                                    InputContent::InputAudio { .. } => None, // Skip audio for now
-                                                })
-                                                .collect()
-                                        )
-                                    }
-                                } else {
-                                    // Multiple content items - convert to parts
-                                    MessageContent::Parts(
-                                        content_items
-                                            .iter()
-                                            .filter_map(|c| match c {
-                                                InputContent::InputText { text } => {
-                                                    Some(crate::apis::openai::ContentPart::Text {
-                                                        text: text.clone(),
-                                                    })
-                                                }
-                                                InputContent::InputImage { image_url, .. } => Some(
-                                                    crate::apis::openai::ContentPart::ImageUrl {
-                                                        image_url: crate::apis::openai::ImageUrl {
-                                                            url: image_url.clone(),
-                                                            detail: None,
-                                                        },
-                                                    },
-                                                ),
-                                                InputContent::InputFile { .. } => None, // Skip files for now
-                                                InputContent::InputAudio { .. } => None, // Skip audio for now
-                                            })
-                                            .collect(),
-                                    )
-                                }
-                            }
-                        };
-
-                        converted_messages.push(Message {
-                            role,
-                            content,
-                            name: None,
-                            tool_call_id: None,
-                            tool_calls: None,
-                        });
-                    }
-                }
-
-                converted_messages
-            }
+        // Convert input to messages using the shared converter
+        let converter = ResponsesInputConverter {
+            input: req.input,
+            instructions: req.instructions.clone(),
         };
+        let messages: Vec<Message> = converter.try_into()?;
 
         // Build the ChatCompletionsRequest
         Ok(ChatCompletionsRequest {
