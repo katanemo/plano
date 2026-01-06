@@ -34,7 +34,9 @@ app = FastAPI()
 
 
 async def validate_query_scope(
-    messages: List[ChatMessage], traceparent_header: str
+    messages: List[ChatMessage],
+    traceparent_header: str,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Validate that the user query is within TechCorp's domain.
 
@@ -94,6 +96,9 @@ Respond in JSON format:
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
 
+        if request_id:
+            extra_headers["x-request-id"] = request_id
+
         logger.info(f"Validating query scope: '{last_user_message}'")
         response = await archgw_client.chat.completions.create(
             model=GUARD_MODEL,
@@ -132,6 +137,7 @@ async def input_guards(messages: List[ChatMessage]) -> List[ChatMessage]:
     # Get traceparent header from HTTP request using FastMCP's dependency function
     headers = get_http_headers()
     traceparent_header = headers.get("traceparent")
+    request_id = headers.get("x-request-id")
 
     if traceparent_header:
         logger.info(f"Received traceparent header: {traceparent_header}")
@@ -139,7 +145,9 @@ async def input_guards(messages: List[ChatMessage]) -> List[ChatMessage]:
         logger.info("No traceparent header found")
 
     # Validate the query scope
-    validation_result = await validate_query_scope(messages, traceparent_header)
+    validation_result = await validate_query_scope(
+        messages, traceparent_header, request_id
+    )
 
     if not validation_result.get("is_valid", True):
         reason = validation_result.get("reason", "Query is outside TechCorp's domain")
