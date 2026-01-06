@@ -11,6 +11,8 @@ dependencies = [
     "jsonschema>=4.23.0,<5.0.0",
     "pyyaml>=6.0.2,<7.0.0",
     "requests>=2.31.0,<3.0.0",
+    "rich>=14.2.0",
+    "rich-click>=1.9.5",
 ]
 
 [project.optional-dependencies]
