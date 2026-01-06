@@ -11,7 +11,7 @@ use tokio_stream::StreamExt;
 use tracing::warn;
 
 // Import tracing constants and signals
-use crate::signals::{InteractionQuality, SignalAnalyzer, FLAG_MARKER};
+use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
 use crate::tracing::{error, llm, signals as signal_constants};
 use hermesllm::apis::openai::Message;
 
@@ -145,7 +145,7 @@ impl StreamProcessor for ObservableStreamProcessor {
 
         // Analyze signals if messages are available and add to span attributes
         if let Some(ref messages) = self.messages {
-            let analyzer = SignalAnalyzer::new();
+            let analyzer = TextBasedSignalAnalyzer::new();
             let report = analyzer.analyze(messages);
 
             // Add overall quality

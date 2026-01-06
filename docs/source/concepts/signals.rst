@@ -4,7 +4,7 @@
 Signals™
 ========
 
-Agentic Signals are behavioral quality indicators that act as early warning signs of agent performance—highlighting both brilliant successes and **severe failures**. These signals are computed directly from conversation traces without requiring manual labeling or domain expertise, making them practical for production observability at scale.
+Agentic Signals are behavioral and executions quality indicators that act as early warning signs of agent performance—highlighting both brilliant successes and **severe failures**. These signals are computed directly from conversation traces without requiring manual labeling or domain expertise, making them practical for production observability at scale.
 
 The Problem: Knowing What's "Good"
 ==================================
