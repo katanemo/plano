@@ -33,7 +33,9 @@ app = FastAPI()
 
 
 async def rewrite_query_with_archgw(
-    messages: List[ChatMessage], traceparent_header: str
+    messages: List[ChatMessage],
+    traceparent_header: str,
+    request_id: Optional[str] = None,
 ) -> str:
     """Rewrite the user query using LLM for better retrieval."""
     system_prompt = """You are a query rewriter that improves user queries for better retrieval.
@@ -59,6 +61,8 @@ async def rewrite_query_with_archgw(
         extra_headers = {"x-envoy-max-retries": "3"}
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
+        if request_id:
+            extra_headers["x-request-id"] = request_id
         logger.info(f"Calling archgw at {LLM_GATEWAY_ENDPOINT} to rewrite query")
         response = await archgw_client.chat.completions.create(
             model=QUERY_REWRITE_MODEL,
@@ -93,6 +97,7 @@ async def query_rewriter(messages: List[ChatMessage]) -> List[ChatMessage]:
     # Get traceparent header from HTTP request using FastMCP's dependency function
     headers = get_http_headers()
     traceparent_header = headers.get("traceparent")
+    request_id = headers.get("x-request-id")
 
     if traceparent_header:
         logger.info(f"Received traceparent header: {traceparent_header}")
@@ -100,7 +105,9 @@ async def query_rewriter(messages: List[ChatMessage]) -> List[ChatMessage]:
         logger.info("No traceparent header found")
 
     # Call archgw to rewrite the last user query
-    rewritten_query = await rewrite_query_with_archgw(messages, traceparent_header)
+    rewritten_query = await rewrite_query_with_archgw(
+        messages, traceparent_header, request_id
+    )
 
     # Create updated messages with the rewritten query
     updated_messages = messages.copy()

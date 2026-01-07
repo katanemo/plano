@@ -68,6 +68,7 @@ async def chat_completion_http(request: Request, request_body: ChatCompletionReq
 
     # Get traceparent header from HTTP request
     traceparent_header = request.headers.get("traceparent")
+    request_id = request.headers.get("x-request-id")
 
     if traceparent_header:
         logger.info(f"Received traceparent header: {traceparent_header}")
@@ -75,7 +76,7 @@ async def chat_completion_http(request: Request, request_body: ChatCompletionReq
         logger.info("No traceparent header found")
 
     return StreamingResponse(
-        stream_chat_completions(request_body, traceparent_header),
+        stream_chat_completions(request_body, traceparent_header, request_id),
         media_type="text/plain",
         headers={
             "content-type": "text/event-stream",
@@ -84,7 +85,9 @@ async def chat_completion_http(request: Request, request_body: ChatCompletionReq
 
 
 async def stream_chat_completions(
-    request_body: ChatCompletionRequest, traceparent_header: str = None
+    request_body: ChatCompletionRequest,
+    traceparent_header: str = None,
+    request_id: str = None,
 ):
     """Generate streaming chat completions."""
     # Prepare messages for response generation
@@ -96,8 +99,11 @@ async def stream_chat_completions(
             f"Calling archgw at {LLM_GATEWAY_ENDPOINT} to generate streaming response"
         )
 
+        logger.info(f"rag_agent - request_id: {request_id}")
         # Prepare extra headers if traceparent is provided
         extra_headers = {"x-envoy-max-retries": "3"}
+        if request_id:
+            extra_headers["x-request-id"] = request_id
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
 
