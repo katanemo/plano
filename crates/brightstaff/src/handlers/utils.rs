@@ -141,7 +141,7 @@ impl StreamProcessor for ObservableStreamProcessor {
 
         // Analyze signals if messages are available and add to span attributes
         if let Some(ref messages) = self.messages {
-            let analyzer = TextBasedSignalAnalyzer::new();
+            let analyzer: Box<dyn SignalAnalyzer> = Box::new(TextBasedSignalAnalyzer::new());
             let report = analyzer.analyze(messages);
 
             // Add overall quality

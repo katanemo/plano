@@ -295,7 +295,7 @@ pub async fn llm_chat(
         operation_component::LLM,
         llm_span,
         request_start_time,
-        (!messages_for_signals.is_empty()).then_some(messages_for_signals),
+        Some(messages_for_signals),
     );
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===
