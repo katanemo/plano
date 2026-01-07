@@ -1,6 +1,6 @@
 Plano Docs v0.4.2
 llms.txt (auto-generated)
-Generated (UTC): 2026-01-07T21:02:33.288375+00:00
+Generated (UTC): 2026-01-07T21:52:09.890172+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -2782,7 +2782,7 @@ Doc: get_started/overview
 
 Overview
 
-Plano is delivery infrastructure for agentic apps. A smart proxy server and data plane designed to help you build agents faster, and deliver them reliably to production.
+Plano is delivery infrastructure for agentic apps. An AI-native proxy server and data plane designed to help you build agents faster, and deliver them reliably to production.
 
 Plano pulls out the rote plumbing work (the “hidden AI middleware”) and decouples you from brittle, ever‑changing framework abstractions. It centralizes what shouldn’t be bespoke in every codebase like agent routing and orchestration, rich agentic signals and traces for continuous improvement, guardrail filters for safety and moderation, and smart LLM routing APIs for UX and DX agility. Use any language or AI framework, and ship agents to production faster with Plano.
 
@@ -5390,7 +5390,7 @@ Welcome to Plano!
 
 
 
-Plano is delivery infrastructure for agentic apps. A smart proxy server and data plane designed to help you build agents faster, and deliver them reliably to production.
+Plano is delivery infrastructure for agentic apps. An AI-native proxy server and data plane designed to help you build agents faster, and deliver them reliably to production.
 
 Plano pulls out the rote plumbing work (aka “hidden AI middleware”) and decouples you from brittle, ever‑changing framework abstractions. It centralizes what shouldn’t be bespoke in every codebase like agent routing and orchestration, rich agentic signals and traces for continuous improvement, guardrail filters for safety and moderation, and smart LLM routing APIs for UX and DX agility. Use any language or AI framework, and ship agents to production faster with Plano.
 
