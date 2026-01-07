@@ -292,10 +292,6 @@ impl NormalizedMessage {
         false
     }
 
-    /// Check what fraction of the pattern's ngrams are contained in this message
-    /// This is efficient for finding patterns buried in longer messages without
-    /// expensive window sliding. Returns containment ratio (0.0-1.0).
-    #[allow(dead_code)] // Used by layered_contains_phrase; kept for reference
     fn char_ngram_containment(&self, pattern: &str) -> f64 {
         // Normalize the pattern the same way as char_ngram_similarity
         let normalized_pattern = pattern
@@ -2276,8 +2272,6 @@ mod tests {
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_repetition(&normalized_messages);
 
-        // Debug output to see what was detected
-        println!("Detected {} repetitions:", signal.repetition_count);
         for rep in &signal.repetitions {
             println!(
                 "  - Messages {:?}, similarity: {:.3}, type: {:?}",
@@ -2795,7 +2789,6 @@ mod tests {
             "test_frustrated_user_false_claim took: {:?}",
             start.elapsed()
         );
-        println!("Full signal analysis completed in {:?}", start.elapsed());
     }
 
     // false negative tests
