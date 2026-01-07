@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use hermesllm::apis::openai::{Message, Role};
 
@@ -16,6 +17,9 @@ use hermesllm::apis::openai::{Message, Role};
 
 /// Flag emoji for marking spans/operations worth investigating
 pub const FLAG_MARKER: &str = "\u{1F6A9}";
+
+/// Size of character n-grams for similarity matching (3 = trigrams)
+const NGRAM_SIZE: usize = 3;
 
 // ============================================================================
 // Normalized Message Processing
@@ -32,13 +36,14 @@ struct NormalizedMessage {
     token_set: HashSet<String>,
     /// Bigram set for fast similarity computation
     bigram_set: HashSet<String>,
-    /// Character trigram set for robust similarity matching
-    char_trigram_set: HashSet<String>,
+    /// Character ngram set for robust similarity matching
+    char_ngram_set: HashSet<String>,
     /// Token frequency map for multiset cosine similarity
     token_frequency: HashMap<String, usize>,
 }
 
 impl NormalizedMessage {
+    #[allow(dead_code)] // Used in tests for algorithm validation
     fn from_text(text: &str) -> Self {
         Self::from_text_with_limit(text, usize::MAX)
     }
@@ -94,13 +99,13 @@ impl NormalizedMessage {
             .map(|w| format!("{} {}", w[0], w[1]))
             .collect();
 
-        // Generate character trigram set for robust similarity
-        // Use tokens (with punctuation stripped) for consistency with pattern matching
+        // Generate character ngram set for robust similarity matching
+        // Uses tokens (with punctuation stripped) for consistency with pattern matching
         let tokens_text = tokens.join(" ");
-        let char_trigram_set: HashSet<String> = tokens_text
+        let char_ngram_set: HashSet<String> = tokens_text
             .chars()
             .collect::<Vec<_>>()
-            .windows(3)
+            .windows(NGRAM_SIZE)
             .map(|w| w.iter().collect::<String>())
             .collect();
 
@@ -115,7 +120,7 @@ impl NormalizedMessage {
             tokens,
             token_set,
             bigram_set,
-            char_trigram_set,
+            char_ngram_set,
             token_frequency,
         }
     }
@@ -145,10 +150,11 @@ impl NormalizedMessage {
         })
     }
 
-    /// Calculate character trigram similarity between this message and a pattern
+    /// Calculate character ngram similarity between this message and a pattern
     /// Returns a similarity score between 0.0 and 1.0
     /// This is robust to typos, small edits, and word insertions
-    fn char_trigram_similarity(&self, pattern: &str) -> f64 {
+    #[allow(dead_code)] // Used in tests for algorithm validation
+    fn char_ngram_similarity(&self, pattern: &str) -> f64 {
         // Normalize the pattern: lowercase and remove ALL punctuation
         // This makes "doesn't" → "doesnt" for robust typo matching
         let normalized_pattern = pattern
@@ -160,28 +166,25 @@ impl NormalizedMessage {
             .collect::<Vec<_>>()
             .join(" ");
 
-        // Generate trigrams for the pattern
-        let pattern_trigrams: HashSet<String> = normalized_pattern
+        // Generate ngrams for the pattern
+        let pattern_ngrams: HashSet<String> = normalized_pattern
             .chars()
             .collect::<Vec<_>>()
-            .windows(3)
+            .windows(NGRAM_SIZE)
             .map(|w| w.iter().collect::<String>())
             .collect();
 
-        if self.char_trigram_set.is_empty() && pattern_trigrams.is_empty() {
+        if self.char_ngram_set.is_empty() && pattern_ngrams.is_empty() {
             return 1.0; // Both empty = identical
         }
 
-        if self.char_trigram_set.is_empty() || pattern_trigrams.is_empty() {
+        if self.char_ngram_set.is_empty() || pattern_ngrams.is_empty() {
             return 0.0;
         }
 
         // Compute Jaccard similarity (intersection / union)
-        let intersection = self
-            .char_trigram_set
-            .intersection(&pattern_trigrams)
-            .count();
-        let union = self.char_trigram_set.union(&pattern_trigrams).count();
+        let intersection = self.char_ngram_set.intersection(&pattern_ngrams).count();
+        let union = self.char_ngram_set.union(&pattern_ngrams).count();
 
         if union == 0 {
             return 0.0;
@@ -193,6 +196,7 @@ impl NormalizedMessage {
     /// Calculate token-based cosine similarity using term frequencies
     /// Returns a similarity score between 0.0 and 1.0
     /// This handles word frequency and is stable for longer messages
+    #[allow(dead_code)] // Used in tests for algorithm validation
     fn token_cosine_similarity(&self, pattern: &str) -> f64 {
         // Tokenize and compute frequencies for the pattern
         let pattern_tokens: Vec<String> = pattern
@@ -252,12 +256,13 @@ impl NormalizedMessage {
         dot_product / (norm1 * norm2)
     }
 
-    /// Layered phrase matching: exact → character trigram → token cosine
+    /// Layered phrase matching: exact → character ngram → token cosine
     /// Returns true if the pattern matches using any layer
+    #[allow(dead_code)] // Kept for reference; production uses matches_normalized_pattern
     fn layered_contains_phrase(
         &self,
         pattern: &str,
-        char_trigram_threshold: f64,
+        char_ngram_threshold: f64,
         token_cosine_threshold: f64,
     ) -> bool {
         // Layer 0: Exact phrase match (fastest)
@@ -265,25 +270,18 @@ impl NormalizedMessage {
             return true;
         }
 
-        // For longer messages, check sliding windows to find the pattern
-        // Otherwise similarity gets diluted by surrounding context
-        let pattern_word_count = pattern.split_whitespace().count();
-
-        // Layer 1: Character trigram similarity (typo/edit robustness)
+        // Layer 1: Character ngram similarity (typo/edit robustness)
         // Check whole message first (for short messages)
-        if self.char_trigram_similarity(pattern) >= char_trigram_threshold {
+        if self.char_ngram_similarity(pattern) >= char_ngram_threshold {
             return true;
         }
 
-        // For longer messages, check windows
-        if self.tokens.len() >= pattern_word_count + 3 {
-            for window in self.tokens.windows(pattern_word_count + 2) {
-                let window_text = window.join(" ");
-                let window_msg = NormalizedMessage::from_text(&window_text);
-                if window_msg.char_trigram_similarity(pattern) >= char_trigram_threshold {
-                    return true;
-                }
-            }
+        // ngram containment check for patterns buried in longer messages
+        // If ALL of the pattern's ngrams exist in the message, the pattern must be
+        // present (possibly with minor variations like missing apostrophes).
+        // This is O(pattern_ngrams) lookups vs expensive window sliding.
+        if self.char_ngram_containment(pattern) >= 1.0 {
+            return true;
         }
 
         // Layer 2: Token cosine similarity (semantic stability for long messages)
@@ -291,12 +289,111 @@ impl NormalizedMessage {
             return true;
         }
 
-        // Check windows for token cosine too
-        if self.tokens.len() >= pattern_word_count + 3 {
-            for window in self.tokens.windows(pattern_word_count + 2) {
-                let window_text = window.join(" ");
-                let window_msg = NormalizedMessage::from_text(&window_text);
-                if window_msg.token_cosine_similarity(pattern) >= token_cosine_threshold {
+        false
+    }
+
+    /// Check what fraction of the pattern's ngrams are contained in this message
+    /// This is efficient for finding patterns buried in longer messages without
+    /// expensive window sliding. Returns containment ratio (0.0-1.0).
+    #[allow(dead_code)] // Used by layered_contains_phrase; kept for reference
+    fn char_ngram_containment(&self, pattern: &str) -> f64 {
+        // Normalize the pattern the same way as char_ngram_similarity
+        let normalized_pattern = pattern
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // Generate ngrams for the pattern
+        let pattern_ngrams: HashSet<String> = normalized_pattern
+            .chars()
+            .collect::<Vec<_>>()
+            .windows(NGRAM_SIZE)
+            .map(|w| w.iter().collect::<String>())
+            .collect();
+
+        if pattern_ngrams.is_empty() {
+            return 0.0;
+        }
+
+        // Count how many pattern ngrams exist in the message
+        let contained = pattern_ngrams
+            .iter()
+            .filter(|t| self.char_ngram_set.contains(*t))
+            .count();
+
+        contained as f64 / pattern_ngrams.len() as f64
+    }
+
+    /// Fast matching against a pre-normalized pattern
+    /// This avoids re-normalizing and re-computing ngrams for each pattern
+    fn matches_normalized_pattern(
+        &self,
+        pattern: &NormalizedPattern,
+        char_ngram_threshold: f64,
+        token_cosine_threshold: f64,
+    ) -> bool {
+        // Layer 0: Exact phrase match (fastest)
+        if self.contains_phrase(&pattern.raw) {
+            return true;
+        }
+
+        // Layer 1: Character ngram similarity using pre-computed ngrams
+        if !self.char_ngram_set.is_empty() && !pattern.char_ngram_set.is_empty() {
+            let intersection = self
+                .char_ngram_set
+                .intersection(&pattern.char_ngram_set)
+                .count();
+            let union = self.char_ngram_set.union(&pattern.char_ngram_set).count();
+            if union > 0 {
+                let similarity = intersection as f64 / union as f64;
+                if similarity >= char_ngram_threshold {
+                    return true;
+                }
+            }
+        }
+
+        // Ngram containment check using pre-computed ngrams
+        if !pattern.char_ngram_set.is_empty() {
+            let contained = pattern
+                .char_ngram_set
+                .iter()
+                .filter(|t| self.char_ngram_set.contains(*t))
+                .count();
+            let containment = contained as f64 / pattern.char_ngram_set.len() as f64;
+            if containment >= 1.0 {
+                return true;
+            }
+        }
+
+        // Layer 2: Token cosine similarity using pre-computed frequencies
+        if !self.token_frequency.is_empty() && !pattern.token_frequency.is_empty() {
+            let mut dot_product = 0.0;
+            let mut norm1_squared = 0.0;
+            let mut norm2_squared = 0.0;
+
+            // Iterate over pattern tokens (usually smaller set)
+            for (token, &freq2) in &pattern.token_frequency {
+                let freq1 = *self.token_frequency.get(token).unwrap_or(&0) as f64;
+                let freq2 = freq2 as f64;
+                dot_product += freq1 * freq2;
+                norm2_squared += freq2 * freq2;
+            }
+
+            // Add self tokens not in pattern for norm1
+            for &freq1 in self.token_frequency.values() {
+                norm1_squared += (freq1 as f64) * (freq1 as f64);
+            }
+
+            let norm1 = norm1_squared.sqrt();
+            let norm2 = norm2_squared.sqrt();
+
+            if norm1 > 0.0 && norm2 > 0.0 {
+                let similarity = dot_product / (norm1 * norm2);
+                if similarity >= token_cosine_threshold {
                     return true;
                 }
             }
@@ -305,6 +402,477 @@ impl NormalizedMessage {
         false
     }
 }
+
+// ============================================================================
+// Normalized Pattern (pre-computed for performance)
+// ============================================================================
+
+/// Pre-processed pattern with normalized text and pre-computed ngrams/tokens
+/// This avoids redundant computation when matching against many messages
+#[derive(Debug, Clone)]
+struct NormalizedPattern {
+    /// Original raw pattern text
+    raw: String,
+    /// Character ngram set for similarity matching
+    char_ngram_set: HashSet<String>,
+    /// Token frequency map for cosine similarity
+    token_frequency: HashMap<String, usize>,
+}
+
+impl NormalizedPattern {
+    fn new(pattern: &str) -> Self {
+        // Normalize: lowercase and remove ALL punctuation
+        let normalized = pattern
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // Generate ngrams
+        let char_ngram_set: HashSet<String> = normalized
+            .chars()
+            .collect::<Vec<_>>()
+            .windows(NGRAM_SIZE)
+            .map(|w| w.iter().collect::<String>())
+            .collect();
+
+        // Compute token frequency map
+        let tokens: Vec<String> = normalized
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        let mut token_frequency: HashMap<String, usize> = HashMap::new();
+        for token in tokens {
+            *token_frequency.entry(token).or_insert(0) += 1;
+        }
+
+        Self {
+            raw: pattern.to_string(),
+            char_ngram_set,
+            token_frequency,
+        }
+    }
+}
+
+/// Helper to create a static slice of normalized patterns
+fn normalize_patterns(patterns: &[&str]) -> Vec<NormalizedPattern> {
+    patterns.iter().map(|p| NormalizedPattern::new(p)).collect()
+}
+
+// ============================================================================
+// Pre-computed Pattern Caches (initialized once at startup)
+// ============================================================================
+
+static REPAIR_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Explicit corrections
+        "i meant",
+        "i mean",
+        "sorry, i meant",
+        "what i meant was",
+        "what i actually meant",
+        "i was trying to say",
+        "let me correct that",
+        "correction",
+        "i misspoke",
+        // Negations and disagreements
+        "no, i",
+        "no i",
+        "nah i",
+        "nope i",
+        "not what i",
+        "that's not",
+        "that's not what",
+        "that isn't what",
+        "not quite",
+        "not exactly",
+        // Rephrasing indicators
+        "let me rephrase",
+        "let me try again",
+        "let me clarify",
+        "to clarify",
+        "to be clear",
+        "let me explain",
+        "what i'm trying to",
+        "what i'm saying",
+        "in other words",
+        // Actual/really emphasis
+        "actually i",
+        "actually no",
+        "what i actually",
+        "i actually",
+        "i really meant",
+        // Mistake acknowledgment
+        "i was wrong",
+        "my mistake",
+        "my bad",
+        "i should have said",
+        "i should clarify",
+        // Wait/hold indicators
+        "wait, i",
+        "wait no",
+        "hold on",
+        "hang on",
+    ])
+});
+
+static COMPLAINT_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Useless/unhelpful (multi-word only)
+        "this is useless",
+        "not helpful",
+        "doesn't help",
+        "not helping",
+        "you're not helping",
+        "no help",
+        "unhelpful",
+        // Not working
+        "this doesn't work",
+        "doesn't work",
+        "not working",
+        "isn't working",
+        "won't work",
+        "still doesn't work",
+        "still not working",
+        // Not fixing/solving
+        "doesn't fix",
+        "not fixing",
+        "doesn't solve",
+        "doesn't seem to work",
+        "doesn't seem to fix",
+        "not resolving",
+        // Waste/pointless
+        "waste of time",
+        "wasting my time",
+        // Ridiculous/absurd
+        "this is ridiculous",
+        "ridiculous",
+        "this is absurd",
+        "absurd",
+        "this is insane",
+        "insane",
+        // Stupid/dumb (as adjectives, not as standalone tokens)
+        "this is stupid",
+        "this is dumb",
+        // Quality complaints (multi-word)
+        "this sucks",
+        "not good enough",
+        // Capability questions
+        "why can't you",
+        "can't you",
+        // Frustration
+        "this is frustrating",
+        "frustrated",
+        "incomplete",
+        "overwhelm",
+        "overwhelmed",
+        "overwhelming",
+        "exhausted",
+        "struggled",
+        // same issue
+        "same issue",
+        // polite dissatisfaction
+        "i'm disappointed",
+        "thanks, but",
+        "appreciate it, but",
+        "good, but",
+        // Fed up/done
+        "i give up",
+        "give up",
+        "fed up",
+        "had enough",
+        "can't take",
+        // Bot-specific complaints
+        "useless bot",
+        "dumb bot",
+        "stupid bot",
+    ])
+});
+
+static CONFUSION_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Don't understand
+        "i don't understand",
+        "don't understand",
+        "not understanding",
+        "can't understand",
+        "don't get it",
+        "don't follow",
+        // Confused state
+        "i'm confused",
+        "so confused",
+        // Makes no sense
+        "makes no sense",
+        "doesn't make sense",
+        "not making sense",
+        // What do you mean (keep multi-word)
+        "what do you mean",
+        "what does that mean",
+        "what are you saying",
+        // Lost/unclear
+        "i'm lost",
+        "totally lost",
+        "lost me",
+        // No clue
+        "no clue",
+        "no idea",
+        // Come again
+        "come again",
+        "say that again",
+        "repeat that",
+    ])
+});
+
+static GRATITUDE_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Standard gratitude
+        "thank you",
+        "thanks",
+        "thank u",
+        "thankyou",
+        "thx",
+        "ty",
+        "tyvm",
+        "tysm",
+        "thnx",
+        "thnks",
+        // Strong gratitude
+        "thanks so much",
+        "thank you so much",
+        "thanks a lot",
+        "thanks a bunch",
+        "much appreciated",
+        "really appreciate",
+        "greatly appreciate",
+        "appreciate it",
+        "appreciate that",
+        "i appreciate",
+        "grateful",
+        "so grateful",
+        // Helpfulness acknowledgment
+        "that's helpful",
+        "very helpful",
+        "super helpful",
+        "really helpful",
+        "that helps",
+        "this helps",
+        "helpful",
+        // Perfection expressions
+        "perfect",
+        "that's perfect",
+        "just perfect",
+        "exactly what i needed",
+        "exactly right",
+        "just what i needed",
+        "that's exactly",
+        // Informal positive
+        "you're the best",
+        "you rock",
+        "you're awesome",
+        "awesome sauce",
+        "legend",
+    ])
+});
+
+static SATISFACTION_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Works/functions
+        "that works",
+        "this works",
+        "works great",
+        "works perfectly",
+        "works for me",
+        // Great variations
+        "that's great",
+        "that's amazing",
+        "this is great",
+        "sounds great",
+        "looks great",
+        "great job",
+        // Excellent/perfect
+        "excellent",
+        "outstanding",
+        "superb",
+        "spectacular",
+        // Awesome/amazing
+        "awesome",
+        "that's awesome",
+        "amazing",
+        "incredible",
+        // Love expressions
+        "love it",
+        "love this",
+        "i love",
+        "loving it",
+        "love that",
+        // Brilliant/wonderful
+        "brilliant",
+        "wonderful",
+        "fantastic",
+        "fabulous",
+        "marvelous",
+    ])
+});
+
+static SUCCESS_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Understanding confirmation
+        "got it",
+        "i got it",
+        "understand",
+        "understood",
+        "i understand",
+        "makes sense",
+        "clear now",
+        "i see",
+        // Success/completion
+        "success",
+        "successful",
+        "it worked",
+        "that worked",
+        "this worked",
+        "worked",
+        // Problem resolution
+        "solved",
+        "resolved",
+        "fixed",
+        "fixed it",
+        "issue resolved",
+        "problem solved",
+        // Working state
+        "working now",
+        "it's working",
+        "works now",
+        "working fine",
+        "working great",
+        // Completion
+        "all set",
+        "all good",
+        "we're good",
+        "i'm good",
+        "all done",
+        "done",
+        "complete",
+        "finished",
+        // Perfect fit
+        "spot on",
+        "nailed it",
+        "bingo",
+        "exactly",
+        "just right",
+    ])
+});
+
+static HUMAN_AGENT_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Speak to human
+        "speak to a human",
+        "speak to human",
+        "speak with a human",
+        "speak with human",
+        "talk to a human",
+        "talk to human",
+        "talk to a person",
+        "talk to person",
+        "talk to someone",
+        // Human/real agent
+        "human agent",
+        "real agent",
+        "actual agent",
+        "live agent",
+        "human support",
+        // Real/actual person
+        "real person",
+        "actual person",
+        "real human",
+        "actual human",
+        "someone real",
+        // Need/want human
+        "need a human",
+        "need human",
+        "want a human",
+        "want human",
+        "get me a human",
+        "get me human",
+        "get me someone",
+        // Transfer/connect
+        "transfer me",
+        "connect me",
+        "escalate this",
+        // Representative (removed standalone "rep" - too many false positives)
+        "representative",
+        "customer service rep",
+        "customer service representative",
+        // Not a bot
+        "not a bot",
+        "not talking to a bot",
+        "tired of bots",
+    ])
+});
+
+static SUPPORT_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Contact support
+        "contact support",
+        "call support",
+        "reach support",
+        "get support",
+        // Customer support
+        "customer support",
+        "customer service",
+        "tech support",
+        "technical support",
+        // Help desk
+        "help desk",
+        "helpdesk",
+        "support desk",
+        // Talk to support
+        "talk to support",
+        "speak to support",
+        "speak with support",
+        "chat with support",
+        // Need help
+        "need real help",
+        "need actual help",
+        "help me now",
+    ])
+});
+
+static QUIT_PATTERNS: LazyLock<Vec<NormalizedPattern>> = LazyLock::new(|| {
+    normalize_patterns(&[
+        // Give up
+        "i give up",
+        "give up",
+        "giving up",
+        // Quit/leaving
+        "i'm going to quit",
+        "i quit",
+        "quitting",
+        "i'm leaving",
+        "i'm done",
+        "i'm out",
+        // Forget it
+        "forget it",
+        "forget this",
+        "screw it",
+        "screw this",
+        // Never mind
+        "never mind",
+        "nevermind",
+        "don't bother",
+        "not worth it",
+        // Hopeless
+        "this is hopeless",
+        // Going elsewhere
+        "going elsewhere",
+        "try somewhere else",
+        "look elsewhere",
+        "find another",
+    ])
+});
 
 // ============================================================================
 // Core Signal Types
@@ -544,8 +1112,8 @@ pub trait SignalAnalyzer {
 pub struct TextBasedSignalAnalyzer {
     /// Baseline expected turns for normal interactions
     baseline_turns: usize,
-    /// Threshold for character trigram similarity (0.0-1.0)
-    char_trigram_threshold: f64,
+    /// Threshold for character ngram similarity (0.0-1.0)
+    char_ngram_threshold: f64,
     /// Threshold for token cosine similarity (0.0-1.0)
     token_cosine_threshold: f64,
     /// Maximum message length in characters (prevents unbounded computation)
@@ -570,11 +1138,11 @@ impl TextBasedSignalAnalyzer {
     pub fn new() -> Self {
         Self {
             baseline_turns: 5,
-            char_trigram_threshold: 0.50, // Lowered to handle typos and small edits realistically
+            char_ngram_threshold: 0.50, // Lowered to handle typos and small edits realistically
             token_cosine_threshold: 0.60, // Lowered for better semantic match in varied contexts
-            max_message_length: 2000,     // Prevent unbounded trigram generation
-            max_messages: 100,            // Prevent unbounded message processing
-            max_repetition_window: 20,    // Prevent O(n²) explosion in repetition detection
+            max_message_length: 2000,   // Prevent unbounded ngram generation
+            max_messages: 100,          // Prevent unbounded message processing
+            max_repetition_window: 20,  // Prevent O(n²) explosion in repetition detection
         }
     }
 
@@ -582,7 +1150,7 @@ impl TextBasedSignalAnalyzer {
     pub fn with_baseline(baseline_turns: usize) -> Self {
         Self {
             baseline_turns,
-            char_trigram_threshold: 0.50,
+            char_ngram_threshold: 0.50,
             token_cosine_threshold: 0.60,
             max_message_length: 2000,
             max_messages: 100,
@@ -594,16 +1162,16 @@ impl TextBasedSignalAnalyzer {
     ///
     /// # Arguments
     /// * `baseline_turns` - Expected baseline turns for normal interactions
-    /// * `char_trigram_threshold` - Threshold for character trigram similarity (0.0-1.0)
+    /// * `char_ngram_threshold` - Threshold for character ngram similarity (0.0-1.0)
     /// * `token_cosine_threshold` - Threshold for token cosine similarity (0.0-1.0)
     pub fn with_settings(
         baseline_turns: usize,
-        char_trigram_threshold: f64,
+        char_ngram_threshold: f64,
         token_cosine_threshold: f64,
     ) -> Self {
         Self {
             baseline_turns,
-            char_trigram_threshold,
+            char_ngram_threshold,
             token_cosine_threshold,
             max_message_length: 2000,
             max_messages: 100,
@@ -615,14 +1183,14 @@ impl TextBasedSignalAnalyzer {
     ///
     /// # Arguments
     /// * `baseline_turns` - Expected baseline turns for normal interactions
-    /// * `char_trigram_threshold` - Threshold for character trigram similarity (0.0-1.0)
+    /// * `char_ngram_threshold` - Threshold for character ngram similarity (0.0-1.0)
     /// * `token_cosine_threshold` - Threshold for token cosine similarity (0.0-1.0)
     /// * `max_message_length` - Maximum characters per message to process
     /// * `max_messages` - Maximum number of messages to process
     /// * `max_repetition_window` - Maximum messages to compare for repetition detection
     pub fn with_full_settings(
         baseline_turns: usize,
-        char_trigram_threshold: f64,
+        char_ngram_threshold: f64,
         token_cosine_threshold: f64,
         max_message_length: usize,
         max_messages: usize,
@@ -630,7 +1198,7 @@ impl TextBasedSignalAnalyzer {
     ) -> Self {
         Self {
             baseline_turns,
-            char_trigram_threshold,
+            char_ngram_threshold,
             token_cosine_threshold,
             max_message_length,
             max_messages,
@@ -682,57 +1250,6 @@ impl TextBasedSignalAnalyzer {
         &self,
         normalized_messages: &[(usize, Role, NormalizedMessage)],
     ) -> FollowUpSignal {
-        let repair_patterns = [
-            // Explicit corrections
-            "i meant",
-            "i mean",
-            "sorry, i meant",
-            "what i meant was",
-            "what i actually meant",
-            "i was trying to say",
-            "let me correct that",
-            "correction",
-            "i misspoke",
-            // Negations and disagreements
-            "no, i",
-            "no i",
-            "nah i",
-            "nope i",
-            "not what i",
-            "that's not",
-            "that's not what",
-            "that isn't what",
-            "not quite",
-            "not exactly",
-            // Rephrasing indicators
-            "let me rephrase",
-            "let me try again",
-            "let me clarify",
-            "to clarify",
-            "to be clear",
-            "let me explain",
-            "what i'm trying to",
-            "what i'm saying",
-            "in other words",
-            // Actual/really emphasis
-            "actually i",
-            "actually no",
-            "what i actually",
-            "i actually",
-            "i really meant",
-            // Mistake acknowledgment
-            "i was wrong",
-            "my mistake",
-            "my bad",
-            "i should have said",
-            "i should clarify",
-            // Wait/hold indicators
-            "wait, i",
-            "wait no",
-            "hold on",
-            "hang on",
-        ];
-
         let mut repair_count = 0;
         let mut repair_phrases = Vec::new();
         let mut user_turn_count = 0;
@@ -747,15 +1264,15 @@ impl TextBasedSignalAnalyzer {
             // Use per-turn boolean to prevent double-counting
             let mut found_in_turn = false;
 
-            for pattern in &repair_patterns {
-                // Use layered matching: exact → trigram → cosine
-                if norm_msg.layered_contains_phrase(
+            // Use pre-computed patterns for fast matching
+            for pattern in REPAIR_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     repair_count += 1;
-                    repair_phrases.push(format!("Turn {}: '{}'", i + 1, pattern));
+                    repair_phrases.push(format!("Turn {}: '{}'", i + 1, pattern.raw));
                     found_in_turn = true;
                     break;
                 }
@@ -801,111 +1318,6 @@ impl TextBasedSignalAnalyzer {
     ) -> FrustrationSignal {
         let mut indicators = Vec::new();
 
-        // Complaint phrases - removed ultra-generic single words that cause false positives
-        let complaint_patterns = [
-            // Useless/unhelpful (multi-word only)
-            "this is useless",
-            "not helpful",
-            "doesn't help",
-            "not helping",
-            "you're not helping",
-            "no help",
-            "unhelpful",
-            // Not working
-            "this doesn't work",
-            "doesn't work",
-            "not working",
-            "isn't working",
-            "won't work",
-            "still doesn't work",
-            "still not working",
-            // Not fixing/solving
-            "doesn't fix",
-            "not fixing",
-            "doesn't solve",
-            "doesn't seem to work",
-            "doesn't seem to fix",
-            "not resolving",
-            // Waste/pointless
-            "waste of time",
-            "wasting my time",
-            // Ridiculous/absurd
-            "this is ridiculous",
-            "ridiculous",
-            "this is absurd",
-            "absurd",
-            "this is insane",
-            "insane",
-            // Stupid/dumb (as adjectives, not as standalone tokens)
-            "this is stupid",
-            "this is dumb",
-            // Quality complaints (multi-word)
-            "this sucks",
-            "not good enough",
-            // Capability questions
-            "why can't you",
-            "can't you",
-            // Frustration
-            "this is frustrating",
-            "frustrated",
-            "incomplete",
-            "overwhelm",
-            "overwhelmed",
-            "overwhelming",
-            "exhausted",
-            "struggled",
-            // same issue
-            "same issue",
-            // polite dissatisfaction
-            "i'm disappointed",
-            "thanks, but",
-            "appreciate it, but",
-            "good, but",
-            // Fed up/done
-            "i give up",
-            "give up",
-            "fed up",
-            "had enough",
-            "can't take",
-            // Bot-specific complaints
-            "useless bot",
-            "dumb bot",
-            "stupid bot",
-        ];
-
-        // Confusion phrases - removed ultra-generic single words
-        let confusion_patterns = [
-            // Don't understand
-            "i don't understand",
-            "don't understand",
-            "not understanding",
-            "can't understand",
-            "don't get it",
-            "don't follow",
-            // Confused state
-            "i'm confused",
-            "so confused",
-            // Makes no sense
-            "makes no sense",
-            "doesn't make sense",
-            "not making sense",
-            // What do you mean (keep multi-word)
-            "what do you mean",
-            "what does that mean",
-            "what are you saying",
-            // Lost/unclear
-            "i'm lost",
-            "totally lost",
-            "lost me",
-            // No clue
-            "no clue",
-            "no idea",
-            // Come again
-            "come again",
-            "say that again",
-            "repeat that",
-        ];
-
         // Profanity list - only as standalone tokens, not substrings
         let profanity_tokens = [
             "damn", "damnit", "crap", "wtf", "ffs", "bullshit", "shit", "fuck", "fucking",
@@ -943,33 +1355,33 @@ impl TextBasedSignalAnalyzer {
                 });
             }
 
-            // Check for complaint patterns (phrase-based, not substring)
-            for pattern in &complaint_patterns {
-                if norm_msg.layered_contains_phrase(
+            // Check for complaint patterns using pre-computed patterns
+            for pattern in COMPLAINT_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     indicators.push(FrustrationIndicator {
                         indicator_type: FrustrationType::DirectComplaint,
                         message_index: *i,
-                        snippet: pattern.to_string(),
+                        snippet: pattern.raw.clone(),
                     });
                     break;
                 }
             }
 
-            // Check for confusion patterns (phrase-based)
-            for pattern in &confusion_patterns {
-                if norm_msg.layered_contains_phrase(
+            // Check for confusion patterns using pre-computed patterns
+            for pattern in CONFUSION_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     indicators.push(FrustrationIndicator {
                         indicator_type: FrustrationType::Confusion,
                         message_index: *i,
-                        snippet: pattern.to_string(),
+                        snippet: pattern.raw.clone(),
                     });
                     break;
                 }
@@ -1121,140 +1533,6 @@ impl TextBasedSignalAnalyzer {
     ) -> PositiveFeedbackSignal {
         let mut indicators = Vec::new();
 
-        let gratitude_patterns = [
-            // Standard gratitude
-            "thank you",
-            "thanks",
-            "thank u",
-            "thankyou",
-            "thx",
-            "ty",
-            "tyvm",
-            "tysm",
-            "thnx",
-            "thnks",
-            // Strong gratitude
-            "thanks so much",
-            "thank you so much",
-            "thanks a lot",
-            "thanks a bunch",
-            "much appreciated",
-            "really appreciate",
-            "greatly appreciate",
-            "appreciate it",
-            "appreciate that",
-            "i appreciate",
-            "grateful",
-            "so grateful",
-            // Helpfulness acknowledgment
-            "that's helpful",
-            "very helpful",
-            "super helpful",
-            "really helpful",
-            "that helps",
-            "this helps",
-            "helpful",
-            // Perfection expressions
-            "perfect",
-            "that's perfect",
-            "just perfect",
-            "exactly what i needed",
-            "exactly right",
-            "just what i needed",
-            "that's exactly",
-            // Informal positive
-            "you're the best",
-            "you rock",
-            "you're awesome",
-            "awesome sauce",
-            "legend",
-        ];
-
-        let satisfaction_patterns = [
-            // Works/functions
-            "that works",
-            "this works",
-            "works great",
-            "works perfectly",
-            "works for me",
-            // Great variations
-            "that's great",
-            "that's amazing",
-            "this is great",
-            "sounds great",
-            "looks great",
-            "great job",
-            // Excellent/perfect
-            "excellent",
-            "outstanding",
-            "superb",
-            "spectacular",
-            // Awesome/amazing
-            "awesome",
-            "that's awesome",
-            "amazing",
-            "incredible",
-            // Love expressions
-            "love it",
-            "love this",
-            "i love",
-            "loving it",
-            "love that",
-            // Brilliant/wonderful
-            "brilliant",
-            "wonderful",
-            "fantastic",
-            "fabulous",
-            "marvelous",
-        ];
-
-        let success_patterns = [
-            // Understanding confirmation
-            "got it",
-            "i got it",
-            "understand",
-            "understood",
-            "i understand",
-            "makes sense",
-            "clear now",
-            "i see",
-            // Success/completion
-            "success",
-            "successful",
-            "it worked",
-            "that worked",
-            "this worked",
-            "worked",
-            // Problem resolution
-            "solved",
-            "resolved",
-            "fixed",
-            "fixed it",
-            "issue resolved",
-            "problem solved",
-            // Working state
-            "working now",
-            "it's working",
-            "works now",
-            "working fine",
-            "working great",
-            // Completion
-            "all set",
-            "all good",
-            "we're good",
-            "i'm good",
-            "all done",
-            "done",
-            "complete",
-            "finished",
-            // Perfect fit
-            "spot on",
-            "nailed it",
-            "bingo",
-            "exactly",
-            "just right",
-        ];
-
         for (i, role, norm_msg) in normalized_messages {
             if *role != Role::User {
                 continue;
@@ -1263,17 +1541,17 @@ impl TextBasedSignalAnalyzer {
             // Use per-turn boolean to prevent double-counting
             let mut found_in_turn = false;
 
-            // Check gratitude
-            for pattern in &gratitude_patterns {
-                if norm_msg.layered_contains_phrase(
+            // Check gratitude using pre-computed patterns
+            for pattern in GRATITUDE_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     indicators.push(PositiveIndicator {
                         indicator_type: PositiveType::Gratitude,
                         message_index: *i,
-                        snippet: pattern.to_string(),
+                        snippet: pattern.raw.clone(),
                     });
                     found_in_turn = true;
                     break;
@@ -1284,17 +1562,17 @@ impl TextBasedSignalAnalyzer {
                 continue;
             }
 
-            // Check satisfaction
-            for pattern in &satisfaction_patterns {
-                if norm_msg.layered_contains_phrase(
+            // Check satisfaction using pre-computed patterns
+            for pattern in SATISFACTION_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     indicators.push(PositiveIndicator {
                         indicator_type: PositiveType::Satisfaction,
                         message_index: *i,
-                        snippet: pattern.to_string(),
+                        snippet: pattern.raw.clone(),
                     });
                     found_in_turn = true;
                     break;
@@ -1305,17 +1583,17 @@ impl TextBasedSignalAnalyzer {
                 continue;
             }
 
-            // Check success confirmation
-            for pattern in &success_patterns {
-                if norm_msg.layered_contains_phrase(
+            // Check success confirmation using pre-computed patterns
+            for pattern in SUCCESS_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     indicators.push(PositiveIndicator {
                         indicator_type: PositiveType::Success,
                         message_index: *i,
-                        snippet: pattern.to_string(),
+                        snippet: pattern.raw.clone(),
                     });
                     break;
                 }
@@ -1351,108 +1629,6 @@ impl TextBasedSignalAnalyzer {
     ) -> EscalationSignal {
         let mut requests = Vec::new();
 
-        let human_agent_patterns = [
-            // Speak to human
-            "speak to a human",
-            "speak to human",
-            "speak with a human",
-            "speak with human",
-            "talk to a human",
-            "talk to human",
-            "talk to a person",
-            "talk to person",
-            "talk to someone",
-            // Human/real agent
-            "human agent",
-            "real agent",
-            "actual agent",
-            "live agent",
-            "human support",
-            // Real/actual person
-            "real person",
-            "actual person",
-            "real human",
-            "actual human",
-            "someone real",
-            // Need/want human
-            "need a human",
-            "need human",
-            "want a human",
-            "want human",
-            "get me a human",
-            "get me human",
-            "get me someone",
-            // Transfer/connect
-            "transfer me",
-            "connect me",
-            "escalate this",
-            // Representative (removed standalone "rep" - too many false positives)
-            "representative",
-            "customer service rep",
-            "customer service representative",
-            // Not a bot
-            "not a bot",
-            "not talking to a bot",
-            "tired of bots",
-        ];
-
-        let support_patterns = [
-            // Contact support
-            "contact support",
-            "call support",
-            "reach support",
-            "get support",
-            // Customer support
-            "customer support",
-            "customer service",
-            "tech support",
-            "technical support",
-            // Help desk
-            "help desk",
-            "helpdesk",
-            "support desk",
-            // Talk to support
-            "talk to support",
-            "speak to support",
-            "speak with support",
-            "chat with support",
-            // Need help
-            "need real help",
-            "need actual help",
-            "help me now",
-        ];
-
-        let quit_patterns = [
-            // Give up
-            "i give up",
-            "give up",
-            "giving up",
-            // Quit/leaving
-            "i'm going to quit",
-            "i quit",
-            "quitting",
-            "i'm leaving",
-            "i'm done",
-            "i'm out",
-            // Forget it
-            "forget it",
-            "forget this",
-            "screw it",
-            "screw this",
-            // Never mind
-            "never mind",
-            "nevermind",
-            "don't bother",
-            "not worth it",
-            // Hopeless
-            "this is hopeless",
-            // Going elsewhere
-            "going elsewhere",
-            "try somewhere else",
-            "find another",
-            "use something else",
-        ];
-
         for (i, role, norm_msg) in normalized_messages {
             if *role != Role::User {
                 continue;
@@ -1460,16 +1636,16 @@ impl TextBasedSignalAnalyzer {
 
             let mut found_human_agent = false;
 
-            // Check for human agent request
-            for pattern in &human_agent_patterns {
-                if norm_msg.layered_contains_phrase(
+            // Check for human agent request using pre-computed patterns
+            for pattern in HUMAN_AGENT_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     requests.push(EscalationRequest {
                         message_index: *i,
-                        snippet: pattern.to_string(),
+                        snippet: pattern.raw.clone(),
                         escalation_type: EscalationType::HumanAgent,
                     });
                     found_human_agent = true;
@@ -1480,15 +1656,15 @@ impl TextBasedSignalAnalyzer {
             // Check for support request (only if no human agent request found)
             // HumanAgent and Support are too similar and often match the same phrase
             if !found_human_agent {
-                for pattern in &support_patterns {
-                    if norm_msg.layered_contains_phrase(
+                for pattern in SUPPORT_PATTERNS.iter() {
+                    if norm_msg.matches_normalized_pattern(
                         pattern,
-                        self.char_trigram_threshold,
+                        self.char_ngram_threshold,
                         self.token_cosine_threshold,
                     ) {
                         requests.push(EscalationRequest {
                             message_index: *i,
-                            snippet: pattern.to_string(),
+                            snippet: pattern.raw.clone(),
                             escalation_type: EscalationType::Support,
                         });
                         break;
@@ -1498,15 +1674,15 @@ impl TextBasedSignalAnalyzer {
 
             // Check for quit threats (independent of HumanAgent/Support)
             // A message can contain both "give up" (quit) and "speak to human" (escalation)
-            for pattern in &quit_patterns {
-                if norm_msg.layered_contains_phrase(
+            for pattern in QUIT_PATTERNS.iter() {
+                if norm_msg.matches_normalized_pattern(
                     pattern,
-                    self.char_trigram_threshold,
+                    self.char_ngram_threshold,
                     self.token_cosine_threshold,
                 ) {
                     requests.push(EscalationRequest {
                         message_index: *i,
-                        snippet: pattern.to_string(),
+                        snippet: pattern.raw.clone(),
                         escalation_type: EscalationType::ThreatToQuit,
                     });
                     break;
@@ -1786,9 +1962,9 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_char_trigram_similarity_exact_match() {
+    fn test_char_ngram_similarity_exact_match() {
         let msg = NormalizedMessage::from_text("thank you very much");
-        let similarity = msg.char_trigram_similarity("thank you very much");
+        let similarity = msg.char_ngram_similarity("thank you very much");
         assert!(
             similarity > 0.95,
             "Exact match should have very high similarity"
@@ -1796,10 +1972,10 @@ mod tests {
     }
 
     #[test]
-    fn test_char_trigram_similarity_typo() {
+    fn test_char_ngram_similarity_typo() {
         let msg = NormalizedMessage::from_text("thank you very much");
         // Common typo: "thnks" instead of "thanks"
-        let similarity = msg.char_trigram_similarity("thnks you very much");
+        let similarity = msg.char_ngram_similarity("thnks you very much");
         assert!(
             similarity > 0.50,
             "Should handle single-character typo with decent similarity: {}",
@@ -1808,9 +1984,9 @@ mod tests {
     }
 
     #[test]
-    fn test_char_trigram_similarity_small_edit() {
+    fn test_char_ngram_similarity_small_edit() {
         let msg = NormalizedMessage::from_text("this doesn't work");
-        let similarity = msg.char_trigram_similarity("this doesnt work");
+        let similarity = msg.char_ngram_similarity("this doesnt work");
         assert!(
             similarity > 0.70,
             "Should handle punctuation removal gracefully: {}",
@@ -1819,9 +1995,9 @@ mod tests {
     }
 
     #[test]
-    fn test_char_trigram_similarity_word_insertion() {
+    fn test_char_ngram_similarity_word_insertion() {
         let msg = NormalizedMessage::from_text("i don't understand");
-        let similarity = msg.char_trigram_similarity("i really don't understand");
+        let similarity = msg.char_ngram_similarity("i really don't understand");
         assert!(
             similarity > 0.40,
             "Should be robust to word insertions: {}",
@@ -1890,10 +2066,10 @@ mod tests {
         // Test that shows layered matching is more robust than exact matching alone
         let msg = NormalizedMessage::from_text("it doesnt work for me");
 
-        // "doesnt work" should match "doesn't work" via character trigrams (high overlap)
+        // "doesnt work" should match "doesn't work" via character ngrams (high overlap)
         assert!(
             msg.layered_contains_phrase("doesn't work", 0.50, 0.60),
-            "Should match 'doesnt work' to 'doesn't work' via character trigrams"
+            "Should match 'doesnt work' to 'doesn't work' via character ngrams"
         );
     }
 
@@ -1928,13 +2104,13 @@ mod tests {
     }
 
     #[test]
-    fn test_char_trigram_vs_token_cosine_tradeoffs() {
-        // Character trigrams handle character-level changes well
+    fn test_char_ngram_vs_token_cosine_tradeoffs() {
+        // Character ngrams handle character-level changes well
         let msg1 = NormalizedMessage::from_text("this doesnt work");
-        let char_sim1 = msg1.char_trigram_similarity("this doesn't work");
+        let char_sim1 = msg1.char_ngram_similarity("this doesn't work");
         assert!(
             char_sim1 > 0.70,
-            "Character trigrams should handle punctuation: {}",
+            "Character ngrams should handle punctuation: {}",
             char_sim1
         );
 
@@ -2225,7 +2401,7 @@ mod tests {
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_frustration(&normalized_messages);
 
-        // The layered matching should catch this via character trigrams or token cosine
+        // The layered matching should catch this via character ngrams or token cosine
         // "doesnt work" has high character-level similarity to "doesn't work"
         assert!(
             signal.has_frustration,
