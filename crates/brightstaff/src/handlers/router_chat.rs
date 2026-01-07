@@ -36,16 +36,13 @@ impl RoutingError {
 pub async fn router_chat_get_upstream_model(
     router_service: Arc<RouterService>,
     client_request: ProviderRequestType,
-    _request_headers: &hyper::HeaderMap,
     trace_collector: Arc<TraceCollector>,
     traceparent: &str,
     request_path: &str,
-    request_id: Option<String>,
+    request_id: &str,
 ) -> Result<RoutingResult, RoutingError> {
     // Clone metadata for routing before converting (which consumes client_request)
     let routing_metadata = client_request.metadata().clone();
-
-    let request_id = request_id.unwrap_or_else(|| "unknown".to_string());
 
     // Convert to ChatCompletionsRequest for routing (regardless of input type)
     let chat_request = match ProviderRequestType::try_from((
@@ -128,9 +125,9 @@ pub async fn router_chat_get_upstream_model(
     let routing_result = router_service
         .determine_route(
             &chat_request.messages,
-            Some(traceparent.to_string()),
+            traceparent,
             usage_preferences,
-            Some(request_id.clone()),
+            request_id,
         )
         .await;
 
