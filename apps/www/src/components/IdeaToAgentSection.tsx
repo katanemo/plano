@@ -11,7 +11,7 @@ const carouselData = [
     category: "LAUNCH FASTER",
     title: "Focus on core objectives",
     description:
-      "Building agents is hard enough. The plumbing work shouldn't be. Plano handles routing, observability, and policy hooks as a models-native sidecar—so you can focus on your agent's core product logic and ship to production faster.",
+      "Building agents is hard enough. The plumbing work shouldn't be. Plano handles routing, observability, and policy hooks as an AI-native sidecar—so you can focus on your agent's core product logic and ship to production faster.",
     image: "/LaunchFaster.svg",
     link: "https://docs.planoai.dev/get_started/quickstart",
   },

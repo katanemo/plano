@@ -18,14 +18,14 @@ export function Hero() {
           <div className="mb-4 sm:mb-6">
             <div className="inline-flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 rounded-full bg-[rgba(185,191,255,0.4)] border border-[var(--secondary)] shadow backdrop-blur">
               <span className="text-xs sm:text-sm font-medium text-black/65">
-                v0.4
+                v0.4.2
               </span>
               <span className="text-xs sm:text-sm font-medium text-black ">
                 —
               </span>
               <span className="text-xs sm:text-sm font-[600] tracking-[-0.6px]! text-black leading-tight">
                 <span className="hidden sm:inline">
-                  Unified /v1/responses API with state management
+                  Signals - Trace Sampling & Preference Data for Continuous Improvement
                 </span>
                 <span className="sm:hidden">Unified /v1/responses API</span>
               </span>
