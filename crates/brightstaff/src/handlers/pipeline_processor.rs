@@ -668,8 +668,6 @@ impl PipelineProcessor {
             )
             .expect("Failed to build headers for initialization");
 
-        info!("Initialize request headers: {:?}", headers);
-
         let response = self
             .send_mcp_request(&initialize_request, &headers, agent_id)
             .await

@@ -158,7 +158,7 @@ async fn handle_agent_chat(
         .unwrap()
         .to_string();
 
-    let (request_headers, request_id) = {
+    let request_headers = {
         let mut headers = request.headers().clone();
         headers.remove(common::consts::ENVOY_ORIGINAL_PATH_HEADER);
 
@@ -173,16 +173,9 @@ async fn handle_agent_chat(
                 hyper::header::HeaderValue::from_str(&request_id).unwrap(),
             );
         }
-        let request_id = headers
-            .get(common::consts::REQUEST_ID_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .unwrap()
-            .to_string();
 
-        (headers, request_id)
+        headers
     };
-
-    info!("Processing request with Request ID: {}", request_id);
 
     let chat_request_bytes = request.collect().await?.to_bytes();
 
