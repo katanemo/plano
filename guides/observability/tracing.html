@@ -108,6 +108,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../../concepts/prompt_target.html">Prompt Target</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../concepts/signals.html">Signals™</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Guides</span></p>
 <ul class="current">
@@ -177,6 +178,111 @@ that developers can capture this trace data consistently and in a format compati
 tools.</p>
 <a class="reference internal image-reference" href="../../_images/tracing.png"><img alt="../../_images/tracing.png" class="align-center" src="../../_images/tracing.png" style="width: 100%;"/>
 </a>
+</section>
+<section id="understanding-plano-traces">
+<h2>Understanding Plano Traces<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#understanding-plano-traces" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#understanding-plano-traces'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Plano creates structured traces that capture the complete flow of requests through your AI system. Each trace consists of multiple spans representing different stages of processing.</p>
+<section id="inbound-request-handling">
+<h3>Inbound Request Handling<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#inbound-request-handling" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#inbound-request-handling'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>When a request enters Plano, it creates an <strong>inbound span</strong> (<code class="docutils literal notranslate"><span class="pre">plano(inbound)</span></code>) that represents the initial request reception and processing. This span captures:</p>
+<ul class="simple">
+<li><p>HTTP request details (method, path, headers)</p></li>
+<li><p>Request payload size</p></li>
+<li><p>Initial validation and authentication</p></li>
+</ul>
+</section>
+<section id="orchestration-routing">
+<h3>Orchestration &amp; Routing<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#orchestration-routing" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#orchestration-routing'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>For agent systems, Plano performs intelligent routing through orchestration spans:</p>
+<ul class="simple">
+<li><p><strong>Agent Orchestration</strong> (<code class="docutils literal notranslate"><span class="pre">plano(orchestrator)</span></code>): When multiple agents are available, Plano uses an LLM to analyze the user’s intent and select the most appropriate agent. This span captures the orchestration decision-making process.</p></li>
+<li><p><strong>LLM Routing</strong> (<code class="docutils literal notranslate"><span class="pre">plano(routing)</span></code>): For direct LLM requests, Plano determines the optimal endpoint based on your routing strategy (round-robin, least-latency, cost-optimized). This span includes:</p>
+<ul>
+<li><p>Routing strategy used</p></li>
+<li><p>Selected upstream endpoint</p></li>
+<li><p>Route determination time</p></li>
+<li><p>Fallback indicators (if applicable)</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="agent-processing">
+<h3>Agent Processing<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#agent-processing" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#agent-processing'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>When requests are routed to agents, Plano creates spans for agent execution:</p>
+<ul class="simple">
+<li><p><strong>Agent Filter Chains</strong> (<code class="docutils literal notranslate"><span class="pre">plano(filter)</span></code>): If filters are configured (guardrails, context enrichment, query rewriting), each filter execution is captured in its own span, showing the transformation pipeline.</p></li>
+<li><p><strong>Agent Execution</strong> (<code class="docutils literal notranslate"><span class="pre">plano(agent)</span></code>): The main agent processing span that captures the agent’s work, including any tools invoked and intermediate reasoning steps.</p></li>
+</ul>
+</section>
+<section id="outbound-llm-calls">
+<h3>Outbound LLM Calls<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#outbound-llm-calls" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#outbound-llm-calls'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>All LLM calls—whether from Plano’s routing layer or from agents—are traced with <strong>LLM spans</strong> (<code class="docutils literal notranslate"><span class="pre">plano(llm)</span></code>) that capture:</p>
+<ul class="simple">
+<li><p>Model name and provider (e.g., <code class="docutils literal notranslate"><span class="pre">gpt-4</span></code>, <code class="docutils literal notranslate"><span class="pre">claude-3-sonnet</span></code>)</p></li>
+<li><p>Request parameters (temperature, max_tokens, top_p)</p></li>
+<li><p>Token usage (prompt_tokens, completion_tokens)</p></li>
+<li><p>Streaming indicators and time-to-first-token</p></li>
+<li><p>Response metadata</p></li>
+</ul>
+<p><strong>Example Span Attributes</strong>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># LLM call span</span>
+</span><span id="line-2"><span class="n">llm</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="s2">"gpt-4"</span>
+</span><span id="line-3"><span class="n">llm</span><span class="o">.</span><span class="n">provider</span> <span class="o">=</span> <span class="s2">"openai"</span>
+</span><span id="line-4"><span class="n">llm</span><span class="o">.</span><span class="n">usage</span><span class="o">.</span><span class="n">prompt_tokens</span> <span class="o">=</span> <span class="mi">150</span>
+</span><span id="line-5"><span class="n">llm</span><span class="o">.</span><span class="n">usage</span><span class="o">.</span><span class="n">completion_tokens</span> <span class="o">=</span> <span class="mi">75</span>
+</span><span id="line-6"><span class="n">llm</span><span class="o">.</span><span class="n">duration_ms</span> <span class="o">=</span> <span class="mi">1250</span>
+</span><span id="line-7"><span class="n">llm</span><span class="o">.</span><span class="n">time_to_first_token</span> <span class="o">=</span> <span class="mi">320</span>
+</span></code></pre></div>
+</div>
+</section>
+<section id="handoff-to-upstream-services">
+<h3>Handoff to Upstream Services<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#handoff-to-upstream-services" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#handoff-to-upstream-services'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>When Plano forwards requests to upstream services (agents, APIs, or LLM providers), it creates <strong>handoff spans</strong> (<code class="docutils literal notranslate"><span class="pre">plano(handoff)</span></code>) that capture:</p>
+<ul class="simple">
+<li><p>Upstream endpoint URL</p></li>
+<li><p>Request/response sizes</p></li>
+<li><p>HTTP status codes</p></li>
+<li><p>Upstream response times</p></li>
+</ul>
+<p>This creates a complete end-to-end trace showing the full request lifecycle through all system components.</p>
+</section>
+</section>
+<section id="behavioral-signals-in-traces">
+<h2>Behavioral Signals in Traces<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#behavioral-signals-in-traces" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#behavioral-signals-in-traces'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Plano automatically enriches OpenTelemetry traces with <a class="reference internal" href="../../concepts/signals.html"><span class="doc">Signals™</span></a> — behavioral quality indicators computed from conversation patterns. These signals are attached as span attributes, providing immediate visibility into interaction quality.</p>
+<p><strong>What Signals Provide</strong></p>
+<p>Signals act as early warning indicators embedded in your traces:</p>
+<ul class="simple">
+<li><p><strong>Quality Assessment</strong>: Overall interaction quality (Excellent/Good/Neutral/Poor/Severe)</p></li>
+<li><p><strong>Efficiency Metrics</strong>: Turn count, efficiency scores, repair frequency</p></li>
+<li><p><strong>User Sentiment</strong>: Frustration indicators, positive feedback, escalation requests</p></li>
+<li><p><strong>Agent Behavior</strong>: Repetition detection, looping patterns</p></li>
+</ul>
+<p><strong>Visual Flag Markers</strong></p>
+<p>When concerning signals are detected (frustration, looping, escalation, or poor/severe quality), Plano automatically appends a flag marker <strong>🚩</strong> to the span’s operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.</p>
+<p><strong>Example Span with Signals</strong>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-4 🚩"</span>
+</span><span id="line-2"><span class="c1"># Standard LLM attributes:</span>
+</span><span id="line-3"><span class="n">llm</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="s2">"gpt-4"</span>
+</span><span id="line-4"><span class="n">llm</span><span class="o">.</span><span class="n">usage</span><span class="o">.</span><span class="n">total_tokens</span> <span class="o">=</span> <span class="mi">225</span>
+</span><span id="line-5">
+</span><span id="line-6"><span class="c1"># Behavioral signal attributes:</span>
+</span><span id="line-7"><span class="n">signals</span><span class="o">.</span><span class="n">quality</span> <span class="o">=</span> <span class="s2">"Severe"</span>
+</span><span id="line-8"><span class="n">signals</span><span class="o">.</span><span class="n">turn_count</span> <span class="o">=</span> <span class="mi">15</span>
+</span><span id="line-9"><span class="n">signals</span><span class="o">.</span><span class="n">efficiency_score</span> <span class="o">=</span> <span class="mf">0.234</span>
+</span><span id="line-10"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">severity</span> <span class="o">=</span> <span class="mi">3</span>
+</span><span id="line-11"><span class="n">signals</span><span class="o">.</span><span class="n">escalation</span><span class="o">.</span><span class="n">requested</span> <span class="o">=</span> <span class="s2">"true"</span>
+</span></code></pre></div>
+</div>
+<p><strong>Querying Signal Data</strong></p>
+<p>In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter traces by signal attributes:</p>
+<ul class="simple">
+<li><p>Find severe interactions: <code class="docutils literal notranslate"><span class="pre">signals.quality</span> <span class="pre">=</span> <span class="pre">"Severe"</span></code></p></li>
+<li><p>Find frustrated users: <code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code></p></li>
+<li><p>Find inefficient flows: <code class="docutils literal notranslate"><span class="pre">signals.efficiency_score</span> <span class="pre">&lt;</span> <span class="pre">0.5</span></code></p></li>
+<li><p>Find escalations: <code class="docutils literal notranslate"><span class="pre">signals.escalation.requested</span> <span class="pre">=</span> <span class="pre">"true"</span></code></p></li>
+</ul>
+<p>For complete details on all available signals, detection methods, and best practices, see the <a class="reference internal" href="../../concepts/signals.html"><span class="doc">Signals™</span></a> guide.</p>
 </section>
 <section id="benefits-of-using-traceparent-headers">
 <h2>Benefits of Using <code class="docutils literal notranslate"><span class="pre">Traceparent</span></code> Headers<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#benefits-of-using-traceparent-headers" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#benefits-of-using-traceparent-headers'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -459,6 +565,15 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 <div class="sticky top-16 -mt-10 max-h-[calc(100vh-5rem)] overflow-y-auto pt-6 space-y-2"><p class="font-medium">On this page</p>
 <ul>
 <li><a :data-current="activeSection === '#overview'" class="reference internal" href="#overview">Overview</a></li>
+<li><a :data-current="activeSection === '#understanding-plano-traces'" class="reference internal" href="#understanding-plano-traces">Understanding Plano Traces</a><ul>
+<li><a :data-current="activeSection === '#inbound-request-handling'" class="reference internal" href="#inbound-request-handling">Inbound Request Handling</a></li>
+<li><a :data-current="activeSection === '#orchestration-routing'" class="reference internal" href="#orchestration-routing">Orchestration &amp; Routing</a></li>
+<li><a :data-current="activeSection === '#agent-processing'" class="reference internal" href="#agent-processing">Agent Processing</a></li>
+<li><a :data-current="activeSection === '#outbound-llm-calls'" class="reference internal" href="#outbound-llm-calls">Outbound LLM Calls</a></li>
+<li><a :data-current="activeSection === '#handoff-to-upstream-services'" class="reference internal" href="#handoff-to-upstream-services">Handoff to Upstream Services</a></li>
+</ul>
+</li>
+<li><a :data-current="activeSection === '#behavioral-signals-in-traces'" class="reference internal" href="#behavioral-signals-in-traces">Behavioral Signals in Traces</a></li>
 <li><a :data-current="activeSection === '#benefits-of-using-traceparent-headers'" class="reference internal" href="#benefits-of-using-traceparent-headers">Benefits of Using <code class="docutils literal notranslate"><span class="pre">Traceparent</span></code> Headers</a></li>
 <li><a :data-current="activeSection === '#how-to-initiate-a-trace'" class="reference internal" href="#how-to-initiate-a-trace">How to Initiate A Trace</a></li>
 <li><a :data-current="activeSection === '#trace-propagation'" class="reference internal" href="#trace-propagation">Trace Propagation</a><ul>
