@@ -335,6 +335,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "serde_yaml",
+ "strsim",
  "thiserror 2.0.12",
  "time",
  "tokio",

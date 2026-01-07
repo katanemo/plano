@@ -111,6 +111,9 @@ pub async fn llm_chat(
         .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
 
+    // Extract messages for signal analysis (clone before moving client_request)
+    let messages_for_signals = client_request.get_messages();
+
     client_request.set_model(resolved_model.clone());
     if client_request.remove_metadata_key("archgw_preference_config") {
         debug!(
@@ -292,6 +295,7 @@ pub async fn llm_chat(
         operation_component::LLM,
         llm_span,
         request_start_time,
+        Some(messages_for_signals),
     );
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===

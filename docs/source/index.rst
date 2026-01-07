@@ -5,7 +5,7 @@ Welcome to Plano!
    :width: 100%
    :align: center
 
-`Plano <https://github.com/katanemo/plano>`_ is delivery infrastructure for agentic apps. A models-native proxy server and data plane designed to help you build agents faster, and deliver them reliably to production.
+`Plano <https://github.com/katanemo/plano>`_ is delivery infrastructure for agentic apps. A smart proxy server and data plane designed to help you build agents faster, and deliver them reliably to production.
 
 Plano pulls out the rote plumbing work (aka “hidden AI middleware”) and decouples you from brittle, ever‑changing framework abstractions. It centralizes what shouldn’t be bespoke in every codebase like agent routing and orchestration, rich agentic signals and traces for continuous improvement, guardrail filters for safety and moderation, and smart LLM routing APIs for UX and DX agility. Use any language or AI framework, and ship agents to production faster with Plano.
 
@@ -36,6 +36,7 @@ Built by contributors to the widely adopted `Envoy Proxy <https://www.envoyproxy
       concepts/filter_chain
       concepts/llm_providers/llm_providers
       concepts/prompt_target
+      concepts/signals
 
   .. tab-item:: Guides
 

@@ -81,7 +81,7 @@ def main(ctx, version):
 
 @click.command()
 def build():
-    """Build Arch from source. Works from any directory within the repo."""
+    """Build Plano from source. Works from any directory within the repo."""
 
     # Find the repo root
     repo_root = find_repo_root()
@@ -112,7 +112,7 @@ def build():
             ],
             check=True,
         )
-        click.echo("archgw image built successfully.")
+        click.echo("plano image built successfully.")
     except subprocess.CalledProcessError as e:
         click.echo(f"Error building plano image: {e}")
         sys.exit(1)
