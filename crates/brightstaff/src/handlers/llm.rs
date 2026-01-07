@@ -44,22 +44,40 @@ pub async fn llm_chat(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
-    let request_id = request_headers
+    let request_id: String = match request_headers
         .get(REQUEST_ID_HEADER)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    {
+        Some(id) => id,
+        None => {
+            let generated_id = uuid::Uuid::new_v4().to_string();
+            warn!(
+                "[PLANO_REQ_ID:{}] | REQUEST_ID header missing, generated new ID",
+                generated_id
+            );
+            generated_id
+        }
+    };
 
     // Extract or generate traceparent - this establishes the trace context for all spans
-    let traceparent: String = request_headers
+    let traceparent: String = match request_headers
         .get(TRACE_PARENT_HEADER)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| {
+    {
+        Some(tp) => tp,
+        None => {
             use uuid::Uuid;
             let trace_id = Uuid::new_v4().to_string().replace("-", "");
-            format!("00-{}-0000000000000000-01", trace_id)
-        });
+            let generated_tp = format!("00-{}-0000000000000000-01", trace_id);
+            warn!(
+                "[PLANO_REQ_ID:{}] | TRACE_PARENT header missing, generated new traceparent: {}",
+                request_id, generated_tp
+            );
+            generated_tp
+        }
+    };
 
     let mut request_headers = request_headers;
     let chat_request_bytes = request.collect().await?.to_bytes();
@@ -207,10 +225,10 @@ pub async fn llm_chat(
     let routing_result = match router_chat_get_upstream_model(
         router_service,
         client_request, // Pass the original request - router_chat will convert it
-        &request_headers,
         trace_collector.clone(),
         &traceparent,
         &request_path,
+        &request_id,
     )
     .await
     {
@@ -321,7 +339,7 @@ pub async fn llm_chat(
             is_streaming_request,
             false, // Not OpenAI upstream since should_manage_state is true
             content_encoding,
-            request_id.clone(),
+            request_id,
         );
         create_streaming_response(byte_stream, state_processor, 16)
     } else {

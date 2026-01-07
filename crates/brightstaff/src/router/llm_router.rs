@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common::{
     configuration::{LlmProvider, ModelUsagePreference, RoutingPreference},
-    consts::ARCH_PROVIDER_HINT_HEADER,
+    consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER},
 };
 use hermesllm::apis::openai::{ChatCompletionsResponse, Message};
 use hyper::header;
@@ -77,8 +77,9 @@ impl RouterService {
     pub async fn determine_route(
         &self,
         messages: &[Message],
-        trace_parent: Option<String>,
+        traceparent: &str,
         usage_preferences: Option<Vec<ModelUsagePreference>>,
+        request_id: &str,
     ) -> Result<Option<(String, String)>> {
         if messages.is_empty() {
             return Ok(None);
@@ -116,12 +117,15 @@ impl RouterService {
             header::HeaderValue::from_str(&self.routing_provider_name).unwrap(),
         );
 
-        if let Some(trace_parent) = trace_parent {
-            llm_route_request_headers.insert(
-                header::HeaderName::from_static("traceparent"),
-                header::HeaderValue::from_str(&trace_parent).unwrap(),
-            );
-        }
+        llm_route_request_headers.insert(
+            header::HeaderName::from_static(TRACE_PARENT_HEADER),
+            header::HeaderValue::from_str(traceparent).unwrap(),
+        );
+
+        llm_route_request_headers.insert(
+            header::HeaderName::from_static(REQUEST_ID_HEADER),
+            header::HeaderValue::from_str(request_id).unwrap(),
+        );
 
         llm_route_request_headers.insert(
             header::HeaderName::from_static("model"),

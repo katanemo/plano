@@ -206,10 +206,15 @@ async fn handle_agent_chat(
     let message: Vec<OpenAIMessage> = client_request.get_messages();
 
     // Extract trace parent for routing
-    let trace_parent = request_headers
+    let traceparent = request_headers
         .iter()
         .find(|(key, _)| key.as_str() == TRACE_PARENT_HEADER)
         .map(|(_, value)| value.to_str().unwrap_or_default().to_string());
+
+    let request_id = request_headers
+        .get(common::consts::REQUEST_ID_HEADER)
+        .and_then(|val| val.to_str().ok())
+        .map(|s| s.to_string());
 
     // Create agent map for pipeline processing and agent selection
     let agent_map = {
@@ -219,7 +224,7 @@ async fn handle_agent_chat(
     };
 
     // Parse trace parent to get trace_id and parent_span_id
-    let (trace_id, parent_span_id) = if let Some(ref tp) = trace_parent {
+    let (trace_id, parent_span_id) = if let Some(ref tp) = traceparent {
         parse_traceparent(tp)
     } else {
         (String::new(), None)
@@ -231,7 +236,7 @@ async fn handle_agent_chat(
     let selection_start_instant = Instant::now();
 
     let selected_agents = agent_selector
-        .select_agents(&message, &listener, trace_parent.clone())
+        .select_agents(&message, &listener, traceparent.clone(), request_id.clone())
         .await?;
 
     // Record agent selection span

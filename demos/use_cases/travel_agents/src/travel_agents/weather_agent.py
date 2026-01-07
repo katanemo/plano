@@ -61,7 +61,13 @@ def get_last_user_content(messages: list) -> str:
     return ""
 
 
-async def get_weather_data(request: Request, messages: list, days: int = 1):
+async def get_weather_data(
+    request: Request,
+    messages: list,
+    days: int = 1,
+    traceparent_header: str = None,
+    request_id: str = None,
+):
     """Extract location from user's conversation and fetch weather data from Open-Meteo API.
 
     This function does two things:
@@ -97,8 +103,9 @@ If no city can be found, output: NOT_FOUND"""
         else:
             ctx = extract(request.headers)
             extra_headers = {}
+            if request_id:
+                extra_headers["x-request-id"] = request_id
             inject(extra_headers, context=ctx)
-
             # For location extraction, pass full conversation for context (e.g., "there" = previous destination)
             response = await openai_client_via_plano.chat.completions.create(
                 model=LOCATION_MODEL,
@@ -226,12 +233,12 @@ If no city can be found, output: NOT_FOUND"""
                     "day_name": date_obj.strftime("%A"),
                     "temperature_c": round(temp_c, 1) if temp_c is not None else None,
                     "temperature_f": celsius_to_fahrenheit(temp_c),
-                    "temperature_max_c": round(temp_max, 1)
-                    if temp_max is not None
-                    else None,
-                    "temperature_min_c": round(temp_min, 1)
-                    if temp_min is not None
-                    else None,
+                    "temperature_max_c": (
+                        round(temp_max, 1) if temp_max is not None else None
+                    ),
+                    "temperature_min_c": (
+                        round(temp_min, 1) if temp_min is not None else None
+                    ),
                     "weather_code": weather_code,
                     "sunrise": sunrise.split("T")[1] if sunrise else None,
                     "sunset": sunset.split("T")[1] if sunset else None,
@@ -270,9 +277,10 @@ async def handle_request(request: Request):
     )
 
     traceparent_header = request.headers.get("traceparent")
+    request_id = request.headers.get("x-request-id")
 
     return StreamingResponse(
-        invoke_weather_agent(request, request_body, traceparent_header),
+        invoke_weather_agent(request, request_body, traceparent_header, request_id),
         media_type="text/plain",
         headers={
             "content-type": "text/event-stream",
@@ -281,7 +289,10 @@ async def handle_request(request: Request):
 
 
 async def invoke_weather_agent(
-    request: Request, request_body: dict, traceparent_header: str = None
+    request: Request,
+    request_body: dict,
+    traceparent_header: str = None,
+    request_id: str = None,
 ):
     """Generate streaming chat completions."""
     messages = request_body.get("messages", [])
@@ -304,7 +315,9 @@ async def invoke_weather_agent(
         days = min(requested_days, 16)  # API supports max 16 days
 
     # Get live weather data (location extraction happens inside this function)
-    weather_data = await get_weather_data(request, messages, days)
+    weather_data = await get_weather_data(
+        request, messages, days, traceparent_header, request_id
+    )
 
     # Create weather context to append to user message
     forecast_type = "forecast" if days > 1 else "current weather"
@@ -351,6 +364,8 @@ Present the weather information to the user in a clear, readable format. If ther
     try:
         ctx = extract(request.headers)
         extra_headers = {"x-envoy-max-retries": "3"}
+        if request_id:
+            extra_headers["x-request-id"] = request_id
         inject(extra_headers, context=ctx)
 
         stream = await openai_client_via_plano.chat.completions.create(

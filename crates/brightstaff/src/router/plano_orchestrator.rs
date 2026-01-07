@@ -2,7 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use common::{
     configuration::{AgentUsagePreference, OrchestrationPreference},
-    consts::{ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME},
+    consts::{
+        ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME, REQUEST_ID_HEADER,
+        TRACE_PARENT_HEADER,
+    },
 };
 use hermesllm::apis::openai::{ChatCompletionsResponse, Message};
 use hyper::header;
@@ -56,6 +59,7 @@ impl OrchestratorService {
         messages: &[Message],
         trace_parent: Option<String>,
         usage_preferences: Option<Vec<AgentUsagePreference>>,
+        request_id: Option<String>,
     ) -> Result<Option<Vec<(String, String)>>> {
         if messages.is_empty() {
             return Ok(None);
@@ -94,8 +98,15 @@ impl OrchestratorService {
 
         if let Some(trace_parent) = trace_parent {
             orchestration_request_headers.insert(
-                header::HeaderName::from_static("traceparent"),
+                header::HeaderName::from_static(TRACE_PARENT_HEADER),
                 header::HeaderValue::from_str(&trace_parent).unwrap(),
+            );
+        }
+
+        if let Some(request_id) = request_id {
+            orchestration_request_headers.insert(
+                header::HeaderName::from_static(REQUEST_ID_HEADER),
+                header::HeaderValue::from_str(&request_id).unwrap(),
             );
         }
 
