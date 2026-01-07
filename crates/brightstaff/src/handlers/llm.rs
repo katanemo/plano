@@ -290,17 +290,13 @@ pub async fn llm_chat(
     .await;
 
     // Create base processor for metrics and tracing
-    let mut base_processor = ObservableStreamProcessor::new(
+    let base_processor = ObservableStreamProcessor::new(
         trace_collector,
         operation_component::LLM,
         llm_span,
         request_start_time,
+        (!messages_for_signals.is_empty()).then_some(messages_for_signals),
     );
-
-    // Add messages for signal analysis if available
-    if !messages_for_signals.is_empty() {
-        base_processor = base_processor.with_messages(messages_for_signals);
-    }
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===
     // Only wrap if we need to manage state (client is ResponsesAPI AND upstream is NOT ResponsesAPI AND state_storage is configured)

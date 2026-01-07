@@ -51,11 +51,13 @@ impl ObservableStreamProcessor {
     /// * `service_name` - The service name for this span (e.g., "archgw(llm)")
     /// * `span` - The span to finalize after streaming completes
     /// * `start_time` - When the request started (for duration calculation)
+    /// * `messages` - Optional conversation messages for signal analysis
     pub fn new(
         collector: Arc<TraceCollector>,
         service_name: impl Into<String>,
         span: Span,
         start_time: Instant,
+        messages: Option<Vec<Message>>,
     ) -> Self {
         Self {
             collector,
@@ -65,14 +67,8 @@ impl ObservableStreamProcessor {
             chunk_count: 0,
             start_time,
             time_to_first_token: None,
-            messages: None,
+            messages,
         }
-    }
-
-    /// Set the conversation messages for signal analysis
-    pub fn with_messages(mut self, messages: Vec<Message>) -> Self {
-        self.messages = Some(messages);
-        self
     }
 }
 
