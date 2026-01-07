@@ -208,6 +208,7 @@ pub async fn llm_chat(
         trace_collector.clone(),
         &traceparent,
         &request_path,
+        Some(request_id.to_string()),
     )
     .await
     {

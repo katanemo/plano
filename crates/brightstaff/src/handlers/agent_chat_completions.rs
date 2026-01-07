@@ -211,6 +211,11 @@ async fn handle_agent_chat(
         .find(|(key, _)| key.as_str() == TRACE_PARENT_HEADER)
         .map(|(_, value)| value.to_str().unwrap_or_default().to_string());
 
+    let request_id = request_headers
+        .get(common::consts::REQUEST_ID_HEADER)
+        .and_then(|val| val.to_str().ok())
+        .map(|s| s.to_string());
+
     // Create agent map for pipeline processing and agent selection
     let agent_map = {
         let agents = agents_list.read().await;
@@ -231,7 +236,12 @@ async fn handle_agent_chat(
     let selection_start_instant = Instant::now();
 
     let selected_agents = agent_selector
-        .select_agents(&message, &listener, trace_parent.clone())
+        .select_agents(
+            &message,
+            &listener,
+            trace_parent.clone(),
+            request_id.clone(),
+        )
         .await?;
 
     // Record agent selection span
