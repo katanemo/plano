@@ -386,7 +386,7 @@ impl PipelineProcessor {
     async fn send_mcp_request(
         &self,
         json_rpc_request: &JsonRpcRequest,
-        headers: HeaderMap,
+        headers: &HeaderMap,
         agent_id: &str,
     ) -> Result<reqwest::Response, PipelineError> {
         let request_body = serde_json::to_string(json_rpc_request)?;
@@ -399,7 +399,7 @@ impl PipelineProcessor {
         let response = self
             .client
             .post(format!("{}/mcp", self.url))
-            .headers(headers)
+            .headers(headers.clone())
             .body(request_body)
             .send()
             .await?;
@@ -443,7 +443,12 @@ impl PipelineProcessor {
             session_id.clone()
         } else {
             let session_id = self
-                .get_new_session_id(&agent.id, trace_id.clone(), filter_span_id.clone())
+                .get_new_session_id(
+                    &agent.id,
+                    trace_id.clone(),
+                    filter_span_id.clone(),
+                    request_headers,
+                )
                 .await;
             self.agent_id_session_map
                 .insert(agent.id.clone(), session_id.clone());
@@ -476,7 +481,7 @@ impl PipelineProcessor {
         let start_instant = Instant::now();
 
         let response = self
-            .send_mcp_request(&json_rpc_request, agent_headers, &agent.id)
+            .send_mcp_request(&json_rpc_request, &agent_headers, &agent.id)
             .await?;
         let http_status = response.status();
         let response_bytes = response.bytes().await?;
@@ -608,6 +613,7 @@ impl PipelineProcessor {
         session_id: &str,
         trace_id: String,
         parent_span_id: String,
+        request_headers: &HeaderMap,
     ) -> Result<(), PipelineError> {
         let initialized_notification = JsonRpcNotification {
             jsonrpc: JSON_RPC_VERSION.to_string(),
@@ -619,7 +625,7 @@ impl PipelineProcessor {
         debug!("Sending initialized notification for agent {}", agent_id);
 
         let headers = self.build_mcp_headers(
-            &HeaderMap::new(),
+            request_headers,
             agent_id,
             Some(session_id),
             trace_id.clone(),
@@ -647,13 +653,14 @@ impl PipelineProcessor {
         agent_id: &str,
         trace_id: String,
         parent_span_id: String,
+        request_headers: &HeaderMap,
     ) -> String {
         info!("Initializing MCP session for agent {}", agent_id);
 
         let initialize_request = self.build_initialize_request();
         let headers = self
             .build_mcp_headers(
-                &HeaderMap::new(),
+                request_headers,
                 agent_id,
                 None,
                 trace_id.clone(),
@@ -662,7 +669,7 @@ impl PipelineProcessor {
             .expect("Failed to build headers for initialization");
 
         let response = self
-            .send_mcp_request(&initialize_request, headers, agent_id)
+            .send_mcp_request(&initialize_request, &headers, agent_id)
             .await
             .expect("Failed to initialize MCP session");
 
@@ -686,6 +693,7 @@ impl PipelineProcessor {
             &session_id,
             trace_id.clone(),
             parent_span_id.clone(),
+            &headers,
         )
         .await
         .expect("Failed to send initialized notification");

@@ -61,7 +61,13 @@ def get_last_user_content(messages: list) -> str:
     return ""
 
 
-async def get_weather_data(request: Request, messages: list, days: int = 1):
+async def get_weather_data(
+    request: Request,
+    messages: list,
+    days: int = 1,
+    traceparent_header: str = None,
+    request_id: str = None,
+):
     """Extract location from user's conversation and fetch weather data from Open-Meteo API.
 
     This function does two things:
@@ -70,26 +76,22 @@ async def get_weather_data(request: Request, messages: list, days: int = 1):
 
     Currently returns only current day weather. Want to add multi-day forecasts?
     """
+    instructions = """You are a city name extractor. Look at the FINAL user message ONLY and extract the city name.
 
-    instructions = """Extract the location for WEATHER queries. Return just the city name.
+The FINAL user message will be the LAST message with role "user" in the conversation.
 
-            Rules:
-            1. For multi-part queries, extract ONLY the location mentioned with weather keywords ("weather in [location]")
-            2. If user says "there" or "that city", it typically refers to the DESTINATION city in travel contexts (not the origin)
-            3. For flight queries with weather, "there" means the destination city where they're traveling TO
-            4. Return plain text (e.g., "London", "New York", "Paris, France")
-            5. If no weather location found, return "NOT_FOUND"
+IMPORTANT: Ignore all previous messages. Focus ONLY on the FINAL user message.
 
-            Examples:
-            - "What's the weather in London?" → "London"
-            - "Flights from Seattle to Atlanta, and show me the weather there" → "Atlanta"
-            - "Can you get me flights from Seattle to Atlanta tomorrow, and also please show me the weather there" → "Atlanta"
-            - "What's the weather in Seattle, and what is one flight that goes direct to Atlanta?" → "Seattle"
-            - User asked about flights to Atlanta, then "what's the weather like there?" → "Atlanta"
-            - "I'm going to Seattle" → "Seattle"
-            - "What's happening?" → "NOT_FOUND"
+Examples of what to extract from the FINAL user message:
+- "What's the weather in Seattle?" → Seattle
+- "What's the weather in San Francisco?" → San Francisco
+- "What about Dubai?" → Dubai
+- "How's the weather in Tokyo today?" → Tokyo
+- "Tell me about Lahore" → Lahore
+- "What about there?" → Look at conversation for the last mentioned city
 
-            Extract location:"""
+Output ONLY the city name. Nothing else. One word or city name only.
+If no city can be found, output: NOT_FOUND"""
 
     try:
         user_messages = [
@@ -101,8 +103,9 @@ async def get_weather_data(request: Request, messages: list, days: int = 1):
         else:
             ctx = extract(request.headers)
             extra_headers = {}
+            if request_id:
+                extra_headers["x-request-id"] = request_id
             inject(extra_headers, context=ctx)
-
             # For location extraction, pass full conversation for context (e.g., "there" = previous destination)
             response = await openai_client_via_plano.chat.completions.create(
                 model=LOCATION_MODEL,
@@ -114,7 +117,7 @@ async def get_weather_data(request: Request, messages: list, days: int = 1):
                     ],
                 ],
                 temperature=0.1,
-                max_tokens=50,
+                max_tokens=10,
                 extra_headers=extra_headers if extra_headers else None,
             )
 
@@ -230,12 +233,12 @@ async def get_weather_data(request: Request, messages: list, days: int = 1):
                     "day_name": date_obj.strftime("%A"),
                     "temperature_c": round(temp_c, 1) if temp_c is not None else None,
                     "temperature_f": celsius_to_fahrenheit(temp_c),
-                    "temperature_max_c": round(temp_max, 1)
-                    if temp_max is not None
-                    else None,
-                    "temperature_min_c": round(temp_min, 1)
-                    if temp_min is not None
-                    else None,
+                    "temperature_max_c": (
+                        round(temp_max, 1) if temp_max is not None else None
+                    ),
+                    "temperature_min_c": (
+                        round(temp_min, 1) if temp_min is not None else None
+                    ),
                     "weather_code": weather_code,
                     "sunrise": sunrise.split("T")[1] if sunrise else None,
                     "sunset": sunset.split("T")[1] if sunset else None,
@@ -265,14 +268,19 @@ async def handle_request(request: Request):
 
     request_body = await request.json()
     messages = request_body.get("messages", [])
+    # Respect the stream parameter - orchestrator controls this based on agent position in chain
+    is_streaming = request_body.get("stream", True)
+
     logger.info(
         "messages detail json dumps: %s",
         json.dumps(messages, indent=2),
     )
 
     traceparent_header = request.headers.get("traceparent")
+    request_id = request.headers.get("x-request-id")
+
     return StreamingResponse(
-        invoke_weather_agent(request, request_body, traceparent_header),
+        invoke_weather_agent(request, request_body, traceparent_header, request_id),
         media_type="text/plain",
         headers={
             "content-type": "text/event-stream",
@@ -281,7 +289,10 @@ async def handle_request(request: Request):
 
 
 async def invoke_weather_agent(
-    request: Request, request_body: dict, traceparent_header: str = None
+    request: Request,
+    request_body: dict,
+    traceparent_header: str = None,
+    request_id: str = None,
 ):
     """Generate streaming chat completions."""
     messages = request_body.get("messages", [])
@@ -304,14 +315,18 @@ async def invoke_weather_agent(
         days = min(requested_days, 16)  # API supports max 16 days
 
     # Get live weather data (location extraction happens inside this function)
-    weather_data = await get_weather_data(request, messages, days)
+    weather_data = await get_weather_data(
+        request, messages, days, traceparent_header, request_id
+    )
 
     # Create weather context to append to user message
     forecast_type = "forecast" if days > 1 else "current weather"
     weather_context = f"""
 
 Weather data for {weather_data['location']} ({forecast_type}):
-{json.dumps(weather_data, indent=2)}"""
+{json.dumps(weather_data, indent=2)}
+
+Present the weather information to the user in a clear, readable format. If there is information from other agents, start your response with a summary of that information."""
 
     # System prompt for weather agent
     instructions = """You are a weather assistant in a multi-agent system. You will receive weather data in JSON format with these fields:
@@ -328,7 +343,7 @@ Weather data for {weather_data['location']} ({forecast_type}):
     5. Describe conditions naturally based on weather_code
     6. Use conversational language
 
-    Important: If the conversation includes information from other agents (like flight details), acknowledge and build upon that context naturally. Your primary focus is weather, but maintain awareness of the full conversation.
+    Multi-agent context: You are part of a larger system. If the conversation includes additional context or information from other sources, acknowledge and incorporate it naturally into your response. Your primary focus is weather, but be aware of the full conversation context.
 
     Remember: Only use the provided data. If fields are null, mention data is unavailable."""
 
@@ -349,6 +364,8 @@ Weather data for {weather_data['location']} ({forecast_type}):
     try:
         ctx = extract(request.headers)
         extra_headers = {"x-envoy-max-retries": "3"}
+        if request_id:
+            extra_headers["x-request-id"] = request_id
         inject(extra_headers, context=ctx)
 
         stream = await openai_client_via_plano.chat.completions.create(

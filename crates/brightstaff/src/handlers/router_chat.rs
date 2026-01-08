@@ -1,5 +1,4 @@
 use common::configuration::ModelUsagePreference;
-use common::consts::REQUEST_ID_HEADER;
 use common::traces::{parse_traceparent, SpanBuilder, SpanKind, TraceCollector};
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
 use hermesllm::{ProviderRequest, ProviderRequestType};
@@ -37,17 +36,13 @@ impl RoutingError {
 pub async fn router_chat_get_upstream_model(
     router_service: Arc<RouterService>,
     client_request: ProviderRequestType,
-    request_headers: &hyper::HeaderMap,
     trace_collector: Arc<TraceCollector>,
     traceparent: &str,
     request_path: &str,
+    request_id: &str,
 ) -> Result<RoutingResult, RoutingError> {
     // Clone metadata for routing before converting (which consumes client_request)
     let routing_metadata = client_request.metadata().clone();
-    let request_id = request_headers
-        .get(REQUEST_ID_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("unknown");
 
     // Convert to ChatCompletionsRequest for routing (regardless of input type)
     let chat_request = match ProviderRequestType::try_from((
@@ -79,16 +74,10 @@ pub async fn router_chat_get_upstream_model(
     };
 
     debug!(
-        "[PLANO_REQ_ID: {}]: ROUTER_REQ: {}",
+        "[PLANO_REQ_ID: {:?}]: ROUTER_REQ: {}",
         request_id,
         &serde_json::to_string(&chat_request).unwrap()
     );
-
-    // Extract trace_parent from headers
-    let trace_parent = request_headers
-        .iter()
-        .find(|(ty, _)| ty.as_str() == "traceparent")
-        .map(|(_, value)| value.to_str().unwrap_or_default().to_string());
 
     // Extract usage preferences from metadata
     let usage_preferences_str: Option<String> = routing_metadata.as_ref().and_then(|metadata| {
@@ -121,7 +110,7 @@ pub async fn router_chat_get_upstream_model(
     };
 
     info!(
-        "[PLANO_REQ_ID: {}] | ROUTER_REQ | Usage preferences from request: {}, request_path: {}, latest message: {}",
+        "[PLANO_REQ_ID: {:?}] | ROUTER_REQ | Usage preferences from request: {}, request_path: {}, latest message: {}",
         request_id,
         usage_preferences.is_some(),
         request_path,
@@ -134,7 +123,12 @@ pub async fn router_chat_get_upstream_model(
 
     // Attempt to determine route using the router service
     let routing_result = router_service
-        .determine_route(&chat_request.messages, trace_parent, usage_preferences)
+        .determine_route(
+            &chat_request.messages,
+            traceparent,
+            usage_preferences,
+            request_id,
+        )
         .await;
 
     match routing_result {

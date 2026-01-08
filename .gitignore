@@ -147,3 +147,5 @@ apps/*/dist/
 .vercel
 
 *.logs
+
+.cursor/

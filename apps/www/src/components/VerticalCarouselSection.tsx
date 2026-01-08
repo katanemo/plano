@@ -11,7 +11,7 @@ const verticalCarouselData = [
     category: "INTRODUCTION",
     title: "",
     description: [
-      "Plano is a models-native data plane for AI agents - a framework-friendly, protocol-native fabric that lets you focus on what really matters: your agents' product logic.",
+      "Plano is an AI-native data plane for AI agents - a framework-friendly, protocol-native fabric that lets you focus on what really matters: your agents' product logic.",
       "Plano takes over the plumbing work that slows teams down when handling and processing prompts, including detecting and blocking jailbreaks, routing tasks to the right model or agent for better accuracy, applying context engineering hooks, and centralizing observability across agentic interactions.",
     ],
     diagram: "/IntroDiagram.svg",

@@ -27,7 +27,7 @@ Plano solves this by moving core delivery concerns into a unified, out-of-proces
 
 - **🚦 Orchestration:** Low-latency orchestration between agents; add new agents without modifying app code.
 - **🔗 Model Agility:** Route [by model name, alias (semantic names) or automatically via preferences](#use-plano-as-a-llm-router).
-- **🕵 Agentic Signals&trade;:** Zero-code capture of [behavior signals](#observability) plus OTEL traces/metrics across every agent.
+- **🕵 Agentic Signals&trade;:** Zero-code capture of [Signals](https://docs.planoai.dev/concepts/signals.html) plus OTEL traces/metrics across every agent.
 - **🛡️ Moderation & Memory Hooks:** Build jailbreak protection, add moderation policies and memory consistently via [Filter Chains](https://docs.planoai.dev/concepts/filter_chain.html).
 
 Plano pulls rote plumbing out of your framework so you can stay focused on what matters most: the core product logic of your agentic applications. Plano is backed by [industry-leading LLM research](https://planoai.dev/research) and built on [Envoy](https://envoyproxy.io) by its core contributors, who built critical infrastructure at scale for modern worklaods.

@@ -10,8 +10,10 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::warn;
 
-// Import tracing constants
-use crate::tracing::{error, llm};
+// Import tracing constants and signals
+use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
+use crate::tracing::{error, llm, signals as signal_constants};
+use hermesllm::apis::openai::Message;
 
 /// Trait for processing streaming chunks
 /// Implementors can inject custom logic during streaming (e.g., hallucination detection, logging)
@@ -38,6 +40,7 @@ pub struct ObservableStreamProcessor {
     chunk_count: usize,
     start_time: Instant,
     time_to_first_token: Option<u128>,
+    messages: Option<Vec<Message>>,
 }
 
 impl ObservableStreamProcessor {
@@ -48,11 +51,13 @@ impl ObservableStreamProcessor {
     /// * `service_name` - The service name for this span (e.g., "archgw(llm)")
     /// * `span` - The span to finalize after streaming completes
     /// * `start_time` - When the request started (for duration calculation)
+    /// * `messages` - Optional conversation messages for signal analysis
     pub fn new(
         collector: Arc<TraceCollector>,
         service_name: impl Into<String>,
         span: Span,
         start_time: Instant,
+        messages: Option<Vec<Message>>,
     ) -> Self {
         Self {
             collector,
@@ -62,6 +67,7 @@ impl ObservableStreamProcessor {
             chunk_count: 0,
             start_time,
             time_to_first_token: None,
+            messages,
         }
     }
 }
@@ -130,6 +136,94 @@ impl StreamProcessor for ObservableStreamProcessor {
                 if let Some(ref mut events) = self.span.events {
                     events.push(event);
                 }
+            }
+        }
+
+        // Analyze signals if messages are available and add to span attributes
+        if let Some(ref messages) = self.messages {
+            let analyzer: Box<dyn SignalAnalyzer> = Box::new(TextBasedSignalAnalyzer::new());
+            let report = analyzer.analyze(messages);
+
+            // Add overall quality
+            self.span.attributes.push(Attribute {
+                key: signal_constants::QUALITY.to_string(),
+                value: AttributeValue {
+                    string_value: Some(format!("{:?}", report.overall_quality)),
+                },
+            });
+
+            // Add repair/follow-up metrics if concerning
+            if report.follow_up.is_concerning || report.follow_up.repair_count > 0 {
+                self.span.attributes.push(Attribute {
+                    key: signal_constants::REPAIR_COUNT.to_string(),
+                    value: AttributeValue {
+                        string_value: Some(report.follow_up.repair_count.to_string()),
+                    },
+                });
+
+                self.span.attributes.push(Attribute {
+                    key: signal_constants::REPAIR_RATIO.to_string(),
+                    value: AttributeValue {
+                        string_value: Some(format!("{:.3}", report.follow_up.repair_ratio)),
+                    },
+                });
+            }
+
+            // Add flag marker to operation name if any concerning signal is detected
+            let should_flag = report.frustration.has_frustration
+                || report.repetition.has_looping
+                || report.escalation.escalation_requested
+                || matches!(
+                    report.overall_quality,
+                    InteractionQuality::Poor | InteractionQuality::Severe
+                );
+
+            if should_flag {
+                // Prepend flag marker to the operation name
+                self.span.name = format!("{} {}", self.span.name, FLAG_MARKER);
+            }
+
+            // Add key signal metrics
+            if report.frustration.has_frustration {
+                self.span.attributes.push(Attribute {
+                    key: signal_constants::FRUSTRATION_COUNT.to_string(),
+                    value: AttributeValue {
+                        string_value: Some(report.frustration.frustration_count.to_string()),
+                    },
+                });
+                self.span.attributes.push(Attribute {
+                    key: signal_constants::FRUSTRATION_SEVERITY.to_string(),
+                    value: AttributeValue {
+                        string_value: Some(report.frustration.severity.to_string()),
+                    },
+                });
+            }
+
+            if report.repetition.has_looping {
+                self.span.attributes.push(Attribute {
+                    key: signal_constants::REPETITION_COUNT.to_string(),
+                    value: AttributeValue {
+                        string_value: Some(report.repetition.repetition_count.to_string()),
+                    },
+                });
+            }
+
+            if report.escalation.escalation_requested {
+                self.span.attributes.push(Attribute {
+                    key: signal_constants::ESCALATION_REQUESTED.to_string(),
+                    value: AttributeValue {
+                        string_value: Some("true".to_string()),
+                    },
+                });
+            }
+
+            if report.positive_feedback.has_positive_feedback {
+                self.span.attributes.push(Attribute {
+                    key: signal_constants::POSITIVE_FEEDBACK_COUNT.to_string(),
+                    value: AttributeValue {
+                        string_value: Some(report.positive_feedback.positive_count.to_string()),
+                    },
+                });
             }
         }
 

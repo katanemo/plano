@@ -49,6 +49,6 @@ COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN mkdir -p /var/log/supervisor && touch /var/log/envoy.log /var/log/supervisor/supervisord.log
 
 RUN mkdir -p /var/log && \
-    touch /var/log/access_ingress.log /var/log/access_ingress_prompt.log /var/log/access_internal.log /var/log/access_llm.log
+    touch /var/log/access_ingress.log /var/log/access_ingress_prompt.log /var/log/access_internal.log /var/log/access_llm.log /var/log/access_agent.log
 
 ENTRYPOINT ["sh","-c", "/usr/bin/supervisord"]

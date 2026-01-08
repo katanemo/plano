@@ -30,7 +30,7 @@ jobs:
 
       - name: build arch docker image
         run: |
-          cd ../../ && docker build -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.1 -t katanemo/plano:latest
+          cd ../../ && docker build -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.2 -t katanemo/plano:latest
 
       - name: start plano
         env:

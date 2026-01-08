@@ -311,7 +311,7 @@ static_resources:
                 - name: envoy.access_loggers.file
                   typed_config:
                     "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
-                    path: "/var/log/access_llm.log"
+                    path: "/var/log/access_agent.log"
                 route_config:
                   name: local_routes
                   request_headers_to_add:
@@ -483,13 +483,13 @@ static_resources:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                 stat_prefix: otel_proxy
                 codec_type: AUTO
-                access_log:
-                - name: envoy.access_loggers.file
-                  typed_config:
-                    "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
-                    path: "/var/log/access_otel.log"
-                    format: |
-                     [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" "%UPSTREAM_CLUSTER%"
+                # access_log:
+                # - name: envoy.access_loggers.file
+                #   typed_config:
+                #     "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                #     path: "/var/log/access_otel.log"
+                #     format: |
+                #      [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" "%UPSTREAM_CLUSTER%"
                 route_config:
                   name: otel_route
                   virtual_hosts:
