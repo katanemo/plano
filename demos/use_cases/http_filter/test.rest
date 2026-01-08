@@ -1,0 +1,92 @@
+@baseUrl = http://0.0.0.0:10502
+@model = gpt-4o
+
+# Health Check
+GET {{baseUrl}}/health
+
+###
+
+# Test 1: Simple Non-Streaming Chat Completion
+POST {{baseUrl}}/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello! Can you help me understand what machine learning is?"
+    }
+  ]
+}
+
+###
+
+# Test 2: Simple Streaming Chat Completion
+POST {{baseUrl}}/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Explain the concept of artificial intelligence in simple terms."
+    }
+  ],
+  "stream": true
+}
+
+### Test 3
+POST http://localhost:8001/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "{{model}}",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the guaranteed uptime percentage for TechCorp's cloud services?"
+    }
+  ],
+  "stream": true
+}
+
+### send request to query_rewriter agent
+POST http://localhost:10500/
+Content-Type: application/json
+
+[
+  {
+    "role": "user",
+    "content": "What is the guaranteed uptime percentage for TechCorp's cloud services?"
+  }
+]
+
+### test fast-llm
+POST http://localhost:12000/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "fast-llm",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ]
+}
+
+### test smart-llm
+POST http://localhost:12000/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "smart-llm",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ]
+}

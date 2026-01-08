@@ -1,0 +1,50 @@
+version: v0.3.0
+
+agents:
+  - id: rag_agent
+    url: http://rag-agents:10505
+
+filters:
+  - id: input_guards
+    url: http://rag-agents:10500
+    type: http
+    # type: mcp (default)
+    # transport: streamable-http (default)
+    # tool: input_guards (default - same as filter id)
+  - id: query_rewriter
+    url: http://rag-agents:10501
+    type: http
+    # type: mcp (default)
+    # transport: streamable-http (default)
+    # tool: query_rewriter (default - same as filter id)
+  - id: context_builder
+    url: http://rag-agents:10502
+    type: http
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+
+model_aliases:
+  fast-llm:
+    target: gpt-4o-mini
+  smart-llm:
+    target: gpt-4o
+
+listeners:
+  - type: agent
+    name: agent_1
+    port: 8001
+    router: plano_orchestrator_v1
+    agents:
+      - id: rag_agent
+        description: virtual assistant for retrieval augmented generation tasks
+        filter_chain:
+          - input_guards
+          - query_rewriter
+          - context_builder
+tracing:
+  random_sampling: 100

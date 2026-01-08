@@ -1,0 +1,42 @@
+services:
+  rag-agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "10500:10500"
+      - "10501:10501"
+      - "10502:10502"
+      - "10505:10505"
+    environment:
+      - LLM_GATEWAY_ENDPOINT=${LLM_GATEWAY_ENDPOINT:-http://host.docker.internal:12000/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+  plano:
+    build:
+      context: ../../../
+      dockerfile: Dockerfile
+    ports:
+      - "12000:12000"
+      - "8001:8001"
+    environment:
+      - ARCH_CONFIG_PATH=/config/config.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+    volumes:
+      - ./config.yaml:/app/arch_config.yaml
+      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+  jaeger:
+    build:
+      context: ../../shared/jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+  open-web-ui:
+    image: dyrnq/open-webui:main
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - DEFAULT_MODEL=gpt-4o-mini
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://host.docker.internal:8001/v1

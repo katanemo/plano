@@ -1,0 +1,77 @@
+# http.rest (replacement for mcp_query.rest)
+
+@host = http://localhost
+@model = gpt-4o-mini
+
+# Filter endpoints (HTTP-only)
+@inputGuards = {{host}}:10500
+@queryRewriter = {{host}}:10501
+@contextBuilder = {{host}}:10502
+
+# Plano agent listener (the thing Open WebUI calls)
+@planoAgent = {{host}}:8001
+
+
+POST {{queryRewriter}}/
+Content-Type: application/json
+
+[
+  {
+    "role": "user",
+    "content": "What is the guaranteed uptime percentage for TechCorp's cloud services?"
+  }
+]
+
+
+
+POST {{inputGuards}}/
+Content-Type: application/json
+
+[
+  {
+    "role": "user",
+    "content": "What is the guaranteed uptime percentage for TechCorp's cloud services?"
+  }
+]
+
+
+
+POST {{contextBuilder}}/
+Content-Type: application/json
+
+[
+  {
+    "role": "user",
+    "content": "What is TechCorp's uptime SLA?"
+  }
+]
+
+
+POST {{planoAgent}}/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "fast-llm",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the guaranteed uptime percentage for TechCorp's cloud services?"
+    }
+  ],
+  "stream": false
+}
+
+
+POST {{planoAgent}}/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "fast-llm",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the guaranteed uptime percentage for TechCorp's cloud services?"
+    }
+  ],
+  "stream": true
+}
