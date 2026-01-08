@@ -1,0 +1,39 @@
+services:
+  # Plano Gateway - LLM routing and observability
+  plano:
+    build:
+      context: ../../../
+      dockerfile: Dockerfile
+    container_name: plano
+    restart: unless-stopped
+    ports:
+      - "12000:12000"  # Model gateway
+    environment:
+      - ARCH_CONFIG_PATH=/app/arch_config.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+    volumes:
+      - ./config.yaml:/app/arch_config.yaml:ro
+    depends_on:
+      - jaeger
+    networks:
+      - plano-network
+
+  # Jaeger - Distributed tracing
+  jaeger:
+    build:
+      context: ../../shared/jaeger
+    container_name: jaeger-tracing
+    restart: unless-stopped
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - plano-network
+
+networks:
+  plano-network:
+    driver: bridge
