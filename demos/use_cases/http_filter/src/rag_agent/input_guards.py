@@ -4,6 +4,7 @@ import time
 from typing import List, Optional, Dict, Any
 import uuid
 from fastapi import FastAPI, Depends, Request, HTTPException
+
 # from fastmcp.exceptions import ToolError
 from openai import AsyncOpenAI
 import os
@@ -11,6 +12,7 @@ import logging
 
 from .api import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
 from . import mcp
+
 # from fastmcp.server.dependencies import get_http_headers
 
 # Set up logging
@@ -123,7 +125,9 @@ Respond in JSON format:
 
 # @mcp.tool
 @app.post("/")
-async def input_guards(messages: List[ChatMessage], request: Request) -> List[ChatMessage]:
+async def input_guards(
+    messages: List[ChatMessage], request: Request
+) -> List[ChatMessage]:
     """Input guard that validates queries are within TechCorp's domain.
 
     If the query is out of scope, replaces the user message with a rejection notice.
@@ -135,7 +139,6 @@ async def input_guards(messages: List[ChatMessage], request: Request) -> List[Ch
     # traceparent_header = headers.get("traceparent")
     traceparent_header = request.headers.get("traceparent")
     request_id = request.headers.get("x-request-id")
-
 
     if traceparent_header:
         logger.info(f"Received traceparent header: {traceparent_header}")
@@ -152,10 +155,13 @@ async def input_guards(messages: List[ChatMessage], request: Request) -> List[Ch
         # Throw ToolError
         error_message = f"I apologize, but I can only assist with questions related to TechCorp and its services. Your query appears to be outside this scope. {reason}\n\nPlease ask me about TechCorp's products, services, pricing, SLAs, or technical support."
         # raise ToolError(error_message)
-        raise HTTPException(status_code=400, detail={"error": "out_of_scope", "message": error_message})
+        raise HTTPException(
+            status_code=400, detail={"error": "out_of_scope", "message": error_message}
+        )
 
     logger.info("Query validation passed - forwarding to next filter")
     return messages
+
 
 @app.get("/health")
 async def health():

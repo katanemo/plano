@@ -9,6 +9,7 @@ import os
 import logging
 
 from .api import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
+
 # from . import mcp
 # from fastmcp.server.dependencies import get_http_headers
 
@@ -82,9 +83,10 @@ Return only the rewritten query, nothing else."""
     return ""
 
 
-
 @app.post("/")
-async def query_rewriter_http(messages: List[ChatMessage], request: Request) -> List[ChatMessage]:
+async def query_rewriter_http(
+    messages: List[ChatMessage], request: Request
+) -> List[ChatMessage]:
     """HTTP filter endpoint used by Plano (type: http)."""
     logger.info(f"Received request with {len(messages)} messages")
 
@@ -96,7 +98,9 @@ async def query_rewriter_http(messages: List[ChatMessage], request: Request) -> 
     else:
         logger.info("No traceparent header found")
 
-    rewritten_query = await rewrite_query_with_archgw(messages, traceparent_header, request_id)
+    rewritten_query = await rewrite_query_with_archgw(
+        messages, traceparent_header, request_id
+    )
     # Create updated messages with the rewritten query
     updated_messages = messages.copy()
 
@@ -109,15 +113,19 @@ async def query_rewriter_http(messages: List[ChatMessage], request: Request) -> 
                 f"Updated user query from '{original_query}' to '{rewritten_query}'"
             )
             break
-    updated_messages_data = [{"role": msg.role, "content": msg.content} for msg in updated_messages]
+    updated_messages_data = [
+        {"role": msg.role, "content": msg.content} for msg in updated_messages
+    ]
     updated_messages = [ChatMessage(**msg) for msg in updated_messages_data]
 
     logger.info("Returning rewritten chat completion response")
     return updated_messages
 
+
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
 
 def start_server(host: str = "0.0.0.0", port: int = 10501):
     """Start the FastAPI server for query rewriter."""
@@ -125,6 +133,3 @@ def start_server(host: str = "0.0.0.0", port: int = 10501):
 
     logger.info(f"Starting Query Rewriter REST server on {host}:{port}")
     uvicorn.run(app, host=host, port=port)
-
-
-

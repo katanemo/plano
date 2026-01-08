@@ -76,4 +76,3 @@ pids+=($!)
 for PID in "${pids[@]}"; do
     wait "$PID"
 done
-
