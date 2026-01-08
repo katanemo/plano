@@ -666,8 +666,7 @@ If no routes are needed, return an empty list for `route`.
         >(orchestrations_str)
         .unwrap();
         let orchestration_model = "test-model".to_string();
-        let orchestrator =
-            OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 235);
+        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model, 235);
 
         let conversation_str = r#"
                     [
@@ -739,8 +738,7 @@ If no routes are needed, return an empty list for `route`.
         .unwrap();
 
         let orchestration_model = "test-model".to_string();
-        let orchestrator =
-            OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 200);
+        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model, 200);
 
         let conversation_str = r#"
                     [
@@ -819,8 +817,7 @@ If no routes are needed, return an empty list for `route`.
         >(orchestrations_str)
         .unwrap();
         let orchestration_model = "test-model".to_string();
-        let orchestrator =
-            OrchestratorModelV1::new(agent_orchestrations, orchestration_model.clone(), 230);
+        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model, 230);
 
         let conversation_str = r#"
                     [

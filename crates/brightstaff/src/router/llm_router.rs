@@ -61,7 +61,7 @@ impl RouterService {
 
         let router_model = Arc::new(router_model_v1::RouterModelV1::new(
             llm_routes,
-            routing_model_name.clone(),
+            routing_model_name,
             router_model_v1::MAX_TOKEN_LEN,
         ));
 

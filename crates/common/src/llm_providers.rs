@@ -14,7 +14,7 @@ impl LlmProviders {
     }
 
     pub fn default(&self) -> Option<Rc<LlmProvider>> {
-        self.default.as_ref().map(|rc| rc.clone())
+        self.default.clone()
     }
 
     pub fn get(&self, name: &str) -> Option<Rc<LlmProvider>> {
@@ -58,19 +58,21 @@ impl TryFrom<Vec<LlmProvider>> for LlmProviders {
             let name = llm_provider.name.clone();
             if llm_providers
                 .providers
-                .insert(name.clone(), llm_provider.clone())
+                .insert(name.clone(), Rc::clone(&llm_provider))
                 .is_some()
             {
                 return Err(LlmProvidersNewError::DuplicateName(name));
             }
 
             // also add model_id as key for provider lookup
-            if llm_providers
-                .providers
-                .insert(llm_provider.model.clone().unwrap(), llm_provider)
-                .is_some()
-            {
-                return Err(LlmProvidersNewError::DuplicateName(name));
+            if let Some(model) = llm_provider.model.clone() {
+                if llm_providers
+                    .providers
+                    .insert(model, llm_provider)
+                    .is_some()
+                {
+                    return Err(LlmProvidersNewError::DuplicateName(name));
+                }
             }
         }
         Ok(llm_providers)

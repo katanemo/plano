@@ -894,7 +894,7 @@ impl HttpContext for StreamContext {
         };
 
         let model_name = match self.llm_provider.as_ref() {
-            Some(llm_provider) => llm_provider.model.as_ref(),
+            Some(llm_provider) => llm_provider.model.clone(),
             None => None,
         };
 
@@ -903,7 +903,7 @@ impl HttpContext for StreamContext {
 
         // Apply model name resolution logic using the trait method
         let resolved_model = match model_name {
-            Some(model_name) => model_name.clone(),
+            Some(model_name) => model_name,
             None => {
                 warn!(
                     "[PLANO_REQ_ID:{}] MODEL_RESOLUTION_ERROR: no model specified | req_model='{}' provider='{}' config_model={:?}",

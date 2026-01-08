@@ -20,13 +20,12 @@ pub fn replace_params_in_path(
             in_param = true;
         } else if c == '}' {
             in_param = false;
-            let param_name = current_param.clone();
-            if let Some(value) = tool_params.get(&param_name) {
+            if let Some(value) = tool_params.get(&current_param) {
                 let value = urlencoding::encode(value);
                 query_string_replaced.push_str(value.into_owned().as_str());
-                vars_replaced.insert(param_name.clone());
+                vars_replaced.insert(current_param.clone());
             } else {
-                return Err(format!("Missing value for parameter `{}`", param_name));
+                return Err(format!("Missing value for parameter `{}`", current_param));
             }
             current_param.clear();
         } else if in_param {
@@ -41,25 +40,22 @@ pub fn replace_params_in_path(
         let value = urlencoding::encode(value).into_owned();
         if !vars_replaced.contains(param_name) {
             vars_replaced.insert(param_name.clone());
-            params.insert(param_name.clone(), value.clone());
             if query_string_replaced.contains("?") {
                 query_string_replaced.push_str(&format!("&{}={}", param_name, value));
             } else {
                 query_string_replaced.push_str(&format!("?{}={}", param_name, value));
             }
+            params.insert(param_name.clone(), value);
         }
     }
 
     // add default values
     for param in prompt_target_params.iter() {
         if !vars_replaced.contains(&param.name) && param.default.is_some() {
-            params.insert(param.name.clone(), param.default.clone().unwrap());
+            let default_val = param.default.as_ref().unwrap();
+            params.insert(param.name.clone(), default_val.clone());
             if query_string_replaced.contains("?") {
-                query_string_replaced.push_str(&format!(
-                    "&{}={}",
-                    param.name,
-                    param.default.as_ref().unwrap()
-                ));
+                query_string_replaced.push_str(&format!("&{}={}", param.name, default_val));
             } else {
                 query_string_replaced.push_str(&format!(
                     "?{}={}",
@@ -117,7 +113,7 @@ mod test {
             Ok((
                 "/cluster.open-cluster-management.io/v1/managedclusters/test1".to_string(),
                 "hello=hello%20world&country=US".to_string(),
-                out_params.clone()
+                out_params
             ))
         );
 

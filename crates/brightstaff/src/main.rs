@@ -97,13 +97,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let router_service: Arc<RouterService> = Arc::new(RouterService::new(
         arch_config.model_providers.clone(),
-        llm_provider_url.clone() + CHAT_COMPLETIONS_PATH,
-        routing_model_name.clone(),
-        routing_llm_provider.clone(),
+        format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
+        routing_model_name,
+        routing_llm_provider,
     ));
 
     let orchestrator_service: Arc<OrchestratorService> = Arc::new(OrchestratorService::new(
-        llm_provider_url.clone() + CHAT_COMPLETIONS_PATH,
+        format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         PLANO_ORCHESTRATOR_MODEL_NAME.to_string(),
     ));
 

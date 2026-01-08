@@ -322,7 +322,7 @@ Based on your analysis, provide your response in the following JSON formats if y
         let llm_routes =
             serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
         let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model.clone(), usize::MAX);
+        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
 
         let conversation_str = r#"
                     [
@@ -380,7 +380,7 @@ Based on your analysis, provide your response in the following JSON formats if y
         let llm_routes =
             serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
         let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model.clone(), usize::MAX);
+        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
 
         let conversation_str = r#"
                     [
@@ -446,7 +446,7 @@ Based on your analysis, provide your response in the following JSON formats if y
         let llm_routes =
             serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
         let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model.clone(), 235);
+        let router = RouterModelV1::new(llm_routes, routing_model, 235);
 
         let conversation_str = r#"
                     [
@@ -507,7 +507,7 @@ Based on your analysis, provide your response in the following JSON formats if y
             serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
 
         let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model.clone(), 200);
+        let router = RouterModelV1::new(llm_routes, routing_model, 200);
 
         let conversation_str = r#"
                     [
@@ -567,7 +567,7 @@ Based on your analysis, provide your response in the following JSON formats if y
         let llm_routes =
             serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
         let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model.clone(), 230);
+        let router = RouterModelV1::new(llm_routes, routing_model, 230);
 
         let conversation_str = r#"
                     [
@@ -634,7 +634,7 @@ Based on your analysis, provide your response in the following JSON formats if y
         let llm_routes =
             serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
         let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model.clone(), usize::MAX);
+        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
 
         let conversation_str = r#"
                     [
@@ -703,7 +703,7 @@ Based on your analysis, provide your response in the following JSON formats if y
         let llm_routes =
             serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
         let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model.clone(), usize::MAX);
+        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
 
         let conversation_str = r#"
                                                 [
