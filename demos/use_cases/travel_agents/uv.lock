@@ -147,6 +147,18 @@ wheels = [
 ]
 
 [[package]]
+name = "importlib-metadata"
+version = "8.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "zipp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/49/3b30cad09e7771a4982d9975a8cbf64f00d4a1ececb53297f1d9a7be1b10/importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb", size = 57107, upload-time = "2025-12-21T10:00:19.278Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/5e/f8e9a1d23b9c20a551a8a02ea3637b4642e22c2626e3a13a9a29cdea99eb/importlib_metadata-8.7.1-py3-none-any.whl", hash = "sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151", size = 27865, upload-time = "2025-12-21T10:00:18.329Z" },
+]
+
+[[package]]
 name = "jiter"
 version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -260,6 +272,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0f/39/8e347e9fda125324d253084bb1b82407e5e3c7777a03dc398f79b2d95626/openai-2.13.0.tar.gz", hash = "sha256:9ff633b07a19469ec476b1e2b5b26c5ef700886524a7a72f65e6f0b5203142d5", size = 626583, upload-time = "2025-12-16T18:19:44.387Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/d5/eb52edff49d3d5ea116e225538c118699ddeb7c29fa17ec28af14bc10033/openai-2.13.0-py3-none-any.whl", hash = "sha256:746521065fed68df2f9c2d85613bb50844343ea81f60009b60e6a600c9352c79", size = 1066837, upload-time = "2025-12-16T18:19:43.124Z" },
+]
+
+[[package]]
+name = "opentelemetry-api"
+version = "1.39.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "importlib-metadata" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/97/b9/3161be15bb8e3ad01be8be5a968a9237c3027c5be504362ff800fca3e442/opentelemetry_api-1.39.1.tar.gz", hash = "sha256:fbde8c80e1b937a2c61f20347e91c0c18a1940cecf012d62e65a7caf08967c9c", size = 65767, upload-time = "2025-12-11T13:32:39.182Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/df/d3f1ddf4bb4cb50ed9b1139cc7b1c54c34a1e7ce8fd1b9a37c0d1551a6bd/opentelemetry_api-1.39.1-py3-none-any.whl", hash = "sha256:2edd8463432a7f8443edce90972169b195e7d6a05500cd29e6d13898187c9950", size = 66356, upload-time = "2025-12-11T13:32:17.304Z" },
 ]
 
 [[package]]
@@ -438,6 +463,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "openai" },
+    { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "uvicorn" },
 ]
@@ -445,11 +471,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.2.1" },
-    { name = "fastapi", specifier = ">=0.104.1" },
+    { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.24.0" },
-    { name = "openai", specifier = ">=2.13.0" },
+    { name = "openai", specifier = ">=1.0.0" },
+    { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
-    { name = "uvicorn", specifier = ">=0.24.0" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 
 [[package]]
@@ -485,4 +512,13 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cb/ce/f06b84e2697fef4688ca63bdb2fdf113ca0a3be33f94488f2cadb690b0cf/uvicorn-0.38.0.tar.gz", hash = "sha256:fd97093bdd120a2609fc0d3afe931d4d4ad688b6e75f0f929fde1bc36fe0e91d", size = 80605, upload-time = "2025-10-18T13:46:44.63Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/d9/d88e73ca598f4f6ff671fb5fde8a32925c2e08a637303a1d12883c7305fa/uvicorn-0.38.0-py3-none-any.whl", hash = "sha256:48c0afd214ceb59340075b4a052ea1ee91c16fbc2a9b1469cca0e54566977b02", size = 68109, upload-time = "2025-10-18T13:46:42.958Z" },
+]
+
+[[package]]
+name = "zipp"
+version = "3.23.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/02/0f2892c661036d50ede074e376733dca2ae7c6eb617489437771209d4180/zipp-3.23.0.tar.gz", hash = "sha256:a07157588a12518c9d4034df3fbbee09c814741a33ff63c05fa29d26a2404166", size = 25547, upload-time = "2025-06-08T17:06:39.4Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl", hash = "sha256:071652d6115ed432f5ce1d34c336c0adfd6a884660d1e9712a256d3d3bd4b14e", size = 10276, upload-time = "2025-06-08T17:06:38.034Z" },
 ]
