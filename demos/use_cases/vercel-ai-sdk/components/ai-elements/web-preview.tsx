@@ -177,12 +177,33 @@ export const WebPreviewBody = ({
 }: WebPreviewBodyProps) => {
   const { url } = useWebPreview();
 
+  const sanitizeUrl = (value: string | undefined): string | undefined => {
+    if (!value) {
+      return undefined;
+    }
+
+    try {
+      // Use window.location.origin as a base so that relative URLs are supported.
+      const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+      const parsed = new URL(value, base);
+
+      // Allow only http and https URLs to be used as iframe src.
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.toString();
+      }
+    } catch {
+      // Invalid URL, fall through and return undefined.
+    }
+
+    return undefined;
+  };
+
   return (
     <div className="flex-1">
       <iframe
         className={cn("size-full", className)}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
-        src={(src ?? url) || undefined}
+        src={sanitizeUrl(src ?? url)}
         title="Preview"
         {...props}
       />
