@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .api import ChatMessage
 from fastapi import Request, FastAPI
+
 # from . import mcp
 # from fastmcp.server.dependencies import get_http_headers
 
@@ -186,8 +187,11 @@ async def augment_query_with_context(
 # Load knowledge base on module import
 load_knowledge_base()
 
+
 @app.post("/")
-async def context_builder(messages: List[ChatMessage],request: Request) -> List[ChatMessage]:
+async def context_builder(
+    messages: List[ChatMessage], request: Request
+) -> List[ChatMessage]:
     """MCP tool that augments user queries with relevant context from the knowledge base."""
     logger.info(f"Received chat completion request with {len(messages)} messages")
 
