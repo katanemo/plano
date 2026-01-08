@@ -297,79 +297,246 @@ def build():
 )
 def up(file, path, foreground):
     """Starts Plano."""
+    import time
+    from rich.console import Console
+    from rich.status import Status
+    from planoai.docker_cli import (
+        docker_container_status as get_container_status,
+        docker_start_plano_detached,
+        docker_stop_container as docker_stop,
+        docker_remove_container,
+        health_check_endpoint,
+    )
+    from planoai.core import _get_gateway_ports, stream_gateway_logs
+
+    console = Console()
+
+    # Print header
+    console.print(
+        f"\n[bold {PLANO_COLOR}]Plano CLI[/bold {PLANO_COLOR}] [dim]v{get_version()}[/dim]\n"
+    )
+
     # Use the utility function to find config file
     arch_config_file = find_config_file(path, file)
 
     # Check if the file exists
     if not os.path.exists(arch_config_file):
-        log.info(f"Error: {arch_config_file} does not exist.")
-        return
-
-    log.info(f"Validating {arch_config_file}")
-    (
-        validation_return_code,
-        validation_stdout,
-        validation_stderr,
-    ) = docker_validate_plano_schema(arch_config_file)
-    if validation_return_code != 0:
-        log.info(f"Error: Validation failed. Exiting")
-        log.info(f"Validation stdout: {validation_stdout}")
-        log.info(f"Validation stderr: {validation_stderr}")
+        console.print(
+            f"[red]✗[/red] Config file not found: [dim]{arch_config_file}[/dim]"
+        )
         sys.exit(1)
 
-    # Set the ARCH_CONFIG_FILE environment variable
+    with Status(
+        "[dim]Validating configuration[/dim]", spinner="dots", spinner_style="dim"
+    ) as status:
+        (
+            validation_return_code,
+            validation_stdout,
+            validation_stderr,
+        ) = docker_validate_plano_schema(arch_config_file)
+        time.sleep(0.5)
+
+    if validation_return_code != 0:
+        console.print(f"[red]✗[/red] Validation failed")
+        if validation_stderr:
+            console.print(f"  [dim]{validation_stderr.strip()}[/dim]")
+        sys.exit(1)
+
+    console.print(f"[green]✓[/green] Configuration valid")
+
+    # Set up environment
     env_stage = {
         "OTEL_TRACING_GRPC_ENDPOINT": DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     }
     env = os.environ.copy()
-    # Remove PATH variable if present
     env.pop("PATH", None)
-    # check if access_keys are preesnt in the config file
-    access_keys = get_llm_provider_access_keys(arch_config_file=arch_config_file)
 
-    # remove duplicates
+    # Check access keys
+    access_keys = get_llm_provider_access_keys(arch_config_file=arch_config_file)
     access_keys = set(access_keys)
-    # remove the $ from the access_keys
     access_keys = [item[1:] if item.startswith("$") else item for item in access_keys]
 
+    missing_keys = []
     if access_keys:
         if file:
-            app_env_file = os.path.join(
-                os.path.dirname(os.path.abspath(file)), ".env"
-            )  # check the .env file in the path
+            app_env_file = os.path.join(os.path.dirname(os.path.abspath(file)), ".env")
         else:
             app_env_file = os.path.abspath(os.path.join(path, ".env"))
 
-        if not os.path.exists(
-            app_env_file
-        ):  # check to see if the environment variables in the current environment or not
+        if not os.path.exists(app_env_file):
             for access_key in access_keys:
                 if env.get(access_key) is None:
-                    log.info(f"Access Key: {access_key} not found. Exiting Start")
-                    sys.exit(1)
+                    missing_keys.append(access_key)
                 else:
                     env_stage[access_key] = env.get(access_key)
-        else:  # .env file exists, use that to send parameters to Arch
+        else:
             env_file_dict = load_env_file_to_dict(app_env_file)
             for access_key in access_keys:
                 if env_file_dict.get(access_key) is None:
-                    log.info(f"Access Key: {access_key} not found. Exiting Start")
-                    sys.exit(1)
+                    missing_keys.append(access_key)
                 else:
                     env_stage[access_key] = env_file_dict[access_key]
+
+    if missing_keys:
+        console.print(f"\n[red]✗[/red] [red]Missing API keys![/red]\n")
+        for key in missing_keys:
+            console.print(f"  [red]•[/red] [bold]{key}[/bold] not found")
+        console.print(f"\n[dim]Set the environment variable(s):[/dim]")
+        for key in missing_keys:
+            console.print(f'  [cyan]export {key}="your-api-key"[/cyan]')
+        console.print(f"\n[dim]Or create a .env file in the config directory.[/dim]\n")
+        sys.exit(1)
 
     # Pass log level to the Docker container — supervisord uses LOG_LEVEL
     # to set RUST_LOG (brightstaff) and envoy component log levels
     env_stage["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "info")
 
     env.update(env_stage)
-    start_arch(arch_config_file, env, foreground=foreground)
+
+    start_time = time.time()
+
+    plano_status = get_container_status(PLANO_DOCKER_NAME)
+    if plano_status != "not found":
+        with console.status(
+            f"[{PLANO_COLOR}]Stopping existing instance...[/{PLANO_COLOR}]",
+            spinner="dots",
+        ):
+            docker_stop(PLANO_DOCKER_NAME)
+            docker_remove_container(PLANO_DOCKER_NAME)
+            time.sleep(1.0)
+
+    gateway_ports = _get_gateway_ports(arch_config_file)
+
+    max_retries = 3
+    retry_delay = 2.0
+
+    with console.status(
+        f"[{PLANO_COLOR}]Starting Plano...[/{PLANO_COLOR}]", spinner="dots"
+    ) as status:
+        for attempt in range(max_retries):
+            return_code, _, plano_stderr = docker_start_plano_detached(
+                arch_config_file,
+                env,
+                gateway_ports,
+            )
+
+            if return_code == 0:
+                break
+
+            if "address already in use" in plano_stderr and attempt < max_retries - 1:
+                plano_status = get_container_status(PLANO_DOCKER_NAME)
+                if plano_status != "not found":
+                    docker_stop(PLANO_DOCKER_NAME)
+                    docker_remove_container(PLANO_DOCKER_NAME)
+
+                time.sleep(retry_delay)
+                continue
+            console.print(f"[red]✗[/red] Failed to start Plano")
+            if plano_stderr:
+                console.print(f"  [dim]{plano_stderr.strip()}[/dim]")
+            sys.exit(1)
+
+        log_timeout = 120
+        consecutive_failures = 0
+        max_consecutive_failures = 10
+
+        while True:
+            plano_status = get_container_status(PLANO_DOCKER_NAME)
+            elapsed = time.time() - start_time
+
+            if plano_status == "exited":
+                console.print(f"[red]✗[/red] Plano container exited unexpectedly")
+                stream_gateway_logs(follow=False)
+                sys.exit(1)
+
+            if plano_status != "running":
+                console.print(
+                    f"[red]✗[/red] Plano container is not running (status: {plano_status})"
+                )
+                sys.exit(1)
+
+            if elapsed > log_timeout:
+                console.print(
+                    f"[red]✗[/red] Timeout waiting for Plano to become healthy"
+                )
+                sys.exit(1)
+
+            all_listeners_healthy = True
+            for port in gateway_ports:
+                if not health_check_endpoint(f"http://localhost:{port}/healthz"):
+                    all_listeners_healthy = False
+                    break
+
+            if all_listeners_healthy:
+                break
+
+            consecutive_failures += 1
+            if consecutive_failures >= max_consecutive_failures and elapsed > 5:
+                console.print(
+                    f"[red]✗[/red] Plano failed to become healthy after {elapsed:.1f}s"
+                )
+                console.print(
+                    f"[dim]Check logs with: docker logs {PLANO_DOCKER_NAME}[/dim]"
+                )
+                sys.exit(1)
+
+            status.update(
+                f"[{PLANO_COLOR}]Starting Plano...[/{PLANO_COLOR}] [dim]({elapsed:.1f}s)[/dim]"
+            )
+            time.sleep(0.5)
+
+    elapsed = time.time() - start_time
+    console.print(
+        f"[green]✓[/green] [bold]Plano is running and healthy![/bold] [dim]({elapsed:.1f}s)[/dim]"
+    )
+
+    console.print(f"\n[bold]Listening on:[/bold]")
+    for port in gateway_ports:
+        console.print(f"  [bold cyan]http://localhost:{port}[/bold cyan]")
+    console.print()
+
+    if foreground:
+        console.print(f"[dim]Streaming logs (Ctrl+C to stop)...[/dim]\n")
+        stream_gateway_logs(follow=True)
 
 
 @click.command()
 def down():
     """Stops Plano."""
-    stop_docker_container()
+    import time
+    from rich.console import Console
+    from planoai.docker_cli import (
+        docker_container_status as get_container_status,
+        docker_stop_container as docker_stop,
+        docker_remove_container,
+    )
+
+    console = Console()
+
+    # Print header
+    console.print(
+        f"\n[bold {PLANO_COLOR}]Plano CLI[/bold {PLANO_COLOR}] [dim]v{get_version()}[/dim]\n"
+    )
+
+    # Check if running
+    plano_status = get_container_status(PLANO_DOCKER_NAME)
+
+    if plano_status == "not found":
+        console.print(f"[yellow]![/yellow] Plano is not running\n")
+        return
+
+    start_time = time.time()
+
+    with console.status(
+        f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]", spinner="dots"
+    ):
+        docker_stop(PLANO_DOCKER_NAME)
+        docker_remove_container(PLANO_DOCKER_NAME)
+
+    elapsed = time.time() - start_time
+    console.print(
+        f"[green]✓[/green] Successfully shut down Plano! [dim]({elapsed:.1f}s)[/dim]\n"
+    )
 
 
 @click.command()
