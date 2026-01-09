@@ -1,0 +1,22 @@
+[project]
+name = "rag_agent"
+version = "0.1.0"
+description = "RAG Agent"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.2.1",
+    "mcp>=1.13.1",
+    "fastmcp>=2.14",
+    "pydantic>=2.11.7",
+    "fastapi>=0.104.1",
+    "uvicorn>=0.24.0",
+    "openai==2.13.0",
+]
+
+[project.scripts]
+rag_agent = "rag_agent:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
