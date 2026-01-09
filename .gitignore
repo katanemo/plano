@@ -149,3 +149,5 @@ apps/*/dist/
 *.logs
 
 .cursor/
+
+demos/use_cases/vercel-ai-sdk/.env.local
