@@ -91,10 +91,12 @@ model_providers:
   model: ministral-3b-latest
   name: mistral/ministral-3b-latest
   provider_interface: mistral
-- model: Arch-Function
+- internal: true
+  model: Arch-Function
   name: arch-function
   provider_interface: arch
-- model: Plano-Orchestrator
+- internal: true
+  model: Plano-Orchestrator
   name: plano-orchestrator
   provider_interface: arch
 prompt_targets:
