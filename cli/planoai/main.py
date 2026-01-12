@@ -94,6 +94,7 @@ from planoai.core import (
     stop_docker_container,
     start_cli_agent,
 )
+from planoai.init_cmd import init as init_cmd
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
@@ -887,6 +888,7 @@ main.add_command(logs)
 main.add_command(cli_agent)
 main.add_command(generate_prompt_targets)
 main.add_command(validate)
+main.add_command(init_cmd, name="init")
 
 if __name__ == "__main__":
     main()
