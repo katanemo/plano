@@ -36,7 +36,7 @@ app = FastAPI(title="RAG Agent Input Guards", version="1.0.0")
 
 
 async def validate_query_scope(
-    messages: List[ChatMessage], traceparent_header: str
+    messages: List[ChatMessage], traceparent_header: Optional[str] = None, request_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Validate that the user query is within TechCorp's domain.
 
@@ -92,7 +92,7 @@ Respond in JSON format:
 
     try:
         # Call archgw using OpenAI client
-        extra_headers = {"x-envoy-max-retries": "3"}
+        extra_headers = {"x-envoy-max-retries": "3", "x-request-id": request_id}
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
 
@@ -146,7 +146,7 @@ async def input_guards(
         logger.info("No traceparent header found")
 
     # Validate the query scope
-    validation_result = await validate_query_scope(messages, traceparent_header)
+    validation_result = await validate_query_scope(messages, traceparent_header, request_id)
 
     if not validation_result.get("is_valid", True):
         reason = validation_result.get("reason", "Query is outside TechCorp's domain")

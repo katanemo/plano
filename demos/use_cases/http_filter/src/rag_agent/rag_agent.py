@@ -68,6 +68,7 @@ async def chat_completion_http(request: Request, request_body: ChatCompletionReq
 
     # Get traceparent header from HTTP request
     traceparent_header = request.headers.get("traceparent")
+    request_id = request.headers.get("x-request-id") or f"req-{uuid.uuid4().hex}"
 
     if traceparent_header:
         logger.info(f"Received traceparent header: {traceparent_header}")
@@ -75,16 +76,17 @@ async def chat_completion_http(request: Request, request_body: ChatCompletionReq
         logger.info("No traceparent header found")
 
     return StreamingResponse(
-        stream_chat_completions(request_body, traceparent_header),
+        stream_chat_completions(request_body, traceparent_header,request_id),
         media_type="text/plain",
         headers={
             "content-type": "text/event-stream",
+            "x-request-id": request_id,
         },
     )
 
 
 async def stream_chat_completions(
-    request_body: ChatCompletionRequest, traceparent_header: str = None
+    request_body: ChatCompletionRequest, traceparent_header: str = None, request_id: str = None
 ):
     """Generate streaming chat completions."""
     # Prepare messages for response generation
@@ -97,7 +99,7 @@ async def stream_chat_completions(
         )
 
         # Prepare extra headers if traceparent is provided
-        extra_headers = {"x-envoy-max-retries": "3"}
+        extra_headers = {"x-envoy-max-retries": "3", "x-request-id": request_id}
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
 

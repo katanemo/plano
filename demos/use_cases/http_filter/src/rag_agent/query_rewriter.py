@@ -54,11 +54,9 @@ Return only the rewritten query, nothing else."""
     for msg in messages:
         rewrite_messages.append({"role": msg.role, "content": msg.content})
 
-    extra_headers = {"x-envoy-max-retries": "3"}
+    extra_headers = {"x-envoy-max-retries": "3", "x-request-id": request_id}
     if traceparent_header:
         extra_headers["traceparent"] = traceparent_header
-    if request_id:
-        extra_headers["x-request-id"] = request_id
 
     try:
         logger.info(f"Calling archgw at {LLM_GATEWAY_ENDPOINT} to rewrite query")
