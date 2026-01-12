@@ -1,69 +1,48 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import {
-  customProvider,
   extractReasoningMiddleware,
+  type LanguageModel,
   wrapLanguageModel,
 } from "ai";
-import { isTestEnvironment } from "../constants";
 
 const plano = createOpenAI({
   baseURL: process.env.PLANO_BASE_URL || "http://localhost:12000/v1",
-  apiKey: process.env.AI_GATEWAY_API_KEY || "plano",
+  apiKey: "plano",
 });
 
 const THINKING_SUFFIX_REGEX = /-thinking$/;
 
-export const myProvider = isTestEnvironment
-  ? (() => {
-      const {
-        artifactModel,
-        chatModel,
-        reasoningModel,
-        titleModel,
-      } = require("./models.mock");
-      return customProvider({
-        languageModels: {
-          "chat-model": chatModel,
-          "chat-model-reasoning": reasoningModel,
-          "title-model": titleModel,
-          "artifact-model": artifactModel,
-        },
-      });
-    })()
-  : null;
+type WrapLanguageModelInput = Parameters<typeof wrapLanguageModel>[0]["model"];
 
-export function getLanguageModel(modelId: string) {
-  if (isTestEnvironment && myProvider) {
-    return myProvider.languageModel(modelId);
-  }
+function asLanguageModel(model: unknown): LanguageModel {
+  // We intentionally cast here to avoid TS conflicts when multiple copies of
+  // `@ai-sdk/provider` exist in node_modules (e.g. nested under @ai-sdk/openai).
+  return model as unknown as LanguageModel;
+}
 
+function asWrapLanguageModelInput(model: unknown): WrapLanguageModelInput {
+  return model as unknown as WrapLanguageModelInput;
+}
+
+export function getLanguageModel(modelId: string): LanguageModel {
   const isReasoningModel =
     modelId.includes("reasoning") || modelId.endsWith("-thinking");
 
   if (isReasoningModel) {
     const gatewayModelId = modelId.replace(THINKING_SUFFIX_REGEX, "");
 
-    return wrapLanguageModel({
-      model: plano(gatewayModelId),
-      middleware: extractReasoningMiddleware({ tagName: "thinking" }),
-    });
+    return asLanguageModel(
+      wrapLanguageModel({
+        model: asWrapLanguageModelInput(plano(gatewayModelId)),
+        middleware: extractReasoningMiddleware({ tagName: "thinking" }),
+      })
+    );
   }
 
-  return plano(modelId);
+  return asLanguageModel(plano(modelId));
 }
 
-export function getTitleModel() {
-  if (isTestEnvironment && myProvider) {
-    return myProvider.languageModel("title-model");
-  }
+export function getTitleModel(): LanguageModel {
   // Keep demo dependency-light: default to an OpenAI model so only OPENAI_API_KEY is required.
-  return plano("openai/gpt-4.1-mini");
-}
-
-export function getArtifactModel() {
-  if (isTestEnvironment && myProvider) {
-    return myProvider.languageModel("artifact-model");
-  }
-  // Keep demo dependency-light: default to an OpenAI model so only OPENAI_API_KEY is required.
-  return plano("openai/gpt-4o");
+  return asLanguageModel(plano("openai/gpt-4.1-mini"));
 }

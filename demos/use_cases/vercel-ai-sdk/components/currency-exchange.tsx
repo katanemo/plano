@@ -181,10 +181,6 @@ export function CurrencyExchange({
             </div>
           </>
         )}
-
-        <div className="mt-2 text-center text-emerald-700 text-xs dark:text-emerald-300">
-          Powered by Frankfurter API
-        </div>
       </div>
     </div>
   );

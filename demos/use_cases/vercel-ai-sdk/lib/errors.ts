@@ -14,8 +14,6 @@ export type Surface =
   | "database"
   | "history"
   | "vote"
-  | "document"
-  | "suggestions"
   | "activate_gateway";
 
 export type ErrorCode = `${ErrorType}:${Surface}`;
@@ -30,8 +28,6 @@ export const visibilityBySurface: Record<Surface, ErrorVisibility> = {
   api: "response",
   history: "response",
   vote: "response",
-  document: "response",
-  suggestions: "response",
   activate_gateway: "response",
 };
 
@@ -102,15 +98,6 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
       return "You need to sign in to view this chat. Please sign in and try again.";
     case "offline:chat":
       return "We're having trouble sending your message. Please check your internet connection and try again.";
-
-    case "not_found:document":
-      return "The requested document was not found. Please check the document ID and try again.";
-    case "forbidden:document":
-      return "This document belongs to another user. Please check the document ID and try again.";
-    case "unauthorized:document":
-      return "You need to sign in to view this document. Please sign in and try again.";
-    case "bad_request:document":
-      return "The request to create or update the document was invalid. Please check your input and try again.";
 
     default:
       return "Something went wrong. Please try again later.";
