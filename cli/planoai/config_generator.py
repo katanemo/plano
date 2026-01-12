@@ -236,9 +236,18 @@ def validate_and_render_schema():
             for routing_preference in model_provider.get("routing_preferences", []):
                 if routing_preference.get("name") in model_usage_name_keys:
                     raise Exception(
-                        f"Duplicate routing preference name \"{routing_preference.get('name')}\", please provide unique name for each routing preference"
+                        f'Duplicate routing preference name "{routing_preference.get("name")}", please provide unique name for each routing preference'
                     )
                 model_usage_name_keys.add(routing_preference.get("name"))
+
+            # Warn if both passthrough_auth and access_key are configured
+            if model_provider.get("passthrough_auth") and model_provider.get(
+                "access_key"
+            ):
+                print(
+                    f"WARNING: Model provider '{model_provider.get('name')}' has both 'passthrough_auth: true' and 'access_key' configured. "
+                    f"The access_key will be ignored and the client's Authorization header will be forwarded instead."
+                )
 
             model_provider["model"] = model_id
             model_provider["provider_interface"] = provider

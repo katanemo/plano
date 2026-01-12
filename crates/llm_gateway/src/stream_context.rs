@@ -149,6 +149,23 @@ impl StreamContext {
     }
 
     fn modify_auth_headers(&mut self) -> Result<(), ServerError> {
+        if self.llm_provider().passthrough_auth == Some(true) {
+            // Check if client provided an Authorization header
+            if self.get_http_request_header("Authorization").is_none() {
+                warn!(
+                    "[PLANO_REQ_ID:{}] AUTH_PASSTHROUGH: passthrough_auth enabled but no Authorization header present in client request",
+                    self.request_identifier()
+                );
+            } else {
+                info!(
+                    "[PLANO_REQ_ID:{}] AUTH_PASSTHROUGH: preserving client Authorization header for provider '{}'",
+                    self.request_identifier(),
+                    self.llm_provider().name
+                );
+            }
+            return Ok(());
+        }
+
         let llm_provider_api_key_value =
             self.llm_provider()
                 .access_key
@@ -778,15 +795,13 @@ impl HttpContext for StreamContext {
             //We need to update the upstream path if there is a variation for a provider like Gemini/Groq, etc.
             self.update_upstream_path(&request_path);
 
-            if self.llm_provider().endpoint.is_some() {
+            // Clone cluster_name to avoid borrowing self while calling add_http_request_header (which requires mut self)
+            let cluster_name_opt = self.llm_provider().cluster_name.clone();
+
+            if let Some(cluster_name) = cluster_name_opt {
                 self.add_http_request_header(
                     ARCH_ROUTING_HEADER,
-                    &self
-                        .llm_provider()
-                        .cluster_name
-                        .as_ref()
-                        .unwrap()
-                        .to_string(),
+                    &cluster_name,
                 );
             } else {
                 self.add_http_request_header(

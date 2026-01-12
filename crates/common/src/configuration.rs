@@ -324,6 +324,7 @@ pub struct LlmProvider {
     pub cluster_name: Option<String>,
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
+    pub passthrough_auth: Option<bool>,
 }
 
 pub trait IntoModels {
@@ -367,6 +368,7 @@ impl Default for LlmProvider {
             cluster_name: None,
             base_url_path_prefix: None,
             internal: None,
+            passthrough_auth: None,
         }
     }
 }
