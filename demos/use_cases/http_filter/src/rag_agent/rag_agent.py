@@ -76,7 +76,7 @@ async def chat_completion_http(request: Request, request_body: ChatCompletionReq
         logger.info("No traceparent header found")
 
     return StreamingResponse(
-        stream_chat_completions(request_body, traceparent_header,request_id),
+        stream_chat_completions(request_body, traceparent_header, request_id),
         media_type="text/plain",
         headers={
             "content-type": "text/event-stream",
@@ -86,7 +86,9 @@ async def chat_completion_http(request: Request, request_body: ChatCompletionReq
 
 
 async def stream_chat_completions(
-    request_body: ChatCompletionRequest, traceparent_header: str = None, request_id: str = None
+    request_body: ChatCompletionRequest,
+    traceparent_header: str = None,
+    request_id: str = None,
 ):
     """Generate streaming chat completions."""
     # Prepare messages for response generation

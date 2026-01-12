@@ -61,7 +61,10 @@ def load_knowledge_base():
 
 
 async def find_relevant_passages(
-    query: str, traceparent: Optional[str] = None, request_id: Optional[str] = None, top_k: int = 3
+    query: str,
+    traceparent: Optional[str] = None,
+    request_id: Optional[str] = None,
+    top_k: int = 3,
 ) -> List[Dict[str, str]]:
     """Use the LLM to find the most relevant passages from the knowledge base."""
 
@@ -133,7 +136,9 @@ async def find_relevant_passages(
 
 
 async def augment_query_with_context(
-    messages: List[ChatMessage], traceparent: Optional[str] = None, request_id: Optional[str] = None
+    messages: List[ChatMessage],
+    traceparent: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> List[ChatMessage]:
     """Extract user query, find relevant context, and augment the messages."""
 
@@ -154,7 +159,9 @@ async def augment_query_with_context(
     logger.info(f"Processing user query: '{last_user_message}'")
 
     # Find relevant passages
-    relevant_passages = await find_relevant_passages(last_user_message, traceparent, request_id)
+    relevant_passages = await find_relevant_passages(
+        last_user_message, traceparent, request_id
+    )
 
     if not relevant_passages:
         logger.info("No relevant passages found, returning original messages")
@@ -208,7 +215,9 @@ async def context_builder(
         logger.info("No traceparent header found")
 
     # Augment the user query with relevant context
-    updated_messages = await augment_query_with_context(messages, traceparent_header, request_id)
+    updated_messages = await augment_query_with_context(
+        messages, traceparent_header, request_id
+    )
 
     # Return as dict to minimize text serialization
     return [{"role": msg.role, "content": msg.content} for msg in updated_messages]
