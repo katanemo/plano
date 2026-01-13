@@ -64,6 +64,15 @@ listeners:
     model: ministral-3b-latest
     name: mistral/ministral-3b-latest
     provider_interface: mistral
+  - base_url: https://litellm.example.com
+    cluster_name: openai_litellm.example.com
+    endpoint: litellm.example.com
+    model: gpt-4o-litellm
+    name: openai/gpt-4o-litellm
+    passthrough_auth: true
+    port: 443
+    protocol: https
+    provider_interface: openai
   name: egress_traffic
   port: 12000
   timeout: 30s
@@ -91,6 +100,15 @@ model_providers:
   model: ministral-3b-latest
   name: mistral/ministral-3b-latest
   provider_interface: mistral
+- base_url: https://litellm.example.com
+  cluster_name: openai_litellm.example.com
+  endpoint: litellm.example.com
+  model: gpt-4o-litellm
+  name: openai/gpt-4o-litellm
+  passthrough_auth: true
+  port: 443
+  protocol: https
+  provider_interface: openai
 - internal: true
   model: Arch-Function
   name: arch-function

@@ -799,10 +799,7 @@ impl HttpContext for StreamContext {
             let cluster_name_opt = self.llm_provider().cluster_name.clone();
 
             if let Some(cluster_name) = cluster_name_opt {
-                self.add_http_request_header(
-                    ARCH_ROUTING_HEADER,
-                    &cluster_name,
-                );
+                self.add_http_request_header(ARCH_ROUTING_HEADER, &cluster_name);
             } else {
                 self.add_http_request_header(
                     ARCH_ROUTING_HEADER,
