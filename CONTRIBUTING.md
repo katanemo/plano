@@ -15,14 +15,30 @@ Fork the repository to create your own version of **Plano**:
 
 ### 2. Clone Your Fork
 
-Once you've forked the repository, clone it to your local machine:
+Once you've forked the repository, clone it to your local machine (replace `<your-username>` with your GitHub username):
 
 ```bash
-$ git clone https://github.com/katanemo/plano.git
+$ git clone git@github.com:<your-username>/plano.git
 $ cd plano
 ```
 
-### 3. Install Prerequisites
+### 3. Add Upstream Remote
+
+Add the original repository as an upstream remote so you can keep your fork in sync:
+
+```bash
+$ git remote add upstream git@github.com:katanemo/plano.git
+```
+
+To sync your fork with the latest changes from the main repository:
+
+```bash
+$ git fetch upstream
+$ git checkout main
+$ git merge upstream/main
+```
+
+### 4. Install Prerequisites
 
 **Install uv** (Python package manager for the planoai CLI):
 
@@ -45,7 +61,7 @@ The pre-commit hooks will automatically run:
 - Linting checks (Rust with `cargo clippy`)
 - Rust unit tests
 
-### 4. Setup the planoai CLI
+### 5. Setup the planoai CLI
 
 The planoai CLI is used to build, run, and manage Plano locally:
 
@@ -64,7 +80,7 @@ $ uv tool install --editable .
 
 Now you can use `planoai` commands from anywhere, or use `uv run planoai` from the `cli` directory.
 
-### 5. Create a Branch
+### 6. Create a Branch
 
 Use a descriptive name for your branch (e.g., fix-bug-123, add-feature-x).
 
@@ -72,11 +88,11 @@ Use a descriptive name for your branch (e.g., fix-bug-123, add-feature-x).
 $ git checkout -b <your-branch-name>
 ```
 
-### 6. Make Your Changes
+### 7. Make Your Changes
 
 Make your changes in the relevant files. If you're adding new features or fixing bugs, please include tests where applicable.
 
-### 7. Test Your Changes Locally
+### 8. Test Your Changes Locally
 
 **Run Rust tests:**
 
@@ -112,7 +128,7 @@ $ pre-commit run --all-files
 
 This ensures your code passes all checks before you commit.
 
-### 8. Push Changes and Create a Pull Request
+### 9. Push Changes and Create a Pull Request
 
 Once your changes are tested and committed:
 
