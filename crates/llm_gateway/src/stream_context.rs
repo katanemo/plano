@@ -157,7 +157,7 @@ impl StreamContext {
                     self.request_identifier()
                 );
             } else {
-                info!(
+                debug!(
                     "[PLANO_REQ_ID:{}] AUTH_PASSTHROUGH: preserving client Authorization header for provider '{}'",
                     self.request_identifier(),
                     self.llm_provider().name
