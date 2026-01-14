@@ -893,6 +893,67 @@ Any provider that implements the OpenAI API interface can be configured using cu
 </span></code></pre></div>
 </div>
 </section>
+<section id="passthrough-authentication">
+<span id="passthrough-auth"></span><h3>Passthrough Authentication<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#passthrough-authentication" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#passthrough-authentication'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>When deploying Plano in front of LLM proxy services that manage their own API key validation (such as LiteLLM, OpenRouter, or custom gateways), you may want to forward the client’s original <code class="docutils literal notranslate"><span class="pre">Authorization</span></code> header instead of replacing it with a configured <code class="docutils literal notranslate"><span class="pre">access_key</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">passthrough_auth</span></code> option enables this behavior:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">llm_providers</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="c1"># Forward client's Authorization header to LiteLLM</span>
+</span><span id="line-3"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o-litellm</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://litellm.example.com</span>
+</span><span id="line-5"><span class="w">    </span><span class="nt">passthrough_auth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-6"><span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-7">
+</span><span id="line-8"><span class="w">  </span><span class="c1"># Forward to OpenRouter</span>
+</span><span id="line-9"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/claude-3-opus</span>
+</span><span id="line-10"><span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://openrouter.ai/api/v1</span>
+</span><span id="line-11"><span class="w">    </span><span class="nt">passthrough_auth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+</div>
+<p><strong>How it works:</strong></p>
+<ol class="arabic simple">
+<li><p>Client sends a request with <code class="docutils literal notranslate"><span class="pre">Authorization:</span> <span class="pre">Bearer</span> <span class="pre">&lt;virtual-key&gt;</span></code></p></li>
+<li><p>Plano preserves this header instead of replacing it with <code class="docutils literal notranslate"><span class="pre">access_key</span></code></p></li>
+<li><p>The upstream service (e.g., LiteLLM) validates the virtual key</p></li>
+<li><p>Response flows back through Plano to the client</p></li>
+</ol>
+<p><strong>Use Cases:</strong></p>
+<ul class="simple">
+<li><p><strong>LiteLLM Integration</strong>: Route requests to LiteLLM which manages virtual keys and rate limits</p></li>
+<li><p><strong>OpenRouter</strong>: Forward requests to OpenRouter with per-user API keys</p></li>
+<li><p><strong>Custom API Gateways</strong>: Integrate with internal gateways that have their own authentication</p></li>
+<li><p><strong>Multi-tenant Deployments</strong>: Allow different clients to use their own credentials</p></li>
+</ul>
+<p><strong>Important Notes:</strong></p>
+<ul class="simple">
+<li><p>When <code class="docutils literal notranslate"><span class="pre">passthrough_auth:</span> <span class="pre">true</span></code> is set, the <code class="docutils literal notranslate"><span class="pre">access_key</span></code> field is ignored (a warning is logged if both are configured)</p></li>
+<li><p>If the client doesn’t provide an <code class="docutils literal notranslate"><span class="pre">Authorization</span></code> header, the request is forwarded without authentication (upstream will likely return 401)</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">base_url</span></code> is typically required when using <code class="docutils literal notranslate"><span class="pre">passthrough_auth</span></code></p></li>
+</ul>
+<p><strong>Configuration with LiteLLM example:</strong></p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># plano_config.yaml</span>
+</span><span id="line-2"><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v0.3.0</span>
+</span><span id="line-3">
+</span><span id="line-4"><span class="nt">listeners</span><span class="p">:</span>
+</span><span id="line-5"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llm</span>
+</span><span id="line-6"><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model</span>
+</span><span id="line-7"><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span>
+</span><span id="line-8">
+</span><span id="line-9"><span class="nt">model_providers</span><span class="p">:</span>
+</span><span id="line-10"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
+</span><span id="line-11"><span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://litellm.example.com</span>
+</span><span id="line-12"><span class="w">    </span><span class="nt">passthrough_auth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-13"><span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Client request - virtual key is forwarded to upstream</span>
+</span><span id="line-2">curl<span class="w"> </span>http://localhost:10000/v1/chat/completions<span class="w"> </span><span class="se">\</span>
+</span><span id="line-3"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-litellm-virtual-key-abc123"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="line-4"><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="line-5"><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'</span>
+</span></code></pre></div>
+</div>
+</section>
 </section>
 <section id="model-selection-guidelines">
 <h2>Model Selection Guidelines<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#model-selection-guidelines" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#model-selection-guidelines'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -966,6 +1027,7 @@ Any provider that implements the OpenAI API interface can be configured using cu
 <li><a :data-current="activeSection === '#multiple-provider-instances'" class="reference internal" href="#multiple-provider-instances">Multiple Provider Instances</a></li>
 <li><a :data-current="activeSection === '#default-model-configuration'" class="reference internal" href="#default-model-configuration">Default Model Configuration</a></li>
 <li><a :data-current="activeSection === '#routing-preferences'" class="reference internal" href="#routing-preferences">Routing Preferences</a></li>
+<li><a :data-current="activeSection === '#passthrough-authentication'" class="reference internal" href="#passthrough-authentication">Passthrough Authentication</a></li>
 </ul>
 </li>
 <li><a :data-current="activeSection === '#model-selection-guidelines'" class="reference internal" href="#model-selection-guidelines">Model Selection Guidelines</a></li>
