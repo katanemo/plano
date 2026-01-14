@@ -1,0 +1,134 @@
+version: v0.3.0
+
+# Define the Risk Crew Agent service
+agents:
+  - id: risk_crew_agent
+    url: http://host.docker.internal:10530
+
+# MCP filter for PII redaction and prompt injection detection
+filters:
+  - id: pii_security_filter
+    url: http://host.docker.internal:10550
+
+# LLM providers with model routing
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+
+# Model aliases for semantic naming
+model_aliases:
+  risk_fast:
+    target: openai/gpt-4o-mini
+  risk_reasoning:
+    target: openai/gpt-4o
+
+# Listeners
+listeners:
+  # Agent listener for routing credit risk requests
+  - type: agent
+    name: credit_risk_service
+    port: 8001
+    router: plano_orchestrator_v1
+    address: 0.0.0.0
+    agents:
+      - id: risk_crew_agent
+        description: |
+          Credit Risk Case Copilot Agent - Specialized AI system for credit risk assessment, policy compliance, and case management.
+
+          CAPABILITIES:
+          * Credit risk triage and assessment for loan applications
+          * Multi-agent workflow using intake, scoring, policy, and memo agents
+          * Risk band classification (LOW/MEDIUM/HIGH) with confidence scoring
+          * Risk driver identification with supporting evidence from application data
+          * Policy and compliance checks against lending standards
+          * Document requirement identification based on risk profile
+          * Bank-ready decision memo generation
+          * Case creation with structured data capture
+          * Handles missing data, thin files, and incomplete applications
+
+          USE CASES:
+          * "Analyze this loan application for credit risk"
+          * "What is the risk assessment for this applicant?"
+          * "Check policy compliance for this case"
+          * "Create a decision memo for this application"
+          * "What documents are needed for this loan?"
+          * "Assess the credit risk and create a case"
+
+          SECURITY & COMPLIANCE:
+          * PII redaction for CNIC, phone numbers, emails
+          * Prompt injection detection and mitigation
+          * Audit trail with model usage and guardrail events
+          * OpenTelemetry tracing for compliance monitoring
+
+          When queries involve credit risk assessment, policy validation, document requirements, decision memos, or case creation for loan applications, route to this agent.
+        filter_chain:
+          - pii_security_filter
+
+  # Model listener for internal LLM gateway (used by agents)
+  - type: model
+    name: llm_gateway
+    address: 0.0.0.0
+    port: 12000
+
+  # Prompt listener for function calling
+  - type: prompt
+    name: prompt_functions
+    address: 0.0.0.0
+    port: 10000
+
+# Endpoints for prompt targets
+endpoints:
+  case_service:
+    endpoint: host.docker.internal:10540
+    connect_timeout: 5s
+
+# Prompt target for case creation
+prompt_targets:
+  - name: create_risk_case
+    description: Create a new credit risk case in the case management system with validated loan application data
+    parameters:
+      - name: applicant_name
+        description: Full name of the loan applicant
+        required: true
+        type: string
+      - name: loan_amount
+        description: Requested loan amount in currency
+        required: true
+        type: number
+      - name: risk_band
+        description: Risk classification (LOW, MEDIUM, or HIGH)
+        required: true
+        type: string
+        enum: ["LOW", "MEDIUM", "HIGH"]
+      - name: confidence
+        description: Confidence score for risk assessment (0.0 to 1.0)
+        required: true
+        type: number
+      - name: recommended_action
+        description: Recommended action (APPROVE, CONDITIONAL_APPROVE, REFER, REJECT)
+        required: true
+        type: string
+        enum: ["APPROVE", "CONDITIONAL_APPROVE", "REFER", "REJECT"]
+      - name: required_documents
+        description: List of required documents for case processing
+        required: true
+        type: array
+      - name: policy_exceptions
+        description: List of policy exceptions identified
+        required: false
+        type: array
+      - name: notes
+        description: Additional case notes or decision memo summary
+        required: false
+        type: string
+    endpoint:
+      name: case_service
+      path: /cases
+      http_method: POST
+
+# OpenTelemetry tracing
+tracing:
+  random_sampling: 100
