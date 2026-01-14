@@ -323,6 +323,7 @@ pub struct LlmProvider {
     pub routing_preferences: Option<Vec<RoutingPreference>>,
     pub cluster_name: Option<String>,
     pub base_url_path_prefix: Option<String>,
+    pub internal: Option<bool>,
 }
 
 pub trait IntoModels {
@@ -333,6 +334,7 @@ impl IntoModels for Vec<LlmProvider> {
     fn into_models(self) -> Models {
         let data = self
             .iter()
+            .filter(|provider| provider.internal != Some(true))
             .map(|provider| ModelDetail {
                 id: provider.name.clone(),
                 object: Some("model".to_string()),
@@ -364,6 +366,7 @@ impl Default for LlmProvider {
             routing_preferences: None,
             cluster_name: None,
             base_url_path_prefix: None,
+            internal: None,
         }
     }
 }
@@ -479,6 +482,7 @@ mod test {
     use pretty_assertions::assert_eq;
     use std::fs;
 
+    use super::{IntoModels, LlmProvider, LlmProviderType};
     use crate::api::open_ai::ToolType;
 
     #[test]
@@ -560,5 +564,43 @@ mod test {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_into_models_filters_internal_providers() {
+        let providers = vec![
+            LlmProvider {
+                name: "openai-gpt4".to_string(),
+                provider_interface: LlmProviderType::OpenAI,
+                model: Some("gpt-4".to_string()),
+                internal: None,
+                ..Default::default()
+            },
+            LlmProvider {
+                name: "arch-router".to_string(),
+                provider_interface: LlmProviderType::Arch,
+                model: Some("Arch-Router".to_string()),
+                internal: Some(true),
+                ..Default::default()
+            },
+            LlmProvider {
+                name: "plano-orchestrator".to_string(),
+                provider_interface: LlmProviderType::Arch,
+                model: Some("Plano-Orchestrator".to_string()),
+                internal: Some(true),
+                ..Default::default()
+            },
+        ];
+
+        let models = providers.into_models();
+
+        // Should only have 1 model: openai-gpt4
+        assert_eq!(models.data.len(), 1);
+
+        // Verify internal models are excluded from /v1/models
+        let model_ids: Vec<String> = models.data.iter().map(|m| m.id.clone()).collect();
+        assert!(model_ids.contains(&"openai-gpt4".to_string()));
+        assert!(!model_ids.contains(&"arch-router".to_string()));
+        assert!(!model_ids.contains(&"plano-orchestrator".to_string()));
     }
 }

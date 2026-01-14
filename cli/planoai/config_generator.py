@@ -310,6 +310,7 @@ def validate_and_render_schema():
                     "name": "arch-router",
                     "provider_interface": "arch",
                     "model": config_yaml.get("routing", {}).get("model", "Arch-Router"),
+                    "internal": True,
                 }
             )
 
@@ -320,6 +321,7 @@ def validate_and_render_schema():
                 "name": "arch-function",
                 "provider_interface": "arch",
                 "model": "Arch-Function",
+                "internal": True,
             }
         )
 
@@ -329,6 +331,7 @@ def validate_and_render_schema():
                 "name": "plano-orchestrator",
                 "provider_interface": "arch",
                 "model": "Plano-Orchestrator",
+                "internal": True,
             }
         )
 

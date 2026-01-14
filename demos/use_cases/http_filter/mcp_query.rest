@@ -1,0 +1,86 @@
+### Initialize MCP Session (SSE)
+POST http://localhost:10501/mcp
+Content-Type: application/json
+Accept: application/json, text/event-stream
+
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},"protocolVersion":"2024-11-05","clientInfo":{"name":"test","version":"1.0.0"}}}
+
+### Send Initialized Notification
+POST http://localhost:10501/mcp
+Content-Type: application/json
+Accept: application/json, text/event-stream
+mcp-session-id: 35d455dc07b8400887f86668590f12bb
+
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/initialized"
+}
+
+### List Tools
+POST http://localhost:10501/mcp
+Content-Type: application/json
+Accept: application/json, text/event-stream
+mcp-session-id: eb10a691b36e4547b6c93c5dc5b47e11
+
+{
+  "jsonrpc": "2.0",
+  "id": "list-tools-1",
+  "method": "tools/list"
+}
+
+### Call Query Rewriter Tool
+POST http://localhost:10501/mcp
+Content-Type: application/json
+Accept: application/json, text/event-stream
+mcp-session-id: 6b95ff75825a402b90eb3ea07e23fbce
+
+{
+  "jsonrpc": "2.0",
+  "id": "3d3b886a-6216-4a26-a422-7a972529c0e7",
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "messages": [
+        {
+          "content": "What is the guaranteed uptime percentage for TechCorp's cloud services?",
+          "role": "user"
+        }
+      ]
+    },
+    "name": "query_rewriter"
+  }
+}
+
+### another test
+
+# Content-Type: application/json
+# Accept: application/json, text/event-stream
+# mcp-session-id: ed7a81a1d39549ecaadb867a6b2daf1e
+
+POST http://localhost:10501/mcp
+content-type: application/json
+mcp-session-id: e4ec1ae904e14e06b7d194da10e5f74c
+accept: application/json, text/event-stream
+
+{"jsonrpc":"2.0","id":"4bb1043a-2953-4bcd-b801-f270b0ae8c39","method":"tools/call","params":{"arguments":{"messages":[{"content":"What is the guaranteed uptime percentage for TechCorp's cloud services?","role":"user"}]},"name":"query_rewriter"}}
+
+
+
+### stream test
+
+POST http://localhost:10501/mcp
+content-type: application/json
+mcp-session-id: 35d455dc07b8400887f86668590f12bb
+accept: application/json, text/event-stream
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "long_job",
+    "arguments": {
+      "n": 3
+    }
+  }
+}
