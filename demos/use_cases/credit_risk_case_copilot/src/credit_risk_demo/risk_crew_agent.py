@@ -5,11 +5,11 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import httpx
 import uvicorn
+from crewai import Agent, Crew, Task, Process
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from openai import AsyncOpenAI
+from langchain_openai import ChatOpenAI
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -44,9 +44,22 @@ tracer = trace.get_tracer(__name__)
 app = FastAPI(title="Credit Risk Crew Agent", version="1.0.0")
 FastAPIInstrumentor.instrument_app(app)
 
-# OpenAI client pointing to Plano
-openai_client = AsyncOpenAI(base_url=LLM_GATEWAY_ENDPOINT, api_key="EMPTY")
-http_client = httpx.AsyncClient(timeout=60.0)
+# Configure LLMs to use Plano's gateway with model aliases
+llm_fast = ChatOpenAI(
+    base_url=LLM_GATEWAY_ENDPOINT,
+    model="risk_fast",  # Uses Plano's model alias -> gpt-4o-mini
+    api_key="EMPTY",
+    temperature=0.1,
+    max_tokens=1500,
+)
+
+llm_reasoning = ChatOpenAI(
+    base_url=LLM_GATEWAY_ENDPOINT,
+    model="risk_reasoning",  # Uses Plano's model alias -> gpt-4o
+    api_key="EMPTY",
+    temperature=0.7,
+    max_tokens=2000,
+)
 
 
 class RiskAssessmentResult(BaseModel):
@@ -64,317 +77,297 @@ class RiskAssessmentResult(BaseModel):
     human_response: str
 
 
-def calculate_risk_band(app: Dict) -> tuple:
-    """Calculate risk band based on application data."""
-    score = 0
-    drivers = []
+def create_risk_crew(application_data: Dict[str, Any]) -> Crew:
+    """Create a CrewAI crew for risk assessment with 4 specialized agents."""
 
-    # Credit score assessment
-    credit_score = app.get("credit_score")
-    if credit_score:
-        if credit_score >= 750:
-            score += 30
-        elif credit_score >= 650:
-            score += 20
-            drivers.append(
-                {
-                    "factor": "Credit Score",
-                    "impact": "MEDIUM",
-                    "evidence": f"Credit score {credit_score} is in fair range (650-750)",
-                }
-            )
-        elif credit_score >= 550:
-            score += 10
-            drivers.append(
-                {
-                    "factor": "Credit Score",
-                    "impact": "HIGH",
-                    "evidence": f"Credit score {credit_score} is below good range",
-                }
-            )
-        else:
-            drivers.append(
-                {
-                    "factor": "Credit Score",
-                    "impact": "CRITICAL",
-                    "evidence": f"Credit score {credit_score} is in poor range (<550)",
-                }
-            )
-    else:
-        score += 10
-        drivers.append(
-            {
-                "factor": "Credit Score",
-                "impact": "MEDIUM",
-                "evidence": "No credit score available - thin file",
-            }
-        )
-
-    # DTI assessment
-    monthly_income = app.get("monthly_income")
-    total_debt = app.get("total_debt", 0)
-    if monthly_income and monthly_income > 0:
-        dti = (total_debt / monthly_income) * 100
-        if dti < 35:
-            score += 30
-        elif dti < 50:
-            score += 15
-            drivers.append(
-                {
-                    "factor": "Debt-to-Income Ratio",
-                    "impact": "MEDIUM",
-                    "evidence": f"DTI of {dti:.1f}% is elevated (35-50% range)",
-                }
-            )
-        else:
-            drivers.append(
-                {
-                    "factor": "Debt-to-Income Ratio",
-                    "impact": "CRITICAL",
-                    "evidence": f"DTI of {dti:.1f}% exceeds prudent limits (>50%)",
-                }
-            )
-    else:
-        score += 10
-        drivers.append(
-            {
-                "factor": "Income Verification",
-                "impact": "HIGH",
-                "evidence": "Monthly income not verified or missing",
-            }
-        )
-
-    # Delinquency check
-    delinquencies = app.get("delinquencies", 0)
-    if delinquencies == 0:
-        score += 20
-    elif delinquencies <= 2:
-        score += 10
-        drivers.append(
-            {
-                "factor": "Payment History",
-                "impact": "MEDIUM",
-                "evidence": f"{delinquencies} recent delinquency/delinquencies on record",
-            }
-        )
-    else:
-        drivers.append(
-            {
-                "factor": "Payment History",
-                "impact": "CRITICAL",
-                "evidence": f"{delinquencies} recent delinquencies indicate high default risk",
-            }
-        )
-
-    # Utilization check
-    utilization = app.get("utilization_rate")
-    if utilization:
-        if utilization < 30:
-            score += 20
-        elif utilization < 70:
-            score += 10
-            drivers.append(
-                {
-                    "factor": "Credit Utilization",
-                    "impact": "MEDIUM",
-                    "evidence": f"Utilization at {utilization:.1f}% suggests tight credit capacity",
-                }
-            )
-        else:
-            drivers.append(
-                {
-                    "factor": "Credit Utilization",
-                    "impact": "HIGH",
-                    "evidence": f"Utilization at {utilization:.1f}% is near maximum limits",
-                }
-            )
-
-    # Determine band
-    if score >= 70:
-        risk_band = "LOW"
-        confidence = 0.85
-    elif score >= 40:
-        risk_band = "MEDIUM"
-        confidence = 0.75
-    else:
-        risk_band = "HIGH"
-        confidence = 0.80
-
-    # Sort drivers by impact
-    impact_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}
-    drivers.sort(key=lambda x: impact_order.get(x["impact"], 3))
-
-    return risk_band, confidence, drivers[:3]
-
-
-def perform_policy_checks(normalized: Dict, raw: Dict, risk_band: str) -> tuple:
-    """Perform policy compliance checks."""
-    checks = []
-    exceptions = []
-    required_docs = []
-
-    # KYC check
-    kyc_complete = raw.get("kyc_complete", False)
-    checks.append(
-        {
-            "check": "KYC Completion",
-            "status": "PASS" if kyc_complete else "FAIL",
-            "details": (
-                "KYC complete"
-                if kyc_complete
-                else "KYC incomplete - requires CNIC, phone, address"
-            ),
-        }
+    # Agent 1: Intake & Normalization Specialist
+    intake_agent = Agent(
+        role="Loan Intake & Normalization Specialist",
+        goal="Extract, validate, and normalize loan application data for downstream risk assessment",
+        backstory="""You are an expert at processing loan applications from various sources. 
+        You extract all relevant information, identify missing data points, normalize values 
+        (e.g., calculate DTI if possible), and flag data quality issues. You prepare a clean, 
+        structured dataset for the risk analysts.""",
+        llm=llm_fast,  # Use faster model for data extraction
+        verbose=True,
+        allow_delegation=False,
     )
-    if not kyc_complete:
-        exceptions.append("KYC_INCOMPLETE")
-        required_docs.extend(["Valid CNIC", "Phone Verification", "Address Proof"])
 
-    # Income verification
-    income_verified = raw.get("income_verified", False)
-    checks.append(
-        {
-            "check": "Income Verification",
-            "status": "PASS" if income_verified else "FAIL",
-            "details": (
-                "Income verified" if income_verified else "Income requires verification"
-            ),
-        }
+    # Agent 2: Risk Scoring & Driver Analysis Expert
+    risk_scoring_agent = Agent(
+        role="Risk Scoring & Driver Analysis Expert",
+        goal="Calculate comprehensive risk scores and identify key risk drivers with evidence",
+        backstory="""You are a senior credit risk analyst with 15+ years experience. You analyze:
+        - Debt-to-income ratios and payment capacity
+        - Credit utilization and credit history
+        - Delinquency patterns and payment history
+        - Employment stability and income verification
+        - Credit score ranges and trends
+        
+        You classify applications into risk bands (LOW/MEDIUM/HIGH) and identify the top 3 risk 
+        drivers with specific evidence from the application data.""",
+        llm=llm_reasoning,  # Use reasoning model for analysis
+        verbose=True,
+        allow_delegation=False,
     )
-    if not income_verified:
-        exceptions.append("INCOME_NOT_VERIFIED")
-        required_docs.extend(["Salary Slips (3 months)", "Bank Statements (6 months)"])
 
-    # Address verification
-    address_verified = raw.get("address_verified", False)
-    checks.append(
-        {
-            "check": "Address Verification",
-            "status": "PASS" if address_verified else "WARNING",
-            "details": (
-                "Address verified"
-                if address_verified
-                else "Address verification pending"
-            ),
-        }
+    # Agent 3: Policy & Compliance Officer
+    policy_agent = Agent(
+        role="Policy & Compliance Officer",
+        goal="Verify compliance with lending policies and identify exceptions",
+        backstory="""You are a compliance expert ensuring all loan applications meet regulatory 
+        and internal policy requirements. You check:
+        - KYC completion (CNIC, phone, address)
+        - Income and address verification status
+        - Debt-to-income limits (reject if >60%)
+        - Minimum credit score thresholds (reject if <500)
+        - Recent delinquency patterns
+        
+        You identify required documents based on risk profile and flag any policy exceptions.""",
+        llm=llm_reasoning,
+        verbose=True,
+        allow_delegation=False,
     )
-    if not address_verified:
-        required_docs.append("Utility Bill / Lease Agreement")
 
-    # Risk-based documents
-    if risk_band == "LOW":
-        required_docs.extend(["Credit Report", "Employment Letter"])
-    elif risk_band == "MEDIUM":
-        required_docs.extend(
-            ["Credit Report", "Employment Letter", "Tax Returns (2 years)"]
-        )
-    else:  # HIGH
-        required_docs.extend(
-            [
-                "Credit Report",
-                "Employment Letter",
-                "Tax Returns (2 years)",
-                "Guarantor Documents",
-                "Collateral Valuation",
-            ]
-        )
-        exceptions.append("HIGH_RISK_PROFILE")
+    # Agent 4: Decision Memo & Action Specialist
+    memo_agent = Agent(
+        role="Decision Memo & Action Specialist",
+        goal="Generate bank-ready decision memos and recommend clear actions",
+        backstory="""You are a senior credit officer who writes clear, concise decision memos 
+        for loan committees. You synthesize:
+        - Risk assessment findings
+        - Policy compliance status
+        - Required documentation
+        - Evidence-based recommendations
+        
+        You recommend actions: APPROVE (low risk + compliant), CONDITIONAL_APPROVE (minor issues), 
+        REFER (manual review needed), or REJECT (high risk/major violations).""",
+        llm=llm_reasoning,
+        verbose=True,
+        allow_delegation=False,
+    )
 
-    return checks, exceptions, list(set(required_docs))
+    # Task 1: Intake and normalization
+    intake_task = Task(
+        description=f"""Analyze this loan application and extract all relevant information:
+
+        {json.dumps(application_data, indent=2)}
+
+        Extract and normalize:
+        1. Applicant name and loan amount
+        2. Monthly income and employment status
+        3. Credit score and existing loans
+        4. Total debt and delinquencies
+        5. Credit utilization rate
+        6. KYC, income verification, and address verification status
+        7. Calculate DTI if income is available: (total_debt / monthly_income) * 100
+        8. Flag any missing critical fields
+
+        Output a JSON structure with normalized values and a missing_fields list.""",
+        agent=intake_agent,
+        expected_output="Normalized application data with missing field analysis in JSON format",
+    )
+
+    # Task 2: Risk scoring
+    risk_task = Task(
+        description="""Based on the normalized data from the Intake Specialist, perform risk assessment:
+
+        **Risk Scoring Criteria:**
+        1. **Credit Score Assessment:**
+           - Excellent (≥750): Low risk
+           - Good (650-749): Medium risk
+           - Fair (550-649): High risk
+           - Poor (<550): Critical risk
+           - Missing: Medium risk (thin file)
+
+        2. **Debt-to-Income Ratio:**
+           - <35%: Low risk
+           - 35-50%: Medium risk
+           - >50%: Critical risk
+           - Missing: High risk
+
+        3. **Delinquency History:**
+           - 0: Low risk
+           - 1-2: Medium risk
+           - >2: Critical risk
+
+        4. **Credit Utilization:**
+           - <30%: Low risk
+           - 30-70%: Medium risk
+           - >70%: High risk
+
+        **Output:**
+        - Risk band: LOW (excellent profile), MEDIUM (some concerns), HIGH (significant issues)
+        - Confidence score (0.0-1.0)
+        - Top 3 risk drivers with: factor name, impact level (CRITICAL/HIGH/MEDIUM/LOW), evidence
+
+        Provide your analysis in JSON format.""",
+        agent=risk_scoring_agent,
+        expected_output="Risk band classification with confidence score and top 3 drivers in JSON format",
+        context=[intake_task],
+    )
+
+    # Task 3: Policy checks
+    policy_task = Task(
+        description="""Verify policy compliance using the normalized data and risk assessment:
+
+        **Policy Checks:**
+        1. KYC Completion: Check if CNIC, phone, and address are provided
+        2. Income Verification: Check if income is verified
+        3. Address Verification: Check if address is verified
+        4. DTI Limit: Flag if DTI >60% (automatic reject threshold)
+        5. Credit Score: Flag if <500 (minimum acceptable)
+        6. Delinquencies: Flag if >2 in recent history
+
+        **Required Documents by Risk Band:**
+        - LOW: Valid CNIC, Credit Report, Employment Letter, Bank Statements (3 months)
+        - MEDIUM: + Income proof (6 months), Address proof, Tax Returns (2 years)
+        - HIGH: + Guarantor Documents, Collateral Valuation, Detailed Financials
+
+        **Output JSON:**
+        - policy_checks: [{check, status (PASS/FAIL/WARNING), details}]
+        - exceptions: [list of exception codes like "KYC_INCOMPLETE", "INCOME_NOT_VERIFIED"]
+        - required_documents: [list of document names]""",
+        agent=policy_agent,
+        expected_output="Policy compliance status with exceptions and required documents in JSON format",
+        context=[intake_task, risk_task],
+    )
+
+    # Task 4: Decision memo
+    memo_task = Task(
+        description="""Generate a bank-ready decision memo synthesizing all findings:
+
+        **Memo Structure:**
+        1. **Executive Summary** (2-3 sentences)
+           - Loan amount, applicant, risk band, recommendation
+
+        2. **Applicant Profile**
+           - Name, loan amount, credit score, monthly income
+
+        3. **Risk Assessment**
+           - Risk band and confidence
+           - Top risk drivers with evidence
+
+        4. **Policy Compliance**
+           - Number of checks passed
+           - Outstanding issues or exceptions
+
+        5. **Required Documents**
+           - List key documents needed
+
+        6. **Recommendation**
+           - APPROVE: LOW risk + all checks passed
+           - CONDITIONAL_APPROVE: LOW/MEDIUM risk + minor issues (collect docs)
+           - REFER: MEDIUM/HIGH risk + exceptions (manual review)
+           - REJECT: HIGH risk OR critical policy violations (>60% DTI, <500 credit score)
+
+        7. **Next Steps**
+           - Action items based on recommendation
+
+        Keep professional, concise, and actionable. Max 300 words.
+
+        **Also provide:**
+        - recommended_action: One of APPROVE/CONDITIONAL_APPROVE/REFER/REJECT
+        - decision_memo: Full memo text""",
+        agent=memo_agent,
+        expected_output="Professional decision memo with clear recommendation",
+        context=[intake_task, risk_task, policy_task],
+    )
+
+    # Create crew with sequential process
+    crew = Crew(
+        agents=[intake_agent, risk_scoring_agent, policy_agent, memo_agent],
+        tasks=[intake_task, risk_task, policy_task, memo_task],
+        process=Process.sequential,
+        verbose=True,
+    )
+
+    return crew
 
 
-def determine_action(risk_band: str, exceptions: List[str]) -> str:
-    """Determine recommended action."""
-    if risk_band == "LOW" and not exceptions:
-        return "APPROVE"
-    elif risk_band == "LOW" and exceptions:
-        return "CONDITIONAL_APPROVE"
-    elif risk_band == "MEDIUM" and len(exceptions) <= 2:
-        return "CONDITIONAL_APPROVE"
-    elif risk_band == "MEDIUM":
-        return "REFER"
-    else:  # HIGH
-        if "HIGH_RISK_PROFILE" in exceptions or len(exceptions) > 3:
-            return "REJECT"
+def parse_crew_output(crew_output: str, application_data: Dict) -> Dict[str, Any]:
+    """Parse CrewAI output and extract structured data."""
+
+    # Initialize result structure
+    result = {
+        "normalized_application": {},
+        "risk_band": "MEDIUM",
+        "confidence": 0.75,
+        "drivers": [],
+        "policy_checks": [],
+        "exceptions": [],
+        "required_documents": [],
+        "recommended_action": "REFER",
+        "decision_memo": "",
+    }
+
+    try:
+        # CrewAI returns the final task output as a string
+        output_text = str(crew_output)
+
+        # Try to extract JSON blocks from the output
+        json_blocks = []
+        lines = output_text.split("\n")
+        in_json = False
+        current_json = []
+
+        for line in lines:
+            if "```json" in line or line.strip().startswith("{"):
+                in_json = True
+                if not line.strip().startswith("```"):
+                    current_json.append(line)
+            elif "```" in line and in_json:
+                in_json = False
+                if current_json:
+                    try:
+                        json_obj = json.loads("\n".join(current_json))
+                        json_blocks.append(json_obj)
+                    except:
+                        pass
+                    current_json = []
+            elif in_json:
+                current_json.append(line)
+
+        # Extract from JSON blocks if available
+        for block in json_blocks:
+            if "risk_band" in block:
+                result["risk_band"] = block.get("risk_band", result["risk_band"])
+            if "confidence" in block:
+                result["confidence"] = float(
+                    block.get("confidence", result["confidence"])
+                )
+            if "drivers" in block:
+                result["drivers"] = block.get("drivers", result["drivers"])
+            if "policy_checks" in block:
+                result["policy_checks"] = block.get(
+                    "policy_checks", result["policy_checks"]
+                )
+            if "exceptions" in block:
+                result["exceptions"] = block.get("exceptions", result["exceptions"])
+            if "required_documents" in block:
+                result["required_documents"] = block.get(
+                    "required_documents", result["required_documents"]
+                )
+            if "recommended_action" in block:
+                result["recommended_action"] = block.get(
+                    "recommended_action", result["recommended_action"]
+                )
+
+        # Extract decision memo from text
+        if (
+            "**CREDIT RISK DECISION MEMO**" in output_text
+            or "Executive Summary" in output_text
+        ):
+            memo_start = output_text.find("**CREDIT RISK DECISION MEMO**")
+            if memo_start == -1:
+                memo_start = output_text.find("Executive Summary")
+            if memo_start != -1:
+                result["decision_memo"] = output_text[memo_start:].strip()
         else:
-            return "REFER"
+            result["decision_memo"] = output_text
 
-
-def generate_decision_memo(
-    app: Dict, risk_band: str, drivers: List, checks: List, docs: List, action: str
-) -> str:
-    """Generate decision memo."""
-    memo = f"""**CREDIT RISK DECISION MEMO**
-
-**Executive Summary**
-Loan application for ${app['loan_amount']:,.2f} assessed as {risk_band} risk with recommendation to {action}. Key concerns include {drivers[0]['factor'].lower() if drivers else 'data completeness'}.
-
-**Applicant Profile**
-- Name: {app['applicant_name']}
-- Requested Amount: ${app['loan_amount']:,.2f}
-- Credit Score: {app.get('credit_score', 'Not Available')}
-- Monthly Income: ${app.get('monthly_income', 0):,.2f}
-
-**Risk Assessment**
-Risk Band: {risk_band}
-Primary Drivers:
-"""
-    for driver in drivers:
-        memo += f"- {driver['factor']} ({driver['impact']}): {driver['evidence']}\n"
-
-    memo += f"""
-**Policy Compliance**
-{len([c for c in checks if c['status'] == 'PASS'])}/{len(checks)} checks passed
-"""
-
-    failed_checks = [c for c in checks if c["status"] in ["FAIL", "WARNING"]]
-    if failed_checks:
-        memo += "Outstanding Issues:\n"
-        for check in failed_checks:
-            memo += f"- {check['check']}: {check['details']}\n"
-
-    memo += f"""
-**Required Documents ({len(docs)})**
-{', '.join(docs[:5])}{'...' if len(docs) > 5 else ''}
-
-**Recommendation: {action}**
-
-**Next Steps**
-"""
-    if action == "APPROVE":
-        memo += "Proceed with loan processing and documentation."
-    elif action == "CONDITIONAL_APPROVE":
-        memo += "Approve pending receipt and verification of required documents."
-    elif action == "REFER":
-        memo += "Escalate to senior credit committee for manual review."
-    else:
-        memo += "Decline application and provide feedback to applicant."
-
-    return memo
-
-
-def format_drivers(drivers: List[Dict]) -> str:
-    """Format drivers for display."""
-    lines = []
-    for driver in drivers:
-        lines.append(
-            f"- **{driver['factor']}** ({driver['impact']}): {driver['evidence']}"
-        )
-    return "\n".join(lines) if lines else "No significant risk drivers identified"
-
-
-async def run_risk_assessment(
-    application_data: Dict[str, Any], request_id: str, trace_context: dict
-) -> RiskAssessmentResult:
-    """Run risk assessment workflow."""
-
-    with tracer.start_as_current_span("risk_assessment_workflow") as span:
-        span.set_attribute("request_id", request_id)
-
-        logger.info(f"Starting risk assessment for request {request_id}")
-
-        # Normalize application
-        normalized_app = {
+        # Normalize application data
+        result["normalized_application"] = {
             "applicant_name": application_data.get("applicant_name", "Unknown"),
             "loan_amount": application_data.get("loan_amount", 0),
             "monthly_income": application_data.get("monthly_income"),
@@ -385,72 +378,161 @@ async def run_risk_assessment(
             "utilization_rate": application_data.get("utilization_rate"),
         }
 
-        # Calculate risk band
-        risk_band, confidence, drivers = calculate_risk_band(normalized_app)
+    except Exception as e:
+        logger.error(f"Error parsing crew output: {e}")
+        # Fall back to basic extraction
+        result["decision_memo"] = str(crew_output)
 
-        # Policy checks
-        policy_checks, exceptions, required_docs = perform_policy_checks(
-            normalized_app, application_data, risk_band
+    return result
+
+
+async def run_risk_assessment_with_crew(
+    application_data: Dict[str, Any], request_id: str, trace_context: dict
+) -> RiskAssessmentResult:
+    """Run CrewAI workflow for risk assessment."""
+
+    with tracer.start_as_current_span("crewai_risk_assessment_workflow") as span:
+        span.set_attribute("request_id", request_id)
+        span.set_attribute(
+            "applicant_name", application_data.get("applicant_name", "Unknown")
         )
 
-        # Recommended action
-        recommended_action = determine_action(risk_band, exceptions)
+        logger.info(f"Starting CrewAI risk assessment for request {request_id}")
 
-        # Decision memo
-        decision_memo = generate_decision_memo(
-            normalized_app,
-            risk_band,
-            drivers,
-            policy_checks,
-            required_docs,
-            recommended_action,
-        )
+        try:
+            # Create and execute crew
+            crew = create_risk_crew(application_data)
 
-        # Human-friendly response
-        human_response = f"""**Credit Risk Assessment Complete**
+            # Run the crew - this will execute all tasks sequentially
+            crew_result = crew.kickoff()
 
-**Applicant:** {normalized_app['applicant_name']}
-**Loan Amount:** ${normalized_app['loan_amount']:,.2f}
-**Risk Band:** {risk_band} (Confidence: {confidence:.1%})
+            logger.info(f"CrewAI workflow completed for request {request_id}")
+
+            # Parse the crew output
+            parsed_result = parse_crew_output(crew_result, application_data)
+
+            # Build human-friendly response
+            human_response = f"""**Credit Risk Assessment Complete** (Powered by CrewAI)
+
+**Applicant:** {parsed_result['normalized_application']['applicant_name']}
+**Loan Amount:** ${parsed_result['normalized_application']['loan_amount']:,.2f}
+**Risk Band:** {parsed_result['risk_band']} (Confidence: {parsed_result['confidence']:.1%})
 
 **Top Risk Drivers:**
-{format_drivers(drivers)}
+{format_drivers(parsed_result['drivers'])}
 
-**Policy Status:** {len(exceptions)} exception(s) identified
-**Required Documents:** {len(required_docs)} document(s)
+**Policy Status:** {len(parsed_result['exceptions'])} exception(s) identified
+**Required Documents:** {len(parsed_result['required_documents'])} document(s)
 
-**Recommendation:** {recommended_action}
+**Recommendation:** {parsed_result['recommended_action']}
 
-See detailed analysis in the response data below."""
+*Assessment performed by 4-agent CrewAI workflow: Intake → Risk Scoring → Policy → Decision Memo*"""
 
-        logger.info(
-            f"Risk assessment completed for request {request_id}: {risk_band} risk"
+            return RiskAssessmentResult(
+                request_id=request_id,
+                normalized_application=parsed_result["normalized_application"],
+                risk_band=parsed_result["risk_band"],
+                confidence=parsed_result["confidence"],
+                drivers=(
+                    parsed_result["drivers"]
+                    if parsed_result["drivers"]
+                    else [
+                        {
+                            "factor": "Analysis in Progress",
+                            "impact": "MEDIUM",
+                            "evidence": "CrewAI assessment completed",
+                        }
+                    ]
+                ),
+                policy_checks=(
+                    parsed_result["policy_checks"]
+                    if parsed_result["policy_checks"]
+                    else [
+                        {
+                            "check": "Comprehensive Review",
+                            "status": "COMPLETED",
+                            "details": "Multi-agent analysis performed",
+                        }
+                    ]
+                ),
+                exceptions=parsed_result["exceptions"],
+                required_documents=(
+                    parsed_result["required_documents"]
+                    if parsed_result["required_documents"]
+                    else ["Standard loan documentation required"]
+                ),
+                recommended_action=parsed_result["recommended_action"],
+                decision_memo=parsed_result["decision_memo"],
+                audit_trail={
+                    "models_used": [
+                        "risk_fast (gpt-4o-mini)",
+                        "risk_reasoning (gpt-4o)",
+                    ],
+                    "agents_executed": [
+                        "intake_agent",
+                        "risk_scoring_agent",
+                        "policy_agent",
+                        "memo_agent",
+                    ],
+                    "framework": "CrewAI",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "request_id": request_id,
+                },
+                human_response=human_response,
+            )
+
+        except Exception as e:
+            logger.error(f"CrewAI workflow error: {e}", exc_info=True)
+            span.record_exception(e)
+
+            # Fallback to basic response
+            return RiskAssessmentResult(
+                request_id=request_id,
+                normalized_application={
+                    "applicant_name": application_data.get("applicant_name", "Unknown"),
+                    "loan_amount": application_data.get("loan_amount", 0),
+                },
+                risk_band="MEDIUM",
+                confidence=0.50,
+                drivers=[
+                    {"factor": "Assessment Error", "impact": "HIGH", "evidence": str(e)}
+                ],
+                policy_checks=[
+                    {
+                        "check": "System Check",
+                        "status": "ERROR",
+                        "details": "CrewAI workflow encountered an error",
+                    }
+                ],
+                exceptions=["SYSTEM_ERROR"],
+                required_documents=["Manual review required"],
+                recommended_action="REFER",
+                decision_memo=f"System encountered an error during assessment. Manual review required. Error: {str(e)}",
+                audit_trail={
+                    "error": str(e),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "request_id": request_id,
+                },
+                human_response=f"Assessment error occurred. Manual review required. Request ID: {request_id}",
+            )
+
+
+def format_drivers(drivers: List[Dict]) -> str:
+    """Format drivers for display."""
+    if not drivers:
+        return "- Analysis in progress"
+
+    lines = []
+    for driver in drivers:
+        lines.append(
+            f"- **{driver.get('factor', 'Unknown')}** ({driver.get('impact', 'UNKNOWN')}): {driver.get('evidence', 'N/A')}"
         )
-
-        return RiskAssessmentResult(
-            request_id=request_id,
-            normalized_application=normalized_app,
-            risk_band=risk_band,
-            confidence=confidence,
-            drivers=drivers,
-            policy_checks=policy_checks,
-            exceptions=exceptions,
-            required_documents=required_docs,
-            recommended_action=recommended_action,
-            decision_memo=decision_memo,
-            audit_trail={
-                "models_used": ["risk_fast", "risk_reasoning"],
-                "guardrails_triggered": [],
-                "timestamp": datetime.utcnow().isoformat(),
-                "request_id": request_id,
-            },
-            human_response=human_response,
-        )
+    return "\n".join(lines)
 
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
-    """OpenAI-compatible chat completions endpoint."""
+    """OpenAI-compatible chat completions endpoint powered by CrewAI."""
     with tracer.start_as_current_span("chat_completions") as span:
         try:
             body = await request.json()
@@ -469,12 +551,11 @@ async def chat_completions(request: Request):
                 )
 
             content = last_user_msg.get("content", "")
-            logger.info(f"Processing request {request_id}: {content[:100]}")
+            logger.info(f"Processing CrewAI request {request_id}: {content[:100]}")
 
             # Try to parse JSON from content
             application_data = {}
             try:
-                # Look for JSON in content
                 if "{" in content and "}" in content:
                     json_start = content.index("{")
                     json_end = content.rindex("}") + 1
@@ -483,18 +564,21 @@ async def chat_completions(request: Request):
                 else:
                     # Simple request without JSON
                     application_data = {
-                        "applicant_name": "Sample",
+                        "applicant_name": "Sample Applicant",
                         "loan_amount": 100000,
                     }
             except Exception as e:
                 logger.warning(f"Could not parse JSON from message: {e}")
-                application_data = {"applicant_name": "Sample", "loan_amount": 100000}
+                application_data = {
+                    "applicant_name": "Sample Applicant",
+                    "loan_amount": 100000,
+                }
 
             # Extract trace context
             trace_context = extract(request.headers)
 
-            # Run risk assessment
-            result = await run_risk_assessment(
+            # Run CrewAI risk assessment
+            result = await run_risk_assessment_with_crew(
                 application_data, request_id, trace_context
             )
 
@@ -528,21 +612,36 @@ async def chat_completions(request: Request):
                         "completion_tokens": 0,
                         "total_tokens": 0,
                     },
+                    "metadata": {
+                        "framework": "CrewAI",
+                        "agents_used": 4,
+                        "request_id": request_id,
+                    },
                 }
             )
 
         except Exception as e:
-            logger.error(f"Error processing request: {e}", exc_info=True)
+            logger.error(f"Error processing CrewAI request: {e}", exc_info=True)
             span.record_exception(e)
-            return JSONResponse(status_code=500, content={"error": str(e)})
+            return JSONResponse(
+                status_code=500, content={"error": str(e), "framework": "CrewAI"}
+            )
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "risk-crew-agent"}
+    return {
+        "status": "healthy",
+        "service": "risk-crew-agent",
+        "framework": "CrewAI",
+        "llm_gateway": LLM_GATEWAY_ENDPOINT,
+        "agents": 4,
+    }
 
 
 if __name__ == "__main__":
-    logger.info("Starting Risk Crew Agent on port 10530")
+    logger.info("Starting Risk Crew Agent with CrewAI on port 10530")
+    logger.info(f"LLM Gateway: {LLM_GATEWAY_ENDPOINT}")
+    logger.info("Agents: Intake → Risk Scoring → Policy → Decision Memo")
     uvicorn.run(app, host="0.0.0.0", port=10530)

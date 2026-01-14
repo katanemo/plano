@@ -9,6 +9,7 @@ dependencies = [
     "uvicorn>=0.30.0",
     "pydantic>=2.11.7",
     "crewai>=0.80.0",
+    "crewai-tools>=0.12.0",
     "openai>=1.0.0",
     "httpx>=0.24.0",
     "streamlit>=1.40.0",
@@ -17,6 +18,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.20.0",
     "opentelemetry-instrumentation-fastapi>=0.41b0",
     "python-dotenv>=1.0.0",
+    "langchain-openai>=0.1.0",
 ]
 
 [build-system]
