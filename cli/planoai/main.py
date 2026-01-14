@@ -74,7 +74,7 @@ def main(ctx, version):
     log.info(f"Starting plano cli version: {get_version()}")
 
     if ctx.invoked_subcommand is None:
-        click.echo("""Arch (The Intelligent Prompt Gateway) CLI""")
+        click.echo("""Plano (AI-native proxy and dataplane for agentic apps) CLI""")
         click.echo(logo)
         click.echo(ctx.get_help())
 
@@ -121,16 +121,16 @@ def build():
 @click.command()
 @click.argument("file", required=False)  # Optional file argument
 @click.option(
-    "--path", default=".", help="Path to the directory containing arch_config.yaml"
+    "--path", default=".", help="Path to the directory containing config.yaml"
 )
 @click.option(
     "--foreground",
     default=False,
-    help="Run Arch in the foreground. Default is False",
+    help="Run Plano in the foreground. Default is False",
     is_flag=True,
 )
 def up(file, path, foreground):
-    """Starts Arch."""
+    """Starts Plano."""
     # Use the utility function to find config file
     arch_config_file = find_config_file(path, file)
 
@@ -270,7 +270,7 @@ def logs(debug, follow):
     help="Additional settings as JSON string for the CLI agent.",
 )
 def cli_agent(type, file, path, settings):
-    """Start a CLI agent connected to Arch.
+    """Start a CLI agent connected to Plano.
 
     CLI_AGENT: The type of CLI agent to start (currently only 'claude' is supported)
     """
@@ -278,7 +278,7 @@ def cli_agent(type, file, path, settings):
     # Check if plano docker container is running
     archgw_status = docker_container_status(PLANO_DOCKER_NAME)
     if archgw_status != "running":
-        log.error(f"archgw docker container is not running (status: {archgw_status})")
+        log.error(f"plano docker container is not running (status: {archgw_status})")
         log.error("Please start plano using the 'planoai up' command.")
         sys.exit(1)
 
