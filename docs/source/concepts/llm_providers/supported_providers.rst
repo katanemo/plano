@@ -791,7 +791,7 @@ The ``passthrough_auth`` option enables this behavior:
 
 .. code-block:: bash
 
-    # Client request - virtual key is forwarded to LiteLLM
+    # Client request - virtual key is forwarded to upstream
     curl http://localhost:10000/v1/chat/completions \
       -H "Authorization: Bearer sk-litellm-virtual-key-abc123" \
       -H "Content-Type: application/json" \
