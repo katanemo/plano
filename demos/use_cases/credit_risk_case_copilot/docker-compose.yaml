@@ -9,6 +9,7 @@ services:
     ports:
       - "10530:10530"
     environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LLM_GATEWAY_ENDPOINT=http://host.docker.internal:12000/v1
       - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
     command: ["uv", "run", "python", "src/credit_risk_demo/risk_crew_agent.py"]
