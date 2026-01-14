@@ -37,24 +37,6 @@ llm_reasoning = ChatOpenAI(
 )
 ```
 
-**Performance:**
-- Response time: 8-15 seconds (4 sequential LLM calls)
-- Cost per request: ~$0.02-0.05
-- Quality: Enhanced analysis vs deterministic logic
-- Observability: Full traces in Jaeger showing each agent execution
-
-**Why No Plano Config Changes:**
-The existing `config.yaml` already had everything needed:
-- ✅ Model aliases (`risk_fast`, `risk_reasoning`) 
-- ✅ LLM gateway on port 12000
-- ✅ OpenTelemetry tracing enabled
-- ✅ Agent routing configured
-
-**Dependencies Added:**
-- `crewai>=0.80.0` - Multi-agent framework
-- `crewai-tools>=0.12.0` - Agent tools
-- `langchain-openai>=0.1.0` - LLM integration with Plano
-
 ## Overview
 
 This demo implements a **Credit Risk Case Copilot** with:
