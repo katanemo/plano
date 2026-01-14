@@ -3,12 +3,12 @@ version: v0.3.0
 # Define the Risk Crew Agent service
 agents:
   - id: risk_crew_agent
-    url: http://host.docker.internal:10530
+    url: http://host.docker.internal:10530/v1/chat/completions
 
 # MCP filter for PII redaction and prompt injection detection
 filters:
   - id: pii_security_filter
-    url: http://host.docker.internal:10550
+    url: http://host.docker.internal:10550/v1/tools/pii_security_filter
 
 # LLM providers with model routing
 model_providers:
