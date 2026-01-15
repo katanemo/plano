@@ -1,6 +1,7 @@
 import json
+
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from openai import AsyncOpenAI
 import os
 import logging
@@ -14,8 +15,7 @@ from opentelemetry.propagate import extract, inject
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-from langchain.prompts import ChatPromptTemplate
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents import create_agent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,61 +67,61 @@ Your task:
 
 Multi-agent context: If the conversation includes information from other sources, incorporate it naturally into your response."""
 
-ROUTE_EXTRACTION_PROMPT = """Extract flight route and travel date. Support direct AND multi-leg flights.
 
-Rules:
-1. Patterns: "flight from X to Y", "X to Y to Z", "fly from X through Y to Z"
-2. For multi-leg (e.g., "Seattle to Dubai to Lahore"), extract ALL cities in order
-3. Extract dates: "tomorrow", "next week", "December 25", "12/25", "on Monday"
-4. Use conversation context for missing details
+def build_flight_agent(
+    request: Request,
+    request_body: dict,
+    streaming: bool,
+):
+    ctx = extract(request.headers)
+    extra_headers = {"x-envoy-max-retries": "3"}
+    request_id = request.headers.get("x-request-id")
+    if request_id:
+        extra_headers["x-request-id"] = request_id
+    inject(extra_headers, context=ctx)
 
-Output format: {"cities": ["City1", "City2", ...], "date": "YYYY-MM-DD" or null}
+    @tool("search_flights", args_schema=FlightSearchInput)
+    async def search_flights(
+        origin_city: str, destination_city: str, travel_date: Optional[str] = None
+    ):
+        """Search for flights between two cities. Supports optional travel date."""
+        origin_code = await resolve_airport_code(origin_city, request)
+        dest_code = await resolve_airport_code(destination_city, request)
 
-Examples:
-- "Flight from Seattle to Atlanta tomorrow" → {"cities": ["Seattle", "Atlanta"], "date": "2026-01-07"}
-- "Seattle to Dubai to Lahore" → {"cities": ["Seattle", "Dubai", "Lahore"], "date": null}
-- "Flights from LA through Chicago to NYC" → {"cities": ["LA", "Chicago", "NYC"], "date": null}
+        if not origin_code or not dest_code:
+            return {
+                "error": "Could not resolve airport codes for provided cities.",
+                "origin_city": origin_city,
+                "destination_city": destination_city,
+            }
 
-Today is January 6, 2026. Extract flight route:"""
+        flight_data = await fetch_flights(origin_code, dest_code, travel_date)
+        return {
+            "origin_city": origin_city,
+            "destination_city": destination_city,
+            "origin_code": origin_code,
+            "destination_code": dest_code,
+            "travel_date": travel_date or datetime.now().strftime("%Y-%m-%d"),
+            "flights": flight_data.get("flights", []),
+            "count": flight_data.get("count", 0),
+            "error": flight_data.get("error"),
+        }
 
+    llm = ChatOpenAI(
+        model=FLIGHT_MODEL,
+        api_key="EMPTY",
+        base_url=LLM_GATEWAY_ENDPOINT,
+        temperature=request_body.get("temperature", 0.7),
+        max_tokens=request_body.get("max_tokens", 1000),
+        streaming=streaming,
+        default_headers=extra_headers,
+    )
 
-async def extract_flight_route(messages: list, request: Request) -> dict:
-    try:
-        ctx = extract(request.headers)
-        extra_headers = {}
-        inject(extra_headers, context=ctx)
-
-        response = await openai_client.chat.completions.create(
-            model=EXTRACTION_MODEL,
-            messages=[
-                {"role": "system", "content": ROUTE_EXTRACTION_PROMPT},
-                *[
-                    {"role": m.get("role"), "content": m.get("content")}
-                    for m in messages[-5:]
-                ],
-            ],
-            temperature=0.1,
-            max_tokens=100,
-            extra_headers=extra_headers or None,
-        )
-
-        result = response.choices[0].message.content.strip()
-        if "```json" in result:
-            result = result.split("```json")[1].split("```")[0].strip()
-        elif "```" in result:
-            result = result.split("```")[1].split("```")[0].strip()
-
-        route = json.loads(result)
-        cities = route.get("cities", [])
-
-        if not cities and (route.get("origin") or route.get("destination")):
-            cities = [c for c in [route.get("origin"), route.get("destination")] if c]
-
-        return {"cities": cities, "date": route.get("date")}
-
-    except Exception as e:
-        logger.error(f"Error extracting flight route: {e}")
-        return {"cities": [], "date": None}
+    return create_agent(
+        model=llm,
+        tools=[search_flights],
+        system_prompt=SYSTEM_PROMPT,
+    )
 
 
 async def resolve_airport_code(city_name: str, request: Request) -> Optional[str]:
@@ -247,130 +247,112 @@ async def fetch_flights(
         }
 
 
-def build_flight_context(cities: list, airport_codes: list, legs_data: list) -> str:
-    if len(cities) == 2:
-        leg = legs_data[0]
-        flight_data = {
-            "flights": leg["flights"],
-            "count": len(leg["flights"]),
-            "origin_code": leg["origin_code"],
-            "destination_code": leg["dest_code"],
-        }
-        if leg["flights"]:
-            return f"""
-Flight search results from {leg['origin']} ({leg['origin_code']}) to {leg['destination']} ({leg['dest_code']}):
-
-Flight data in JSON format:
-{json.dumps(flight_data, indent=2)}
-
-Present these {len(leg['flights'])} flight(s) to the user clearly."""
-        else:
-            error = leg.get("error") or "No direct flights found"
-            return f"""
-Flight search from {leg['origin']} ({leg['origin_code']}) to {leg['destination']} ({leg['dest_code']}):
-
-Result: {error}
-
-Let the user know and suggest alternatives if appropriate."""
-
-    route_str = " → ".join(
-        [f"{city} ({code})" for city, code in zip(cities, airport_codes)]
-    )
-    context = f"\nMulti-leg flight search: {route_str}\n\n"
-
-    for leg in legs_data:
-        context += f"**Leg {leg['leg']}: {leg['origin']} ({leg['origin_code']}) → {leg['destination']} ({leg['dest_code']})**\n"
-        if leg["flights"]:
-            leg_data = {"flights": leg["flights"], "count": len(leg["flights"])}
-            context += f"Flight data:\n{json.dumps(leg_data, indent=2)}\n\n"
-        elif leg.get("error"):
-            context += f"Error: {leg['error']}\n\n"
-        else:
-            context += "No direct flights found for this leg.\n\n"
-
-    context += "Present this itinerary clearly. For each leg, show available flights by departure time. Note connection timing between legs."
-    return context
-
-
 app = FastAPI(title="Flight Information Agent", version="1.0.0")
 
 
 @app.post("/v1/chat/completions")
 async def handle_request(request: Request):
     request_body = await request.json()
+    is_streaming = request_body.get("stream", True)
+    model = request_body.get("model", FLIGHT_MODEL)
+
+    if is_streaming:
+        return StreamingResponse(
+            invoke_flight_agent_stream(request, request_body, model),
+            media_type="text/event-stream",
+            headers={"content-type": "text/event-stream"},
+        )
+
     content = await invoke_flight_agent(request, request_body)
-    return JSONResponse({"content": content})
+    return JSONResponse(
+        {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+    )
 
 
 async def invoke_flight_agent(request: Request, request_body: dict):
+    """Generate flight information using a LangChain agent with the modern create_agent API."""
     messages = request_body.get("messages", [])
-
-    conversation = "\n".join(
-        [f"{m.get('role')}: {m.get('content')}" for m in messages if m.get("content")]
-    )
-
-    ctx = extract(request.headers)
-    extra_headers = {"x-envoy-max-retries": "3"}
-    inject(extra_headers, context=ctx)
-
-    @tool("search_flights", args_schema=FlightSearchInput)
-    async def search_flights(
-        origin_city: str, destination_city: str, travel_date: Optional[str] = None
-    ):
-        """Search for flights between two cities. Supports optional travel date."""
-        origin_code = await resolve_airport_code(origin_city, request)
-        dest_code = await resolve_airport_code(destination_city, request)
-
-        if not origin_code or not dest_code:
-            return {
-                "error": "Could not resolve airport codes for provided cities.",
-                "origin_city": origin_city,
-                "destination_city": destination_city,
-            }
-
-        flight_data = await fetch_flights(origin_code, dest_code, travel_date)
-        return {
-            "origin_city": origin_city,
-            "destination_city": destination_city,
-            "origin_code": origin_code,
-            "destination_code": dest_code,
-            "travel_date": travel_date or datetime.now().strftime("%Y-%m-%d"),
-            "flights": flight_data.get("flights", []),
-            "count": flight_data.get("count", 0),
-            "error": flight_data.get("error"),
-        }
-
-    tools = [search_flights]
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", SYSTEM_PROMPT),
-            (
-                "user",
-                "Conversation:\n{conversation}\n\nUse tools to fetch real flight options. Be concise and clear.",
-            ),
-        ]
-    )
-
-    llm = ChatOpenAI(
-        model=FLIGHT_MODEL,
-        api_key="EMPTY",
-        base_url=LLM_GATEWAY_ENDPOINT,
-        temperature=request_body.get("temperature", 0.7),
-        max_tokens=request_body.get("max_tokens", 1000),
-        streaming=False,
-        default_headers=extra_headers,
-    )
-
-    agent = create_tool_calling_agent(llm, tools, prompt)
-    executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
+    agent = build_flight_agent(request, request_body, streaming=False)
 
     try:
-        result = await executor.ainvoke({"conversation": conversation})
-        return result.get("output", "")
+        # Invoke agent with messages
+        result = await agent.ainvoke({"messages": messages})
+
+        # Extract final response from messages
+        final_message = result["messages"][-1]
+        content = (
+            final_message.content
+            if hasattr(final_message, "content")
+            else str(final_message)
+        )
+        return content
     except Exception as e:
         logger.error(f"Error generating response: {e}")
-        return "I’m having trouble retrieving flight information right now. Please try again."
+        return "I'm having trouble retrieving flight information right now. Please try again."
+
+
+def build_openai_chunk(model: str, content: str, finish_reason: Optional[str] = None):
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "delta": {"content": content} if content else {},
+                "finish_reason": finish_reason,
+            }
+        ],
+    }
+
+
+async def invoke_flight_agent_stream(
+    request: Request,
+    request_body: dict,
+    model: str,
+):
+    messages = request_body.get("messages", [])
+    agent = build_flight_agent(request, request_body, streaming=True)
+
+    try:
+        async for event in agent.astream_events(
+            {"messages": messages},
+            version="v2",
+        ):
+            if event.get("event") != "on_chat_model_stream":
+                continue
+            chunk = event.get("data", {}).get("chunk")
+            content = getattr(chunk, "content", None)
+            if not content:
+                continue
+            if isinstance(content, list):
+                content = "".join(
+                    piece for piece in content if isinstance(piece, str)
+                ).strip()
+                if not content:
+                    continue
+            yield f"data: {json.dumps(build_openai_chunk(model, content))}\n\n"
+
+        yield f"data: {json.dumps(build_openai_chunk(model, '', 'stop'))}\n\n"
+        yield "data: [DONE]\n\n"
+    except Exception as e:
+        logger.error(f"Error streaming response: {e}")
+        error_message = "I'm having trouble retrieving flight information right now. Please try again."
+        yield f"data: {json.dumps(build_openai_chunk(model, error_message, 'stop'))}\n\n"
+        yield "data: [DONE]\n\n"
 
 
 @app.get("/health")

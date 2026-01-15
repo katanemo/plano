@@ -8,7 +8,7 @@ agents:
 
 model_providers:
   - model: openai/gpt-4o
-    access_key: $OPENAI_API_KEY
+    access_key: $OPENAI_API_KEY # smaller, faster, cheaper model for extracting entities like location
     default: true
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY # smaller, faster, cheaper model for extracting entities like location
