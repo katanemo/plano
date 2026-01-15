@@ -219,6 +219,7 @@ impl ResponseMessage {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum MessageContent {
+    Null,
     Text(String),
     Parts(Vec<ContentPart>),
 }
@@ -227,6 +228,7 @@ pub enum MessageContent {
 impl ExtractText for MessageContent {
     fn extract_text(&self) -> String {
         match self {
+            MessageContent::Null => String::new(),
             MessageContent::Text(text) => text.clone(),
             MessageContent::Parts(parts) => parts.extract_text(),
         }
@@ -248,6 +250,7 @@ impl ExtractText for Vec<ContentPart> {
 impl Display for MessageContent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            MessageContent::Null => write!(f, ""),
             MessageContent::Text(text) => write!(f, "{}", text),
             MessageContent::Parts(parts) => {
                 let text_parts: Vec<String> = parts
@@ -624,6 +627,7 @@ impl ProviderRequest for ChatCompletionsRequest {
         self.messages.iter().fold(String::new(), |acc, m| {
             acc + " "
                 + &match &m.content {
+                    MessageContent::Null => String::new(),
                     MessageContent::Text(text) => text.clone(),
                     MessageContent::Parts(parts) => parts
                         .iter()
@@ -640,6 +644,7 @@ impl ProviderRequest for ChatCompletionsRequest {
     fn get_recent_user_message(&self) -> Option<String> {
         self.messages.last().and_then(|msg| {
             match &msg.content {
+                MessageContent::Null => None,
                 MessageContent::Text(text) => Some(text.clone()),
                 MessageContent::Parts(_) => None, // No user message in parts
             }
