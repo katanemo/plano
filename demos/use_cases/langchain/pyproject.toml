@@ -1,19 +1,26 @@
 [project]
 name = "travel-agents"
 version = "0.1.0"
-description = "Travel Booking Agents - Weather, Flight, and Currency"
+description = "Travel Booking Agents (LangChain-first) - Weather and Flight agents powered by LangChain"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "click>=8.2.1",
-    "pydantic>=2.11.7",
+    # Web framework
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
-    "openai>=1.0.0",
+    # HTTP client
     "httpx>=0.24.0",
+    # CLI
+    "click>=8.2.1",
+    "pydantic>=2.11.7",
+    # LangChain ecosystem (v1.0+)
+    "langchain>=1.0.0",
+    "langchain-openai>=0.3.0",
+    "langchain-core>=1.0.0",
+    # OpenAI (for direct API calls if needed)
+    "openai>=1.0.0",
+    # Telemetry
     "opentelemetry-api>=1.20.0",
-    "langchain>=0.3.13",
-    "langchain-openai>=0.2.14",
 ]
 
 [project.scripts]

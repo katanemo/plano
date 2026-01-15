@@ -1,141 +1,25 @@
 # Travel Booking Agent Demo (LangChain-first)
 
-A lightweight LangChain-powered multi-agent travel booking system that runs two small agents behind Plano’s router: a weather agent and a flight agent. Each agent is implemented with LangChain tool-calling out of the box and kept minimal so you can read, tweak, and extend quickly.
+A lightweight **LangChain-powered** multi-agent travel booking system that runs two agents behind Plano's router: a weather agent and a flight agent. Each agent is implemented with LangChain's tool-calling capabilities for a clean, modular design.
 
 ## Overview
 
-This demo consists of two LangChain agents that work together seamlessly:
+This demo showcases how to integrate LangChain agents with Plano:
 
-- **Weather Agent** - Real-time weather conditions and multi-day forecasts for any city worldwide
-- **Flight Agent** - Live flight information between airports with real-time tracking
+- **Weather Agent** - Uses `@tool` decorator to fetch real-time weather from Open-Meteo API
+- **Flight Agent** - Uses `@tool` decorator to search flights via FlightAware API
 
-Both agents are plain LangChain tool-callers. Plano routes traffic based on intent and forwards to the right LangChain agent. Everything runs in Docker for quick start.
-
-## Features
-
-- **Lightweight code**: Minimal prompts + tools you can read in one pass
-- **Intelligent routing**: Plano auto-routes to weather vs flight
-- **Real-time data**: Weather (Open-Meteo) + flights (FlightAware)
-- **Multi-day forecasts**: Up to 16 days for weather
-
-## Prerequisites
-
-- Docker and Docker Compose
-- [Plano CLI](https://docs.planoai.dev) installed
-- OpenAI API key
-
-## Quick Start
-
-### 1. Set Environment Variables
-
-Create a `.env` file or export environment variables:
-
-```bash
-export AEROAPI_KEY="your-flightaware-api-key"  # Optional, demo key included
-```
-
-### 2. Start All Agents with Docker
-
-```bash
-chmod +x start_agents.sh
-./start_agents.sh
-```
-
-Or directly:
-
-```bash
-docker compose up --build
-```
-
-This starts:
-- Weather Agent on port 10510
-- Flight Agent on port 10520
-- Open WebUI on port 8080
-
-### 3. Start Plano Orchestrator
-
-In a new terminal:
-
-```bash
-cd /path/to/travel_agents
-planoai up config.yaml
-# Or if installed with uv: uvx planoai up config.yaml
-```
-
-The gateway will start on port 8001 and route requests to the appropriate agents.
-
-### 4. Test the System
-
-**Option 1**: Use Open WebUI at http://localhost:8080
-
-**Option 2**: Send requests directly to Plano Orchestrator:
-
-```bash
-curl http://localhost:8001/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o",
-    "messages": [
-      {"role": "user", "content": "What is the weather like in Paris?"}
-    ]
-  }'
-```
-
-## Example Conversations
-
-### Weather Query
-```
-User: What's the weather in Istanbul?
-Assistant: [Weather Agent provides current conditions and forecast]
-```
-
-### Flight Search
-```
-User: What flights go from London to Seattle?
-Assistant: [Flight Agent shows available flights with schedules and status]
-```
-
-### Multi-Agent Conversation
-```
-User: What's the weather in Istanbul?
-Assistant: [Weather information]
-
-User: Do they fly out from Seattle?
-Assistant: [Flight information from Istanbul to Seattle]
-```
-
-The system understands context and pronouns, automatically routing to the right agent.
-
-### Multi-Intent Queries
-```
-User: What's the weather in Seattle, and do any flights go direct to New York?
-Assistant: [Both weather_agent and flight_agent respond simultaneously]
-  - Weather Agent: [Weather information for Seattle]
-  - Flight Agent: [Flight information from Seattle to New York]
-```
-
-The orchestrator can select multiple agents simultaneously for queries containing multiple intents.
-
-## Agent Details (LangChain)
-
-### Weather Agent
-- **Port**: 10510
-- **API**: Open-Meteo (free, no API key)
-- **LangChain**: Tool to fetch weather; LLM summarizes with provided data
-- **Capabilities**: Current weather, multi-day forecasts, temperature, conditions, sunrise/sunset
-
-### Flight Agent
-- **Port**: 10520
-- **API**: FlightAware AeroAPI
-- **LangChain**: Tool resolves cities → IATA and fetches flights
-- **Capabilities**: Real-time flight status, schedules, delays, gates, terminals, live tracking
+Both agents use LangChain's `create_tool_calling_agent` and `AgentExecutor` for:
+- Automatic tool selection and execution
+- Streaming responses via `astream_events`
+- OpenAI-compatible API endpoints
 
 ## Architecture
 
 ```
     User Request
          ↓
-    Plano (8001)
+    Plano Gateway (8001)
      [Orchestrator]
          |
     ┌────┴────┐
@@ -143,70 +27,226 @@ The orchestrator can select multiple agents simultaneously for queries containin
 Weather    Flight
 Agent      Agent
 (10510)    (10520)
-[Docker]   [Docker]
+   │          │
+   └──────────┴─── LangChain Tools ───→ External APIs
 ```
 
-
-
 Each agent:
-1. Extracts intent using GPT-4o-mini (with OpenTelemetry tracing)
-2. Fetches real-time data from APIs
-3. Generates response using GPT-4o
-4. Streams response back to user
+1. Receives OpenAI-compatible chat requests
+2. Uses LangChain's agent executor with tools
+3. Tools fetch data from external APIs (Open-Meteo, FlightAware)
+4. Streams responses back in OpenAI format
 
-Both agents run as Docker containers and communicate with Plano via `host.docker.internal`.
+## LangChain Implementation Details
+
+### Weather Agent Tools
+
+```python
+@tool
+async def get_weather(city: str, days: int = 1) -> str:
+    """Get weather information for a city."""
+    # Geocode city → fetch weather from Open-Meteo
+    ...
+```
+
+### Flight Agent Tools
+
+```python
+@tool
+async def resolve_airport_code(city: str) -> str:
+    """Convert city name to IATA airport code."""
+    ...
+
+@tool
+async def search_flights(origin_code: str, destination_code: str, travel_date: str = None) -> str:
+    """Search flights between two airports."""
+    # Query FlightAware AeroAPI
+    ...
+```
+
+### Agent Setup
+
+```python
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="openai/gpt-4o",
+    base_url=LLM_GATEWAY_ENDPOINT,  # Plano gateway
+    api_key="EMPTY",
+    streaming=True,
+)
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+```
+
+## Prerequisites
+
+- Docker and Docker Compose
+- [Plano CLI](https://docs.planoai.dev) installed
+- OpenAI API key
+- (Optional) FlightAware AeroAPI key for live flight data
+
+## Quick Start
+
+### 1. Set Environment Variables
+
+```bash
+export OPENAI_API_KEY="your-openai-api-key"
+export AEROAPI_KEY="your-flightaware-api-key"  # Optional for flight agent
+```
+
+### 2. Start All Services with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+This starts:
+- Plano Gateway on port 8001 (and 12000 for LLM proxy)
+- Weather Agent on port 10510
+- Flight Agent on port 10520
+- Open WebUI on port 8080
+- Jaeger tracing on port 16686
+
+### 3. Test the System
+
+**Option 1**: Use Open WebUI at http://localhost:8080
+
+**Option 2**: Send requests directly:
+
+```bash
+# Weather query
+curl http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "What is the weather like in Paris?"}]
+  }'
+
+# Flight query
+curl http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Find flights from Seattle to New York"}]
+  }'
+```
+
+## Example Conversations
+
+### Weather Query
+```
+User: What's the 5-day forecast for Tokyo?
+Assistant: [Weather Agent uses get_weather tool → presents forecast]
+```
+
+### Flight Search
+```
+User: What flights go from London to Seattle tomorrow?
+Assistant: [Flight Agent uses resolve_airport_code → search_flights → presents results]
+```
+
+### Multi-Agent (via Plano routing)
+```
+User: What's the weather in Seattle, and any flights to New York?
+Assistant: [Plano routes to both agents → combined response]
+```
+
+## Local Development
+
+### Run agents locally (without Docker)
+
+```bash
+# Install dependencies
+cd demos/use_cases/langchain
+uv sync
+
+# Start weather agent
+uv run python src/travel_agents/weather_agent.py
+
+# In another terminal, start flight agent
+uv run python src/travel_agents/flight_agent.py
+```
+
+### Using the CLI
+
+```bash
+# Start weather agent
+uv run travel_agents weather --port 10510
+
+# Start flight agent
+uv run travel_agents flight --port 10520
+```
 
 ## Project Structure
 
 ```
-travel_agents/
-├── config.yaml          # Plano configuration
-├── docker-compose.yaml       # Docker services orchestration
-├── Dockerfile               # Multi-agent container image
-├── start_agents.sh          # Quick start script
-├── pyproject.toml           # Python dependencies
+langchain/
+├── config.yaml              # Plano gateway configuration
+├── docker-compose.yaml      # Docker services orchestration
+├── Dockerfile               # Container image
+├── pyproject.toml           # Python dependencies (LangChain, FastAPI, etc.)
+├── README.md                # This file
 └── src/
     └── travel_agents/
-        ├── __init__.py      # CLI entry point
-        ├── weather_agent.py # Weather forecast agent (multi-day support)
-        └── flight_agent.py  # Flight information agent
+        ├── __init__.py      # CLI entry points
+        ├── weather_agent.py # Weather agent with get_weather tool
+        └── flight_agent.py  # Flight agent with search_flights tool
 ```
 
-## Configuration Files
+## Configuration
 
 ### config.yaml
 
-Defines the two agents, their descriptions, and routing configuration. The agent router uses these descriptions to intelligently route requests.
+Defines agent descriptions for Plano's intelligent routing:
 
-### docker-compose.yaml
+```yaml
+agents:
+  - id: weather_agent
+    url: http://host.docker.internal:10510
+  - id: flight_agent
+    url: http://host.docker.internal:10520
 
-Orchestrates the deployment of:
-- Weather Agent (builds from Dockerfile)
-- Flight Agent (builds from Dockerfile)
-- Open WebUI (for testing)
-- Jaeger (for distributed tracing)
+listeners:
+  - type: agent
+    name: travel_booking_service
+    port: 8001
+    router: plano_orchestrator_v1
+    agents:
+      - id: weather_agent
+        description: |
+          WeatherAgent provides real-time weather and forecasts...
+      - id: flight_agent
+        description: |
+          FlightAgent provides live flight information...
+```
 
 ## Troubleshooting
 
-**Docker containers won't start**
-- Verify Docker and Docker Compose are installed
-- Check that ports 10510, 10520, 8080 are available
-- Review container logs: `docker compose logs weather-agent` or `docker compose logs flight-agent`
+**Agents not responding**
+- Check container logs: `docker compose logs weather-agent`
+- Verify Plano is running: `curl http://localhost:8001/health`
 
-**Plano won't start**
-- Verify Plano is installed: `plano --version`
-- Ensure you're in the travel_agents directory
-- Check config.yaml is valid
+**LangChain agent errors**
+- Check that `LLM_GATEWAY_ENDPOINT` is correctly set
+- Verify OpenAI API key is valid
 
-**No response from agents**
-- Verify all containers are running: `docker compose ps`
-- Check that Plano is running on port 8001
-- Review agent logs: `docker compose logs -f`
-- Verify `host.docker.internal` resolves correctly (should point to host machine)
+**Flight API returning mock data**
+- Set `AEROAPI_KEY` for live FlightAware data
+- Without the key, the agent returns sample flight data
 
 ## API Endpoints
 
-All agents expose OpenAI-compatible chat completion endpoints:
+All agents expose OpenAI-compatible endpoints:
 
-- `POST /v1/chat/completions` - Chat completion endpoint
-- `GET /health` - Health check endpoint
+- `POST /v1/chat/completions` - Chat completion (streaming)
+- `GET /health` - Health check
+
+## Key Dependencies
+
+- `langchain>=0.3.13` - Agent framework
+- `langchain-openai>=0.2.14` - OpenAI integration via Plano
+- `fastapi>=0.115.0` - Web framework
+- `httpx>=0.24.0` - Async HTTP client for API calls

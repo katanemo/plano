@@ -36,7 +36,7 @@ services:
       - "10520:10520"
     environment:
       - LLM_GATEWAY_ENDPOINT=http://host.docker.internal:12000/v1
-      - AEROAPI_KEY=${AEROAPI_KEY:? AEROAPI_KEY environment variable is required but not set}
+      - AEROAPI_KEY=${AEROAPI_KEY:-}  # Optional: mock data returned if not set
     command: ["uv", "run", "python", "src/travel_agents/flight_agent.py"]
     extra_hosts:
       - "host.docker.internal:host-gateway"

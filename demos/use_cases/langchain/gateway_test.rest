@@ -1,0 +1,35 @@
+### Weather via Plano (8001)
+POST http://localhost:8001/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "openai/gpt-4o-mini",
+  "stream": true,
+  "messages": [
+    { "role": "user", "content": "What's the weather in Lahore?" }
+  ]
+}
+
+### Flight via Plano (8001)
+POST http://localhost:8001/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "openai/gpt-4o-mini",
+  "stream": false,
+  "messages": [
+    { "role": "user", "content": "Find flights from Seattle to Atlanta." }
+  ]
+}
+
+### Multi-intent via Plano (8001)
+POST http://localhost:8001/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "openai/gpt-4o-mini",
+  "stream": false,
+  "messages": [
+    { "role": "user", "content": "What's the weather in Tokyo this weekend, and any direct flights to Sydney?" }
+  ]
+}
