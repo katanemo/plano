@@ -174,10 +174,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
 
 impl From<Message> for MessagesSystemPrompt {
     fn from(val: Message) -> Self {
-        let system_text = match val.content {
-            MessageContent::Text(text) => text,
-            MessageContent::Parts(parts) => parts.extract_text(),
-        };
+        let system_text = val.content.extract_text();
         MessagesSystemPrompt::Single(system_text)
     }
 }
@@ -248,6 +245,7 @@ impl TryFrom<Message> for BedrockMessage {
             Role::User => {
                 // Convert user message content to content blocks
                 match message.content {
+                    MessageContent::Null => {}
                     MessageContent::Text(text) => {
                         if !text.is_empty() {
                             content_blocks.push(ContentBlock::Text { text });
@@ -550,10 +548,7 @@ impl TryFrom<ChatCompletionsRequest> for ConverseRequest {
         for message in req.messages {
             match message.role {
                 Role::System => {
-                    let system_text = match message.content {
-                        MessageContent::Text(text) => text,
-                        MessageContent::Parts(parts) => parts.extract_text(),
-                    };
+                    let system_text = message.content.extract_text();
                     system_messages.push(SystemContentBlock::Text { text: system_text });
                 }
                 _ => {

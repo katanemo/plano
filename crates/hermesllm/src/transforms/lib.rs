@@ -188,6 +188,7 @@ pub fn convert_openai_message_to_anthropic_content(
 
     // Handle regular content
     match &message.content {
+        MessageContent::Null => {}
         MessageContent::Text(text) => {
             if !text.is_empty() {
                 blocks.push(MessagesContentBlock::Text {
