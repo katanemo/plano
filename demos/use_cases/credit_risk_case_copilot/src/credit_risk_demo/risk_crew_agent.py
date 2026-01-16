@@ -47,7 +47,7 @@ FastAPIInstrumentor.instrument_app(app)
 # Configure LLMs to use Plano's gateway with model aliases
 llm_fast = ChatOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
-    model="risk_fast",  # Uses Plano's model alias -> gpt-4o-mini
+    model="openai/gpt-4o-mini",  # alias not working
     api_key="EMPTY",
     temperature=0.1,
     max_tokens=1500,
@@ -55,7 +55,7 @@ llm_fast = ChatOpenAI(
 
 llm_reasoning = ChatOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
-    model="risk_reasoning",  # Uses Plano's model alias -> gpt-4o
+    model="openai/gpt-4o",  # alias not working
     api_key="EMPTY",
     temperature=0.7,
     max_tokens=2000,
