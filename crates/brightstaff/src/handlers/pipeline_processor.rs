@@ -811,7 +811,7 @@ impl PipelineProcessor {
             });
         }
 
-        info!(
+        debug!(
             "Response from HTTP agent {}: {}",
             agent.id,
             String::from_utf8_lossy(&response_bytes)
