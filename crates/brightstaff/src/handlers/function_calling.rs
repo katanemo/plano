@@ -649,7 +649,6 @@ impl ArchFunctionHandler {
         for (idx, message) in messages.iter().enumerate() {
             let mut role = message.role.clone();
             let mut content = match &message.content {
-                MessageContent::Null => String::new(),
                 MessageContent::Text(text) => text.clone(),
                 MessageContent::Parts(_) => String::new(),
             };

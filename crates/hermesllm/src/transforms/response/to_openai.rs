@@ -209,7 +209,6 @@ impl TryFrom<MessagesResponse> for ChatCompletionsResponse {
 
         // Convert MessageContent to String for response
         let content_string = match content {
-            MessageContent::Null => None,
             MessageContent::Text(text) => Some(text),
             MessageContent::Parts(parts) => {
                 let text = parts.extract_text();
