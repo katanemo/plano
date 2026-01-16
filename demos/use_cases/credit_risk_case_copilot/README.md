@@ -1,141 +1,260 @@
 # Credit Risk Case Copilot
 
-A demo multi-agent credit risk assessment system demonstrating Plano's intelligent orchestration, guardrails, and prompt targets. This demo showcases a sophisticated workflow that analyzes loan applications, performs policy compliance checks, generates decision memos, and creates cases with full observability.
+This directory contains a demo **credit risk assessment system** built to exercise Plano's orchestration, guardrails, and observability features in a realistic setup.
 
-## 🤖 CrewAI Multi-Agent System
+The goal of this project is not to show "yet another agent demo", but to answer a more practical question:
 
-This demo uses **actual CrewAI execution** with 4 specialized AI agents working sequentially through Plano's LLM gateway:
+> How would you actually deploy an agentic AI system in a regulated environment?
 
-### Agent Workflow
+To do that, the system includes a real multi-agent workflow, a security boundary in front of it, structured downstream actions, and full tracing across all components.
 
-```
-Loan Application JSON
-    ↓
-Agent 1: Intake & Normalization (risk_fast/gpt-4o-mini) → 1-2s
-    ↓
-Agent 2: Risk Scoring & Drivers (risk_reasoning/gpt-4o) → 2-3s
-    ↓
-Agent 3: Policy & Compliance (risk_reasoning/gpt-4o) → 2-3s
-    ↓
-Agent 4: Decision Memo & Action (risk_reasoning/gpt-4o) → 2-4s
-    ↓
-Complete Risk Assessment (Total: 8-15 seconds)
-```
+---
 
-### Key Implementation Details
+## Why this demo exists
 
-**LLM Configuration:**
-```python
-# All agents use Plano's gateway with model aliases
-llm_fast = ChatOpenAI(
-    base_url="http://host.docker.internal:12000/v1",
-    model="risk_fast",      # → gpt-4o-mini
-)
-llm_reasoning = ChatOpenAI(
-    base_url="http://host.docker.internal:12000/v1", 
-    model="risk_reasoning", # → gpt-4o
-)
-```
+Most agent demos run everything inside the agent:
+- Agents call models directly
+- There's no security boundary
+- Observability is minimal
+- Downstream systems are mocked or ignored
 
-## Overview
+That works for experimentation, but it doesn't resemble how these systems would be deployed in production.
 
-This demo implements a **Credit Risk Case Copilot** with:
+This demo flips that around:
+- **Plano sits in front** as the control plane
+- Requests are sanitized before reaching agents
+- Agents are treated as untrusted workloads
+- Every LLM call is routed, logged, and traceable
 
-- **Risk Crew Agent** - Multi-agent workflow for comprehensive risk assessment
-- **Case Service** - Case management API for storing decisions
-- **PII Security Filter** - MCP filter for redacting sensitive data and detecting prompt injections
-- **Streamlit UI** - Interactive web interface for risk analysts
-- **Jaeger Tracing** - End-to-end distributed tracing across all services
+---
 
-All services communicate through **Plano's orchestrator** which handles intelligent routing, model selection, guardrails, and function calling.
-
-## Features
-
-- **CrewAI Multi-Agent Workflow**: 4 specialized agents executing sequentially with context passing
-- **Risk Band Classification**: LOW/MEDIUM/HIGH with confidence scores and evidence-based drivers
-- **Policy Compliance**: Automated KYC, income verification, and lending standard checks
-- **Decision Memos**: Bank-ready recommendations (APPROVE/CONDITIONAL/REFER/REJECT)
-- **Security Guardrails**: PII redaction (CNIC, phone, email) and prompt injection detection
-- **Case Management**: Create and track risk cases with full audit trails
-- **Full Observability**: OpenTelemetry traces showing all 4 agent executions in Jaeger
-- **Model Optimization**: Uses `risk_fast` (gpt-4o-mini) for extraction, `risk_reasoning` (gpt-4o) for analysis
-- **Plano Integration**: All LLM calls through centralized gateway for unified management
-
-## Architecture
+## High-level architecture
 
 ```
-Streamlit UI (8501)
-      ↓
+User / Streamlit UI
+    ↓
 Plano Orchestrator (8001)
-      ↓
-PII Filter (10550) → Risk Crew Agent (10530) → Plano LLM Gateway (12000)
-                           ↓
-                    Case Service (10540)
-                           ↓
-                    Jaeger (16686)
+├─ HTTP Security Filter (PII + injection)
+├─ Agent routing
+├─ Model routing
+└─ Prompt target invocation
+    ↓
+Risk Crew Agent (CrewAI)
+    ↓
+Plano LLM Gateway (12000)
+    ↓
+OpenAI
 ```
 
-## Prerequisites
+Plano is the only component allowed to talk to models or invoke downstream systems. Everything else goes through it.
 
-- Docker and Docker Compose
-- [Plano CLI](https://docs.planoai.dev) installed (`pip install planoai` or `uvx planoai`)
+---
+
+## What the system actually does
+
+At a high level, the system takes an unstructured loan request and turns it into a structured credit decision.
+
+Internally, this is implemented as a small CrewAI workflow with four agents:
+
+1. Intake & normalization (gpt-4o-mini)
+2. Risk scoring & drivers (gpt-4o)
+3. Policy & compliance checks (gpt-4o)
+4. Decision memo synthesis (gpt-4o)
+
+Each agent builds on the output of the previous one. The workflow is sequential on purpose to make traces easier to follow.
+
+The specific agent framework isn't the focus here — it's mainly used as a realistic payload for Plano to orchestrate.
+
+---
+
+## Plano features exercised in this demo
+
+This demo actively uses several Plano capabilities together:
+
+### Agent listener
+- OpenAI-compatible `/v1/chat/completions` endpoint
+- Requests are routed to the appropriate agent based on configuration
+- Agents remain unaware of routing logic
+
+### HTTP filter chain (security guardrails)
+- Requests pass through an HTTP-based security filter before agent execution
+- PII (CNIC, phone numbers, emails) is redacted in-place
+- Prompt injection attempts are detected and flagged
+- The agent receives only sanitized input
+
+The filter is implemented as a simple HTTP service to keep things easy to debug and reason about.
+
+### Central LLM gateway
+- All LLM calls go through Plano
+- Agents never talk to OpenAI directly
+- Makes tracing, policy enforcement, and provider switching easier later
+
+### Prompt targets
+- Structured function-style calls to downstream services
+- Used here to create a risk case in the case service
+- Keeps side effects explicit and traceable
+
+### Observability
+- End-to-end OpenTelemetry tracing
+- One trace per request, spanning:
+  - Security filter
+  - Agent execution
+  - Individual LLM calls
+  - Downstream API calls
+
+---
+
+## Example request flow
+
+```bash
+curl http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "messages": [
+      {
+        "role": "user",
+        "content": "CNIC 12345-1234567-1 assess risk for loan amount 300000"
+      }
+    ]
+  }'
+```
+
+What happens:
+
+1. Plano receives the request
+2. The PII filter redacts the CNIC
+3. The sanitized request is routed to the risk agent
+4. The multi-agent workflow executes
+5. The response is returned
+6. The entire flow appears as a single trace in Jaeger
+
+---
+
+## Services in this repo
+
+### Risk Crew Agent (10530)
+Implements the CrewAI workflow. Exposes an OpenAI-compatible `/v1/chat/completions` endpoint so Plano can treat it like any other model-backed service.
+
+The agent is intentionally kept unaware of:
+- Security filters
+- Model providers
+- Downstream systems
+
+### PII Security Filter (10550)
+A small FastAPI service that:
+- Redacts CNIC, phone numbers, and emails
+- Detects common prompt injection patterns
+- Mutates messages in-place
+- Returns only the updated message list (as expected by Plano's HTTP filter interface)
+
+This runs before the agent is invoked.
+
+### Case Service (10540)
+A simple REST API used to store credit risk cases.  
+Exercised via Plano prompt targets.
+
+### Streamlit UI (8501)
+A lightweight UI for interacting with the system:
+- Provides example scenarios
+- Displays structured outputs
+- Useful for demos and manual testing
+
+### Jaeger (16686)
+Used for distributed tracing.  
+All services emit OpenTelemetry spans.
+
+---
+
+## Observability notes
+
+Open Jaeger at: **http://localhost:16686**
+
+A typical trace shows:
+- One parent request span
+- A security filter span
+- Four LLM call spans (one per agent step)
+- Optional case creation span
+
+This is intentional — the trace tells the full story of what happened and why.
+
+---
+
+## Running the demo
+
+### Prerequisites
+- Docker + Docker Compose
+- Plano CLI (`pip install planoai` or `uvx planoai`)
 - OpenAI API key
 
-## Quick Start
-
-### 1. Set Environment Variables
-
-Copy the example environment file and add your API key:
-
+### Environment setup
 ```bash
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# add OPENAI_API_KEY
 ```
 
-Or export directly:
-
-```bash
-export OPENAI_API_KEY="your-openai-api-key"
-```
-
-### 2. Start Docker Services
-
-Start all containerized services (agents, UI, Jaeger):
-
+### Start services
 ```bash
 docker compose up --build
 ```
 
-This starts:
-- **Risk Crew Agent** on port 10530
-- **Case Service** on port 10540
-- **PII Filter** on port 10550
-- **Streamlit UI** on port 8501
-- **Jaeger** on port 16686
-
-### 3. Start Plano Orchestrator
-
-In a new terminal, start Plano (runs on host, not in Docker):
+### Start Plano
+In a separate terminal:
 
 ```bash
-cd /path/to/credit_risk_case_copilot
-planoai up config.yaml
-
-# Or if installed with uv:
-# uvx planoai up config.yaml
+uvx planoai up config.yaml
 ```
 
-The orchestrator will start on:
-- Port **8001** - Agent listener (main entry point)
-- Port **12000** - LLM gateway (for agents to call)
-- Port **10000** - Prompt listener (for function calling)
+Plano runs on:
+- **8001** – agent listener
+- **12000** – LLM gateway
+- **10000** – prompt listener
 
-### 4. Access the UI
-
-Open your browser to:
-
+### Access
 - **Streamlit UI**: http://localhost:8501
-- **Jaeger Tracing**: http://localhost:16686
+- **Jaeger Traces**: http://localhost:16686
+
+---
+
+## Screenshots
+
+### Streamlit UI
+The UI provides a simple interface for testing scenarios and viewing risk assessments:
+
+![Streamlit UI](images/ui-demo.png)
+
+### PII Redaction in Action
+The security filter automatically redacts sensitive information (CNIC, email, phone) before it reaches the agent:
+
+![PII Redaction](images/pii-redaction.png)
+
+### Prompt Injection Detection
+The filter detects and flags malicious prompt injection attempts:
+
+![Prompt Injection Detection](images/prompt-injection.png)
+
+---
+
+## Notes on design choices
+
+- The PII filter is HTTP-based rather than MCP to keep the demo simpler to debug.
+- Agents execute sequentially to make traces readable.
+- Model aliases are supported by Plano, but the agent uses explicit model IDs to avoid ambiguity during the demo.
+- Error handling favors fallback responses over hard failures.
+
+These are demo choices, not hard requirements.
+
+---
+
+## What this demo demonstrates
+
+- A real multi-agent workflow running behind a control plane
+- Centralized security and routing
+- Clear separation between agents and infrastructure
+- End-to-end observability
+- OpenAI-compatible APIs preserved throughout
+
+This is closer to how agentic systems are likely to be deployed in practice.
 
 ## Using the Demo
 
@@ -229,17 +348,9 @@ Implements a 4-agent CrewAI workflow where each agent is specialized:
 
 **Context Passing:** Each agent builds on the previous agent's output for comprehensive analysis.
 
-### Case Service (Port 10540)
-
-RESTful API for case management:
-- `POST /cases` - Create new case
-- `GET /cases/{case_id}` - Retrieve case
-- `GET /cases` - List all cases
-- `GET /health` - Health check
-
 ### PII Security Filter (Port 10550)
 
-MCP filter that:
+HTTP Filter that:
 - Redacts CNIC patterns (12345-6789012-3)
 - Redacts phone numbers (+923001234567)
 - Redacts email addresses
@@ -262,7 +373,6 @@ MCP filter that:
 
 Orchestrates 5 services:
 - `risk-crew-agent` - Risk assessment engine
-- `case-service` - Case management
 - `pii-filter` - Security filter
 - `streamlit-ui` - Web interface
 - `jaeger` - Tracing backend
@@ -323,8 +433,7 @@ credit_risk_case_copilot/
     └── credit_risk_demo/
         ├── __init__.py
         ├── risk_crew_agent.py       # Multi-agent workflow (FastAPI)
-        ├── case_service.py          # Case management API (FastAPI)
-        ├── pii_filter.py            # MCP security filter (FastAPI)
+        ├── pii_filter.py            # HTTP security filter (FastAPI)
         └── ui_streamlit.py          # Web UI (Streamlit)
 ```
 
@@ -419,7 +528,7 @@ pip install -e .
 - `GET /health` - Health check
 
 ### PII Filter (10550)
-- `POST /v1/tools/pii_security_filter` - MCP filter endpoint
+- `POST /v1/tools/pii_security_filter` - PII filter endpoint
 - `GET /health` - Health check
 
 ## Next Steps & Extensions
@@ -453,7 +562,7 @@ This project showcases:
 ✅ **True Multi-Agent AI System** - 4 specialized CrewAI agents with distinct roles and expertise  
 ✅ **Plano Orchestration** - Central LLM gateway managing all agent calls without config changes  
 ✅ **Model Aliases** - Semantic routing (`risk_fast`, `risk_reasoning`) for cost/quality optimization  
-✅ **Security Guardrails** - PII redaction and prompt injection detection via MCP filters  
+✅ **Security Guardrails** - PII redaction and prompt injection detection via HTTP filters  
 ✅ **Full Observability** - OpenTelemetry traces showing every agent execution in Jaeger  
 ✅ **Production Patterns** - Error handling, fallbacks, health checks, structured logging  
 ✅ **Context Passing** - Agents build on each other's work through sequential task dependencies  
