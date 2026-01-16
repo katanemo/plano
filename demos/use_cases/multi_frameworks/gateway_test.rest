@@ -1,0 +1,21 @@
+### Test weather agent via Plano gateway
+POST http://localhost:11000/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "gpt-4o",
+  "messages": [
+    {"role": "user", "content": "What's the weather in Seattle today?"}
+  ]
+}
+
+### Test flight agent via Plano gateway
+POST http://localhost:8001/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "gpt-4o",
+  "messages": [
+    {"role": "user", "content": "Find flights from Seattle to New York"}
+  ]
+}
