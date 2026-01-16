@@ -1,6 +1,6 @@
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
 use http::StatusCode;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use proxy_wasm::hostcalls::get_current_time;
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
@@ -128,16 +128,23 @@ impl StreamContext {
         }
     }
 
-    fn select_llm_provider(&mut self) {
+    fn select_llm_provider(&mut self) -> Result<(), String> {
         let provider_hint = self
             .get_http_request_header(ARCH_PROVIDER_HINT_HEADER)
             .map(|llm_name| llm_name.into());
 
         // info!("llm_providers: {:?}", self.llm_providers);
-        self.llm_provider = Some(routing::get_llm_provider(
-            &self.llm_providers,
-            provider_hint,
-        ));
+        let provider =
+            routing::get_llm_provider(&self.llm_providers, provider_hint).map_err(|err| {
+                error!(
+                    "[PLANO_REQ_ID:{}] PROVIDER_SELECTION_FAILED: Hint='None' Error='{}'",
+                    self.request_identifier(),
+                    err
+                );
+                err
+            })?;
+
+        self.llm_provider = Some(provider);
 
         info!(
             "[PLANO_REQ_ID:{}] PROVIDER_SELECTION: Hint='{}' -> Selected='{}'",
@@ -146,6 +153,8 @@ impl StreamContext {
                 .unwrap_or("none".to_string()),
             self.llm_provider.as_ref().unwrap().name
         );
+
+        Ok(())
     }
 
     fn modify_auth_headers(&mut self) -> Result<(), ServerError> {
@@ -747,7 +756,15 @@ impl HttpContext for StreamContext {
 
         // let routing_header_value = self.get_http_request_header(ARCH_ROUTING_HEADER);
 
-        self.select_llm_provider();
+        if let Err(err) = self.select_llm_provider() {
+            self.send_http_response(
+                400,
+                vec![],
+                Some(format!(r#"{{"error": "{}"}}"#, err).as_bytes()),
+            );
+            return Action::Continue;
+        }
+
         // Check if this is a supported API endpoint
         if SupportedAPIsFromClient::from_endpoint(&request_path).is_none() {
             self.send_http_response(404, vec![], Some(b"Unsupported endpoint"));

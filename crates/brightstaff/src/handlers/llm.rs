@@ -123,6 +123,14 @@ pub async fn llm_chat(
     let is_streaming_request = client_request.is_streaming();
     let resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
 
+    // Handle provider/model slug format (e.g., "openai/gpt-4")
+    // Extract just the model name for upstream (providers don't understand the slug)
+    let model_name_only = if let Some((_, model)) = resolved_model.split_once('/') {
+        model.to_string()
+    } else {
+        resolved_model.clone()
+    };
+
     // Extract tool names and user message preview for span attributes
     let tool_names = client_request.get_tool_names();
     let user_message_preview = client_request
@@ -132,7 +140,9 @@ pub async fn llm_chat(
     // Extract messages for signal analysis (clone before moving client_request)
     let messages_for_signals = client_request.get_messages();
 
-    client_request.set_model(resolved_model.clone());
+    // Set the model to just the model name (without provider prefix)
+    // This ensures upstream receives "gpt-4" not "openai/gpt-4"
+    client_request.set_model(model_name_only.clone());
     if client_request.remove_metadata_key("archgw_preference_config") {
         debug!(
             "[PLANO_REQ_ID:{}] Removed archgw_preference_config from metadata",
@@ -240,16 +250,22 @@ pub async fn llm_chat(
         }
     };
 
+    // Use the resolved model (could be "gpt-4" or "openai/gpt-4") as the provider hint
+    // The routing layer will use llm_providers.get() which handles both formats:
+    // - "gpt-4" → looks up by model name
+    // - "openai/gpt-4" → looks up by provider/model slug
+    // If router doesn't find anything, it will use routing_result.model_name
+    let provider_hint_value = resolved_model.clone();
     let model_name = routing_result.model_name;
 
     debug!(
-        "[PLANO_REQ_ID:{}] | ARCH_ROUTER URL | {}, Resolved Model: {}",
-        request_id, full_qualified_llm_provider_url, model_name
+        "[PLANO_REQ_ID:{}] | ARCH_ROUTER URL | {}, Provider Hint: {}, Model for upstream: {}",
+        request_id, full_qualified_llm_provider_url, provider_hint_value, model_name_only
     );
 
     request_headers.insert(
         ARCH_PROVIDER_HINT_HEADER,
-        header::HeaderValue::from_str(&model_name).unwrap(),
+        header::HeaderValue::from_str(&provider_hint_value).unwrap(),
     );
 
     request_headers.insert(
