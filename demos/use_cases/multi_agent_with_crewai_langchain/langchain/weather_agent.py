@@ -55,20 +55,20 @@ async def get_weather_data(
 ):
     instructions = """You are a city name extractor. Look at the FINAL user message ONLY and extract the city name.
 
-The FINAL user message will be the LAST message with role "user" in the conversation.
+    The FINAL user message will be the LAST message with role "user" in the conversation.
 
-IMPORTANT: Ignore all previous messages. Focus ONLY on the FINAL user message.
+    IMPORTANT: Ignore all previous messages. Focus ONLY on the FINAL user message.
 
-Examples of what to extract from the FINAL user message:
-- "What's the weather in Seattle?" -> Seattle
-- "What's the weather in San Francisco?" -> San Francisco
-- "What about Dubai?" -> Dubai
-- "How's the weather in Tokyo today?" -> Tokyo
-- "Tell me about Lahore" -> Lahore
-- "What about there?" -> Look at conversation for the last mentioned city
+    Examples of what to extract from the FINAL user message:
+    - "What's the weather in Seattle?" -> Seattle
+    - "What's the weather in San Francisco?" -> San Francisco
+    - "What about Dubai?" -> Dubai
+    - "How's the weather in Tokyo today?" -> Tokyo
+    - "Tell me about Lahore" -> Lahore
+    - "What about there?" -> Look at conversation for the last mentioned city
 
-Output ONLY the city name. Nothing else. One word or city name only.
-If no city can be found, output: NOT_FOUND"""
+    Output ONLY the city name. Nothing else. One word or city name only.
+    If no city can be found, output: NOT_FOUND"""
 
     location = city_override
     if not location:
@@ -250,23 +250,24 @@ class WeatherToolInput(BaseModel):
     )
 
 
-WEATHER_SYSTEM_PROMPT = """You are a weather assistant in a multi-agent system. You will receive weather data in JSON format with these fields:
+WEATHER_SYSTEM_PROMPT = """
+    You are a weather assistant in a multi-agent system. You will receive weather data in JSON format with these fields:
 
-- "location": City name
-- "forecast": Array of weather objects, each with date, day_name, temperature_c, temperature_f, temperature_max_c, temperature_min_c, weather_code, sunrise, sunset
-- weather_code: WMO code (0=clear, 1-3=partly cloudy, 45-48=fog, 51-67=rain, 71-86=snow, 95-99=thunderstorm)
+    - "location": City name
+    - "forecast": Array of weather objects, each with date, day_name, temperature_c, temperature_f, temperature_max_c, temperature_min_c, weather_code, sunrise, sunset
+    - weather_code: WMO code (0=clear, 1-3=partly cloudy, 45-48=fog, 51-67=rain, 71-86=snow, 95-99=thunderstorm)
 
-Your task:
-1. Present the weather/forecast clearly for the location
-2. For single day: show current conditions
-3. For multi-day: show each day with date and conditions
-4. Include temperature in both Celsius and Fahrenheit
-5. Describe conditions naturally based on weather_code
-6. Use conversational language
+    Your task:
+    1. Present the weather/forecast clearly for the location
+    2. For single day: show current conditions
+    3. For multi-day: show each day with date and conditions
+    4. Include temperature in both Celsius and Fahrenheit
+    5. Describe conditions naturally based on weather_code
+    6. Use conversational language
 
-Multi-agent context: You are part of a larger system. If the conversation includes additional context or information from other sources, acknowledge and incorporate it naturally into your response. Your primary focus is weather, but be aware of the full conversation context.
+    Multi-agent context: You are part of a larger system. If the conversation includes additional context or information from other sources, acknowledge and incorporate it naturally into your response. Your primary focus is weather, but be aware of the full conversation context.
 
-Remember: Only use the provided data. If fields are null, mention data is unavailable."""
+    Remember: Only use the provided data. If fields are null, mention data is unavailable."""
 
 
 def build_weather_agent(
@@ -405,20 +406,20 @@ async def invoke_weather_agent_stream(
                 ).strip()
                 if not content:
                     continue
-            yield f"data: {json.dumps(create_chat_completion_chunk(model, content))}\n\n"
+            yield f"data: {create_chat_completion_chunk(model, content).model_dump_json()}\n\n"
 
-        yield f"data: {json.dumps(create_chat_completion_chunk(model, '', 'stop'))}\n\n"
+        yield f"data: {create_chat_completion_chunk(model, '', 'stop').model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as e:
         logger.error("Error streaming weather response: %s", e)
         error_message = "I'm having trouble retrieving weather information right now. Please try again."
-        yield f"data: {json.dumps(create_chat_completion_chunk(model, error_message, 'stop'))}\n\n"
+        yield f"data: {create_chat_completion_chunk(model, error_message, 'stop').model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"
 
 
 async def invoke_weather_agent_error_stream(request_body: dict, error_message: str):
     model = request_body.get("model", WEATHER_MODEL)
-    yield f"data: {json.dumps(create_chat_completion_chunk(model, error_message, 'stop'))}\n\n"
+    yield f"data: {create_chat_completion_chunk(model, error_message, 'stop').model_dump_json()}\n\n"
     yield "data: [DONE]\n\n"
 
 

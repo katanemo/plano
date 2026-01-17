@@ -1,17 +1,28 @@
+
 services:
   plano:
-    build:
-      context: ../../../
-      dockerfile: Dockerfile
+    image: katanemo/plano:0.4.2  # Will auto-pull from Docker Hub if not present locally
+    container_name: plano-dataplane
     ports:
-      - "12000:12000"
-      - "8001:8001"
+      - "12000:12000"  # Main LLM gateway port
+      - "8001:8001"    # Agent/prompt gateway port
+      - "12001:12001"  # Control plane port
+      - "19901:9901"   # Envoy admin interface
     environment:
-      - ARCH_CONFIG_PATH=/config/config.yaml
+      - ARCH_CONFIG_PATH=/app/arch_config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+      - OTEL_TRACING_HTTP_ENDPOINT=http://host.docker.internal:4318/v1/traces
     volumes:
-      - ./config.yaml:/app/arch_config.yaml
+      - ./config.yaml:/app/arch_config.yaml:ro
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:12000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   crewai-flight-agent:
     build:
@@ -23,9 +34,12 @@ services:
       - "10520:10520"
     environment:
       - LLM_GATEWAY_ENDPOINT=http://host.docker.internal:12000/v1
-      - AEROAPI_KEY=${AEROAPI_KEY:-}
+      - AEROAPI_KEY=${AEROAPI_KEY:?AEROAPI_KEY environment variable is required but not set}
       - PYTHONUNBUFFERED=1
     command: ["python", "-u", "crewai/flight_agent.py"]
+    depends_on:
+      plano:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -41,6 +55,9 @@ services:
       - LLM_GATEWAY_ENDPOINT=http://host.docker.internal:12000/v1
       - PYTHONUNBUFFERED=1
     command: ["python", "-u", "langchain/weather_agent.py"]
+    depends_on:
+      plano:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -54,8 +71,14 @@ services:
       - ENABLE_OPENAI_API=true
       - OPENAI_API_BASE_URL=http://host.docker.internal:8001/v1
     depends_on:
-      - langchain-weather-agent
-      - crewai-flight-agent
+      plano:
+        condition: service_healthy
+      langchain-weather-agent:
+        condition: service_started
+      crewai-flight-agent:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   jaeger:
     build:

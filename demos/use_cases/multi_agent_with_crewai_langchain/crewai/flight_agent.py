@@ -378,14 +378,14 @@ async def invoke_flight_agent_stream(
                 content = str(chunk)
             if not content:
                 continue
-            yield f"data: {json.dumps(create_chat_completion_chunk(model, content))}\n\n"
+            yield f"data: {create_chat_completion_chunk(model, content).model_dump_json()}\n\n"
 
-        yield f"data: {json.dumps(create_chat_completion_chunk(model, '', 'stop'))}\n\n"
+        yield f"data: {create_chat_completion_chunk(model, '', 'stop').model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as e:
         logger.error(f"Error streaming response: {e}")
         error_message = "I'm having trouble retrieving flight information right now. Please try again."
-        yield f"data: {json.dumps(create_chat_completion_chunk(model, error_message, 'stop'))}\n\n"
+        yield f"data: {create_chat_completion_chunk(model, error_message, 'stop').model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"
 
 
