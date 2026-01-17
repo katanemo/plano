@@ -196,6 +196,7 @@ mod tests {
             routing_preferences: None,
             internal: None,
             stream: None,
+            passthrough_auth: None,
         }
     }
 
