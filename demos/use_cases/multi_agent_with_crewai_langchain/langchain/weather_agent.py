@@ -100,7 +100,6 @@ If no city can be found, output: NOT_FOUND"""
                 )
 
                 location = response.choices[0].message.content.strip().strip("\"'`.,!?")
-                logger.info("Location extraction result: '%s'", location)
 
                 if not location or location.upper() == "NOT_FOUND":
                     location = "New York"
@@ -281,6 +280,7 @@ def build_weather_agent(
     request_id = request.headers.get("x-request-id")
     if request_id:
         extra_headers["x-request-id"] = request_id
+        logger.debug("Request ID set: [redacted]")
     inject(extra_headers, context=ctx)
 
     @tool("get_weather_forecast", args_schema=WeatherToolInput)
