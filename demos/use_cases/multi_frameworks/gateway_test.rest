@@ -1,5 +1,5 @@
 ### Test weather agent via Plano gateway
-POST http://localhost:11000/v1/chat/completions
+POST http://localhost:8001/v1/chat/completions
 Content-Type: application/json
 
 {
