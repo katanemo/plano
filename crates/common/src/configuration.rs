@@ -255,7 +255,8 @@ impl LlmProviderType {
     /// Get the ProviderId for this LlmProviderType
     /// Used with the new function-based hermesllm API
     pub fn to_provider_id(&self) -> hermesllm::ProviderId {
-        hermesllm::ProviderId::from(self.to_string().as_str())
+        hermesllm::ProviderId::try_from(self.to_string().as_str())
+            .expect("LlmProviderType should always map to a valid ProviderId")
     }
 }
 

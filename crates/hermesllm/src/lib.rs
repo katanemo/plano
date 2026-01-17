@@ -29,10 +29,27 @@ mod tests {
 
     #[test]
     fn test_provider_id_conversion() {
-        assert_eq!(ProviderId::from("openai"), ProviderId::OpenAI);
-        assert_eq!(ProviderId::from("mistral"), ProviderId::Mistral);
-        assert_eq!(ProviderId::from("groq"), ProviderId::Groq);
-        assert_eq!(ProviderId::from("arch"), ProviderId::Arch);
+        assert_eq!(ProviderId::try_from("openai").unwrap(), ProviderId::OpenAI);
+        assert_eq!(
+            ProviderId::try_from("mistral").unwrap(),
+            ProviderId::Mistral
+        );
+        assert_eq!(ProviderId::try_from("groq").unwrap(), ProviderId::Groq);
+        assert_eq!(ProviderId::try_from("arch").unwrap(), ProviderId::Arch);
+
+        // Test aliases
+        assert_eq!(ProviderId::try_from("google").unwrap(), ProviderId::Gemini);
+        assert_eq!(
+            ProviderId::try_from("together").unwrap(),
+            ProviderId::TogetherAI
+        );
+        assert_eq!(
+            ProviderId::try_from("amazon").unwrap(),
+            ProviderId::AmazonBedrock
+        );
+
+        // Test error case
+        assert!(ProviderId::try_from("unknown_provider").is_err());
     }
 
     #[test]

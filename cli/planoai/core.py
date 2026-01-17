@@ -145,7 +145,7 @@ def stop_docker_container(service=PLANO_DOCKER_NAME):
 
 
 def start_cli_agent(arch_config_file=None, settings_json="{}"):
-    """Start a CLI client connected to Arch."""
+    """Start a CLI client connected to Plano."""
 
     with open(arch_config_file, "r") as file:
         arch_config = file.read()

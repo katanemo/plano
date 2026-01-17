@@ -1,6 +1,7 @@
 # Contribution
 
 We would love feedback on our [Roadmap](https://github.com/orgs/katanemo/projects/1) and we welcome contributions to **Plano**!
+We would love feedback on our [Roadmap](https://github.com/orgs/katanemo/projects/1) and we welcome contributions to **Plano**!
 Whether you're fixing bugs, adding new features, improving documentation, or creating tutorials, your help is much appreciated.
 
 ## How to Contribute
@@ -8,7 +9,9 @@ Whether you're fixing bugs, adding new features, improving documentation, or cre
 ### 1. Fork the Repository
 
 Fork the repository to create your own version of **Plano**:
+Fork the repository to create your own version of **Plano**:
 
+- Navigate to the [Plano GitHub repository](https://github.com/katanemo/plano).
 - Navigate to the [Plano GitHub repository](https://github.com/katanemo/plano).
 - Click the "Fork" button in the upper right corner.
 - This will create a copy of the repository under your GitHub account.
@@ -75,7 +78,8 @@ This creates a virtual environment in `.venv` and installs all dependencies.
 Optionally, install planoai globally in editable mode:
 
 ```bash
-$ uv tool install --editable .
+$ git clone https://github.com/katanemo/plano.git
+$ cd plano
 ```
 
 Now you can use `planoai` commands from anywhere, or use `uv run planoai` from the `cli` directory.
@@ -123,19 +127,13 @@ $ uv run pytest -v
 Before committing, you can run all pre-commit checks manually:
 
 ```bash
-$ pre-commit run --all-files
+cd plano
+cargo test
 ```
 
-This ensures your code passes all checks before you commit.
+### 6. Push changes, and create a Pull request
 
-### 9. Push Changes and Create a Pull Request
-
-Once your changes are tested and committed:
-
-```bash
-$ git push origin <your-branch-name>
-```
-
+Go back to the original Plano repository, and you should see a "Compare & pull request" button. Click that to submit a Pull Request (PR). In your PR description, clearly explain the changes you made and why they are necessary.
 Go back to the original Plano repository, and you should see a "Compare & pull request" button. Click that to submit a Pull Request (PR). In your PR description, clearly explain the changes you made and why they are necessary.
 
 We will review your pull request and provide feedback. Once approved, your contribution will be merged into the main repository!
