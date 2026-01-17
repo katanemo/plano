@@ -1,0 +1,37 @@
+# Test configuration for passthrough_auth feature
+# This config demonstrates forwarding client's Authorization header to upstream
+# instead of using a configured access_key.
+#
+# Use case: Deploying Plano in front of LiteLLM, OpenRouter, or other LLM proxies
+# that manage their own API key validation.
+#
+# To test:
+#   docker build -t plano-passthrough-test .
+#   docker run -d -p 10000:10000 -v $(pwd)/config/test_passthrough.yaml:/app/arch_config.yaml plano-passthrough-test
+#
+#   curl http://localhost:10000/v1/chat/completions \
+#     -H "Authorization: Bearer sk-your-virtual-key" \
+#     -H "Content-Type: application/json" \
+#     -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+
+version: v0.3.0
+
+listeners:
+  - name: llm
+    type: model
+    port: 10000
+
+model_providers:
+  # Passthrough auth example - forwards client's Authorization header
+  # Replace base_url with your LiteLLM or proxy endpoint
+  - model: openai/gpt-4o
+    base_url: 'https://litellm.example.com'
+    passthrough_auth: true
+    default: true
+
+  # Example with both passthrough_auth and access_key (access_key will be ignored)
+  # This configuration will trigger a warning during startup
+  - model: openai/gpt-4o-mini
+    base_url: 'https://litellm.example.com'
+    passthrough_auth: true
+    access_key: 'this-will-be-ignored'

@@ -728,6 +728,75 @@ Configure routing preferences for dynamic model selection:
           - name: creative_writing
             description: creative content generation, storytelling, and writing assistance
 
+.. _passthrough_auth:
+
+Passthrough Authentication
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When deploying Plano in front of LLM proxy services that manage their own API key validation (such as LiteLLM, OpenRouter, or custom gateways), you may want to forward the client's original ``Authorization`` header instead of replacing it with a configured ``access_key``.
+
+The ``passthrough_auth`` option enables this behavior:
+
+.. code-block:: yaml
+
+    llm_providers:
+      # Forward client's Authorization header to LiteLLM
+      - model: openai/gpt-4o-litellm
+        base_url: https://litellm.example.com
+        passthrough_auth: true
+        default: true
+
+      # Forward to OpenRouter
+      - model: openai/claude-3-opus
+        base_url: https://openrouter.ai/api/v1
+        passthrough_auth: true
+
+**How it works:**
+
+1. Client sends a request with ``Authorization: Bearer <virtual-key>``
+2. Plano preserves this header instead of replacing it with ``access_key``
+3. The upstream service (e.g., LiteLLM) validates the virtual key
+4. Response flows back through Plano to the client
+
+**Use Cases:**
+
+- **LiteLLM Integration**: Route requests to LiteLLM which manages virtual keys and rate limits
+- **OpenRouter**: Forward requests to OpenRouter with per-user API keys
+- **Custom API Gateways**: Integrate with internal gateways that have their own authentication
+- **Multi-tenant Deployments**: Allow different clients to use their own credentials
+
+**Important Notes:**
+
+- When ``passthrough_auth: true`` is set, the ``access_key`` field is ignored (a warning is logged if both are configured)
+- If the client doesn't provide an ``Authorization`` header, the request is forwarded without authentication (upstream will likely return 401)
+- The ``base_url`` is typically required when using ``passthrough_auth``
+
+**Configuration with LiteLLM example:**
+
+.. code-block:: yaml
+
+    # plano_config.yaml
+    version: v0.3.0
+
+    listeners:
+      - name: llm
+        type: model
+        port: 10000
+
+    model_providers:
+      - model: openai/gpt-4o
+        base_url: https://litellm.example.com
+        passthrough_auth: true
+        default: true
+
+.. code-block:: bash
+
+    # Client request - virtual key is forwarded to upstream
+    curl http://localhost:10000/v1/chat/completions \
+      -H "Authorization: Bearer sk-litellm-virtual-key-abc123" \
+      -H "Content-Type: application/json" \
+      -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
+
 Model Selection Guidelines
 --------------------------
 

@@ -811,7 +811,7 @@ impl PipelineProcessor {
             });
         }
 
-        info!(
+        debug!(
             "Response from HTTP agent {}: {}",
             agent.id,
             String::from_utf8_lossy(&response_bytes)
@@ -887,7 +887,7 @@ mod tests {
     fn create_test_message(role: Role, content: &str) -> Message {
         Message {
             role,
-            content: MessageContent::Text(content.to_string()),
+            content: Some(MessageContent::Text(content.to_string())),
             name: None,
             tool_calls: None,
             tool_call_id: None,

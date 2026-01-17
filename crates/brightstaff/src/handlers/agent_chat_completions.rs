@@ -402,7 +402,7 @@ async fn handle_agent_chat(
         // and add it to the conversation history
         current_messages.push(OpenAIMessage {
             role: hermesllm::apis::openai::Role::Assistant,
-            content: hermesllm::apis::openai::MessageContent::Text(response_text),
+            content: Some(hermesllm::apis::openai::MessageContent::Text(response_text)),
             name: Some(agent_name.clone()),
             tool_calls: None,
             tool_call_id: None,

@@ -1,25 +1,21 @@
-
 # Arch Gateway configuration version
 version: v0.3.0
 
-
 # External HTTP agents - API type is controlled by request path (/v1/responses, /v1/messages, /v1/chat/completions)
 agents:
-  - id: weather_agent  # Example agent for weather
+  - id: weather_agent # Example agent for weather
     url: http://host.docker.internal:10510
 
-  - id: flight_agent   # Example agent for flights
+  - id: flight_agent # Example agent for flights
     url: http://host.docker.internal:10520
-
 
 # MCP filters applied to requests/responses (e.g., input validation, query rewriting)
 filters:
-  - id: input_guards  # Example filter for input validation
+  - id: input_guards # Example filter for input validation
     url: http://host.docker.internal:10500
     # type: mcp (default)
     # transport: streamable-http (default)
     # tool: input_guards (default - same as filter id)
-
 
 # LLM provider configurations with API keys and model routing
 model_providers:
@@ -36,6 +32,12 @@ model_providers:
   - model: mistral/ministral-3b-latest
     access_key: $MISTRAL_API_KEY
 
+  # Example: Passthrough authentication for LiteLLM or similar proxies
+  # When passthrough_auth is true, client's Authorization header is forwarded
+  # instead of using the configured access_key
+  - model: openai/gpt-4o-litellm
+    base_url: https://litellm.example.com
+    passthrough_auth: true
 
 # Model aliases - use friendly names instead of full provider model names
 model_aliases:
@@ -44,7 +46,6 @@ model_aliases:
 
   smart-llm:
     target: gpt-4o
-
 
 # HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access
 listeners:
@@ -73,7 +74,6 @@ listeners:
     port: 10000
     # This listener is used for prompt_targets and function calling
 
-
 # Reusable service endpoints
 endpoints:
   app_server:
@@ -82,7 +82,6 @@ endpoints:
 
   mistral_local:
     endpoint: 127.0.0.1:8001
-
 
 # Prompt targets for function calling and API orchestration
 prompt_targets:
@@ -102,7 +101,6 @@ prompt_targets:
       name: app_server
       path: /weather
       http_method: POST
-
 
 # OpenTelemetry tracing configuration
 tracing:

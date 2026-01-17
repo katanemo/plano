@@ -1,4 +1,4 @@
-$schema: "http://json-schema.org/draft-07/schema#"
+$schema: 'http://json-schema.org/draft-07/schema#'
 type: object
 properties:
   version:
@@ -109,12 +109,12 @@ properties:
   endpoints:
     type: object
     patternProperties:
-      "^[a-zA-Z][a-zA-Z0-9_]*$":
+      '^[a-zA-Z][a-zA-Z0-9_]*$':
         type: object
         properties:
           endpoint:
             type: string
-            pattern: "^.*$"
+            pattern: '^.*$'
           connect_timeout:
             type: string
           protocol:
@@ -143,6 +143,9 @@ properties:
           type: boolean
         base_url:
           type: string
+        passthrough_auth:
+          type: boolean
+          description: "When true, forwards the client's Authorization header to upstream instead of using the configured access_key. Useful for routing to services like LiteLLM that validate their own virtual keys."
         http_host:
           type: string
         provider_interface:
@@ -187,6 +190,9 @@ properties:
           type: boolean
         base_url:
           type: string
+        passthrough_auth:
+          type: boolean
+          description: "When true, forwards the client's Authorization header to upstream instead of using the configured access_key. Useful for routing to services like LiteLLM that validate their own virtual keys."
         http_host:
           type: string
         provider_interface:
@@ -219,7 +225,7 @@ properties:
   model_aliases:
     type: object
     patternProperties:
-      "^.*$":
+      '^.*$':
         type: object
         properties:
           target:
