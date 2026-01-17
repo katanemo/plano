@@ -2,9 +2,9 @@ version: v0.3.0
 
 agents:
   - id: weather_agent
-    url: http://host.docker.internal:10510
+    url: http://langchain-weather-agent:10510
   - id: flight_agent
-    url: http://host.docker.internal:10520
+    url: http://crewai-flight-agent:10520
 
 model_providers:
   - model: openai/gpt-4o
