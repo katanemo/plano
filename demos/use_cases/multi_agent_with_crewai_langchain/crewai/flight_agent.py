@@ -65,9 +65,7 @@ Your task:
 2. Convert technical data into friendly, readable text
 3. Use 12-hour time format (e.g., "9:00 AM")
 4. Organize flights chronologically by departure time
-5. Include terminal/gate info when available
-
-NOTE: Multi-agent context: If the conversation includes information from other sources, incorporate it naturally."""
+5. Include terminal/gate info when available6. NOTE (Multi-agent context): If the conversation includes information from other sources that are not flight-related, incorporate it naturally."""
 
 
 def build_flight_crew(
@@ -156,14 +154,15 @@ def build_flight_crew(
         backstory=SYSTEM_PROMPT,
         tools=[resolve_airport_code_tool, search_flights],
         llm=llm,
-        verbose=False,
+        verbose=True,
         reasoning=False,
     )
 
     task = Task(
         description=(
             "Answer the user's request based on this conversation:\n{conversation}\n\n"
-            "CRITICAL: Output ONLY your final answer to the user. Do NOT output:\n"
+            "CRITICAL: NOTE you are part of a multi-agent setup, so if the conversation includes information from other sources that are not flight-related, incorporate it naturally.\n"
+            "Output ONLY your final answer to the user. Do NOT show:\n"
             "- Thought, Action, Action Input, Observation, or any reasoning steps\n"
             "- Tool names, parameters, or results\n"
             "- Planning or internal deliberation\n\n"

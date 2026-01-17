@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 LLM_GATEWAY_ENDPOINT = os.getenv(
     "LLM_GATEWAY_ENDPOINT", "http://host.docker.internal:12000/v1"
 )
-WEATHER_MODEL = "openai/gpt-4o"
-LOCATION_MODEL = "openai/gpt-4o-mini"
+WEATHER_MODEL = "gpt-4o"
+LOCATION_MODEL = "gpt-4o-mini"
 
 openai_client_via_plano = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
@@ -250,8 +250,7 @@ class WeatherToolInput(BaseModel):
     )
 
 
-WEATHER_SYSTEM_PROMPT = """
-    You are a weather assistant in a multi-agent system. You will receive weather data in JSON format with these fields:
+WEATHER_SYSTEM_PROMPT = """You are a weather assistant in a multi-agent system. You will receive weather data in JSON format with these fields:
 
     - "location": City name
     - "forecast": Array of weather objects, each with date, day_name, temperature_c, temperature_f, temperature_max_c, temperature_min_c, weather_code, sunrise, sunset
@@ -264,8 +263,7 @@ WEATHER_SYSTEM_PROMPT = """
     4. Include temperature in both Celsius and Fahrenheit
     5. Describe conditions naturally based on weather_code
     6. Use conversational language
-
-    NOTE: Multi-agent context: You are part of a larger system. If the conversation includes additional context or information from other sources, acknowledge and incorporate it naturally into your response. Your primary focus is weather, but be aware of the full conversation context.
+    7. NOTE (Multi-agent context): If the conversation includes information from other agents and sources incorporate it naturally.
 
     Remember: Only use the provided data. If fields are null, mention data is unavailable."""
 
