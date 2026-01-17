@@ -67,7 +67,7 @@ Your task:
 4. Organize flights chronologically by departure time
 5. Include terminal/gate info when available
 
-Multi-agent context: If the conversation includes information from other sources, incorporate it naturally."""
+NOTE: Multi-agent context: If the conversation includes information from other sources, incorporate it naturally."""
 
 
 def build_flight_crew(

@@ -58,7 +58,7 @@ This starts:
 
 2. **Ask Multi-Agent Questions**
    ```
-   "What's the weather in Seattle and can you find flights to San Francisco?"
+   "What's the weather in San Francisco and can you find flights from Seattle to San Francisco?"
    ```
 
    Plano automatically:

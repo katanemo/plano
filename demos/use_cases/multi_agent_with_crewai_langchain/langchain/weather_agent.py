@@ -265,7 +265,7 @@ WEATHER_SYSTEM_PROMPT = """
     5. Describe conditions naturally based on weather_code
     6. Use conversational language
 
-    Multi-agent context: You are part of a larger system. If the conversation includes additional context or information from other sources, acknowledge and incorporate it naturally into your response. Your primary focus is weather, but be aware of the full conversation context.
+    NOTE: Multi-agent context: You are part of a larger system. If the conversation includes additional context or information from other sources, acknowledge and incorporate it naturally into your response. Your primary focus is weather, but be aware of the full conversation context.
 
     Remember: Only use the provided data. If fields are null, mention data is unavailable."""
 
