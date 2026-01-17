@@ -638,7 +638,7 @@ impl ArchFunctionHandler {
             let system_prompt = self.format_system_prompt(tools)?;
             processed_messages.push(Message {
                 role: Role::System,
-                content: MessageContent::Text(system_prompt),
+                content: Some(MessageContent::Text(system_prompt)),
                 name: None,
                 tool_calls: None,
                 tool_call_id: None,
@@ -649,8 +649,9 @@ impl ArchFunctionHandler {
         for (idx, message) in messages.iter().enumerate() {
             let mut role = message.role.clone();
             let mut content = match &message.content {
-                MessageContent::Text(text) => text.clone(),
-                MessageContent::Parts(_) => String::new(),
+                Some(MessageContent::Text(text)) => text.clone(),
+                Some(MessageContent::Parts(_)) => String::new(),
+                None => String::new(),
             };
 
             // Handle tool calls
@@ -675,7 +676,8 @@ impl ArchFunctionHandler {
                 } else {
                     // Get the tool call from previous message
                     if idx > 0 {
-                        if let MessageContent::Text(prev_content) = &messages[idx - 1].content {
+                        if let Some(MessageContent::Text(prev_content)) = &messages[idx - 1].content
+                        {
                             let mut tool_call_msg = prev_content.clone();
 
                             // Strip markdown code blocks
@@ -721,7 +723,7 @@ impl ArchFunctionHandler {
 
             processed_messages.push(Message {
                 role,
-                content: MessageContent::Text(content),
+                content: Some(MessageContent::Text(content)),
                 name: message.name.clone(),
                 tool_calls: None,
                 tool_call_id: None,
@@ -740,7 +742,7 @@ impl ArchFunctionHandler {
         // Add extra instruction if provided
         if let Some(instruction) = extra_instruction {
             if let Some(last) = processed_messages.last_mut() {
-                if let MessageContent::Text(content) = &mut last.content {
+                if let Some(MessageContent::Text(content)) = &mut last.content {
                     content.push('\n');
                     content.push_str(instruction);
                 }
@@ -761,7 +763,7 @@ impl ArchFunctionHandler {
         // Keep system message if present
         if let Some(first) = messages.first() {
             if first.role == Role::System {
-                if let MessageContent::Text(content) = &first.content {
+                if let Some(MessageContent::Text(content)) = &first.content {
                     num_tokens += content.len() / 4; // Approximate 4 chars per token
                 }
                 conversation_idx = 1;
@@ -772,7 +774,7 @@ impl ArchFunctionHandler {
         // Start with message_idx pointing past the end (will be used if no truncation needed)
         let mut message_idx = messages.len();
         for i in (conversation_idx..messages.len()).rev() {
-            if let MessageContent::Text(content) = &messages[i].content {
+            if let Some(MessageContent::Text(content)) = &messages[i].content {
                 num_tokens += content.len() / 4;
                 if num_tokens >= max_tokens && messages[i].role == Role::User {
                     // Set message_idx to current position and break
@@ -802,7 +804,7 @@ impl ArchFunctionHandler {
     pub fn prefill_message(&self, mut messages: Vec<Message>, prefill: &str) -> Vec<Message> {
         messages.push(Message {
             role: Role::Assistant,
-            content: MessageContent::Text(prefill.to_string()),
+            content: Some(MessageContent::Text(prefill.to_string())),
             name: None,
             tool_calls: None,
             tool_call_id: None,

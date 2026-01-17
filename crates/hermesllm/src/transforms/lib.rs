@@ -188,7 +188,7 @@ pub fn convert_openai_message_to_anthropic_content(
 
     // Handle regular content
     match &message.content {
-        MessageContent::Text(text) => {
+        Some(MessageContent::Text(text)) => {
             if !text.is_empty() {
                 blocks.push(MessagesContentBlock::Text {
                     text: text.clone(),
@@ -196,7 +196,7 @@ pub fn convert_openai_message_to_anthropic_content(
                 });
             }
         }
-        MessageContent::Parts(parts) => {
+        Some(MessageContent::Parts(parts)) => {
             for part in parts {
                 match part {
                     ContentPart::Text { text } => {
@@ -212,6 +212,7 @@ pub fn convert_openai_message_to_anthropic_content(
                 }
             }
         }
+        None => {}
     }
 
     // Handle tool calls

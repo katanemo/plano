@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use common::configuration::{ModelUsagePreference, RoutingPreference};
 use hermesllm::apis::openai::{ChatCompletionsRequest, Message, MessageContent, Role};
+use hermesllm::transforms::lib::ExtractText;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
@@ -78,7 +79,9 @@ impl RouterModel for RouterModelV1 {
         let messages_vec = messages
             .iter()
             .filter(|m| {
-                m.role != Role::System && m.role != Role::Tool && !m.content.to_string().is_empty()
+                m.role != Role::System
+                    && m.role != Role::Tool
+                    && !m.content.extract_text().is_empty()
             })
             .collect::<Vec<&Message>>();
 
@@ -87,7 +90,7 @@ impl RouterModel for RouterModelV1 {
         let mut token_count = ARCH_ROUTER_V1_SYSTEM_PROMPT.len() / TOKEN_LENGTH_DIVISOR;
         let mut selected_messages_list_reversed: Vec<&Message> = vec![];
         for (selected_messsage_count, message) in messages_vec.iter().rev().enumerate() {
-            let message_token_count = message.content.to_string().len() / TOKEN_LENGTH_DIVISOR;
+            let message_token_count = message.content.extract_text().len() / TOKEN_LENGTH_DIVISOR;
             token_count += message_token_count;
             if token_count > self.max_token_length {
                 debug!(
@@ -136,7 +139,12 @@ impl RouterModel for RouterModelV1 {
                 Message {
                     role: message.role.clone(),
                     // we can unwrap here because we have already filtered out messages without content
-                    content: MessageContent::Text(message.content.to_string()),
+                    content: Some(MessageContent::Text(
+                        message
+                            .content
+                            .as_ref()
+                            .map_or(String::new(), |c| c.to_string()),
+                    )),
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
@@ -154,7 +162,7 @@ impl RouterModel for RouterModelV1 {
         ChatCompletionsRequest {
             model: self.routing_model.clone(),
             messages: vec![Message {
-                content: MessageContent::Text(router_message),
+                content: Some(MessageContent::Text(router_message)),
                 role: Role::User,
                 name: None,
                 tool_calls: None,
@@ -344,7 +352,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 
         let req = router.generate_request(&conversation, &None);
 
-        let prompt = req.messages[0].content.to_string();
+        let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
     }
@@ -409,7 +417,7 @@ Based on your analysis, provide your response in the following JSON formats if y
         }]);
         let req = router.generate_request(&conversation, &usage_preferences);
 
-        let prompt = req.messages[0].content.to_string();
+        let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
     }
@@ -469,7 +477,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 
         let req = router.generate_request(&conversation, &None);
 
-        let prompt = req.messages[0].content.to_string();
+        let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
     }
@@ -530,7 +538,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 
         let req = router.generate_request(&conversation, &None);
 
-        let prompt = req.messages[0].content.to_string();
+        let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
     }
@@ -598,7 +606,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 
         let req = router.generate_request(&conversation, &None);
 
-        let prompt = req.messages[0].content.to_string();
+        let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
     }
@@ -667,7 +675,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 
         let req = router.generate_request(&conversation, &None);
 
-        let prompt = req.messages[0].content.to_string();
+        let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
     }
@@ -762,7 +770,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 
         let req: ChatCompletionsRequest = router.generate_request(&conversation, &None);
 
-        let prompt = req.messages[0].content.to_string();
+        let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
     }

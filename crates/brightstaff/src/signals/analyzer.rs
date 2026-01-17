@@ -1122,9 +1122,9 @@ pub struct TextBasedSignalAnalyzer {
 
 impl TextBasedSignalAnalyzer {
     /// Extract text content from MessageContent, skipping non-text content
-    fn extract_text(content: &hermesllm::apis::openai::MessageContent) -> Option<String> {
+    fn extract_text(content: &Option<hermesllm::apis::openai::MessageContent>) -> Option<String> {
         match content {
-            hermesllm::apis::openai::MessageContent::Text(text) => Some(text.clone()),
+            Some(hermesllm::apis::openai::MessageContent::Text(text)) => Some(text.clone()),
             // Tool calls and other structured content are skipped
             _ => None,
         }
@@ -1941,12 +1941,13 @@ impl Default for TextBasedSignalAnalyzer {
 mod tests {
     use super::*;
     use hermesllm::apis::openai::MessageContent;
+    use hermesllm::transforms::lib::ExtractText;
     use std::time::Instant;
 
     fn create_message(role: Role, content: &str) -> Message {
         Message {
             role,
-            content: MessageContent::Text(content.to_string()),
+            content: Some(MessageContent::Text(content.to_string())),
             name: None,
             tool_calls: None,
             tool_call_id: None,
@@ -2130,7 +2131,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, msg)| {
-                let text = msg.content.to_string();
+                let text = msg.content.extract_text();
                 (i, msg.role.clone(), NormalizedMessage::from_text(&text))
             })
             .collect()
@@ -2532,7 +2533,7 @@ mod tests {
             |content: &str, tool_id: &str, tool_name: &str, args: &str| -> Message {
                 Message {
                     role: Role::Assistant,
-                    content: MessageContent::Text(content.to_string()),
+                    content: Some(MessageContent::Text(content.to_string())),
                     name: None,
                     tool_calls: Some(vec![ToolCall {
                         id: tool_id.to_string(),
@@ -2550,7 +2551,7 @@ mod tests {
         let create_tool_message = |tool_call_id: &str, content: &str| -> Message {
             Message {
                 role: Role::Tool,
-                content: MessageContent::Text(content.to_string()),
+                content: Some(MessageContent::Text(content.to_string())),
                 name: None,
                 tool_calls: None,
                 tool_call_id: Some(tool_call_id.to_string()),
@@ -2665,7 +2666,7 @@ mod tests {
             |content: &str, tool_id: &str, tool_name: &str, args: &str| -> Message {
                 Message {
                     role: Role::Assistant,
-                    content: MessageContent::Text(content.to_string()),
+                    content: Some(MessageContent::Text(content.to_string())),
                     name: None,
                     tool_calls: Some(vec![ToolCall {
                         id: tool_id.to_string(),
@@ -2683,7 +2684,7 @@ mod tests {
         let create_tool_message = |tool_call_id: &str, content: &str| -> Message {
             Message {
                 role: Role::Tool,
-                content: MessageContent::Text(content.to_string()),
+                content: Some(MessageContent::Text(content.to_string())),
                 name: None,
                 tool_calls: None,
                 tool_call_id: Some(tool_call_id.to_string()),

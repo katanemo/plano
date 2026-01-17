@@ -18,7 +18,6 @@ use crate::apis::openai_responses::{
     ResponsesAPIRequest, Tool as ResponsesTool, ToolChoice as ResponsesToolChoice,
 };
 use crate::clients::TransformError;
-use crate::transforms::lib::ExtractText;
 use crate::transforms::lib::*;
 use crate::transforms::*;
 
@@ -48,7 +47,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                 if let Some(instructions) = converter.instructions {
                     messages.push(Message {
                         role: Role::System,
-                        content: MessageContent::Text(instructions),
+                        content: Some(MessageContent::Text(instructions)),
                         name: None,
                         tool_call_id: None,
                         tool_calls: None,
@@ -58,7 +57,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                 // Add the user message
                 messages.push(Message {
                     role: Role::User,
-                    content: MessageContent::Text(text),
+                    content: Some(MessageContent::Text(text)),
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
@@ -74,7 +73,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                 if let Some(instructions) = converter.instructions {
                     converted_messages.push(Message {
                         role: Role::System,
-                        content: MessageContent::Text(instructions),
+                        content: Some(MessageContent::Text(instructions)),
                         name: None,
                         tool_call_id: None,
                         tool_calls: None,
@@ -154,7 +153,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
 
                         converted_messages.push(Message {
                             role,
-                            content,
+                            content: Some(content),
                             name: None,
                             tool_call_id: None,
                             tool_calls: None,
@@ -174,11 +173,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
 
 impl From<Message> for MessagesSystemPrompt {
     fn from(val: Message) -> Self {
-        let system_text = match val.content {
-            MessageContent::Text(text) => text,
-            MessageContent::Parts(parts) => parts.extract_text(),
-        };
-        MessagesSystemPrompt::Single(system_text)
+        MessagesSystemPrompt::Single(val.content.extract_text())
     }
 }
 
@@ -191,6 +186,8 @@ impl TryFrom<Message> for MessagesMessage {
             Role::Assistant => MessagesRole::Assistant,
             Role::Tool => {
                 // Tool messages become user messages with tool results
+                // Extract content text first, before moving tool_call_id
+                let content_text = message.content.extract_text();
                 let tool_call_id = message.tool_call_id.ok_or_else(|| {
                     TransformError::MissingField(
                         "tool_call_id required for Tool messages".to_string(),
@@ -204,7 +201,7 @@ impl TryFrom<Message> for MessagesMessage {
                             tool_use_id: tool_call_id,
                             is_error: None,
                             content: ToolResultContent::Blocks(vec![MessagesContentBlock::Text {
-                                text: message.content.extract_text(),
+                                text: content_text,
                                 cache_control: None,
                             }]),
                             cache_control: None,
@@ -248,12 +245,12 @@ impl TryFrom<Message> for BedrockMessage {
             Role::User => {
                 // Convert user message content to content blocks
                 match message.content {
-                    MessageContent::Text(text) => {
+                    Some(MessageContent::Text(text)) => {
                         if !text.is_empty() {
                             content_blocks.push(ContentBlock::Text { text });
                         }
                     }
-                    MessageContent::Parts(parts) => {
+                    Some(MessageContent::Parts(parts)) => {
                         // Convert OpenAI content parts to Bedrock ContentBlocks
                         for part in parts {
                             match part {
@@ -292,6 +289,9 @@ impl TryFrom<Message> for BedrockMessage {
                                 }
                             }
                         }
+                    }
+                    None => {
+                        // Empty content for user - shouldn't happen but handle gracefully
                     }
                 }
 
@@ -550,10 +550,7 @@ impl TryFrom<ChatCompletionsRequest> for ConverseRequest {
         for message in req.messages {
             match message.role {
                 Role::System => {
-                    let system_text = match message.content {
-                        MessageContent::Text(text) => text,
-                        MessageContent::Parts(parts) => parts.extract_text(),
-                    };
+                    let system_text = message.content.extract_text();
                     system_messages.push(SystemContentBlock::Text { text: system_text });
                 }
                 _ => {
@@ -778,14 +775,16 @@ mod tests {
             messages: vec![
                 Message {
                     role: Role::System,
-                    content: MessageContent::Text("You are a helpful assistant.".to_string()),
+                    content: Some(MessageContent::Text(
+                        "You are a helpful assistant.".to_string(),
+                    )),
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
                 },
                 Message {
                     role: Role::User,
-                    content: MessageContent::Text("Hello, how are you?".to_string()),
+                    content: Some(MessageContent::Text("Hello, how are you?".to_string())),
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
@@ -840,7 +839,7 @@ mod tests {
             model: "gpt-4".to_string(),
             messages: vec![Message {
                 role: Role::User,
-                content: MessageContent::Text("What's the weather like?".to_string()),
+                content: Some(MessageContent::Text("What's the weather like?".to_string())),
                 name: None,
                 tool_call_id: None,
                 tool_calls: None,
@@ -907,7 +906,7 @@ mod tests {
             model: "gpt-4".to_string(),
             messages: vec![Message {
                 role: Role::User,
-                content: MessageContent::Text("Help me with something".to_string()),
+                content: Some(MessageContent::Text("Help me with something".to_string())),
                 name: None,
                 tool_call_id: None,
                 tool_calls: None,
@@ -950,28 +949,30 @@ mod tests {
             messages: vec![
                 Message {
                     role: Role::System,
-                    content: MessageContent::Text("Be concise".to_string()),
+                    content: Some(MessageContent::Text("Be concise".to_string())),
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
                 },
                 Message {
                     role: Role::User,
-                    content: MessageContent::Text("Hello".to_string()),
+                    content: Some(MessageContent::Text("Hello".to_string())),
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
                 },
                 Message {
                     role: Role::Assistant,
-                    content: MessageContent::Text("Hi there! How can I help you?".to_string()),
+                    content: Some(MessageContent::Text(
+                        "Hi there! How can I help you?".to_string(),
+                    )),
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
                 },
                 Message {
                     role: Role::User,
-                    content: MessageContent::Text("What's 2+2?".to_string()),
+                    content: Some(MessageContent::Text("What's 2+2?".to_string())),
                     name: None,
                     tool_call_id: None,
                     tool_calls: None,
@@ -1009,7 +1010,7 @@ mod tests {
     fn test_openai_message_to_bedrock_conversion() {
         let openai_message = Message {
             role: Role::User,
-            content: MessageContent::Text("Test message".to_string()),
+            content: Some(MessageContent::Text("Test message".to_string())),
             name: None,
             tool_call_id: None,
             tool_calls: None,

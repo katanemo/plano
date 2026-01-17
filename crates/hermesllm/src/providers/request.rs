@@ -671,14 +671,16 @@ mod tests {
             messages: vec![
                 Message {
                     role: Role::System,
-                    content: MessageContent::Text("You are a helpful assistant".to_string()),
+                    content: Some(MessageContent::Text(
+                        "You are a helpful assistant".to_string(),
+                    )),
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
                 },
                 Message {
                     role: Role::User,
-                    content: MessageContent::Text("Hello!".to_string()),
+                    content: Some(MessageContent::Text("Hello!".to_string())),
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
@@ -900,7 +902,7 @@ mod tests {
             model: "gpt-4".to_string(),
             messages: vec![Message {
                 role: Role::User,
-                content: MessageContent::Text("Hello!".to_string()),
+                content: Some(MessageContent::Text("Hello!".to_string())),
                 name: None,
                 tool_calls: None,
                 tool_call_id: None,
@@ -993,14 +995,14 @@ mod tests {
             messages: vec![
                 Message {
                     role: Role::System,
-                    content: MessageContent::Text("You are helpful".to_string()),
+                    content: Some(MessageContent::Text("You are helpful".to_string())),
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
                 },
                 Message {
                     role: Role::User,
-                    content: MessageContent::Text("Hello!".to_string()),
+                    content: Some(MessageContent::Text("Hello!".to_string())),
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
