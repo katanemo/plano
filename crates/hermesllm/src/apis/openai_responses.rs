@@ -1146,7 +1146,7 @@ impl ProviderRequest for ResponsesAPIRequest {
             .iter()
             .filter(|msg| msg.role == crate::apis::openai::Role::System)
             .filter_map(|msg| {
-                if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
+                if let Some(crate::apis::openai::MessageContent::Text(text)) = &msg.content {
                     Some(text.as_str())
                 } else {
                     None
@@ -1170,7 +1170,8 @@ impl ProviderRequest for ResponsesAPIRequest {
         if !input_messages.is_empty() {
             // If there's only one message, use Text format
             if input_messages.len() == 1 {
-                if let crate::apis::openai::MessageContent::Text(text) = &input_messages[0].content
+                if let Some(crate::apis::openai::MessageContent::Text(text)) =
+                    &input_messages[0].content
                 {
                     self.input = crate::apis::openai_responses::InputParam::Text(text.clone());
                 }
@@ -1180,7 +1181,8 @@ impl ProviderRequest for ResponsesAPIRequest {
                 let combined_text = input_messages
                     .iter()
                     .filter_map(|msg| {
-                        if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
+                        if let Some(crate::apis::openai::MessageContent::Text(text)) = &msg.content
+                        {
                             Some(format!(
                                 "{}: {}",
                                 match msg.role {

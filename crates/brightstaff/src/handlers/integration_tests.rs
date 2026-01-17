@@ -28,7 +28,7 @@ mod tests {
     fn create_test_message(role: Role, content: &str) -> Message {
         Message {
             role,
-            content: MessageContent::Text(content.to_string()),
+            content: Some(MessageContent::Text(content.to_string())),
             name: None,
             tool_calls: None,
             tool_call_id: None,
@@ -129,7 +129,7 @@ mod tests {
         let processed_messages = result.unwrap();
         // With empty filter chain, should return the original messages unchanged
         assert_eq!(processed_messages.len(), 1);
-        if let MessageContent::Text(content) = &processed_messages[0].content {
+        if let Some(MessageContent::Text(content)) = &processed_messages[0].content {
             assert_eq!(content, "Hello world!");
         } else {
             panic!("Expected text content");

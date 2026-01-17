@@ -584,7 +584,7 @@ impl ProviderRequest for MessagesRequest {
             let system_text = system_messages
                 .iter()
                 .filter_map(|msg| {
-                    if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
+                    if let Some(crate::apis::openai::MessageContent::Text(text)) = &msg.content {
                         Some(text.as_str())
                     } else {
                         None

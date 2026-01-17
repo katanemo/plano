@@ -95,7 +95,9 @@ pub async fn router_chat_get_upstream_model(
         .messages
         .last()
         .map_or("None".to_string(), |msg| {
-            msg.content.to_string().replace('\n', "\\n")
+            msg.content
+                .as_ref()
+                .map_or("None".to_string(), |c| c.to_string().replace('\n', "\\n"))
         });
 
     const MAX_MESSAGE_LENGTH: usize = 50;
