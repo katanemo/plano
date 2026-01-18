@@ -1,0 +1,82 @@
+name: e2e tests (parallel)
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main  # Run tests on pushes to the main branch
+  pull_request:
+
+jobs:
+  e2e_tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # Continue running other jobs even if one fails
+      matrix:
+        test-suite:
+          - name: "Prompt Gateway"
+            script: "run_prompt_gateway_tests.sh"
+          - name: "Model Alias Routing"
+            script: "run_model_alias_tests.sh"
+          - name: "OpenAI Responses API"
+            script: "run_openai_responses_tests.sh"
+          - name: "OpenAI Responses API with State"
+            script: "run_openai_responses_with_state_tests.sh"
+
+    name: ${{ matrix.test-suite.name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # --- Disk inspection & cleanup section (added to free space on GitHub runner) ---
+      - name: Check disk usage before cleanup
+        run: |
+          echo "=== Disk usage before cleanup ==="
+          df -h
+          echo "=== Repo size ==="
+          du -sh .
+
+      - name: Free disk space on runner
+        run: |
+          echo "=== Cleaning preinstalled SDKs and toolchains to free space ==="
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          # If you still hit disk issues, uncomment this to free more space.
+          # It just removes cached tool versions; setup-python will re-download what it needs.
+          # sudo rm -rf /opt/hostedtoolcache || true
+
+          echo "=== Docker cleanup (before our builds/compose) ==="
+          docker system prune -af || true
+          docker volume prune -f || true
+
+          echo "=== Disk usage after cleanup ==="
+          df -h
+      # --- End disk cleanup section ---
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          export POETRY_VERSION=2.2.1
+          curl -sSL https://install.python-poetry.org | python3 -
+          export PATH="$HOME/.local/bin:$PATH"
+
+      - name: Run ${{ matrix.test-suite.name }} tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          GROK_API_KEY : ${{ secrets.GROK_API_KEY }}
+        run: |
+          python -mvenv venv
+          source venv/bin/activate && cd tests/e2e && bash ${{ matrix.test-suite.script }}
