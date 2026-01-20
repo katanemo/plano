@@ -37,7 +37,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
 .. code-block:: console
 
-   $ uv tool install planoai==0.4.2
+   $ uv tool install planoai==0.4.3
 
 **Option 2: Install with pip (Traditional)**
 
@@ -45,7 +45,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
    $ python -m venv venv
    $ source venv/bin/activate   # On Windows, use: venv\Scripts\activate
-   $ pip install planoai==0.4.2
+   $ pip install planoai==0.4.3
 
 
 .. _llm_routing_quickstart:
@@ -90,7 +90,7 @@ Start Plano:
 
    $ planoai up plano_config.yaml
    # Or if installed with uv tool: uvx planoai up plano_config.yaml
-   2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.2
+   2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.3
    2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
    2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano
    ...

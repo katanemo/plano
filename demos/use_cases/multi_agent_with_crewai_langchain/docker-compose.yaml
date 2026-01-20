@@ -1,0 +1,56 @@
+
+services:
+  plano:
+    build:
+      context: ../../../
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - ARCH_CONFIG_PATH=/app/arch_config.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+      - OTEL_TRACING_HTTP_ENDPOINT=http://host.docker.internal:4318/v1/traces
+    volumes:
+      - ./config.yaml:/app/arch_config.yaml:ro
+      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+
+  crewai-flight-agent:
+    build:
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "10520:10520"
+    environment:
+      - LLM_GATEWAY_ENDPOINT=http://plano:12000/v1
+      - AEROAPI_KEY=${AEROAPI_KEY:?AEROAPI_KEY environment variable is required but not set}
+      - PYTHONUNBUFFERED=1
+    command: ["python", "-u", "crewai/flight_agent.py"]
+
+  langchain-weather-agent:
+    build:
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "10510:10510"
+    environment:
+      - LLM_GATEWAY_ENDPOINT=http://plano:12000/v1
+    command: ["python", "-u", "langchain/weather_agent.py"]
+
+  open-web-ui:
+    image: dyrnq/open-webui:main
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - DEFAULT_MODEL=gpt-4o-mini
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://plano:8001/v1
+
+  jaeger:
+    build:
+      context: ../../shared/jaeger
+    restart: always
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
