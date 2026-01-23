@@ -445,7 +445,7 @@ def test_anthropic_client_with_openai_model_streaming():
     client = anthropic.Anthropic(api_key="test-key", base_url=base_url)
 
     with client.messages.stream(
-        model="gpt-5-mini-2025-08-07",  # OpenAI model via Anthropic client
+        model="gpt-4o-mini",  # OpenAI model via Anthropic client
         max_tokens=500,
         messages=[
             {
