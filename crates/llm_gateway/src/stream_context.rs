@@ -134,16 +134,33 @@ impl StreamContext {
             .get_http_request_header(ARCH_PROVIDER_HINT_HEADER)
             .map(|llm_name| llm_name.into());
 
-        // info!("llm_providers: {:?}", self.llm_providers);
-        let provider =
-            routing::get_llm_provider(&self.llm_providers, provider_hint).map_err(|err| {
-                error!(
-                    "[PLANO_REQ_ID:{}] PROVIDER_SELECTION_FAILED: Hint='None' Error='{}'",
-                    self.request_identifier(),
-                    err
-                );
-                err
-            })?;
+        // Try to get provider with hint, fallback to default if error
+        // This handles prompt_gateway requests which don't set ARCH_PROVIDER_HINT_HEADER
+        // since prompt_gateway doesn't have access to model configuration.
+        // brightstaff (model proxy) always validates and sets the provider hint.
+        let provider = match routing::get_llm_provider(&self.llm_providers, provider_hint) {
+            Ok(provider) => provider,
+            Err(err) => {
+                // Try default provider as fallback
+                match self.llm_providers.default() {
+                    Some(default_provider) => {
+                        info!(
+                            "[PLANO_REQ_ID:{}] Provider selection failed, using default provider",
+                            self.request_identifier()
+                        );
+                        default_provider
+                    }
+                    None => {
+                        error!(
+                            "[PLANO_REQ_ID:{}] PROVIDER_SELECTION_FAILED: Error='{}' and no default provider configured",
+                            self.request_identifier(),
+                            err
+                        );
+                        return Err(err);
+                    }
+                }
+            }
+        };
 
         self.llm_provider = Some(provider);
 
