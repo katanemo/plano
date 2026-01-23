@@ -207,9 +207,7 @@ fn fetch_google_models(api_key: &str) -> Result<Vec<String>, Box<dyn std::error:
         .filter(|m| {
             m.supported_generation_methods
                 .as_ref()
-                .map_or(false, |methods| {
-                    methods.contains(&"generateContent".to_string())
-                })
+                .is_some_and(|methods| methods.contains(&"generateContent".to_string()))
         })
         .map(|m| {
             // Convert "models/gemini-pro" to "google/gemini-pro"
