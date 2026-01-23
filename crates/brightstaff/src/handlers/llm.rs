@@ -1,8 +1,9 @@
 use bytes::Bytes;
-use common::configuration::{LlmProvider, ModelAlias};
+use common::configuration::ModelAlias;
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
+use common::llm_providers::LlmProviders;
 use common::traces::TraceCollector;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
@@ -38,7 +39,7 @@ pub async fn llm_chat(
     router_service: Arc<RouterService>,
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
-    llm_providers: Arc<RwLock<Vec<LlmProvider>>>,
+    llm_providers: Arc<RwLock<LlmProviders>>,
     trace_collector: Arc<TraceCollector>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -122,6 +123,19 @@ pub async fn llm_chat(
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
+
+    // Validate that the requested model exists in configuration
+    // This matches the validation in llm_gateway routing.rs
+    if llm_providers.read().await.get(&resolved_model).is_none() {
+        let err_msg = format!(
+            "Model '{}' not found in configured providers",
+            resolved_model
+        );
+        warn!("[PLANO_REQ_ID:{}] | FAILURE | {}", request_id, err_msg);
+        let mut bad_request = Response::new(full(err_msg));
+        *bad_request.status_mut() = StatusCode::BAD_REQUEST;
+        return Ok(bad_request);
+    }
 
     // Handle provider/model slug format (e.g., "openai/gpt-4")
     // Extract just the model name for upstream (providers don't understand the slug)
@@ -250,22 +264,25 @@ pub async fn llm_chat(
         }
     };
 
-    // Use the resolved model (could be "gpt-4" or "openai/gpt-4") as the provider hint
-    // The routing layer will use llm_providers.get() which handles both formats:
-    // - "gpt-4" → looks up by model name
-    // - "openai/gpt-4" → looks up by provider/model slug
-    // If router doesn't find anything, it will use routing_result.model_name
-    let provider_hint_value = resolved_model.clone();
-    let model_name = routing_result.model_name;
+    // Determine final model to use
+    // Router returns "none" as a sentinel value when it doesn't select a specific model
+    let router_selected_model = routing_result.model_name;
+    let model_name = if router_selected_model != "none" {
+        // Router selected a specific model via routing preferences
+        router_selected_model
+    } else {
+        // Router returned "none" sentinel, use validated resolved_model from request
+        resolved_model.clone()
+    };
 
     debug!(
         "[PLANO_REQ_ID:{}] | ARCH_ROUTER URL | {}, Provider Hint: {}, Model for upstream: {}",
-        request_id, full_qualified_llm_provider_url, provider_hint_value, model_name_only
+        request_id, full_qualified_llm_provider_url, model_name, model_name_only
     );
 
     request_headers.insert(
         ARCH_PROVIDER_HINT_HEADER,
-        header::HeaderValue::from_str(&provider_hint_value).unwrap(),
+        header::HeaderValue::from_str(&model_name).unwrap(),
     );
 
     request_headers.insert(
@@ -405,7 +422,7 @@ async fn build_llm_span(
     tool_names: Option<Vec<String>>,
     user_message_preview: Option<String>,
     temperature: Option<f32>,
-    llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
+    llm_providers: &Arc<RwLock<LlmProviders>>,
 ) -> common::traces::Span {
     use crate::tracing::{http, llm, OperationNameBuilder};
     use common::traces::{parse_traceparent, SpanBuilder, SpanKind};
@@ -478,7 +495,7 @@ async fn build_llm_span(
 /// Looks up provider configuration, gets the ProviderId and base_url_path_prefix,
 /// then uses target_endpoint_for_provider to calculate the correct upstream path.
 async fn get_upstream_path(
-    llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
+    llm_providers: &Arc<RwLock<LlmProviders>>,
     model_name: &str,
     request_path: &str,
     resolved_model: &str,
@@ -501,25 +518,21 @@ async fn get_upstream_path(
 
 /// Helper function to get provider info (ProviderId and base_url_path_prefix)
 async fn get_provider_info(
-    llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
+    llm_providers: &Arc<RwLock<LlmProviders>>,
     model_name: &str,
 ) -> (hermesllm::ProviderId, Option<String>) {
     let providers_lock = llm_providers.read().await;
 
-    // First, try to find by model name or provider name
-    let provider = providers_lock.iter().find(|p| {
-        p.model.as_ref().map(|m| m == model_name).unwrap_or(false) || p.name == model_name
-    });
-
-    if let Some(provider) = provider {
+    // Try to find by model name or provider name using LlmProviders::get
+    // This handles both "gpt-4" and "openai/gpt-4" formats
+    if let Some(provider) = providers_lock.get(model_name) {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
         return (provider_id, prefix);
     }
 
-    let default_provider = providers_lock.iter().find(|p| p.default.unwrap_or(false));
-
-    if let Some(provider) = default_provider {
+    // Fall back to default provider
+    if let Some(provider) = providers_lock.default() {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
         (provider_id, prefix)

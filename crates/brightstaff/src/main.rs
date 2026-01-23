@@ -13,6 +13,7 @@ use common::configuration::{Agent, Configuration};
 use common::consts::{
     CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
 };
+use common::llm_providers::LlmProviders;
 use common::traces::TraceCollector;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
@@ -76,7 +77,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .cloned()
         .collect();
 
-    let llm_providers = Arc::new(RwLock::new(arch_config.model_providers.clone()));
+    // Create expanded provider list for /v1/models endpoint
+    let llm_providers = LlmProviders::try_from(arch_config.model_providers.clone())
+        .expect("Failed to create LlmProviders");
+    let llm_providers = Arc::new(RwLock::new(llm_providers));
     let combined_agents_filters_list = Arc::new(RwLock::new(Some(all_agents)));
     let listeners = Arc::new(RwLock::new(arch_config.listeners.clone()));
     let llm_provider_url =

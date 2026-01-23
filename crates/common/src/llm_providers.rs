@@ -1,27 +1,54 @@
 use crate::configuration::LlmProvider;
 use hermesllm::providers::ProviderId;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct LlmProviders {
-    providers: HashMap<String, Rc<LlmProvider>>,
-    default: Option<Rc<LlmProvider>>,
+    providers: HashMap<String, Arc<LlmProvider>>,
+    default: Option<Arc<LlmProvider>>,
     /// Wildcard providers: maps provider prefix to base provider config
     /// e.g., "openai" -> LlmProvider for "openai/*"
-    wildcard_providers: HashMap<String, Rc<LlmProvider>>,
+    wildcard_providers: HashMap<String, Arc<LlmProvider>>,
 }
 
 impl LlmProviders {
-    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Rc<LlmProvider>> {
+    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Arc<LlmProvider>> {
         self.providers.iter()
     }
 
-    pub fn default(&self) -> Option<Rc<LlmProvider>> {
+    pub fn default(&self) -> Option<Arc<LlmProvider>> {
         self.default.clone()
     }
+    /// Convert providers to OpenAI Models format for /v1/models endpoint
+    /// Filters out internal models and duplicate entries (backward compatibility aliases)
+    pub fn to_models(&self) -> hermesllm::apis::openai::Models {
+        use hermesllm::apis::openai::{ModelDetail, ModelObject, Models};
 
-    pub fn get(&self, name: &str) -> Option<Rc<LlmProvider>> {
+        let data: Vec<ModelDetail> = self
+            .providers
+            .iter()
+            .filter(|(key, provider)| {
+                // Exclude internal models
+                provider.internal != Some(true)
+                // Only include canonical entries (key matches provider name)
+                // This avoids duplicates from backward compatibility short names
+                && *key == &provider.name
+            })
+            .map(|(name, provider)| ModelDetail {
+                id: name.clone(),
+                object: Some("model".to_string()),
+                created: 0,
+                owned_by: provider.to_provider_id().to_string(),
+            })
+            .collect();
+
+        Models {
+            object: ModelObject::List,
+            data,
+        }
+    }
+    pub fn get(&self, name: &str) -> Option<Arc<LlmProvider>> {
         // First try exact match
         if let Some(provider) = self.providers.get(name).cloned() {
             return Some(provider);
@@ -47,7 +74,7 @@ impl LlmProviders {
                 // Create a new provider with the specific model from the slug
                 let mut specific_provider = (**wildcard_provider).clone();
                 specific_provider.model = Some(model_name.to_string());
-                return Some(Rc::new(specific_provider));
+                return Some(Arc::new(specific_provider));
             }
         }
 
@@ -79,13 +106,40 @@ impl TryFrom<Vec<LlmProvider>> for LlmProviders {
             wildcard_providers: HashMap::new(),
         };
 
+        // Track specific (non-wildcard) provider names to detect true duplicates
+        let mut specific_provider_names = std::collections::HashSet::new();
+
+        // Track specific models that should be excluded from wildcard expansion
+        // Maps provider_prefix -> Set of model names (e.g., "anthropic" -> {"claude-sonnet-4-20250514"})
+        let mut specific_models_by_provider: HashMap<String, std::collections::HashSet<String>> =
+            HashMap::new();
+
+        // First pass: collect all specific model configurations
+        for llm_provider in &llm_providers_config {
+            let is_wildcard = llm_provider
+                .model
+                .as_ref()
+                .map(|m| m == "*" || m.ends_with("/*"))
+                .unwrap_or(false);
+
+            if !is_wildcard {
+                // Check if this is a provider/model format
+                if let Some((provider_prefix, model_name)) = llm_provider.name.split_once('/') {
+                    specific_models_by_provider
+                        .entry(provider_prefix.to_string())
+                        .or_default()
+                        .insert(model_name.to_string());
+                }
+            }
+        }
+
         for llm_provider in llm_providers_config {
-            let llm_provider: Rc<LlmProvider> = Rc::new(llm_provider);
+            let llm_provider: Arc<LlmProvider> = Arc::new(llm_provider);
 
             if llm_provider.default.unwrap_or_default() {
                 match llm_providers.default {
                     Some(_) => return Err(LlmProvidersNewError::MoreThanOneDefault),
-                    None => llm_providers.default = Some(Rc::clone(&llm_provider)),
+                    None => llm_providers.default = Some(Arc::clone(&llm_provider)),
                 }
             }
 
@@ -109,20 +163,45 @@ impl TryFrom<Vec<LlmProvider>> for LlmProviders {
 
                 llm_providers
                     .wildcard_providers
-                    .insert(provider_prefix.to_string(), Rc::clone(&llm_provider));
+                    .insert(provider_prefix.to_string(), Arc::clone(&llm_provider));
 
                 // Try to expand wildcard using ProviderId models
                 if let Ok(provider_id) = ProviderId::try_from(provider_prefix) {
                     let models = provider_id.models();
+
+                    // Get the set of specific models to exclude for this provider
+                    let models_to_exclude = specific_models_by_provider
+                        .get(provider_prefix)
+                        .cloned()
+                        .unwrap_or_default();
+
                     if !models.is_empty() {
+                        let excluded_count = models_to_exclude.len();
+                        let total_models = models.len();
+
                         log::info!(
-                            "Expanding wildcard provider '{}' to {} models",
+                            "Expanding wildcard provider '{}' to {} models{}",
                             provider_prefix,
-                            models.len()
+                            total_models - excluded_count,
+                            if excluded_count > 0 {
+                                format!(" (excluding {} specifically configured)", excluded_count)
+                            } else {
+                                String::new()
+                            }
                         );
 
-                        // Create a provider entry for each model
+                        // Create a provider entry for each model (except those specifically configured)
                         for model_name in models {
+                            // Skip this model if it has a specific configuration
+                            if models_to_exclude.contains(&model_name) {
+                                log::debug!(
+                                    "Skipping wildcard expansion for '{}/{}' - specific configuration exists",
+                                    provider_prefix,
+                                    model_name
+                                );
+                                continue;
+                            }
+
                             let full_model_id = format!("{}/{}", provider_prefix, model_name);
 
                             // Create a new provider with the specific model
@@ -130,12 +209,12 @@ impl TryFrom<Vec<LlmProvider>> for LlmProviders {
                             expanded_provider.model = Some(model_name.clone());
                             expanded_provider.name = full_model_id.clone();
 
-                            let expanded_rc = Rc::new(expanded_provider);
+                            let expanded_rc = Arc::new(expanded_provider);
 
                             // Insert with full model ID as key
                             llm_providers
                                 .providers
-                                .insert(full_model_id.clone(), Rc::clone(&expanded_rc));
+                                .insert(full_model_id.clone(), Arc::clone(&expanded_rc));
 
                             // Also insert with just model name for backward compatibility
                             llm_providers.providers.insert(model_name, expanded_rc);
@@ -149,24 +228,26 @@ impl TryFrom<Vec<LlmProvider>> for LlmProviders {
                     );
                 }
             } else {
-                // Non-wildcard provider - original behavior
-                if llm_providers
-                    .providers
-                    .insert(name.clone(), Rc::clone(&llm_provider))
-                    .is_some()
-                {
+                // Non-wildcard provider - specific configuration
+                // Check for duplicate specific entries (not allowed)
+                if specific_provider_names.contains(&name) {
                     return Err(LlmProvidersNewError::DuplicateName(name));
                 }
+                specific_provider_names.insert(name.clone());
 
-                // also add model_id as key for provider lookup
+                // This specific configuration takes precedence over any wildcard expansion
+                // The wildcard expansion already excluded this model (see first pass above)
+
+                log::debug!("Processing specific provider configuration: {}", name);
+
+                // Insert with the provider name as key
+                llm_providers
+                    .providers
+                    .insert(name.clone(), Arc::clone(&llm_provider));
+
+                // Also add model_id as key for provider lookup
                 if let Some(model) = llm_provider.model.clone() {
-                    if llm_providers
-                        .providers
-                        .insert(model, llm_provider)
-                        .is_some()
-                    {
-                        return Err(LlmProvidersNewError::DuplicateName(name));
-                    }
+                    llm_providers.providers.insert(model, llm_provider);
                 }
             }
         }

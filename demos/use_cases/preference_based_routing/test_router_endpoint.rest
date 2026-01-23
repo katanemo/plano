@@ -34,7 +34,7 @@ POST http://localhost:12000/v1/chat/completions HTTP/1.1
 Content-Type: application/json
 
 {
-  "model": "none",
+  "model": "gpt-4o",
   "messages": [
     {
       "role": "user",
@@ -49,7 +49,7 @@ POST http://localhost:12000/v1/chat/completions HTTP/1.1
 Content-Type: application/json
 
 {
-  "model": "none",
+  "model": "gpt-4o",
   "messages": [
     {
       "role": "user",

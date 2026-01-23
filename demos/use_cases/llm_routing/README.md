@@ -19,7 +19,7 @@ You can also pass in a header to override model when sending prompt. Following e
 
 $ curl --header 'Content-Type: application/json' \
   --header 'x-arch-llm-provider-hint: mistral/ministral-3b' \
-  --data '{"messages": [{"role": "user","content": "hello"}], "model": "none"}' \
+  --data '{"messages": [{"role": "user","content": "hello"}], "model": "gpt-4o"}' \
   http://localhost:12000/v1/chat/completions 2> /dev/null | jq .
 {
   "id": "xxx",

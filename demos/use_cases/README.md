@@ -67,7 +67,7 @@ print("OpenAI Response:", response.choices[0].message.content)
 #### Step 3.2: Using curl command
 ```
 $ curl --header 'Content-Type: application/json' \
-  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}' \
+  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "gpt-4o"}' \
   http://localhost:12000/v1/chat/completions
 
 {
@@ -92,7 +92,7 @@ You can override model selection using `x-arch-llm-provider-hint` header. For ex
 ```
 $ curl --header 'Content-Type: application/json' \
   --header 'x-arch-llm-provider-hint: ministral-3b' \
-  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}' \
+  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "gpt-4o"}' \
   http://localhost:12000/v1/chat/completions
 {
   ...

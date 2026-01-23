@@ -6,6 +6,7 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 use std::num::NonZero;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::metrics::Metrics;
@@ -40,7 +41,7 @@ pub struct StreamContext {
     /// The API that should be used for the upstream provider (after compatibility mapping)
     resolved_api: Option<SupportedUpstreamAPIs>,
     llm_providers: Rc<LlmProviders>,
-    llm_provider: Option<Rc<LlmProvider>>,
+    llm_provider: Option<Arc<LlmProvider>>,
     request_id: Option<String>,
     start_time: SystemTime,
     ttft_duration: Option<Duration>,

@@ -151,16 +151,15 @@ pub async fn router_chat_get_upstream_model(
                 Ok(RoutingResult { model_name })
             }
             None => {
-                // No route determined, use default model from request
+                // No route determined, return sentinel value "none"
+                // This signals to llm.rs to use the original validated request model
                 info!(
-                    "[PLANO_REQ_ID: {}] | ROUTER_REQ | No route determined, using default model from request: {}",
-                    request_id,
-                    chat_request.model
+                    "[PLANO_REQ_ID: {}] | ROUTER_REQ | No route determined, returning sentinel 'none'",
+                    request_id
                 );
 
-                let default_model = chat_request.model.clone();
                 let mut attrs = HashMap::new();
-                attrs.insert("route.selected_model".to_string(), default_model.clone());
+                attrs.insert("route.selected_model".to_string(), "none".to_string());
                 record_routing_span(
                     trace_collector,
                     traceparent,
@@ -171,7 +170,7 @@ pub async fn router_chat_get_upstream_model(
                 .await;
 
                 Ok(RoutingResult {
-                    model_name: default_model,
+                    model_name: "none".to_string(),
                 })
             }
         },

@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::{configuration, llm_providers::LlmProviders};
 use configuration::LlmProvider;
@@ -21,7 +21,7 @@ impl From<String> for ProviderHint {
 pub fn get_llm_provider(
     llm_providers: &LlmProviders,
     provider_hint: Option<ProviderHint>,
-) -> Result<Rc<LlmProvider>, String> {
+) -> Result<Arc<LlmProvider>, String> {
     match provider_hint {
         Some(ProviderHint::Default) => llm_providers
             .default()
@@ -29,11 +29,6 @@ pub fn get_llm_provider(
         Some(ProviderHint::Name(name)) => llm_providers
             .get(&name)
             .ok_or_else(|| format!("Model '{}' not found in configured providers", name)),
-        None => {
-            // No hint provided - must have a default configured
-            llm_providers
-                .default()
-                .ok_or_else(|| "No model specified and no default provider configured".to_string())
-        }
+        None => Err("No model specified in request".to_string()),
     }
 }
