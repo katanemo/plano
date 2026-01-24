@@ -26,7 +26,7 @@ All providers are configured in the ``llm_providers`` section of your ``plano_co
 
 **Common Configuration Fields:**
 
-- ``model``: Provider prefix and model name (format: ``provider/model-name``)
+- ``model``: Provider prefix and model name (format: ``provider/model-name`` or ``provider/*`` for wildcard expansion)
 - ``access_key``: API key for authentication (supports environment variables)
 - ``default``: Mark a model as the default (optional, boolean)
 - ``name``: Custom name for the provider instance (optional)
@@ -108,7 +108,11 @@ OpenAI
 .. code-block:: yaml
 
     llm_providers:
-      # Latest models (examples - use any OpenAI chat model)
+      # Configure all OpenAI models with wildcard
+      - model: openai/*
+        access_key: $OPENAI_API_KEY
+
+      # Or configure specific models
       - model: openai/gpt-5.2
         access_key: $OPENAI_API_KEY
         default: true
@@ -116,7 +120,6 @@ OpenAI
       - model: openai/gpt-5
         access_key: $OPENAI_API_KEY
 
-      # Use any model name from OpenAI's API
       - model: openai/gpt-4o
         access_key: $OPENAI_API_KEY
 
@@ -156,16 +159,28 @@ Anthropic
 .. code-block:: yaml
 
     llm_providers:
-      # Latest models (examples - use any Anthropic chat model)
+      # Configure all Anthropic models with wildcard
+      - model: anthropic/*
+        access_key: $ANTHROPIC_API_KEY
+
+      # Or configure specific models
       - model: anthropic/claude-opus-4-5
         access_key: $ANTHROPIC_API_KEY
 
       - model: anthropic/claude-sonnet-4-5
         access_key: $ANTHROPIC_API_KEY
 
-      # Use any model name from Anthropic's API
       - model: anthropic/claude-haiku-4-5
         access_key: $ANTHROPIC_API_KEY
+
+      # Override specific model with custom routing
+      - model: anthropic/*
+        access_key: $ANTHROPIC_API_KEY
+
+      - model: anthropic/claude-sonnet-4-20250514
+        access_key: $ANTHROPIC_PROD_API_KEY
+        routing_preferences:
+          - name: code_generation
 
 DeepSeek
 ~~~~~~~~
@@ -693,6 +708,92 @@ Configure multiple instances of the same provider:
       - model: openai/gpt-4o-mini
         access_key: $OPENAI_DEV_KEY
         name: openai-dev
+
+Wildcard Model Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Automatically configure all available models from a provider using wildcard patterns. Plano expands wildcards at configuration load time to include all known models from the provider's registry.
+
+**Basic Wildcard Usage:**
+
+.. code-block:: yaml
+
+    llm_providers:
+      # Expand to all OpenAI models
+      - model: openai/*
+        access_key: $OPENAI_API_KEY
+
+      # Expand to all Anthropic Claude models
+      - model: anthropic/*
+        access_key: $ANTHROPIC_API_KEY
+
+      # Expand to all Mistral models
+      - model: mistral/*
+        access_key: $MISTRAL_API_KEY
+
+**How Wildcards Work:**
+
+1. **Known Providers** (OpenAI, Anthropic, DeepSeek, Mistral, Groq, Gemini, Together AI, xAI, Moonshot, Zhipu):
+
+   - Expands at config load time to all models in Plano's provider registry
+   - Creates entries for both canonical (``openai/gpt-4``) and short names (``gpt-4``)
+   - Enables the ``/v1/models`` endpoint to list all available models
+
+2. **Unknown/Custom Providers** (e.g., ``custom-provider/*``):
+
+   - Stores as a wildcard pattern for runtime matching
+   - Requires ``base_url`` and ``provider_interface`` configuration
+   - Matches model requests dynamically (e.g., ``custom-provider/any-model-name``)
+   - Does not appear in ``/v1/models`` endpoint
+
+**Overriding Wildcard Models:**
+
+You can configure specific models with custom settings even when using wildcards. Specific configurations take precedence and are excluded from wildcard expansion:
+
+.. code-block:: yaml
+
+    llm_providers:
+      # Expand to all Anthropic models
+      - model: anthropic/*
+        access_key: $ANTHROPIC_API_KEY
+
+      # Override specific model with custom settings
+      # This model will NOT be included in the wildcard expansion above
+      - model: anthropic/claude-sonnet-4-20250514
+        access_key: $ANTHROPIC_PROD_API_KEY
+        routing_preferences:
+          - name: code_generation
+            priority: 1
+
+      # Another specific override
+      - model: anthropic/claude-3-haiku-20240307
+        access_key: $ANTHROPIC_DEV_API_KEY
+
+**Custom Provider Wildcards:**
+
+For providers not in Plano's registry, wildcards enable dynamic model routing:
+
+.. code-block:: yaml
+
+    llm_providers:
+      # Custom LiteLLM deployment
+      - model: litellm/*
+        base_url: https://litellm.example.com
+        provider_interface: openai
+        passthrough_auth: true
+
+      # Custom provider with all models
+      - model: custom-provider/*
+        access_key: $CUSTOM_API_KEY
+        base_url: https://api.custom-provider.com
+        provider_interface: openai
+
+**Benefits:**
+
+- **Simplified Configuration**: One line instead of listing dozens of models
+- **Future-Proof**: Automatically includes new models as they're released
+- **Flexible Overrides**: Customize specific models while using wildcards for others
+- **Selective Expansion**: Control which models get custom configurations
 
 Default Model Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

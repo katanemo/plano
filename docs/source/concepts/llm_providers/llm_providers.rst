@@ -20,6 +20,7 @@ Connect to any combination of providers simultaneously (see :ref:`supported_prov
 
 - First-Class Providers: Native integrations with OpenAI, Anthropic, DeepSeek, Mistral, Groq, Google Gemini, Together AI, xAI, Azure OpenAI, and Ollama
 - OpenAI-Compatible Providers: Any provider implementing the OpenAI Chat Completions API standard
+- Wildcard Model Configuration: Automatically configure all models from a provider using ``provider/*`` syntax
 
 **Intelligent Routing**
 Three powerful routing approaches to optimize model selection:
