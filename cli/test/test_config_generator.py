@@ -102,13 +102,13 @@ listeners:
     type: agent
     router: plano_orchestrator_v1
     agents:
-      - name: simple_tmobile_rag_agent
+      - id: simple_tmobile_rag_agent
         description: t-mobile virtual assistant for device contracts.
         filter_chain:
           - query_rewriter
           - context_builder
           - response_generator
-      - name: research_agent
+      - id: research_agent
         description: agent to research and gather information from various sources.
         filter_chain:
           - research_agent
@@ -117,11 +117,11 @@ listeners:
 
   - name: llm_provider
     type: model
-    description: llm provider configuration
     port: 12000
-    llm_providers:
-      - access_key: ${OPENAI_API_KEY}
-        model: openai/gpt-4o
+
+model_providers:
+  - access_key: ${OPENAI_API_KEY}
+    model: openai/gpt-4o
 """
     arch_config_schema = ""
     with open("../config/arch_config_schema.yaml", "r") as file:
