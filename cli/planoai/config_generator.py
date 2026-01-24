@@ -248,7 +248,21 @@ def validate_and_render_schema():
                         f"Must provide base_url and provider_interface for unsupported provider {provider} for model {model_name}. Supported providers are: {', '.join(SUPPORTED_PROVIDERS)}"
                     )
                 provider = model_provider.get("provider_interface", None)
-            elif model_provider.get("provider_interface", None) is not None:
+            elif is_wildcard and provider not in SUPPORTED_PROVIDERS:
+                # Wildcard models with unsupported providers require base_url and provider_interface
+                if (
+                    model_provider.get("base_url", None) is None
+                    or model_provider.get("provider_interface", None) is None
+                ):
+                    raise Exception(
+                        f"Must provide base_url and provider_interface for unsupported provider {provider} for wildcard model {model_name}. Supported providers are: {', '.join(SUPPORTED_PROVIDERS)}"
+                    )
+                provider = model_provider.get("provider_interface", None)
+            elif (
+                provider in SUPPORTED_PROVIDERS
+                and model_provider.get("provider_interface", None) is not None
+            ):
+                # For supported providers, provider_interface should not be manually set
                 raise Exception(
                     f"Please provide provider interface as part of model name {model_name} using the format <provider>/<model_id>. For example, use 'openai/gpt-3.5-turbo' instead of 'gpt-3.5-turbo' "
                 )
