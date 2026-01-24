@@ -83,6 +83,10 @@ properties:
                     type: string
                   default:
                     type: boolean
+                  filter_chain:
+                    type: array
+                    items:
+                      type: string
                 additionalProperties: false
                 required:
                   - id
