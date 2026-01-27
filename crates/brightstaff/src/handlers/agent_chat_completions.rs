@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use bytes::Bytes;
+use common::configuration::Tracing;
 use common::consts::TRACE_PARENT_HEADER;
 use common::traces::{generate_random_span_id, parse_traceparent, SpanBuilder, SpanKind};
 use hermesllm::apis::OpenAIMessage;
@@ -18,7 +19,9 @@ use super::agent_selector::{AgentSelectionError, AgentSelector};
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
 use super::response_handler::ResponseHandler;
 use crate::router::plano_orchestrator::OrchestratorService;
-use crate::tracing::{http, operation_component, OperationNameBuilder};
+use crate::tracing::{
+    extract_custom_trace_attributes, http, operation_component, OperationNameBuilder,
+};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
@@ -42,6 +45,7 @@ pub async fn agent_chat(
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
     trace_collector: Arc<common::traces::TraceCollector>,
+    tracing_config: Arc<Option<Tracing>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     match handle_agent_chat(
         request,
@@ -49,6 +53,7 @@ pub async fn agent_chat(
         agents_list,
         listeners,
         trace_collector,
+        tracing_config,
     )
     .await
     {
@@ -127,6 +132,7 @@ async fn handle_agent_chat(
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
     trace_collector: Arc<common::traces::TraceCollector>,
+    tracing_config: Arc<Option<Tracing>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(orchestrator_service);
@@ -176,6 +182,13 @@ async fn handle_agent_chat(
 
         headers
     };
+    let custom_attrs = extract_custom_trace_attributes(
+        &request_headers,
+        tracing_config
+            .as_ref()
+            .as_ref()
+            .and_then(|tracing| tracing.custom_attributes.as_deref()),
+    );
 
     let chat_request_bytes = request.collect().await?.to_bytes();
 
@@ -269,6 +282,9 @@ async fn handle_agent_chat(
             "duration_ms",
             format!("{:.2}", selection_elapsed.as_secs_f64() * 1000.0),
         );
+    for (key, value) in &custom_attrs {
+        selection_span_builder = selection_span_builder.with_attribute(key, value);
+    }
 
     if !trace_id.is_empty() {
         selection_span_builder = selection_span_builder.with_trace_id(trace_id.clone());
@@ -359,6 +375,9 @@ async fn handle_agent_chat(
                 "duration_ms",
                 format!("{:.2}", agent_elapsed.as_secs_f64() * 1000.0),
             );
+        for (key, value) in &custom_attrs {
+            span_builder = span_builder.with_attribute(key, value);
+        }
 
         if !trace_id.is_empty() {
             span_builder = span_builder.with_trace_id(trace_id.clone());

@@ -112,6 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ));
 
     let model_aliases = Arc::new(arch_config.model_aliases.clone());
+    let tracing_config = Arc::new(arch_config.tracing.clone());
 
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in arch_config.yaml
@@ -176,6 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
         let trace_collector = trace_collector.clone();
+        let tracing_config = tracing_config.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
@@ -187,6 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
             let trace_collector = trace_collector.clone();
+            let tracing_config = tracing_config.clone();
             let state_storage = state_storage.clone();
 
             async move {
@@ -207,6 +210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             agents_list,
                             listeners,
                             trace_collector,
+                            tracing_config,
                         )
                         .with_context(parent_cx)
                         .await;
@@ -225,6 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             model_aliases,
                             llm_providers,
                             trace_collector,
+                            tracing_config,
                             state_storage,
                         )
                         .with_context(parent_cx)
