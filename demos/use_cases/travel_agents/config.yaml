@@ -55,3 +55,22 @@ listeners:
 
 tracing:
   random_sampling: 100
+  custom_attributes:
+    - header: x-workspace-id
+      key: workspace.id
+      type: str
+    - header: x-tenant-id
+      key: tenant.id
+      type: str
+    - header: x-user-id
+      key: user.id
+      type: str
+    - header: x-admin-level
+      key: admin.level
+      type: int
+    - header: x-is-internal
+      key: is.internal
+      type: bool
+    - header: x-budget
+      key: budget.value
+      type: float
