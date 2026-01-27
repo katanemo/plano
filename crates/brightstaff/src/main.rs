@@ -14,6 +14,7 @@ use common::consts::{
     CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
 };
 use common::llm_providers::LlmProviders;
+use common::traces::TraceCollector;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -114,11 +115,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ));
 
     let model_aliases = Arc::new(plano_config.model_aliases.clone());
+    let tracing_config = Arc::new(plano_config.tracing.clone());
 
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in plano_config.yaml
     // Pass Some(true/false) to override, or None to use env var OTEL_TRACING_ENABLED
-    // OpenTelemetry automatic instrumentation is configured in utils/tracing.rs
+    let tracing_enabled = if tracing_config.is_some() {
+        info!("Tracing configuration found in plano_config.yaml");
+        Some(true)
+    } else {
+        info!(
+            "No tracing configuration in plano_config.yaml, will check OTEL_TRACING_ENABLED env var"
+        );
+        None
+    };
+    let trace_collector = Arc::new(TraceCollector::new(tracing_enabled));
+    let _flusher_handle = trace_collector.clone().start_background_flusher();
 
     // Initialize conversation state storage for v1/responses
     // Configurable via plano_config.yaml state_storage section
@@ -128,10 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(storage_config) = &plano_config.state_storage {
             let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
                 common::configuration::StateStorageType::Memory => {
-                    info!(
-                        storage_type = "memory",
-                        "initialized conversation state storage"
-                    );
+                    info!("Initialized conversation state storage: Memory");
                     Arc::new(MemoryConversationalStorage::new())
                 }
                 common::configuration::StateStorageType::Postgres => {
@@ -140,11 +149,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .as_ref()
                         .expect("connection_string is required for postgres state_storage");
 
-                    debug!(connection_string = %connection_string, "postgres connection");
-                    info!(
-                        storage_type = "postgres",
-                        "initializing conversation state storage"
-                    );
+                    debug!("Postgres connection string (full): {}", connection_string);
+                    info!("Initializing conversation state storage: Postgres");
                     Arc::new(
                         PostgreSQLConversationStorage::new(connection_string.clone())
                             .await
@@ -154,7 +160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             };
             Some(storage)
         } else {
-            info!("no state_storage configured, conversation state management disabled");
+            info!("No state_storage configured - conversation state management disabled");
             None
         };
 
@@ -173,6 +179,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
+        let trace_collector = trace_collector.clone();
+        let tracing_config = tracing_config.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
@@ -183,6 +191,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
+            let trace_collector = trace_collector.clone();
+            let tracing_config = tracing_config.clone();
             let state_storage = state_storage.clone();
 
             async move {
@@ -202,6 +212,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             agents_list,
                             listeners,
+                            trace_collector,
+                            tracing_config,
                         )
                         .with_context(parent_cx)
                         .await;
@@ -219,6 +231,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             model_aliases,
                             llm_providers,
+                            trace_collector,
+                            tracing_config,
                             state_storage,
                         )
                         .with_context(parent_cx)
@@ -259,7 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         Ok(response)
                     }
                     _ => {
-                        debug!(method = %req.method(), path = %req.uri().path(), "no route found");
+                        debug!("No route for {} {}", req.method(), req.uri().path());
                         let mut not_found = Response::new(empty());
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
                         Ok(not_found)
@@ -269,13 +283,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         tokio::task::spawn(async move {
-            debug!(peer = ?peer_addr, "accepted connection");
+            debug!("Accepted connection from {:?}", peer_addr);
             if let Err(err) = http1::Builder::new()
                 // .serve_connection(io, service_fn(chat_completion))
                 .serve_connection(io, service)
                 .await
             {
-                warn!(error = ?err, "error serving connection");
+                warn!("Error serving connection: {:?}", err);
             }
         });
     }
