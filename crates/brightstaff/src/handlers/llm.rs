@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{LlmProvider, ModelAlias};
+use common::configuration::{LlmProvider, ModelAlias, Tracing};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -25,7 +25,7 @@ use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
-use crate::tracing::operation_component;
+use crate::tracing::{extract_custom_trace_attributes, operation_component};
 
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
@@ -33,6 +33,8 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .boxed()
 }
 
+// ! we reached the limit of the number of arguments for a function
+#[allow(clippy::too_many_arguments)]
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
@@ -40,10 +42,18 @@ pub async fn llm_chat(
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<Vec<LlmProvider>>>,
     trace_collector: Arc<TraceCollector>,
+    tracing_config: Arc<Option<Tracing>>, // ! right here
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
+    let custom_attrs = extract_custom_trace_attributes(
+        &request_headers,
+        tracing_config
+            .as_ref()
+            .as_ref()
+            .and_then(|tracing| tracing.custom_attributes.as_deref()),
+    );
     let request_id: String = match request_headers
         .get(REQUEST_ID_HEADER)
         .and_then(|h| h.to_str().ok())
@@ -229,6 +239,7 @@ pub async fn llm_chat(
         &traceparent,
         &request_path,
         &request_id,
+        &custom_attrs,
     )
     .await
     {
@@ -304,6 +315,7 @@ pub async fn llm_chat(
         user_message_preview,
         temperature,
         &llm_providers,
+        &custom_attrs,
     )
     .await;
 
@@ -390,6 +402,7 @@ async fn build_llm_span(
     user_message_preview: Option<String>,
     temperature: Option<f32>,
     llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
+    custom_attrs: &HashMap<String, String>,
 ) -> common::traces::Span {
     use crate::tracing::{http, llm, OperationNameBuilder};
     use common::traces::{parse_traceparent, SpanBuilder, SpanKind};
@@ -453,6 +466,10 @@ async fn build_llm_span(
 
     if let Some(preview) = user_message_preview {
         span_builder = span_builder.with_attribute(llm::USER_MESSAGE_PREVIEW, preview);
+    }
+
+    for (key, value) in custom_attrs {
+        span_builder = span_builder.with_attribute(key, value);
     }
 
     span_builder.build()
