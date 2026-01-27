@@ -183,7 +183,9 @@ def up(file, path, foreground):
                     sys.exit(1)
                 else:
                     env_stage[access_key] = env.get(access_key)
-        else:  # .env file exists, use that to send parameters to Arch
+            if env.get("AWS_SESSION_TOKEN"):
+                env_stage["AWS_SESSION_TOKEN"] = env.get("AWS_SESSION_TOKEN")
+        else:
             env_file_dict = load_env_file_to_dict(app_env_file)
             for access_key in access_keys:
                 if env_file_dict.get(access_key) is None:
@@ -191,6 +193,8 @@ def up(file, path, foreground):
                     sys.exit(1)
                 else:
                     env_stage[access_key] = env_file_dict[access_key]
+            if env_file_dict.get("AWS_SESSION_TOKEN"):
+                env_stage["AWS_SESSION_TOKEN"] = env_file_dict["AWS_SESSION_TOKEN"]
 
     env.update(env_stage)
     start_arch(arch_config_file, env, foreground=foreground)

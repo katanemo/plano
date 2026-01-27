@@ -191,6 +191,35 @@ properties:
           required:
             - name
             - description
+        auth:
+          oneOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - bearer_token
+                access_key:
+                  type: string
+              additionalProperties: false
+              required:
+                - type
+                - access_key
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - aws_iam_role
+                role_arn:
+                  type: string
+                region:
+                  type: string
+              additionalProperties: false
+              required:
+                - type
+                - role_arn
+                - region
       additionalProperties: false
       required:
         - model
@@ -238,6 +267,35 @@ properties:
           required:
             - name
             - description
+        auth:
+          oneOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - bearer_token
+                access_key:
+                  type: string
+              additionalProperties: false
+              required:
+                - type
+                - access_key
+            - type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - aws_iam_role
+                role_arn:
+                  type: string
+                region:
+                  type: string
+              additionalProperties: false
+              required:
+                - type
+                - role_arn
+                - region
       additionalProperties: false
       required:
         - model

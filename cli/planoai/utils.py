@@ -180,6 +180,11 @@ def get_llm_provider_access_keys(arch_config_file):
             if access_key is not None:
                 access_key_list.append(access_key)
 
+            auth = llm_provider.get("auth")
+            if auth and isinstance(auth, dict) and auth.get("type") == "aws_iam_role":
+                access_key_list.append("AWS_ACCESS_KEY_ID")
+                access_key_list.append("AWS_SECRET_ACCESS_KEY")
+
     # Extract environment variables from state_storage.connection_string
     state_storage = arch_config_yaml.get("state_storage_v1_responses")
     if state_storage:

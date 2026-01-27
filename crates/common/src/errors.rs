@@ -42,4 +42,18 @@ pub enum ServerError {
     Streaming(#[from] ChatCompletionChunkResponseError),
     #[error("error parsing openai message: {0}")]
     OpenAIPError(#[from] OpenAIError),
+    #[error("STS credential fetch in progress")]
+    StsFetchInProgress,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AwsError {
+    #[error("Failed to get credentials from environment: {0}")]
+    CredentialError(String),
+    #[error("STS AssumeRole failed: {0}")]
+    StsError(String),
+    #[error("AWS Signature V4 signing failed: {0}")]
+    SigningError(String),
+    #[error("Invalid AWS configuration: {0}")]
+    ConfigError(String),
 }

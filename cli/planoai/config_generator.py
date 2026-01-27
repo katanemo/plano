@@ -249,6 +249,26 @@ def validate_and_render_schema():
                     f"The access_key will be ignored and the client's Authorization header will be forwarded instead."
                 )
 
+            auth = model_provider.get("auth")
+            if auth:
+                if isinstance(auth, dict):
+                    auth_type = auth.get("type")
+                    if auth_type == "aws_iam_role":
+                        if not auth.get("role_arn"):
+                            raise Exception(
+                                f"Model provider '{model_provider.get('name')}' has auth.type='aws_iam_role' but missing required 'role_arn' field"
+                            )
+                        if not auth.get("region"):
+                            raise Exception(
+                                f"Model provider '{model_provider.get('name')}' has auth.type='aws_iam_role' but missing required 'region' field"
+                            )
+
+                if model_provider.get("access_key"):
+                    print(
+                        f"WARNING: Model provider '{model_provider.get('name')}' has both 'auth' and 'access_key' configured. "
+                        f"The 'auth' configuration will be used, 'access_key' will be ignored."
+                    )
+
             model_provider["model"] = model_id
             model_provider["provider_interface"] = provider
             model_provider_name_set.add(model_provider.get("name"))
@@ -367,9 +387,6 @@ def validate_and_render_schema():
                     f"Model alias 2 - '{alias_name}' targets '{target}' which is not defined as a model. Available models: {', '.join(sorted(model_name_keys))}"
                 )
 
-    arch_config_string = yaml.dump(config_yaml)
-    arch_llm_config_string = yaml.dump(config_yaml)
-
     use_agent_orchestrator = config_yaml.get("overrides", {}).get(
         "use_agent_orchestrator", False
     )
@@ -391,6 +408,47 @@ def validate_and_render_schema():
 
     print("agent_orchestrator: ", agent_orchestrator)
 
+    aws_environment_variables = {}
+    aws_credentials_config = {}
+    for key in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]:
+        value = os.getenv(key)
+        if value:
+            aws_environment_variables[key] = value
+            if key == "AWS_ACCESS_KEY_ID":
+                aws_credentials_config["AWS_ACCESS_KEY_ID"] = value
+            elif key == "AWS_SECRET_ACCESS_KEY":
+                aws_credentials_config["AWS_SECRET_ACCESS_KEY"] = value
+            elif key == "AWS_SESSION_TOKEN":
+                aws_credentials_config["AWS_SESSION_TOKEN"] = value
+
+    sts_regions = set()
+    for model_provider in updated_model_providers:
+        auth = model_provider.get("auth")
+        if auth and isinstance(auth, dict) and auth.get("type") == "aws_iam_role":
+            region = auth.get("region")
+            if region:
+                sts_regions.add(region)
+
+    for region in sts_regions:
+        if region.startswith("cn-"):
+            sts_host = f"sts.{region}.amazonaws.com.cn"
+        else:
+            sts_host = f"sts.{region}.amazonaws.com"
+
+        cluster_name = f"sts_{sts_host.replace('.', '_')}"
+        inferred_clusters[cluster_name] = {
+            "endpoint": sts_host,
+            "port": 443,
+            "protocol": "https",
+            "connect_timeout": "30s",
+        }
+
+    if aws_credentials_config:
+        config_yaml["aws_credentials"] = aws_credentials_config
+
+    arch_config_string = yaml.dump(config_yaml)
+    arch_llm_config_string = yaml.dump(config_yaml)
+
     data = {
         "prompt_gateway_listener": prompt_gateway,
         "llm_gateway_listener": llm_gateway,
@@ -402,6 +460,7 @@ def validate_and_render_schema():
         "local_llms": llms_with_endpoint,
         "agent_orchestrator": agent_orchestrator,
         "listeners": listeners,
+        "aws_environment_variables": aws_environment_variables,
     }
 
     rendered = template.render(data)
