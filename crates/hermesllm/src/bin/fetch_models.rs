@@ -1,4 +1,4 @@
-// Fetch latest provider models from canonical provider APIs and update provider_models.json
+// Fetch latest provider models from canonical provider APIs and update provider_models.yaml
 // Usage:
 //   Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GROK_API_KEY,
 //             DASHSCOPE_API_KEY, MOONSHOT_API_KEY, ZHIPU_API_KEY, GOOGLE_API_KEY
@@ -13,7 +13,7 @@ fn main() {
     let default_path = std::path::Path::new(file!())
         .parent()
         .unwrap()
-        .join("provider_models.json");
+        .join("provider_models.yaml");
 
     let output_path = std::env::args()
         .nth(1)
@@ -23,9 +23,9 @@ fn main() {
 
     match fetch_all_models() {
         Ok(models) => {
-            let json = serde_json::to_string_pretty(&models).expect("Failed to serialize models");
+            let yaml = serde_yaml::to_string(&models).expect("Failed to serialize models");
 
-            std::fs::write(&output_path, json).expect("Failed to write provider_models.json");
+            std::fs::write(&output_path, yaml).expect("Failed to write provider_models.yaml");
 
             println!(
                 "✓ Successfully updated {} providers ({} models) to {}",

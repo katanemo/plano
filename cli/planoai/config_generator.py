@@ -210,7 +210,7 @@ def validate_and_render_schema():
             model_name_tokens = model_name.split("/")
             if len(model_name_tokens) < 2:
                 raise Exception(
-                    f"Invalid model name {model_name}. Please provide model name in the format <provider>/<model_id>."
+                    f"Invalid model name {model_name}. Please provide model name in the format <provider>/<model_id> or <provider>/* for wildcards."
                 )
             provider = model_name_tokens[0].strip()
 

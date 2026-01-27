@@ -738,6 +738,7 @@ Automatically configure all available models from a provider using wildcard patt
    - Expands at config load time to all models in Plano's provider registry
    - Creates entries for both canonical (``openai/gpt-4``) and short names (``gpt-4``)
    - Enables the ``/v1/models`` endpoint to list all available models
+   - **View complete model list**: `provider_models.yaml <../../includes/provider_models.yaml>`_
 
 2. **Unknown/Custom Providers** (e.g., ``custom-provider/*``):
 

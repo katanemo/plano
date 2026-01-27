@@ -1,34 +1,26 @@
 use crate::apis::{AmazonBedrockApi, AnthropicApi, OpenAIApi};
 use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::OnceLock;
 
-static PROVIDER_MODELS_JSON: &str = include_str!("../bin/provider_models.json");
+static PROVIDER_MODELS_YAML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/src/bin/provider_models.yaml"
+));
+
+#[derive(Deserialize)]
+struct ProviderModelsFile {
+    providers: HashMap<String, Vec<String>>,
+}
 
 fn load_provider_models() -> &'static HashMap<String, Vec<String>> {
     static MODELS: OnceLock<HashMap<String, Vec<String>>> = OnceLock::new();
     MODELS.get_or_init(|| {
-        let data: serde_json::Value = serde_json::from_str(PROVIDER_MODELS_JSON)
-            .expect("Failed to parse provider_models.json");
-
-        let providers = data
-            .get("providers")
-            .expect("Missing 'providers' key")
-            .as_object()
-            .expect("'providers' must be an object");
-
-        let mut result = HashMap::new();
-        for (provider, models) in providers {
-            let model_list: Vec<String> = models
-                .as_array()
-                .expect("Models must be an array")
-                .iter()
-                .map(|m| m.as_str().expect("Model must be a string").to_string())
-                .collect();
-            result.insert(provider.clone(), model_list);
-        }
-        result
+        let ProviderModelsFile { providers } = serde_yaml::from_str(PROVIDER_MODELS_YAML)
+            .expect("Failed to parse provider_models.yaml");
+        providers
     })
 }
 
@@ -244,7 +236,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_models_loaded_from_json() {
+    fn test_models_loaded_from_yaml() {
         // Test that we can load models for each supported provider
         let openai_models = ProviderId::OpenAI.models();
         assert!(!openai_models.is_empty(), "OpenAI should have models");

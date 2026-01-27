@@ -11,6 +11,7 @@ required-features = ["model-fetch"]
 [dependencies]
 serde = {version = "1.0.219", features = ["derive"]}
 serde_json = "1.0.140"
+serde_yaml = "0.9.34-deprecated"
 serde_with = {version = "3.12.0", features = ["base64"]}
 thiserror = "2.0.12"
 aws-smithy-eventstream = "0.60"

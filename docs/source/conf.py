@@ -38,6 +38,7 @@ extensions = [
     "sphinx_design",
     # Local extensions
     "llms_txt",
+    "provider_models",
 ]
 
 # Paths that contain templates, relative to this directory.
