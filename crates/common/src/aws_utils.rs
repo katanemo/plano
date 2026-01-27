@@ -99,7 +99,9 @@ mod tests {
             Some("cn-north-1".to_string())
         );
         assert_eq!(
-            extract_region_from_base_url("https://bedrock-runtime.cn-northwest-1.amazonaws.com.cn:443"),
+            extract_region_from_base_url(
+                "https://bedrock-runtime.cn-northwest-1.amazonaws.com.cn:443"
+            ),
             Some("cn-northwest-1".to_string())
         );
         assert_eq!(
@@ -110,10 +112,7 @@ mod tests {
             extract_region_from_base_url("https://bedrock-runtime.us-gov-west-1.amazonaws.com:443"),
             Some("us-gov-west-1".to_string())
         );
-        assert_eq!(
-            extract_region_from_base_url("invalid-url"),
-            None
-        );
+        assert_eq!(extract_region_from_base_url("invalid-url"), None);
         assert_eq!(
             extract_region_from_base_url("model.us-east-1.amazonaws.com"),
             None

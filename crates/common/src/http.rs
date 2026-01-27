@@ -1,3 +1,5 @@
+#![allow(clippy::needless_lifetimes)]
+
 use crate::{
     errors::ClientError,
     stats::{Gauge, IncrementingMetric},
@@ -20,6 +22,7 @@ pub struct CallArgs<'a> {
     timeout: Duration,
 }
 
+#[allow(clippy::needless_lifetimes)]
 impl<'a> CallArgs<'a> {
     pub fn new(
         upstream: &'a str,

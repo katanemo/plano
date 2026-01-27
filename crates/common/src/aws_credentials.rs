@@ -38,19 +38,32 @@ mod serde_system_time {
     }
 }
 
-
 pub fn get_credentials_from_config(
     config: &crate::configuration::AwsCredentialsConfig,
 ) -> Result<(String, String, Option<String>), AwsError> {
-    let access_key_id = config.access_key_id.as_ref()
-        .ok_or_else(|| AwsError::CredentialError("AWS_ACCESS_KEY_ID not found in configuration".to_string()))?
+    let access_key_id = config
+        .access_key_id
+        .as_ref()
+        .ok_or_else(|| {
+            AwsError::CredentialError("AWS_ACCESS_KEY_ID not found in configuration".to_string())
+        })?
         .clone();
 
-    let secret_access_key = config.secret_access_key.as_ref()
-        .ok_or_else(|| AwsError::CredentialError("AWS_SECRET_ACCESS_KEY not found in configuration".to_string()))?
+    let secret_access_key = config
+        .secret_access_key
+        .as_ref()
+        .ok_or_else(|| {
+            AwsError::CredentialError(
+                "AWS_SECRET_ACCESS_KEY not found in configuration".to_string(),
+            )
+        })?
         .clone();
 
-    Ok((access_key_id, secret_access_key, config.session_token.clone()))
+    Ok((
+        access_key_id,
+        secret_access_key,
+        config.session_token.clone(),
+    ))
 }
 
 pub fn build_sts_assume_role_request(role_arn: &str, role_session_name: &str) -> String {
@@ -62,6 +75,8 @@ pub fn build_sts_assume_role_request(role_arn: &str, role_session_name: &str) ->
     )
 }
 
+type StsRequestResult = (Vec<(String, String)>, Vec<u8>, String, String);
+
 pub fn build_sts_request(
     access_key_id: &str,
     secret_access_key: &str,
@@ -69,8 +84,7 @@ pub fn build_sts_request(
     role_arn: &str,
     region: &str,
     request_id: Option<&str>,
-) -> Result<(Vec<(String, String)>, Vec<u8>, String, String), AwsError> {
-
+) -> Result<StsRequestResult, AwsError> {
     let sts_endpoint = get_sts_endpoint(region);
     let sts_host = sts_endpoint
         .strip_prefix("https://")
@@ -96,7 +110,10 @@ pub fn build_sts_request(
     headers.insert("host".to_string(), sts_host.to_string());
     headers.insert("x-amz-date".to_string(), amz_date.clone());
 
-    headers.insert("content-type".to_string(), "application/x-www-form-urlencoded".to_string());
+    headers.insert(
+        "content-type".to_string(),
+        "application/x-www-form-urlencoded".to_string(),
+    );
     if let Some(token) = session_token {
         headers.insert("x-amz-security-token".to_string(), token.to_string());
     }
@@ -120,15 +137,13 @@ pub fn build_sts_request(
     if let Some(token) = session_token {
         http_headers.push(("x-amz-security-token".to_string(), token.to_string()));
     }
-    http_headers.push(("content-type".to_string(), "application/x-www-form-urlencoded".to_string()));
+    http_headers.push((
+        "content-type".to_string(),
+        "application/x-www-form-urlencoded".to_string(),
+    ));
     http_headers.push(("content-length".to_string(), body_bytes.len().to_string()));
 
-    Ok((
-        http_headers,
-        body_bytes,
-        sts_endpoint,
-        role_session_name,
-    ))
+    Ok((http_headers, body_bytes, sts_endpoint, role_session_name))
 }
 
 pub fn parse_sts_response(xml_body: &[u8]) -> Result<AwsCredentials, AwsError> {
@@ -138,8 +153,9 @@ pub fn parse_sts_response(xml_body: &[u8]) -> Result<AwsCredentials, AwsError> {
     let access_key_id = extract_xml_value(&xml_str, "AccessKeyId")
         .ok_or_else(|| AwsError::StsError("AccessKeyId not found in STS response".to_string()))?;
 
-    let secret_access_key = extract_xml_value(&xml_str, "SecretAccessKey")
-        .ok_or_else(|| AwsError::StsError("SecretAccessKey not found in STS response".to_string()))?;
+    let secret_access_key = extract_xml_value(&xml_str, "SecretAccessKey").ok_or_else(|| {
+        AwsError::StsError("SecretAccessKey not found in STS response".to_string())
+    })?;
 
     let session_token = extract_xml_value(&xml_str, "SessionToken")
         .ok_or_else(|| AwsError::StsError("SessionToken not found in STS response".to_string()))?;
@@ -167,13 +183,12 @@ fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     let open_tag = format!("<{}>", tag);
     let close_tag = format!("</{}>", tag);
 
-    xml.find(&open_tag)
-        .and_then(|start| {
-            let content_start = start + open_tag.len();
-            xml[content_start..]
-                .find(&close_tag)
-                .map(|end| xml[content_start..content_start + end].trim().to_string())
-        })
+    xml.find(&open_tag).and_then(|start| {
+        let content_start = start + open_tag.len();
+        xml[content_start..]
+            .find(&close_tag)
+            .map(|end| xml[content_start..content_start + end].trim().to_string())
+    })
 }
 
 fn parse_iso8601_datetime(datetime_str: &str) -> Result<SystemTime, String> {
@@ -199,6 +214,9 @@ mod tests {
     #[test]
     fn test_extract_xml_value() {
         let xml = "<AccessKeyId>ASIA123</AccessKeyId>";
-        assert_eq!(extract_xml_value(xml, "AccessKeyId"), Some("ASIA123".to_string()));
+        assert_eq!(
+            extract_xml_value(xml, "AccessKeyId"),
+            Some("ASIA123".to_string())
+        );
     }
 }

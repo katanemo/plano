@@ -42,6 +42,8 @@ pub enum ServerError {
     Streaming(#[from] ChatCompletionChunkResponseError),
     #[error("error parsing openai message: {0}")]
     OpenAIPError(#[from] OpenAIError),
+    #[error("STS credential fetch in progress")]
+    StsFetchInProgress,
 }
 
 #[derive(thiserror::Error, Debug)]

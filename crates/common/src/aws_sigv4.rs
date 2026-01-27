@@ -28,7 +28,10 @@ pub fn sign_request(params: SigV4Params) -> Result<(String, String, String), Aws
 
     let (canonical_request, signed_headers) = create_canonical_request(&params, &amz_date)?;
 
-    let credential_scope = format!("{}/{}/{}/aws4_request", date_stamp, params.region, params.service);
+    let credential_scope = format!(
+        "{}/{}/{}/aws4_request",
+        date_stamp, params.region, params.service
+    );
     let string_to_sign = create_string_to_sign(&amz_date, &credential_scope, &canonical_request)?;
 
     let signature = calculate_signature(
@@ -59,7 +62,8 @@ fn create_canonical_request(
 
     let canonical_querystring = canonicalize_query_string(&params.query_string)?;
 
-    let (canonical_headers, signed_headers) = canonicalize_headers(&params.headers, amz_date, &params.session_token)?;
+    let (canonical_headers, signed_headers) =
+        canonicalize_headers(&params.headers, amz_date, &params.session_token)?;
 
     let payload_hash = if params.payload.is_empty() {
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string()
@@ -69,7 +73,12 @@ fn create_canonical_request(
 
     let canonical_request = format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
-        method, canonical_uri, canonical_querystring, canonical_headers, signed_headers, payload_hash
+        method,
+        canonical_uri,
+        canonical_querystring,
+        canonical_headers,
+        signed_headers,
+        payload_hash
     );
 
     Ok((canonical_request, signed_headers))
@@ -147,11 +156,9 @@ fn canonicalize_query_string(query_string: &str) -> Result<String, AwsError> {
         params.push((key, value));
     }
 
-    params.sort_by(|a, b| {
-        match a.0.cmp(&b.0) {
-            std::cmp::Ordering::Equal => a.1.cmp(&b.1),
-            other => other,
-        }
+    params.sort_by(|a, b| match a.0.cmp(&b.0) {
+        std::cmp::Ordering::Equal => a.1.cmp(&b.1),
+        other => other,
     });
 
     let mut result = String::new();
@@ -179,7 +186,10 @@ fn canonicalize_headers(
     canonical_headers.insert("x-amz-date".to_string(), amz_date.to_string());
 
     if let Some(ref token) = session_token {
-        canonical_headers.insert("x-amz-security-token".to_string(), normalize_header_value(token));
+        canonical_headers.insert(
+            "x-amz-security-token".to_string(),
+            normalize_header_value(token),
+        );
     }
 
     for (key, value) in headers {
@@ -219,7 +229,11 @@ fn normalize_header_value(value: &str) -> String {
         .to_string()
 }
 
-fn create_string_to_sign(amz_date: &str, credential_scope: &str, canonical_request: &str) -> Result<String, AwsError> {
+fn create_string_to_sign(
+    amz_date: &str,
+    credential_scope: &str,
+    canonical_request: &str,
+) -> Result<String, AwsError> {
     let algorithm = "AWS4-HMAC-SHA256";
     let canonical_request_hash = hex::encode(Sha256::digest(canonical_request.as_bytes()));
 
@@ -286,7 +300,9 @@ fn extract_host_from_headers(headers: &BTreeMap<String, String>) -> Result<Strin
         }
     }
 
-    Err(AwsError::SigningError("Host header not found in request headers".to_string()))
+    Err(AwsError::SigningError(
+        "Host header not found in request headers".to_string(),
+    ))
 }
 
 fn percent_encode_uri(uri: &str) -> String {
@@ -353,7 +369,10 @@ mod tests {
     #[test]
     fn test_percent_encode_uri() {
         assert_eq!(percent_encode_uri("/path/to/resource"), "/path/to/resource");
-        assert_eq!(percent_encode_uri("/path with spaces"), "/path%20with%20spaces");
+        assert_eq!(
+            percent_encode_uri("/path with spaces"),
+            "/path%20with%20spaces"
+        );
     }
 
     #[test]
@@ -366,7 +385,10 @@ mod tests {
     #[test]
     fn test_normalize_header_value() {
         assert_eq!(normalize_header_value("  value  "), "value");
-        assert_eq!(normalize_header_value("value   with   spaces"), "value with spaces");
+        assert_eq!(
+            normalize_header_value("value   with   spaces"),
+            "value with spaces"
+        );
     }
 
     #[test]

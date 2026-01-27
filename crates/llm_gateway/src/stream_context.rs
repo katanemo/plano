@@ -12,7 +12,9 @@ use crate::metrics::Metrics;
 use common::aws_credentials::AwsCredentials;
 use common::aws_sigv4::{sign_request, SigV4Params};
 use common::aws_utils::extract_region_from_base_url;
-use common::configuration::{AwsCredentialsConfig, AwsIamRoleAuth, LlmProvider, LlmProviderAuth, LlmProviderType, Overrides};
+use common::configuration::{
+    AwsCredentialsConfig, AwsIamRoleAuth, LlmProvider, LlmProviderAuth, LlmProviderType, Overrides,
+};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, ARCH_ROUTING_HEADER, HEALTHZ_PATH,
     RATELIMIT_SELECTOR_HEADER_KEY, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
@@ -22,9 +24,6 @@ use common::llm_providers::LlmProviders;
 use common::ratelimit::Header;
 use common::stats::{IncrementingMetric, RecordingMetric};
 use common::{ratelimit, routing, tokenizer};
-use serde_json;
-use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
 use hermesllm::apis::streaming_shapes::amazon_bedrock_binary_frame::BedrockBinaryFrameDecoder;
 use hermesllm::apis::streaming_shapes::sse::{SseEvent, SseStreamBuffer, SseStreamBufferTrait};
 use hermesllm::apis::streaming_shapes::sse_chunk_processor::SseChunkProcessor;
@@ -35,6 +34,8 @@ use hermesllm::{
     DecodedFrame, ProviderId, ProviderRequest, ProviderRequestType, ProviderResponseType,
     ProviderStreamResponseType,
 };
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
 
 const AWS_CREDENTIAL_EXPIRATION_BUFFER_SECS: u64 = 5 * 60;
 
@@ -157,7 +158,10 @@ impl StreamContext {
         *self.cached_sts_credentials.borrow_mut() = Some(creds);
     }
 
-    fn fetch_sts_credentials(&mut self, iam_auth: &AwsIamRoleAuth) -> Result<Option<AwsCredentials>, ServerError> {
+    fn fetch_sts_credentials(
+        &mut self,
+        iam_auth: &AwsIamRoleAuth,
+    ) -> Result<Option<AwsCredentials>, ServerError> {
         use common::aws_credentials::{build_sts_request, get_credentials_from_config};
         use std::time::Duration;
 
@@ -168,25 +172,23 @@ impl StreamContext {
             self.aws_credentials.is_some()
         );
 
-        let creds_config = self.aws_credentials.as_ref()
-            .as_ref()
-            .ok_or_else(|| {
-                warn!(
-                    "[PLANO_REQ_ID:{}] AWS_CREDENTIALS_MISSING: aws_credentials Option is None",
-                    self.request_identifier()
-                );
-                ServerError::BadRequest {
-                    why: "AWS credentials not configured".to_string(),
-                }
-            })?;
+        let creds_config = self.aws_credentials.as_ref().as_ref().ok_or_else(|| {
+            warn!(
+                "[PLANO_REQ_ID:{}] AWS_CREDENTIALS_MISSING: aws_credentials Option is None",
+                self.request_identifier()
+            );
+            ServerError::BadRequest {
+                why: "AWS credentials not configured".to_string(),
+            }
+        })?;
 
-        let (access_key_id, secret_access_key, session_token) = get_credentials_from_config(creds_config)
-            .map_err(|e| ServerError::BadRequest {
+        let (access_key_id, secret_access_key, session_token) =
+            get_credentials_from_config(creds_config).map_err(|e| ServerError::BadRequest {
                 why: format!("Failed to get credentials from configuration: {}", e),
             })?;
 
         let request_id = self.request_id.as_deref();
-        let session_token_opt: Option<&str> = session_token.as_ref().map(|s| s.as_str());
+        let session_token_opt: Option<&str> = session_token.as_deref();
         let (headers, body, endpoint, _session_name) = build_sts_request(
             &access_key_id,
             &secret_access_key,
@@ -194,16 +196,17 @@ impl StreamContext {
             &iam_auth.role_arn,
             &iam_auth.region,
             request_id,
-        ).map_err(|e| ServerError::BadRequest {
+        )
+        .map_err(|e| ServerError::BadRequest {
             why: format!("Failed to build STS request: {}", e),
         })?;
 
-        let sts_host = endpoint
-            .strip_prefix("https://")
-            .ok_or_else(|| ServerError::BadRequest {
-                why: "Invalid STS endpoint".to_string(),
-            })?;
-
+        let sts_host =
+            endpoint
+                .strip_prefix("https://")
+                .ok_or_else(|| ServerError::BadRequest {
+                    why: "Invalid STS endpoint".to_string(),
+                })?;
 
         let cluster_name = format!("sts_{}", sts_host.replace('.', "_"));
 
@@ -234,7 +237,9 @@ impl StreamContext {
             Duration::from_secs(30),
         ) {
             Ok(token_id) => {
-                self.sts_callouts.borrow_mut().insert(token_id, iam_auth.role_arn.clone());
+                self.sts_callouts
+                    .borrow_mut()
+                    .insert(token_id, iam_auth.role_arn.clone());
                 debug!(
                     "[PLANO_REQ_ID:{}] STS_ASSUME_ROLE_DISPATCHED: token_id={}, role_arn={}",
                     self.request_identifier(),
@@ -245,7 +250,7 @@ impl StreamContext {
             }
             Err(status) => Err(ServerError::BadRequest {
                 why: format!("Failed to dispatch STS AssumeRole call: {:?}", status),
-            })
+            }),
         }
     }
     fn llm_provider(&self) -> &LlmProvider {
@@ -323,25 +328,24 @@ impl StreamContext {
             let path = self.get_http_request_header(":path");
             let content_type = self.get_http_request_header("content-type");
 
-            if self.get_cached_credentials(&iam_auth.role_arn).is_none() {
-                info!(
-                    "[PLANO_REQ_ID:{}] IAM_AUTH_PENDING: role_arn={}, method={:?}, path={:?}",
-                    self.request_identifier(),
-                    iam_auth.role_arn,
-                    method,
-                    path
-                );
-            } else {
+            self.pending_iam_auth = Some(iam_auth.clone());
+            self.pending_request_method = method;
+            self.pending_request_path = path;
+            self.pending_content_type = content_type;
+
+            if self.get_cached_credentials(&iam_auth.role_arn).is_some() {
                 info!(
                     "[PLANO_REQ_ID:{}] IAM_AUTH_CREDS_CACHED: role_arn={}, will sign in body handler",
                     self.request_identifier(),
                     iam_auth.role_arn
                 );
+            } else {
+                info!(
+                    "[PLANO_REQ_ID:{}] IAM_AUTH_PENDING: role_arn={}, will fetch STS in body phase after reading body",
+                    self.request_identifier(),
+                    iam_auth.role_arn
+                );
             }
-            self.pending_iam_auth = Some(iam_auth);
-            self.pending_request_method = method;
-            self.pending_request_path = path;
-            self.pending_content_type = content_type;
             return Ok(());
         }
 
@@ -384,7 +388,11 @@ impl StreamContext {
         Ok(())
     }
 
-    fn sign_bedrock_request_with_iam_and_body(&mut self, iam_auth: &AwsIamRoleAuth, body: &[u8]) -> Result<(), ServerError> {
+    fn sign_bedrock_request_with_iam_and_body(
+        &mut self,
+        iam_auth: &AwsIamRoleAuth,
+        body: &[u8],
+    ) -> Result<(), ServerError> {
         info!(
             "[PLANO_REQ_ID:{}] SIGN_START: role_arn={}",
             self.request_identifier(),
@@ -393,13 +401,11 @@ impl StreamContext {
 
         let credentials = self.get_cached_credentials(&iam_auth.role_arn);
 
-        let credentials = credentials.ok_or_else(|| {
-            ServerError::BadRequest {
-                why: format!(
-                    "Failed to obtain AWS credentials for role {}. Credentials must be pre-cached.",
-                    iam_auth.role_arn
-                ),
-            }
+        let credentials = credentials.ok_or_else(|| ServerError::BadRequest {
+            why: format!(
+                "Failed to obtain AWS credentials for role {}. Credentials must be pre-cached.",
+                iam_auth.role_arn
+            ),
         })?;
 
         info!(
@@ -408,12 +414,17 @@ impl StreamContext {
             &credentials.access_key_id[..8.min(credentials.access_key_id.len())]
         );
 
-        let method = self.pending_request_method.clone()
+        let method = self
+            .pending_request_method
+            .clone()
             .unwrap_or_else(|| "POST".to_string());
-        let path = self.pending_request_path.clone()
+        let path = self
+            .pending_request_path
+            .clone()
             .unwrap_or_else(|| "/".to_string());
 
-        let host = self.llm_provider()
+        let host = self
+            .llm_provider()
             .endpoint
             .as_ref()
             .ok_or_else(|| ServerError::BadRequest {
@@ -424,10 +435,9 @@ impl StreamContext {
         let region = if !iam_auth.region.is_empty() {
             iam_auth.region.clone()
         } else {
-            extract_region_from_base_url(&host)
-                .ok_or_else(|| ServerError::BadRequest {
-                    why: "Could not extract region from endpoint".to_string(),
-                })?
+            extract_region_from_base_url(&host).ok_or_else(|| ServerError::BadRequest {
+                why: "Could not extract region from endpoint".to_string(),
+            })?
         };
 
         let mut headers = BTreeMap::new();
@@ -454,7 +464,8 @@ impl StreamContext {
             query_string,
             headers,
             payload: body.to_vec(),
-        }).map_err(|e| ServerError::BadRequest {
+        })
+        .map_err(|e| ServerError::BadRequest {
             why: format!("Failed to sign AWS request: {}", e),
         })?;
 
@@ -1110,7 +1121,7 @@ impl HttpContext for StreamContext {
             if credentials.is_some() {
                 let body_for_signing = if let Some(ref pending_body) = self.pending_request_body {
                     info!(
-                        "[PLANO_REQ_ID:{}] IAM_AUTH_SIGNING_RESUMED: role_arn={}, using pending_body_len={}, body_size={}, end_of_stream={}",
+                        "[PLANO_REQ_ID:{}] IAM_AUTH_SIGNING_RESUMED: role_arn={}, using cached body_len={}, body_size={}, end_of_stream={}",
                         self.request_identifier(),
                         iam_auth_clone.role_arn,
                         pending_body.len(),
@@ -1118,7 +1129,7 @@ impl HttpContext for StreamContext {
                         end_of_stream
                     );
                     pending_body.clone()
-                } else if body_size > 0 {
+                } else if end_of_stream && body_size > 0 {
                     match self.get_http_request_body(0, body_size) {
                         Some(body_bytes) => {
                             info!(
@@ -1128,29 +1139,37 @@ impl HttpContext for StreamContext {
                                 body_size
                             );
                             body_bytes
-                        },
+                        }
                         None => {
                             self.send_server_error(
-                                ServerError::LogicError("Failed to obtain body bytes for signing".to_string()),
+                                ServerError::LogicError(
+                                    "Failed to obtain body bytes for signing".to_string(),
+                                ),
                                 None,
                             );
                             return Action::Pause;
                         }
                     }
+                } else if !end_of_stream {
+                    return Action::Pause;
                 } else {
                     warn!(
-                        "[PLANO_REQ_ID:{}] IAM_AUTH_NO_BODY: role_arn={}, body_size=0, no pending_body - cannot sign",
+                        "[PLANO_REQ_ID:{}] IAM_AUTH_NO_BODY: role_arn={}, body_size=0, end_of_stream=true - cannot sign",
                         self.request_identifier(),
                         iam_auth_clone.role_arn
                     );
                     self.send_server_error(
-                        ServerError::LogicError("Cannot sign request - no body available".to_string()),
+                        ServerError::LogicError(
+                            "Cannot sign request - no body available".to_string(),
+                        ),
                         None,
                     );
                     return Action::Pause;
                 };
 
-                if let Err(e) = self.sign_bedrock_request_with_iam_and_body(&iam_auth_clone, &body_for_signing) {
+                if let Err(e) =
+                    self.sign_bedrock_request_with_iam_and_body(&iam_auth_clone, &body_for_signing)
+                {
                     warn!(
                         "[PLANO_REQ_ID:{}] IAM_AUTH_SIGN_ERROR: role_arn={}, error={}",
                         self.request_identifier(),
@@ -1166,14 +1185,18 @@ impl HttpContext for StreamContext {
                     iam_auth_clone.role_arn
                 );
                 self.pending_iam_auth = None;
+                self.pending_request_body = None;
+            } else if !end_of_stream {
+                return Action::Pause;
+            } else if body_size == 0 {
+                self.send_server_error(
+                    ServerError::LogicError(
+                        "Cannot fetch STS credentials - no body available".to_string(),
+                    ),
+                    None,
+                );
+                return Action::Pause;
             } else {
-                if body_size == 0 {
-                    self.send_server_error(
-                        ServerError::LogicError("Cannot fetch STS credentials - no body available".to_string()),
-                        None,
-                    );
-                    return Action::Pause;
-                }
                 let body_bytes = match self.get_http_request_body(0, body_size) {
                     Some(body_bytes) => body_bytes,
                     None => {
@@ -1189,22 +1212,29 @@ impl HttpContext for StreamContext {
                 };
 
                 info!(
-                    "[PLANO_REQ_ID:{}] IAM_AUTH_FETCH_START: storing body, method={:?}, path={:?}",
+                    "[PLANO_REQ_ID:{}] IAM_AUTH_FETCH_START: storing body_len={}, fetching STS, will pause",
                     self.request_identifier(),
-                    self.pending_request_method,
-                    self.pending_request_path
+                    body_bytes.len()
                 );
-                self.pending_request_body = Some(body_bytes.clone());
+                self.pending_request_body = Some(body_bytes);
                 match self.fetch_sts_credentials(&iam_auth_clone) {
                     Ok(None) => {
                         return Action::Pause;
                     }
                     Ok(Some(creds)) => {
                         self.set_cached_credentials(&iam_auth_clone.role_arn, creds.clone());
-                        if let Err(e) = self.sign_bedrock_request_with_iam_and_body(&iam_auth_clone, &body_bytes) {
+                        let body = self.pending_request_body.clone().unwrap();
+                        if let Err(e) =
+                            self.sign_bedrock_request_with_iam_and_body(&iam_auth_clone, &body)
+                        {
                             self.send_server_error(e, Some(StatusCode::BAD_REQUEST));
                             return Action::Pause;
                         }
+                        info!(
+                            "[PLANO_REQ_ID:{}] IAM_AUTH_SIGNED: role_arn={}, signed immediately",
+                            self.request_identifier(),
+                            iam_auth_clone.role_arn
+                        );
                         self.pending_iam_auth = None;
                         self.pending_request_body = None;
                     }
@@ -1571,23 +1601,16 @@ impl Context for StreamContext {
                                     credentials.expiration
                                 );
 
-                                let should_resume = if let Some(ref iam_auth) = self.pending_iam_auth {
+                                let should_resume = if let Some(ref iam_auth) =
+                                    self.pending_iam_auth
+                                {
                                     if iam_auth.role_arn == role_arn {
-                                        if self.pending_request_body.is_some() {
-                                            info!(
-                                                "[PLANO_REQ_ID:{}] STS_CREDENTIALS_READY: role_arn={}, will sign on resume",
-                                                self.request_identifier(),
-                                                role_arn
-                                            );
-                                            true
-                                        } else {
-                                            warn!(
-                                                "[PLANO_REQ_ID:{}] STS_NO_PENDING_BODY: role_arn={}",
-                                                self.request_identifier(),
-                                                role_arn
-                                            );
-                                            false
-                                        }
+                                        info!(
+                                            "[PLANO_REQ_ID:{}] STS_CREDENTIALS_READY: role_arn={}, credentials cached, resuming - will sign in on_http_request_body",
+                                            self.request_identifier(),
+                                            role_arn
+                                        );
+                                        true
                                     } else {
                                         warn!(
                                             "[PLANO_REQ_ID:{}] STS_ROLE_ARN_MISMATCH: expected={}, got={}",
@@ -1607,34 +1630,8 @@ impl Context for StreamContext {
                                 };
 
                                 if should_resume {
-                                    if let (Some(ref iam_auth), Some(ref pending_body)) = (self.pending_iam_auth.as_ref(), self.pending_request_body.as_ref()) {
-                                        info!(
-                                            "[PLANO_REQ_ID:{}] STS_ATTEMPTING_SIGN_BEFORE_RESUME: role_arn={}, trying to sign from on_http_call_response",
-                                            self.request_identifier(),
-                                            role_arn
-                                        );
-                                        match self.sign_bedrock_request_with_iam_and_body(iam_auth, pending_body) {
-                                            Ok(_) => {
-                                                info!(
-                                                    "[PLANO_REQ_ID:{}] STS_SIGNED_BEFORE_RESUME: role_arn={}, headers set successfully",
-                                                    self.request_identifier(),
-                                                    role_arn
-                                                );
-                                                self.pending_iam_auth = None;
-                                                self.pending_request_body = None;
-                                            }
-                                            Err(e) => {
-                                                warn!(
-                                                    "[PLANO_REQ_ID:{}] STS_SIGN_ERROR_BEFORE_RESUME: role_arn={}, error={}, will try on resume",
-                                                    self.request_identifier(),
-                                                    role_arn,
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
                                     info!(
-                                        "[PLANO_REQ_ID:{}] STS_RESUMING_REQUEST: role_arn={}, credentials cached",
+                                        "[PLANO_REQ_ID:{}] STS_RESUMING_REQUEST: role_arn={}, credentials cached, resuming - will sign in on_http_request_body",
                                         self.request_identifier(),
                                         role_arn
                                     );

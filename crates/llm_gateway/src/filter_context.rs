@@ -1,7 +1,7 @@
 use crate::metrics::Metrics;
 use crate::stream_context::StreamContext;
-use common::configuration::{AwsCredentialsConfig, Configuration};
 use common::configuration::Overrides;
+use common::configuration::{AwsCredentialsConfig, Configuration};
 use common::http::Client;
 use common::llm_providers::LlmProviders;
 use common::ratelimit;
@@ -69,7 +69,11 @@ impl RootContext for FilterContext {
         log::info!(
             "AWS_CREDENTIALS_CONFIG: loaded={}, has_access_key={}",
             config.aws_credentials.is_some(),
-            config.aws_credentials.as_ref().map(|c| c.access_key_id.is_some()).unwrap_or(false)
+            config
+                .aws_credentials
+                .as_ref()
+                .map(|c| c.access_key_id.is_some())
+                .unwrap_or(false)
         );
         self.aws_credentials = Rc::new(config.aws_credentials);
 
