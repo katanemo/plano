@@ -20,6 +20,9 @@ urlencoding = "2.1.3"
 url = "2.5.4"
 hermesllm = { version = "0.1.0", path = "../hermesllm" }
 serde_with = "3.13.0"
+hmac = "0.12"
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "parsing"] }
 
 # Optional dependencies for trace collection (not available in WASM)
 tokio = { version = "1.44", features = ["sync", "time"], optional = true }

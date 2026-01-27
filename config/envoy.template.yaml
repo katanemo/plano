@@ -424,6 +424,25 @@ static_resources:
                             prefix: "/healthz"
                           direct_response:
                             status: 200
+                        {% if arch_model_providers %}
+                        {% for provider in arch_model_providers %}
+                        {% if provider.endpoint %}
+                        {% set llm_cluster_name = provider.cluster_name %}
+                        {% else %}
+                        {% set llm_cluster_name = provider.provider_interface %}
+                        {% endif %}
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: "x-arch-llm-provider"
+                                string_match:
+                                  exact: {{ llm_cluster_name }}
+                          route:
+                            auto_host_rewrite: true
+                            cluster: {{ llm_cluster_name }}
+                            timeout: {{ llm_gateway_listener.timeout }}
+                        {% endfor %}
+                        {% endif %}
                         - match:
                             prefix: "/"
                           route:
@@ -465,6 +484,25 @@ static_resources:
                         name: envoy.compression.brotli.decompressor
                         typed_config:
                           "@type": type.googleapis.com/envoy.extensions.compression.brotli.decompressor.v3.Brotli
+                  {% if arch_model_providers %}
+                  - name: envoy.filters.http.wasm
+                    typed_config:
+                      "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                      type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                      value:
+                        config:
+                          name: "http_config"
+                          root_id: llm_gateway
+                          configuration:
+                            "@type": "type.googleapis.com/google.protobuf.StringValue"
+                            value: |
+                                {{ arch_llm_config | indent(32) }}
+                          vm_config:
+                            runtime: "envoy.wasm.runtime.v8"
+                            code:
+                              local:
+                                filename: "/etc/envoy/proxy-wasm-plugins/llm_gateway.wasm"
+                  {% endif %}
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router

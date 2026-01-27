@@ -1,6 +1,6 @@
 use crate::metrics::Metrics;
 use crate::stream_context::StreamContext;
-use common::configuration::Configuration;
+use common::configuration::{AwsCredentialsConfig, Configuration};
 use common::configuration::Overrides;
 use common::http::Client;
 use common::llm_providers::LlmProviders;
@@ -24,6 +24,7 @@ pub struct FilterContext {
     callouts: RefCell<HashMap<u32, CallContext>>,
     llm_providers: Option<Rc<LlmProviders>>,
     overrides: Rc<Option<Overrides>>,
+    aws_credentials: Rc<Option<AwsCredentialsConfig>>,
 }
 
 impl FilterContext {
@@ -33,6 +34,7 @@ impl FilterContext {
             metrics: Rc::new(Metrics::new()),
             llm_providers: None,
             overrides: Rc::new(None),
+            aws_credentials: Rc::new(None),
         }
     }
 }
@@ -64,6 +66,13 @@ impl RootContext for FilterContext {
         ratelimit::ratelimits(Some(config.ratelimits.unwrap_or_default()));
         self.overrides = Rc::new(config.overrides);
 
+        log::info!(
+            "AWS_CREDENTIALS_CONFIG: loaded={}, has_access_key={}",
+            config.aws_credentials.is_some(),
+            config.aws_credentials.as_ref().map(|c| c.access_key_id.is_some()).unwrap_or(false)
+        );
+        self.aws_credentials = Rc::new(config.aws_credentials);
+
         match config.model_providers.try_into() {
             Ok(llm_providers) => self.llm_providers = Some(Rc::new(llm_providers)),
             Err(err) => panic!("{err}"),
@@ -86,6 +95,7 @@ impl RootContext for FilterContext {
                     .expect("LLM Providers must exist when Streams are being created"),
             ),
             Rc::clone(&self.overrides),
+            Rc::clone(&self.aws_credentials),
         )))
     }
 

@@ -59,6 +59,16 @@ pub enum StateStorageType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AwsCredentialsConfig {
+    #[serde(rename = "AWS_ACCESS_KEY_ID")]
+    pub access_key_id: Option<String>,
+    #[serde(rename = "AWS_SECRET_ACCESS_KEY")]
+    pub secret_access_key: Option<String>,
+    #[serde(rename = "AWS_SESSION_TOKEN")]
+    pub session_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration {
     pub version: String,
     pub endpoints: Option<HashMap<String, Endpoint>>,
@@ -77,6 +87,8 @@ pub struct Configuration {
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,
     pub state_storage: Option<StateStorageConfig>,
+    #[serde(rename = "aws_credentials")]
+    pub aws_credentials: Option<AwsCredentialsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -308,6 +320,21 @@ impl serde::Serialize for OrchestrationPreference {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AwsIamRoleAuth {
+    pub role_arn: String,
+    pub region: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum LlmProviderAuth {
+    #[serde(rename = "bearer_token")]
+    BearerToken { access_key: String },
+    #[serde(rename = "aws_iam_role")]
+    AwsIamRole(AwsIamRoleAuth),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 //TODO: use enum for model, but if there is a new model, we need to update the code
 pub struct LlmProvider {
     pub name: String,
@@ -325,6 +352,7 @@ pub struct LlmProvider {
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
+    pub auth: Option<LlmProviderAuth>,
 }
 
 pub trait IntoModels {
@@ -357,6 +385,7 @@ impl Default for LlmProvider {
             name: "openai".to_string(),
             provider_interface: LlmProviderType::OpenAI,
             access_key: None,
+            auth: None,
             model: None,
             default: Some(true),
             stream: Some(false),
