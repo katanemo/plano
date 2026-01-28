@@ -25,11 +25,57 @@ def load_scenario(scenario_file: str):
         return None
 
 
+def extract_json_block(content: str):
+    """Extract the first JSON block from an agent response."""
+    try:
+        if "```json" in content:
+            json_start = content.index("```json") + 7
+            json_end = content.index("```", json_start)
+            return json.loads(content[json_start:json_end].strip())
+        if "{" in content and "}" in content:
+            json_start = content.index("{")
+            json_end = content.rindex("}") + 1
+            return json.loads(content[json_start:json_end].strip())
+    except Exception:
+        return None
+    return None
+
+
+def call_plano(step_label: str, payload: dict):
+    """Call Plano and return the parsed JSON response."""
+    response = httpx.post(
+        f"{PLANO_ENDPOINT}/chat/completions",
+        json={
+            "model": "risk_reasoning",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        f"Run the {step_label} step only. Return JSON.\n\n"
+                        f"{json.dumps(payload, indent=2)}"
+                    ),
+                }
+            ],
+        },
+        timeout=60.0,
+    )
+    if response.status_code != 200:
+        return None, {
+            "status_code": response.status_code,
+            "text": response.text,
+        }
+
+    raw = response.json()
+    content = raw["choices"][0]["message"]["content"]
+    parsed = extract_json_block(content)
+    return parsed, raw
+
+
 # Initialize session state
-if "assessment_result" not in st.session_state:
-    st.session_state.assessment_result = None
-if "raw_result" not in st.session_state:
-    st.session_state.raw_result = None
+if "workflow_result" not in st.session_state:
+    st.session_state.workflow_result = None
+if "raw_results" not in st.session_state:
+    st.session_state.raw_results = {}
 if "application_json" not in st.session_state:
     st.session_state.application_json = "{}"
 
@@ -79,52 +125,76 @@ with st.sidebar:
             try:
                 application_data = json.loads(application_json)
 
-                with st.spinner("Running risk assessment..."):
-                    response = httpx.post(
-                        f"{PLANO_ENDPOINT}/chat/completions",
-                        json={
-                            # Use risk_reasoning if you’re standardizing on aliases.
-                            # If you want plain OpenAI model routing, set "gpt-4o".
-                            "model": "risk_reasoning",
-                            "messages": [
-                                {
-                                    "role": "user",
-                                    "content": (
-                                        "Assess credit risk for this loan application:\n\n"
-                                        f"{json.dumps(application_data, indent=2)}"
-                                    ),
-                                }
-                            ],
-                        },
-                        timeout=60.0,
-                    )
+                with st.spinner("Running intake..."):
+                    intake, intake_raw = call_plano("loan intake normalization", application_data)
+                if not intake:
+                    st.session_state.workflow_result = None
+                    st.session_state.raw_results = {"intake": intake_raw}
+                    st.error("Intake step failed.")
+                    st.stop()
 
-                if response.status_code == 200:
-                    raw = response.json()
-                    st.session_state.raw_result = raw
-
-                    content = raw["choices"][0]["message"]["content"]
-
-                    # Extract JSON block from response
-                    if "```json" in content:
-                        json_start = content.index("```json") + 7
-                        json_end = content.index("```", json_start)
-                        json_str = content[json_start:json_end].strip()
-                        assessment = json.loads(json_str)
-                        st.session_state.assessment_result = assessment
-                        st.success("✅ Risk assessment complete!")
-                    else:
-                        st.session_state.assessment_result = None
-                        st.error(
-                            "Could not parse JSON assessment from the agent response."
-                        )
-                else:
-                    st.session_state.assessment_result = None
-                    st.session_state.raw_result = {
-                        "status_code": response.status_code,
-                        "text": response.text,
+                with st.spinner("Running risk scoring..."):
+                    risk_payload = {"application": application_data, "intake": intake}
+                    risk, risk_raw = call_plano("risk scoring", risk_payload)
+                if not risk:
+                    st.session_state.workflow_result = None
+                    st.session_state.raw_results = {
+                        "intake": intake_raw,
+                        "risk": risk_raw,
                     }
-                    st.error(f"Error: {response.status_code} - {response.text}")
+                    st.error("Risk scoring step failed.")
+                    st.stop()
+
+                with st.spinner("Running policy compliance..."):
+                    policy_payload = {
+                        "application": application_data,
+                        "intake": intake,
+                        "risk": risk,
+                    }
+                    policy, policy_raw = call_plano("policy compliance", policy_payload)
+                if not policy:
+                    st.session_state.workflow_result = None
+                    st.session_state.raw_results = {
+                        "intake": intake_raw,
+                        "risk": risk_raw,
+                        "policy": policy_raw,
+                    }
+                    st.error("Policy compliance step failed.")
+                    st.stop()
+
+                with st.spinner("Running decision memo..."):
+                    memo_payload = {
+                        "application": application_data,
+                        "intake": intake,
+                        "risk": risk,
+                        "policy": policy,
+                    }
+                    memo, memo_raw = call_plano("decision memo", memo_payload)
+                if not memo:
+                    st.session_state.workflow_result = None
+                    st.session_state.raw_results = {
+                        "intake": intake_raw,
+                        "risk": risk_raw,
+                        "policy": policy_raw,
+                        "memo": memo_raw,
+                    }
+                    st.error("Decision memo step failed.")
+                    st.stop()
+
+                st.session_state.workflow_result = {
+                    "application": application_data,
+                    "intake": intake,
+                    "risk": risk,
+                    "policy": policy,
+                    "memo": memo,
+                }
+                st.session_state.raw_results = {
+                    "intake": intake_raw,
+                    "risk": risk_raw,
+                    "policy": policy_raw,
+                    "memo": memo_raw,
+                }
+                st.success("✅ Risk assessment complete!")
 
             except json.JSONDecodeError:
                 st.error("Invalid JSON format")
@@ -133,15 +203,15 @@ with st.sidebar:
 
     with col_b:
         if st.button("🧹 Clear", use_container_width=True):
-            st.session_state.assessment_result = None
-            st.session_state.raw_result = None
+            st.session_state.workflow_result = None
+            st.session_state.raw_results = {}
             st.session_state.application_json = "{}"
             st.rerun()
 
 
 # Main content area
-if st.session_state.assessment_result:
-    result = st.session_state.assessment_result
+if st.session_state.workflow_result:
+    result = st.session_state.workflow_result
 
     st.header("Decision")
 
@@ -149,51 +219,37 @@ if st.session_state.assessment_result:
 
     with col1:
         risk_color = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🔴"}
-        risk_band = result.get("risk_band", "UNKNOWN")
+        risk_band = result.get("risk", {}).get("risk_band", "UNKNOWN")
         st.metric("Risk Band", f"{risk_color.get(risk_band, '⚪')} {risk_band}")
 
     with col2:
-        confidence = result.get("confidence", 0.0)
+        confidence = result.get("risk", {}).get("confidence_score", 0.0)
         try:
             st.metric("Confidence", f"{float(confidence):.0%}")
         except Exception:
             st.metric("Confidence", str(confidence))
 
     with col3:
-        st.metric("Recommended Action", result.get("recommended_action", "REVIEW"))
+        st.metric(
+            "Recommended Action",
+            result.get("memo", {}).get("recommended_action", "REVIEW"),
+        )
 
     st.divider()
 
-    tab1, tab2, tab3 = st.tabs(["🧾 Summary", "📝 Decision Memo", "🧪 Raw Output"])
+    st.subheader("Decision Memo")
+    memo = result.get("memo", {}).get("decision_memo", "")
+    if memo:
+        st.markdown(memo)
+    else:
+        st.info("No decision memo available.")
 
-    with tab1:
-        st.subheader("Summary")
+    st.divider()
+    with st.expander("Normalized Application"):
+        st.json(result.get("intake", {}).get("normalized_data", {}))
 
-        human = result.get("human_response", "")
-        if human:
-            st.write(human.split("```")[0].strip())
-        else:
-            st.info("No human-readable summary available.")
-
-        st.divider()
-        st.subheader("Normalized Application")
-        st.json(result.get("normalized_application", {}))
-
-    with tab2:
-        st.subheader("Decision Memo")
-        memo = result.get("decision_memo", "")
-        if memo:
-            st.markdown(memo)
-        else:
-            st.info("No decision memo available.")
-
-    with tab3:
-        st.subheader("Raw Output")
-        with st.expander("Show raw agent response JSON"):
-            st.json(st.session_state.raw_result or {})
-
-        with st.expander("Show parsed assessment JSON"):
-            st.json(result)
+    with st.expander("Step Outputs (debug)"):
+        st.json(st.session_state.raw_results or {})
 
 else:
     st.info(
