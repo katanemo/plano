@@ -37,7 +37,6 @@ Plano Orchestrator (8001)
 ├─ HTTP Security Filter (PII + injection)
 ├─ Agent routing
 ├─ Model routing
-└─ Prompt target invocation
     ↓
 Risk Crew Agent (CrewAI)
     ↓
@@ -89,11 +88,6 @@ The filter is implemented as a simple HTTP service to keep things easy to debug 
 - Agents never talk to OpenAI directly
 - Makes tracing, policy enforcement, and provider switching easier later
 
-### Prompt targets
-- Structured function-style calls to downstream services
-- Used here to create a risk case in the case service
-- Keeps side effects explicit and traceable
-
 ### Observability
 - End-to-end OpenTelemetry tracing
 - One trace per request, spanning:
@@ -134,12 +128,12 @@ What happens:
 ## Services in this repo
 
 ### Risk Crew Agent (10530)
-Implements the CrewAI workflow. Exposes an OpenAI-compatible `/v1/chat/completions` endpoint so Plano can treat it like any other model-backed service.
+Implements the CrewAI workflow and exposes four standalone OpenAI-compatible endpoints so Plano can route to each step independently.
 
 The agent is intentionally kept unaware of:
 - Security filters
 - Model providers
-- Downstream systems
+- Routing decisions
 
 ### PII Security Filter (10550)
 A small FastAPI service that:
@@ -149,10 +143,6 @@ A small FastAPI service that:
 - Returns only the updated message list (as expected by Plano's HTTP filter interface)
 
 This runs before the agent is invoked.
-
-### Case Service (10540)
-A simple REST API used to store credit risk cases.  
-Exercised via Plano prompt targets.
 
 ### Streamlit UI (8501)
 A lightweight UI for interacting with the system:
@@ -174,7 +164,6 @@ A typical trace shows:
 - One parent request span
 - A security filter span
 - Four LLM call spans (one per agent step)
-- Optional case creation span
 
 This is intentional — the trace tells the full story of what happened and why.
 
@@ -208,7 +197,6 @@ uvx planoai up config.yaml
 Plano runs on:
 - **8001** – agent listener
 - **12000** – LLM gateway
-- **10000** – prompt listener
 
 ### Access
 - **Streamlit UI**: http://localhost:8501
@@ -265,16 +253,9 @@ This is closer to how agentic systems are likely to be deployed in practice.
    - 🟡 **Scenario B** - Medium risk (thin file, missing verifications)
    - 🔴 **Scenario C** - High risk + prompt injection attempt
 
-2. **Click "Assess Risk"** - Plano routes to Risk Crew Agent
+2. **Click "Assess Risk"** - The UI calls the four agents sequentially through Plano
 
-3. **View Results** in tabs:
-   - **Risk Summary**: Normalized data and overview
-   - **Risk Drivers**: Top factors with evidence
-   - **Policy & Compliance**: Checks, exceptions, required documents
-   - **Decision Memo**: Bank-ready memo with recommendation
-   - **Audit Trail**: Models used, timestamps, request ID
-
-4. **Create Case** - Stores assessment in Case Service
+3. **Review Results** - Memo + key summary fields, with normalized data in an expander
 
 ### Direct API Testing
 
@@ -324,7 +305,7 @@ curl http://localhost:8001/v1/chat/completions \
 
 ### Risk Crew Agent (Port 10530) - CrewAI Multi-Agent System
 
-Implements a 4-agent CrewAI workflow where each agent is specialized:
+Implements four standalone endpoints where each agent is specialized:
 
 1. **Intake & Normalization Agent** 
    - Model: `risk_fast` (gpt-4o-mini)
@@ -346,7 +327,11 @@ Implements a 4-agent CrewAI workflow where each agent is specialized:
    - Task: Synthesize findings into bank-ready memo
    - Output: Executive summary + recommendation (APPROVE/CONDITIONAL_APPROVE/REFER/REJECT)
 
-**Context Passing:** Each agent builds on the previous agent's output for comprehensive analysis.
+**Context Passing:** Each call includes the prior outputs as explicit JSON payloads:
+- Intake expects the raw application JSON.
+- Risk expects `{ application, intake }`.
+- Policy expects `{ application, intake, risk }`.
+- Memo expects `{ application, intake, risk, policy }`.
 
 ### PII Security Filter (Port 10550)
 
@@ -361,17 +346,16 @@ HTTP Filter that:
 
 ### config.yaml (Plano Configuration)
 
-- **Agents**: `risk_crew_agent` with rich description for routing
+- **Agents**: `loan_intake_agent`, `risk_scoring_agent`, `policy_compliance_agent`, `decision_memo_agent`
 - **Filters**: `pii_security_filter` in filter chain
 - **Model Providers**: OpenAI GPT-4o and GPT-4o-mini
 - **Model Aliases**: `risk_fast` (mini), `risk_reasoning` (4o)
-- **Prompt Targets**: `create_risk_case` → Case Service API
-- **Listeners**: agent (8001), model (12000), prompt (10000)
+- **Listeners**: agent (8001), model (12000)
 - **Tracing**: 100% sampling to Jaeger
 
 ### docker-compose.yaml
 
-Orchestrates 5 services:
+Orchestrates 4 services:
 - `risk-crew-agent` - Risk assessment engine
 - `pii-filter` - Security filter
 - `streamlit-ui` - Web interface
@@ -405,8 +389,7 @@ chat_completions (risk-crew-agent) - 8500ms
    - Each agent calls Plano LLM Gateway (12000)
    - Plano routes to OpenAI with configured model alias
 5. Agent returns synthesized assessment
-6. (Optional) Prompt target calls Case Service (10540)
-7. All spans visible in Jaeger (16686)
+6. All spans visible in Jaeger (16686)
 
 **Search Tips:**
 - Service: `risk-crew-agent`
@@ -445,9 +428,6 @@ credit_risk_case_copilot/
 # Risk Crew Agent
 uv run python src/credit_risk_demo/risk_crew_agent.py
 
-# Case Service
-uv run python src/credit_risk_demo/case_service.py
-
 # PII Filter
 uv run python src/credit_risk_demo/pii_filter.py
 
@@ -467,7 +447,7 @@ pip install -e .
 
 **Services won't start**
 - Check Docker is running: `docker ps`
-- Verify ports are available: `lsof -i :8001,10530,10540,10550,8501,16686`
+- Verify ports are available: `lsof -i :8001,10530,10550,8501,16686`
 - Check logs: `docker compose logs -f`
 
 **CrewAI Import Errors** (e.g., "No module named 'crewai'")
@@ -494,7 +474,6 @@ pip install -e .
 **No response from agents**
 - Verify all services are healthy:
   - `curl http://localhost:10530/health` (should show `"framework": "CrewAI"`)
-  - `curl http://localhost:10540/health`
   - `curl http://localhost:10550/health`
 - Check Plano is running on port 8001
 
@@ -518,13 +497,11 @@ pip install -e .
 - `POST /v1/chat/completions` - Main entry point (OpenAI-compatible)
 
 ### Risk Crew Agent (10530)
-- `POST /v1/chat/completions` - Risk assessment endpoint
-- `GET /health` - Health check
-
-### Case Service (10540)
-- `POST /cases` - Create case
-- `GET /cases/{case_id}` - Get case
-- `GET /cases` - List cases
+- `POST /v1/agents/intake/chat/completions` - Intake normalization endpoint
+- `POST /v1/agents/risk/chat/completions` - Risk scoring endpoint
+- `POST /v1/agents/policy/chat/completions` - Policy compliance endpoint
+- `POST /v1/agents/memo/chat/completions` - Decision memo endpoint
+- `POST /v1/chat/completions` - Full risk assessment endpoint (legacy)
 - `GET /health` - Health check
 
 ### PII Filter (10550)
@@ -534,7 +511,7 @@ pip install -e .
 ## Next Steps & Extensions
 
 ### Immediate Enhancements
-- Add database persistence for case storage (PostgreSQL/MongoDB)
+- Add database persistence for assessment storage (PostgreSQL/MongoDB)
 - Implement parallel agent execution where possible (e.g., Risk + Policy agents)
 - Add agent tools (credit bureau API integration, fraud detection)
 - Enable CrewAI memory for cross-request learning
@@ -550,7 +527,7 @@ pip install -e .
 - Add Fraud Detection Agent to the crew
 - Implement Appeals Agent for rejected applications
 - Build analytics dashboard for risk metrics
-- Add email/SMS notifications for case creation
+- Add email/SMS notifications for decisions
 - Implement batch processing API for multiple applications
 - Create PDF export for decision memos
 - Add A/B testing framework for different risk models

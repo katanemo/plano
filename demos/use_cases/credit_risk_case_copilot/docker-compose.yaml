@@ -18,21 +18,6 @@ services:
     depends_on:
       - jaeger
 
-  # Case Management Service
-  case-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: case-service
-    restart: unless-stopped
-    ports:
-      - "10540:10540"
-    environment:
-      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
-    command: ["uv", "run", "python", "src/credit_risk_demo/case_service.py"]
-    depends_on:
-      - jaeger
-
   # PII Security Filter (MCP)
   pii-filter:
     build:
@@ -60,7 +45,6 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - risk-crew-agent
-      - case-service
 
   # Jaeger for distributed tracing
   jaeger:
