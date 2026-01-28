@@ -5,10 +5,9 @@ import { BlogHeader } from "@/components/BlogHeader";
 import { FeaturedBlogCard } from "@/components/FeaturedBlogCard";
 import { BlogCard } from "@/components/BlogCard";
 import { BlogSectionHeader } from "@/components/BlogSectionHeader";
-export const metadata: Metadata = {
-  title: "Blog - Plano",
-  description: "Latest insights, updates, and stories from Plano",
-};
+import { pageMetadata } from "@/lib/metadata";
+
+export const metadata: Metadata = pageMetadata.blog;
 
 interface BlogPost {
   _id: string;

@@ -149,3 +149,4 @@ apps/*/dist/
 *.logs
 
 .cursor/
+.agents
