@@ -31,12 +31,10 @@ export function Hero() {
                 </span>
                 <span className="text-xs sm:text-sm font-[600] tracking-[-0.6px]! text-black leading-tight">
                   <span className="hidden sm:inline">
-                    Signals: Trace Sampling & Preference Data for Continuous
-                    Improvement
+                    Signals: Trace Sampling for Fast Error Analysis
                   </span>
                   <span className="sm:hidden">
-                    Signals: Trace Sampling & Preference Data for Continuous
-                    Improvement
+                    Signals: Trace Sampling for Fast Error Analysis
                   </span>
                 </span>
               </div>
