@@ -33,10 +33,14 @@ export function UnlockPotentialSection({
 
           <div className="flex flex-col sm:flex-row gap-5">
             <Button asChild>
-              <Link href="https://docs.planoai.dev/get_started/quickstart">Deploy today</Link>
+              <Link href="https://docs.planoai.dev/get_started/quickstart">
+                Deploy today
+              </Link>
             </Button>
             <Button variant="secondaryDark" asChild>
-              <Link href="https://docs.planoai.dev/get_started/quickstart">Documentation</Link>
+              <Link href="https://docs.planoai.dev/get_started/quickstart">
+                Documentation
+              </Link>
             </Button>
           </div>
         </div>

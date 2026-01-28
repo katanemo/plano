@@ -187,12 +187,7 @@ export const pageMetadata = {
     description:
       "Get in touch with the Plano team. Join our Discord community or contact us for enterprise solutions for your AI agent infrastructure needs.",
     pathname: "/contact",
-    keywords: [
-      "contact Plano",
-      "AI support",
-      "enterprise AI",
-      "AI consulting",
-    ],
+    keywords: ["contact Plano", "AI support", "enterprise AI", "AI consulting"],
   }),
 
   docs: createMetadata({
@@ -246,9 +241,7 @@ export function createBlogPostMetadata({
       locale: "en_US",
       url: pageUrl,
       title: title,
-      description:
-        description ||
-        `Read "${title}" on the Plano blog.`,
+      description: description || `Read "${title}" on the Plano blog.`,
       siteName: siteConfig.name,
       publishedTime: publishedAt,
       authors: author ? [author] : undefined,
@@ -264,9 +257,7 @@ export function createBlogPostMetadata({
     twitter: {
       card: "summary_large_image",
       title: title,
-      description:
-        description ||
-        `Read "${title}" on the Plano blog.`,
+      description: description || `Read "${title}" on the Plano blog.`,
       images: [ogImage],
       creator: "@katanemo",
     },

@@ -31,9 +31,13 @@ export function Hero() {
                 </span>
                 <span className="text-xs sm:text-sm font-[600] tracking-[-0.6px]! text-black leading-tight">
                   <span className="hidden sm:inline">
-                    Signals: Trace Sampling & Preference Data for Continuous Improvement
+                    Signals: Trace Sampling & Preference Data for Continuous
+                    Improvement
                   </span>
-                  <span className="sm:hidden">Signals: Trace Sampling & Preference Data for Continuous Improvement</span>
+                  <span className="sm:hidden">
+                    Signals: Trace Sampling & Preference Data for Continuous
+                    Improvement
+                  </span>
                 </span>
               </div>
             </Link>
@@ -58,12 +62,20 @@ export function Hero() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-3 sm:gap-4">
             <Button asChild className="w-full sm:w-auto">
-              <Link href="https://docs.planoai.dev/get_started/quickstart" target="_blank" rel="noopener noreferrer">
+              <Link
+                href="https://docs.planoai.dev/get_started/quickstart"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Get started
               </Link>
             </Button>
             <Button variant="secondary" asChild className="w-full sm:w-auto">
-              <Link href="https://docs.planoai.dev" target="_blank" rel="noopener noreferrer">
+              <Link
+                href="https://docs.planoai.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Documentation
               </Link>
             </Button>
