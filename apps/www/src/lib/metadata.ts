@@ -26,24 +26,28 @@ export const siteConfig = {
     "agent orchestration",
     "LLM gateway",
     "LLM routing",
+
     // Secondary keywords
     "multi-agent systems",
     "AI infrastructure",
     "AI proxy",
     "agentic applications",
     "LLM proxy",
+
     // Technical keywords
     "AI observability",
     "agent tracing",
     "AI guardrails",
     "model routing",
     "prompt routing",
+
     // Long-tail keywords
     "mixture of agents",
     "AI agent framework",
     "production AI agents",
     "deploy AI agents",
     "open source AI gateway",
+
     // brand specific keywords
     "Plano",
     "Plano AI",
@@ -54,6 +58,49 @@ export const siteConfig = {
     "Arch gateway",
     "Arch AI",
     "Arch AI gateway",
+
+    // Production & reliability intent
+    "AI agents in production",
+    "scaling AI agents",
+    "debugging AI agents",
+    "LLM failures in production",
+    "agent reliability",
+    "agent failure modes",
+    "prompt drift",
+    "model regression detection",
+    "AI reliability engineering",
+
+    // Routing & cost optimization intent
+    "LLM cost optimization",
+    "model failover",
+    "provider fallback",
+    "inference routing",
+    "latency based routing",
+    "token usage tracking",
+    "model selection logic",
+    "multi provider LLM routing",
+
+    // Observability & evals
+    "LLM tracing",
+    "agent observability",
+    "prompt versioning",
+    "production evals",
+    "tool calling observability",
+    "agent performance monitoring",
+
+    // Infra & architecture language
+    "AI control plane",
+    "AI data plane",
+    "LLM traffic management",
+    "AI API gateway",
+    "Envoy for LLMs",
+    "OTEL for AI",
+
+    // Open source & self-hosted intent
+    "open source LLM gateway",
+    "self hosted AI gateway",
+    "OSS AI infrastructure",
+    "on premise LLM routing",
   ],
   authors: [{ name: "Katanemo", url: "https://github.com/katanemo/plano" }],
   creator: "Katanemo",
