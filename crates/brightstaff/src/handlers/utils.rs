@@ -1,18 +1,14 @@
 use bytes::Bytes;
-use common::traces::{Attribute, AttributeValue, Event, Span, TraceCollector};
 use http_body_util::combinators::BoxBody;
 use http_body_util::StreamBody;
 use hyper::body::Frame;
-use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::warn;
+use tracing::{info, warn};
 
-// Import tracing constants and signals
-use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
-use crate::tracing::{error, llm, signals as signal_constants};
+use crate::signals::{SignalAnalyzer, TextBasedSignalAnalyzer};
 use hermesllm::apis::openai::Message;
 
 /// Trait for processing streaming chunks
@@ -31,11 +27,9 @@ pub trait StreamProcessor: Send + 'static {
     fn on_error(&mut self, _error: &str) {}
 }
 
-/// A processor that tracks streaming metrics and finalizes the span
+/// A processor that tracks streaming metrics
 pub struct ObservableStreamProcessor {
-    collector: Arc<TraceCollector>,
     service_name: String,
-    span: Span,
     total_bytes: usize,
     chunk_count: usize,
     start_time: Instant,
@@ -47,22 +41,16 @@ impl ObservableStreamProcessor {
     /// Create a new passthrough processor
     ///
     /// # Arguments
-    /// * `collector` - The trace collector to record the span to
     /// * `service_name` - The service name for this span (e.g., "archgw(llm)")
-    /// * `span` - The span to finalize after streaming completes
     /// * `start_time` - When the request started (for duration calculation)
     /// * `messages` - Optional conversation messages for signal analysis
     pub fn new(
-        collector: Arc<TraceCollector>,
         service_name: impl Into<String>,
-        span: Span,
         start_time: Instant,
         messages: Option<Vec<Message>>,
     ) -> Self {
         Self {
-            collector,
             service_name: service_name.into(),
-            span,
             total_bytes: 0,
             chunk_count: 0,
             start_time,
@@ -87,186 +75,30 @@ impl StreamProcessor for ObservableStreamProcessor {
     }
 
     fn on_complete(&mut self) {
-        // Update span with streaming metrics and end time
-        let end_time_nanos = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-
-        self.span.end_time_unix_nano = format!("{}", end_time_nanos);
-
-        // Add streaming metrics as attributes using constants
-        self.span.attributes.push(Attribute {
-            key: llm::RESPONSE_BYTES.to_string(),
-            value: AttributeValue {
-                string_value: Some(self.total_bytes.to_string()),
-            },
-        });
-
-        self.span.attributes.push(Attribute {
-            key: llm::DURATION_MS.to_string(),
-            value: AttributeValue {
-                string_value: Some(self.start_time.elapsed().as_millis().to_string()),
-            },
-        });
-
-        // Add time to first token if available (streaming only)
-        if let Some(ttft) = self.time_to_first_token {
-            self.span.attributes.push(Attribute {
-                key: llm::TIME_TO_FIRST_TOKEN_MS.to_string(),
-                value: AttributeValue {
-                    string_value: Some(ttft.to_string()),
-                },
-            });
-
-            // Add time to first token as a span event
-            // Calculate the timestamp by adding ttft duration to span start time
-            if let Ok(start_time_nanos) = self.span.start_time_unix_nano.parse::<u128>() {
-                // Convert ttft from milliseconds to nanoseconds and add to start time
-                let event_timestamp = start_time_nanos + (ttft * 1_000_000);
-                let mut event =
-                    Event::new(llm::TIME_TO_FIRST_TOKEN_MS.to_string(), event_timestamp);
-                event.add_attribute(llm::TIME_TO_FIRST_TOKEN_MS.to_string(), ttft.to_string());
-
-                // Initialize events vector if needed
-                if self.span.events.is_none() {
-                    self.span.events = Some(Vec::new());
-                }
-
-                if let Some(ref mut events) = self.span.events {
-                    events.push(event);
-                }
-            }
-        }
-
-        // Analyze signals if messages are available and add to span attributes
+        // Analyze signals if messages are available
         if let Some(ref messages) = self.messages {
             let analyzer: Box<dyn SignalAnalyzer> = Box::new(TextBasedSignalAnalyzer::new());
-            let report = analyzer.analyze(messages);
-
-            // Add overall quality
-            self.span.attributes.push(Attribute {
-                key: signal_constants::QUALITY.to_string(),
-                value: AttributeValue {
-                    string_value: Some(format!("{:?}", report.overall_quality)),
-                },
-            });
-
-            // Add repair/follow-up metrics if concerning
-            if report.follow_up.is_concerning || report.follow_up.repair_count > 0 {
-                self.span.attributes.push(Attribute {
-                    key: signal_constants::REPAIR_COUNT.to_string(),
-                    value: AttributeValue {
-                        string_value: Some(report.follow_up.repair_count.to_string()),
-                    },
-                });
-
-                self.span.attributes.push(Attribute {
-                    key: signal_constants::REPAIR_RATIO.to_string(),
-                    value: AttributeValue {
-                        string_value: Some(format!("{:.3}", report.follow_up.repair_ratio)),
-                    },
-                });
-            }
-
-            // Add flag marker to operation name if any concerning signal is detected
-            let should_flag = report.frustration.has_frustration
-                || report.repetition.has_looping
-                || report.escalation.escalation_requested
-                || matches!(
-                    report.overall_quality,
-                    InteractionQuality::Poor | InteractionQuality::Severe
-                );
-
-            if should_flag {
-                // Prepend flag marker to the operation name
-                self.span.name = format!("{} {}", self.span.name, FLAG_MARKER);
-            }
-
-            // Add key signal metrics
-            if report.frustration.has_frustration {
-                self.span.attributes.push(Attribute {
-                    key: signal_constants::FRUSTRATION_COUNT.to_string(),
-                    value: AttributeValue {
-                        string_value: Some(report.frustration.frustration_count.to_string()),
-                    },
-                });
-                self.span.attributes.push(Attribute {
-                    key: signal_constants::FRUSTRATION_SEVERITY.to_string(),
-                    value: AttributeValue {
-                        string_value: Some(report.frustration.severity.to_string()),
-                    },
-                });
-            }
-
-            if report.repetition.has_looping {
-                self.span.attributes.push(Attribute {
-                    key: signal_constants::REPETITION_COUNT.to_string(),
-                    value: AttributeValue {
-                        string_value: Some(report.repetition.repetition_count.to_string()),
-                    },
-                });
-            }
-
-            if report.escalation.escalation_requested {
-                self.span.attributes.push(Attribute {
-                    key: signal_constants::ESCALATION_REQUESTED.to_string(),
-                    value: AttributeValue {
-                        string_value: Some("true".to_string()),
-                    },
-                });
-            }
-
-            if report.positive_feedback.has_positive_feedback {
-                self.span.attributes.push(Attribute {
-                    key: signal_constants::POSITIVE_FEEDBACK_COUNT.to_string(),
-                    value: AttributeValue {
-                        string_value: Some(report.positive_feedback.positive_count.to_string()),
-                    },
-                });
-            }
+            let _report = analyzer.analyze(messages);
+            // Signal analysis complete - OpenTelemetry automatic instrumentation handles span attributes
         }
 
-        // Record the finalized span
-        self.collector
-            .record_span(&self.service_name, self.span.clone());
+        info!(
+            service = %self.service_name,
+            total_bytes = self.total_bytes,
+            chunk_count = self.chunk_count,
+            duration_ms = self.start_time.elapsed().as_millis(),
+            time_to_first_token_ms = ?self.time_to_first_token,
+            "Streaming completed"
+        );
     }
 
     fn on_error(&mut self, error_msg: &str) {
-        warn!("Stream error in PassthroughProcessor: {}", error_msg);
-
-        // Update span with error info and end time
-        let end_time_nanos = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-
-        self.span.end_time_unix_nano = format!("{}", end_time_nanos);
-
-        self.span.attributes.push(Attribute {
-            key: error::ERROR.to_string(),
-            value: AttributeValue {
-                string_value: Some("true".to_string()),
-            },
-        });
-
-        self.span.attributes.push(Attribute {
-            key: error::MESSAGE.to_string(),
-            value: AttributeValue {
-                string_value: Some(error_msg.to_string()),
-            },
-        });
-
-        self.span.attributes.push(Attribute {
-            key: llm::DURATION_MS.to_string(),
-            value: AttributeValue {
-                string_value: Some(self.start_time.elapsed().as_millis().to_string()),
-            },
-        });
-
-        // Record the error span
-        self.collector
-            .record_span(&self.service_name, self.span.clone());
+        warn!(
+            service = %self.service_name,
+            error = error_msg,
+            duration_ms = self.start_time.elapsed().as_millis(),
+            "Stream error"
+        );
     }
 }
 

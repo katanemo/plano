@@ -13,7 +13,6 @@ use common::configuration::{Agent, Configuration};
 use common::consts::{
     CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
 };
-use common::traces::TraceCollector;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -112,17 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in arch_config.yaml
     // Pass Some(true/false) to override, or None to use env var OTEL_TRACING_ENABLED
-    let tracing_enabled = if arch_config.tracing.is_some() {
-        info!("Tracing configuration found in arch_config.yaml");
-        Some(true)
-    } else {
-        info!(
-            "No tracing configuration in arch_config.yaml, will check OTEL_TRACING_ENABLED env var"
-        );
-        None
-    };
-    let trace_collector = Arc::new(TraceCollector::new(tracing_enabled));
-    let _flusher_handle = trace_collector.clone().start_background_flusher();
+    // OpenTelemetry automatic instrumentation is configured in utils/tracing.rs
 
     // Initialize conversation state storage for v1/responses
     // Configurable via arch_config.yaml state_storage section
@@ -171,7 +160,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
-        let trace_collector = trace_collector.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
@@ -182,7 +170,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
-            let trace_collector = trace_collector.clone();
             let state_storage = state_storage.clone();
 
             async move {
@@ -202,7 +189,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             agents_list,
                             listeners,
-                            trace_collector,
                         )
                         .with_context(parent_cx)
                         .await;
@@ -220,7 +206,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             model_aliases,
                             llm_providers,
-                            trace_collector,
                             state_storage,
                         )
                         .with_context(parent_cx)

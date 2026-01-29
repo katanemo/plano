@@ -3,7 +3,6 @@ use common::configuration::{LlmProvider, ModelAlias};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
-use common::traces::TraceCollector;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
@@ -11,10 +10,11 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::header::{self};
 use hyper::{Request, Response, StatusCode};
+use opentelemetry::trace::get_active_span;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 use crate::handlers::router_chat::router_chat_get_upstream_model;
 use crate::handlers::utils::{
@@ -33,13 +33,23 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .boxed()
 }
 
+#[instrument(
+    name = "llm_chat_handler",
+    skip_all,
+    fields(
+        http.method = %request.method(),
+        http.path = %request.uri().path(),
+        model.requested = tracing::field::Empty,
+        model.alias_resolved = tracing::field::Empty,
+        model.routing_resolved = tracing::field::Empty
+    )
+)]
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<Vec<LlmProvider>>>,
-    trace_collector: Arc<TraceCollector>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
@@ -119,13 +129,17 @@ pub async fn llm_chat(
     // Model alias resolution: update model field in client_request immediately
     // This ensures all downstream objects use the resolved model
     let model_from_request = client_request.model().to_string();
-    let temperature = client_request.get_temperature();
+    let _temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
 
+    // Record model information in span
+    tracing::Span::current().record("model.requested", model_from_request.as_str());
+    tracing::Span::current().record("model.alias_resolved", resolved_model.as_str());
+
     // Extract tool names and user message preview for span attributes
-    let tool_names = client_request.get_tool_names();
-    let user_message_preview = client_request
+    let _tool_names = client_request.get_tool_names();
+    let _user_message_preview = client_request
         .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
 
@@ -225,7 +239,6 @@ pub async fn llm_chat(
     let routing_result = match router_chat_get_upstream_model(
         router_service,
         client_request, // Pass the original request - router_chat will convert it
-        trace_collector.clone(),
         &traceparent,
         &request_path,
         &request_id,
@@ -241,6 +254,13 @@ pub async fn llm_chat(
     };
 
     let model_name = routing_result.model_name;
+
+    // Record the routed model in span
+    tracing::Span::current().record("model.routing_resolved", model_name.as_str());
+
+    get_active_span(|span| {
+        span.update_name(format!("llm_chat POST {} -> {}", request_path, model_name));
+    });
 
     debug!(
         "[PLANO_REQ_ID:{}] | ARCH_ROUTER URL | {}, Resolved Model: {}",
@@ -261,7 +281,7 @@ pub async fn llm_chat(
 
     // Capture start time right before sending request to upstream
     let request_start_time = std::time::Instant::now();
-    let request_start_system_time = std::time::SystemTime::now();
+    let _request_start_system_time = std::time::SystemTime::now();
 
     let llm_response = match reqwest::Client::new()
         .post(full_qualified_llm_provider_url)
@@ -291,27 +311,9 @@ pub async fn llm_chat(
     // Build LLM span with actual status code using constants
     let byte_stream = llm_response.bytes_stream();
 
-    // Build the LLM span (will be finalized after streaming completes)
-    let llm_span = build_llm_span(
-        &traceparent,
-        &request_path,
-        &resolved_model,
-        &model_name,
-        upstream_status.as_u16(),
-        is_streaming_request,
-        request_start_system_time,
-        tool_names,
-        user_message_preview,
-        temperature,
-        &llm_providers,
-    )
-    .await;
-
     // Create base processor for metrics and tracing
     let base_processor = ObservableStreamProcessor::new(
-        trace_collector,
         operation_component::LLM,
-        llm_span,
         request_start_time,
         Some(messages_for_signals),
     );
@@ -374,88 +376,6 @@ fn resolve_model_alias(
         }
     }
     model_from_request.to_string()
-}
-
-/// Builds the LLM span with all required and optional attributes.
-#[allow(clippy::too_many_arguments)]
-async fn build_llm_span(
-    traceparent: &str,
-    request_path: &str,
-    resolved_model: &str,
-    model_name: &str,
-    status_code: u16,
-    is_streaming: bool,
-    start_time: std::time::SystemTime,
-    tool_names: Option<Vec<String>>,
-    user_message_preview: Option<String>,
-    temperature: Option<f32>,
-    llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
-) -> common::traces::Span {
-    use crate::tracing::{http, llm, OperationNameBuilder};
-    use common::traces::{parse_traceparent, SpanBuilder, SpanKind};
-
-    // Calculate the upstream path based on provider configuration
-    let upstream_path = get_upstream_path(
-        llm_providers,
-        model_name,
-        request_path,
-        resolved_model,
-        is_streaming,
-    )
-    .await;
-
-    // Build operation name showing path transformation if different
-    let operation_name = if request_path != upstream_path {
-        OperationNameBuilder::new()
-            .with_method("POST")
-            .with_path(format!("{} >> {}", request_path, upstream_path))
-            .with_target(resolved_model)
-            .build()
-    } else {
-        OperationNameBuilder::new()
-            .with_method("POST")
-            .with_path(request_path)
-            .with_target(resolved_model)
-            .build()
-    };
-
-    let (trace_id, parent_span_id) = parse_traceparent(traceparent);
-
-    let mut span_builder = SpanBuilder::new(&operation_name)
-        .with_trace_id(&trace_id)
-        .with_kind(SpanKind::Client)
-        .with_start_time(start_time)
-        .with_attribute(http::METHOD, "POST")
-        .with_attribute(http::STATUS_CODE, status_code.to_string())
-        .with_attribute(http::TARGET, request_path.to_string())
-        .with_attribute(http::UPSTREAM_TARGET, upstream_path)
-        .with_attribute(llm::MODEL_NAME, resolved_model.to_string())
-        .with_attribute(llm::IS_STREAMING, is_streaming.to_string());
-
-    // Only set parent span ID if it exists (not a root span)
-    if let Some(parent) = parent_span_id {
-        span_builder = span_builder.with_parent_span_id(&parent);
-    }
-
-    // Add optional attributes
-    if let Some(temp) = temperature {
-        span_builder = span_builder.with_attribute(llm::TEMPERATURE, temp.to_string());
-    }
-
-    if let Some(tools) = tool_names {
-        let formatted_tools = tools
-            .iter()
-            .map(|name| format!("{}(...)", name))
-            .collect::<Vec<_>>()
-            .join("\n");
-        span_builder = span_builder.with_attribute(llm::TOOLS, formatted_tools);
-    }
-
-    if let Some(preview) = user_message_preview {
-        span_builder = span_builder.with_attribute(llm::USER_MESSAGE_PREVIEW, preview);
-    }
-
-    span_builder.build()
 }
 
 /// Calculates the upstream path for the provider based on the model name.

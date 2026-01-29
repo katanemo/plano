@@ -206,7 +206,7 @@ static_resources:
     - name: outbound_api_traffic
       address:
         socket_address:
-          address: 127.0.0.1
+          address: 0.0.0.0
           port_value: 11000
       traffic_direction: OUTBOUND
       filter_chains:
@@ -1007,7 +1007,7 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: 0.0.0.0
+                      address: host.docker.internal
                       port_value: 9091
                   hostname: localhost
 

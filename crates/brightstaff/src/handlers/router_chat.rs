@@ -1,14 +1,11 @@
 use common::configuration::ModelUsagePreference;
-use common::traces::{parse_traceparent, SpanBuilder, SpanKind, TraceCollector};
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use hyper::StatusCode;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::router::llm_router::RouterService;
-use crate::tracing::{http, operation_component, routing, OperationNameBuilder};
 
 pub struct RoutingResult {
     pub model_name: String,
@@ -36,7 +33,6 @@ impl RoutingError {
 pub async fn router_chat_get_upstream_model(
     router_service: Arc<RouterService>,
     client_request: ProviderRequestType,
-    trace_collector: Arc<TraceCollector>,
     traceparent: &str,
     request_path: &str,
     request_id: &str,
@@ -120,8 +116,8 @@ pub async fn router_chat_get_upstream_model(
     );
 
     // Capture start time for routing span
-    let routing_start_time = std::time::Instant::now();
-    let routing_start_system_time = std::time::SystemTime::now();
+    let _routing_start_time = std::time::Instant::now();
+    let _routing_start_system_time = std::time::SystemTime::now();
 
     // Attempt to determine route using the router service
     let routing_result = router_service
@@ -135,21 +131,7 @@ pub async fn router_chat_get_upstream_model(
 
     match routing_result {
         Ok(route) => match route {
-            Some((_, model_name)) => {
-                // Record successful routing span
-                let mut attrs: HashMap<String, String> = HashMap::new();
-                attrs.insert("route.selected_model".to_string(), model_name.clone());
-                record_routing_span(
-                    trace_collector,
-                    traceparent,
-                    routing_start_time,
-                    routing_start_system_time,
-                    attrs,
-                )
-                .await;
-
-                Ok(RoutingResult { model_name })
-            }
+            Some((_, model_name)) => Ok(RoutingResult { model_name }),
             None => {
                 // No route determined, use default model from request
                 info!(
@@ -158,91 +140,14 @@ pub async fn router_chat_get_upstream_model(
                     chat_request.model
                 );
 
-                let default_model = chat_request.model.clone();
-                let mut attrs = HashMap::new();
-                attrs.insert("route.selected_model".to_string(), default_model.clone());
-                record_routing_span(
-                    trace_collector,
-                    traceparent,
-                    routing_start_time,
-                    routing_start_system_time,
-                    attrs,
-                )
-                .await;
-
                 Ok(RoutingResult {
-                    model_name: default_model,
+                    model_name: chat_request.model.clone(),
                 })
             }
         },
-        Err(err) => {
-            // Record failed routing span
-            let mut attrs = HashMap::new();
-            attrs.insert("route.selected_model".to_string(), "unknown".to_string());
-            attrs.insert("error.message".to_string(), err.to_string());
-            record_routing_span(
-                trace_collector,
-                traceparent,
-                routing_start_time,
-                routing_start_system_time,
-                attrs,
-            )
-            .await;
-
-            Err(RoutingError::internal_error(format!(
-                "Failed to determine route: {}",
-                err
-            )))
-        }
+        Err(err) => Err(RoutingError::internal_error(format!(
+            "Failed to determine route: {}",
+            err
+        ))),
     }
-}
-
-/// Helper function to record a routing span with the given attributes.
-/// Reduces code duplication across different routing outcomes.
-async fn record_routing_span(
-    trace_collector: Arc<TraceCollector>,
-    traceparent: &str,
-    start_time: std::time::Instant,
-    start_system_time: std::time::SystemTime,
-    attrs: HashMap<String, String>,
-) {
-    // The routing always uses OpenAI Chat Completions format internally,
-    // so we log that as the actual API being used for routing
-    let routing_api_path = "/v1/chat/completions";
-
-    let routing_operation_name = OperationNameBuilder::new()
-        .with_method("POST")
-        .with_path(routing_api_path)
-        .with_target("Arch-Router-1.5B")
-        .build();
-
-    let (trace_id, parent_span_id) = parse_traceparent(traceparent);
-
-    // Build the routing span directly using constants
-    let mut span_builder = SpanBuilder::new(&routing_operation_name)
-        .with_trace_id(&trace_id)
-        .with_kind(SpanKind::Client)
-        .with_start_time(start_system_time)
-        .with_end_time(std::time::SystemTime::now())
-        .with_attribute(http::METHOD, "POST")
-        .with_attribute(http::TARGET, routing_api_path.to_string())
-        .with_attribute(
-            routing::ROUTE_DETERMINATION_MS,
-            start_time.elapsed().as_millis().to_string(),
-        );
-
-    // Only set parent span ID if it exists (not a root span)
-    if let Some(parent) = parent_span_id {
-        span_builder = span_builder.with_parent_span_id(&parent);
-    }
-
-    // Add all custom attributes
-    for (key, value) in attrs {
-        span_builder = span_builder.with_attribute(key, value);
-    }
-
-    let span = span_builder.build();
-
-    // Record the span directly to the collector
-    trace_collector.record_span(operation_component::ROUTING, span);
 }

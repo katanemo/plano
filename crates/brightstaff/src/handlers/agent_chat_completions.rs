@@ -1,9 +1,7 @@
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
 
 use bytes::Bytes;
 use common::consts::TRACE_PARENT_HEADER;
-use common::traces::{generate_random_span_id, parse_traceparent, SpanBuilder, SpanKind};
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
@@ -12,13 +10,12 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::{Request, Response};
 use serde::ser::Error as SerError;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 use super::agent_selector::{AgentSelectionError, AgentSelector};
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
 use super::response_handler::ResponseHandler;
 use crate::router::plano_orchestrator::OrchestratorService;
-use crate::tracing::{http, operation_component, OperationNameBuilder};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
@@ -41,17 +38,8 @@ pub async fn agent_chat(
     _: String,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
-    trace_collector: Arc<common::traces::TraceCollector>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    match handle_agent_chat(
-        request,
-        orchestrator_service,
-        agents_list,
-        listeners,
-        trace_collector,
-    )
-    .await
-    {
+    match handle_agent_chat(request, orchestrator_service, agents_list, listeners).await {
         Ok(response) => Ok(response),
         Err(err) => {
             // Check if this is a client error from the pipeline that should be cascaded
@@ -121,12 +109,20 @@ pub async fn agent_chat(
     }
 }
 
+#[instrument(
+    name = "agent_chat_handler",
+    skip(request, orchestrator_service, agents_list, listeners),
+    level = "info",
+    fields(
+        http.method = %request.method(),
+        http.path = %request.uri().path()
+    )
+)]
 async fn handle_agent_chat(
     request: Request<hyper::body::Incoming>,
     orchestrator_service: Arc<OrchestratorService>,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
-    trace_collector: Arc<common::traces::TraceCollector>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(orchestrator_service);
@@ -223,62 +219,10 @@ async fn handle_agent_chat(
         agent_selector.create_agent_map(agents)
     };
 
-    // Parse trace parent to get trace_id and parent_span_id
-    let (trace_id, parent_span_id) = if let Some(ref tp) = traceparent {
-        parse_traceparent(tp)
-    } else {
-        (String::new(), None)
-    };
-
     // Select appropriate agents using arch orchestrator llm model
-    let selection_span_id = generate_random_span_id();
-    let selection_start_time = SystemTime::now();
-    let selection_start_instant = Instant::now();
-
     let selected_agents = agent_selector
         .select_agents(&message, &listener, traceparent.clone(), request_id.clone())
         .await?;
-
-    // Record agent selection span
-    let selection_end_time = SystemTime::now();
-    let selection_elapsed = selection_start_instant.elapsed();
-    let selection_operation_name = OperationNameBuilder::new()
-        .with_method("POST")
-        .with_path("/agents/select")
-        .with_target(&listener.name)
-        .build();
-
-    let mut selection_span_builder = SpanBuilder::new(&selection_operation_name)
-        .with_span_id(selection_span_id)
-        .with_kind(SpanKind::Internal)
-        .with_start_time(selection_start_time)
-        .with_end_time(selection_end_time)
-        .with_attribute(http::METHOD, "POST")
-        .with_attribute(http::TARGET, "/agents/select")
-        .with_attribute("selection.listener", listener.name.clone())
-        .with_attribute("selection.agent_count", selected_agents.len().to_string())
-        .with_attribute(
-            "selection.agents",
-            selected_agents
-                .iter()
-                .map(|a| a.id.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        )
-        .with_attribute(
-            "duration_ms",
-            format!("{:.2}", selection_elapsed.as_secs_f64() * 1000.0),
-        );
-
-    if !trace_id.is_empty() {
-        selection_span_builder = selection_span_builder.with_trace_id(trace_id.clone());
-    }
-    if let Some(parent_id) = parent_span_id.clone() {
-        selection_span_builder = selection_span_builder.with_parent_span_id(parent_id);
-    }
-
-    let selection_span = selection_span_builder.build();
-    trace_collector.record_span(operation_component::ORCHESTRATOR, selection_span);
 
     info!("Selected {} agent(s) for execution", selected_agents.len());
 
@@ -296,11 +240,6 @@ async fn handle_agent_chat(
             selected_agent.id
         );
 
-        // Record the start time for agent span
-        let agent_start_time = SystemTime::now();
-        let agent_start_instant = Instant::now();
-        let span_id = generate_random_span_id();
-
         // Get agent name
         let agent_name = selected_agent.id.clone();
 
@@ -311,9 +250,6 @@ async fn handle_agent_chat(
                 selected_agent,
                 &agent_map,
                 &request_headers,
-                Some(&trace_collector),
-                trace_id.clone(),
-                span_id.clone(),
             )
             .await?;
 
@@ -328,47 +264,8 @@ async fn handle_agent_chat(
                 client_request.clone(),
                 agent,
                 &request_headers,
-                trace_id.clone(),
-                span_id.clone(),
             )
             .await?;
-
-        // Record agent span
-        let agent_end_time = SystemTime::now();
-        let agent_elapsed = agent_start_instant.elapsed();
-        let full_path = format!("/agents{}", request_path);
-        let operation_name = OperationNameBuilder::new()
-            .with_method("POST")
-            .with_path(&full_path)
-            .with_target(&agent_name)
-            .build();
-
-        let mut span_builder = SpanBuilder::new(&operation_name)
-            .with_span_id(span_id)
-            .with_kind(SpanKind::Internal)
-            .with_start_time(agent_start_time)
-            .with_end_time(agent_end_time)
-            .with_attribute(http::METHOD, "POST")
-            .with_attribute(http::TARGET, full_path)
-            .with_attribute("agent.name", agent_name.clone())
-            .with_attribute(
-                "agent.sequence",
-                format!("{}/{}", agent_index + 1, agent_count),
-            )
-            .with_attribute(
-                "duration_ms",
-                format!("{:.2}", agent_elapsed.as_secs_f64() * 1000.0),
-            );
-
-        if !trace_id.is_empty() {
-            span_builder = span_builder.with_trace_id(trace_id.clone());
-        }
-        if let Some(parent_id) = parent_span_id.clone() {
-            span_builder = span_builder.with_parent_span_id(parent_id);
-        }
-
-        let span = span_builder.build();
-        trace_collector.record_span(operation_component::AGENT, span);
 
         // If this is the last agent, return the streaming response
         if is_last_agent {
