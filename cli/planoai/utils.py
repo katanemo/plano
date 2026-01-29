@@ -128,7 +128,7 @@ def convert_legacy_listeners(
 
     model_provider_set = False
     for listener in listeners:
-        if listener.get("type") == "model_listener":
+        if listener.get("type") == "model":
             if model_provider_set:
                 raise ValueError(
                     "Currently only one listener can have model_providers set"

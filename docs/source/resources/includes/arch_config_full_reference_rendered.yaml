@@ -38,14 +38,6 @@ listeners:
   router: plano_orchestrator_v1
   type: agent
 - address: 0.0.0.0
-  name: model_1
-  port: 12000
-  type: model
-- address: 0.0.0.0
-  name: prompt_function_listener
-  port: 10000
-  type: prompt
-- address: 0.0.0.0
   model_providers:
   - access_key: $OPENAI_API_KEY
     default: true
@@ -73,10 +65,13 @@ listeners:
     port: 443
     protocol: https
     provider_interface: openai
-  name: egress_traffic
+  name: model_1
   port: 12000
-  timeout: 30s
-  type: model_listener
+  type: model
+- address: 0.0.0.0
+  name: prompt_function_listener
+  port: 10000
+  type: prompt
 model_aliases:
   fast-llm:
     target: gpt-4o-mini
