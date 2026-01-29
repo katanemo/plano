@@ -5,6 +5,7 @@ listeners:
     name: model_1
     address: 0.0.0.0
     port: 12000
+    max_retries: 3
 
 model_providers:
 

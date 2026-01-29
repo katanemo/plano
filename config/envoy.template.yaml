@@ -413,7 +413,7 @@ static_resources:
                     "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
                     path: "/var/log/access_llm.log"
                     format: |
-                     [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" "%UPSTREAM_CLUSTER%"
+                     [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" "%UPSTREAM_CLUSTER%" attempts=%UPSTREAM_REQUEST_ATTEMPT_COUNT%
                 route_config:
                   name: local_routes
                   virtual_hosts:
@@ -534,7 +534,7 @@ static_resources:
                     "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
                     path: "/var/log/access_llm.log"
                     format: |
-                     [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" "%UPSTREAM_CLUSTER%"
+                     [%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" "%UPSTREAM_CLUSTER%" attempts=%UPSTREAM_REQUEST_ATTEMPT_COUNT%
                 route_config:
                   name: local_routes
                   virtual_hosts:
@@ -559,6 +559,16 @@ static_resources:
                             auto_host_rewrite: true
                             cluster: {{ llm_cluster_name }}
                             timeout: 300s
+                            {% if llm_gateway_listener.max_retries %}
+                            retry_policy:
+                              retry_on: "5xx,connect-failure,refused-stream,reset,retriable-status-codes"
+                              num_retries: {{ llm_gateway_listener.max_retries }}
+                              per_try_timeout: 30s
+                              retriable_status_codes: [429, 500, 502, 503, 504]
+                              retry_back_off:
+                                base_interval: 0.5s
+                                max_interval: 5s
+                            {% endif %}
                       {% endfor %}
                         - match:
                             prefix: "/"
