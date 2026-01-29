@@ -278,6 +278,7 @@ static_resources:
 
     {% if listener.agents %}
 
+    # agent listeners
     - name: {{ listener.name | replace(" ", "_") }}
       address:
         socket_address:
@@ -333,7 +334,7 @@ static_resources:
                             auto_host_rewrite: true
                             prefix_rewrite: "/agents/"
                             cluster: bright_staff
-                            timeout: {{ llm_gateway_listener.timeout }}
+                            timeout: {{ listener.timeout | default('30s') }}
                 http_filters:
                   - name: envoy.filters.http.compressor
                     typed_config:
