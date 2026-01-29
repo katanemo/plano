@@ -20,87 +20,102 @@ export const siteConfig = {
     huggingface: "https://huggingface.co/katanemo",
   },
   keywords: [
-    // Primary keywords
+    // High-intent comparison/alternative searches (proven search volume)
+    "LiteLLM alternative",
+    "Portkey alternative",
+    "Helicone alternative",
+    "OpenRouter alternative",
+    "Kong AI Gateway alternative",
+
+    // Primary keywords (high volume, validated by industry reports)
     "AI gateway",
+    "LLM gateway",
+    "agentic AI",
     "AI agents",
     "agent orchestration",
-    "LLM gateway",
     "LLM routing",
 
-    // Secondary keywords
-    "multi-agent systems",
-    "AI infrastructure",
-    "AI proxy",
-    "agentic applications",
-    "LLM proxy",
+    // MCP - massive 2025 trend (97M+ SDK downloads, industry standard)
+    "MCP server",
+    "Model Context Protocol",
+    "MCP gateway",
+    "MCP observability",
+    "MCP security",
 
-    // Technical keywords
+    // Problem-aware searches (how developers search)
+    "LLM rate limiting",
+    "LLM load balancing",
+    "LLM failover",
+    "provider fallback",
+    "multi-provider LLM",
+    "LLM cost optimization",
+    "token usage tracking",
+
+    // Agent framework integration (trending frameworks)
+    "LangGraph gateway",
+    "LangChain infrastructure",
+    "CrewAI deployment",
+    "AutoGen orchestration",
+    "multi-agent orchestration",
+
+    // Production & reliability (enterprise focus)
+    "AI agents in production",
+    "production AI infrastructure",
+    "agent reliability",
+    "deploy AI agents",
+    "scaling AI agents",
+    "LLM traffic management",
+
+    // Observability & LLMOps (growing category)
+    "LLM observability",
     "AI observability",
     "agent tracing",
+    "LLMOps",
+    "AI telemetry",
+    "prompt versioning",
+
+    // Guardrails & safety (enterprise requirement)
     "AI guardrails",
+    "LLM content filtering",
+    "prompt injection protection",
+    "AI safety middleware",
+
+    // Routing & optimization
     "model routing",
-    "prompt routing",
-
-    // Long-tail keywords
-    "mixture of agents",
-    "AI agent framework",
-    "production AI agents",
-    "deploy AI agents",
-    "open source AI gateway",
-
-    // brand specific keywords
-    "Plano",
-    "Plano AI",
-    "Plano AI gateway",
-    "Katanemo",
-    "Katanemo AI",
-    "Katanemo AI gateway",
-    "Arch gateway",
-    "Arch AI",
-    "Arch AI gateway",
-
-    // Production & reliability intent
-    "AI agents in production",
-    "scaling AI agents",
-    "debugging AI agents",
-    "LLM failures in production",
-    "agent reliability",
-    "agent failure modes",
-    "prompt drift",
-    "model regression detection",
-    "AI reliability engineering",
-
-    // Routing & cost optimization intent
-    "LLM cost optimization",
-    "model failover",
-    "provider fallback",
     "inference routing",
     "latency based routing",
-    "token usage tracking",
-    "model selection logic",
-    "multi provider LLM routing",
+    "intelligent model selection",
+    "semantic caching LLM",
 
-    // Observability & evals
-    "LLM tracing",
-    "agent observability",
-    "prompt versioning",
-    "production evals",
-    "tool calling observability",
-    "agent performance monitoring",
+    // Emerging trends (A2A, agentic RAG)
+    "A2A protocol",
+    "agent to agent communication",
+    "agentic RAG",
+    "tool calling orchestration",
+    "function calling routing",
 
-    // Infra & architecture language
-    "AI control plane",
+    // Use cases (specific applications)
+    "RAG infrastructure",
+    "chatbot backend",
+    "AI customer service infrastructure",
+    "coding agent infrastructure",
+
+    // Infrastructure architecture
     "AI data plane",
-    "LLM traffic management",
-    "AI API gateway",
-    "Envoy for LLMs",
-    "OTEL for AI",
+    "AI control plane",
+    "AI proxy",
+    "unified LLM API",
 
-    // Open source & self-hosted intent
+    // Open source & self-hosted (strong developer interest)
+    "open source AI gateway",
     "open source LLM gateway",
     "self hosted AI gateway",
-    "OSS AI infrastructure",
     "on premise LLM routing",
+
+    // Brand (minimal, necessary)
+    "Plano AI",
+    "Plano gateway",
+    "Arch gateway",
   ],
   authors: [{ name: "Katanemo", url: "https://github.com/katanemo/plano" }],
   creator: "Katanemo",
