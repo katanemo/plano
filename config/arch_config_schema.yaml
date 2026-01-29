@@ -66,6 +66,8 @@ properties:
               type: string
               enum:
                 - plano_orchestrator_v1
+            max_retries:
+              type: integer
             type:
               type: string
               enum:
