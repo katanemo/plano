@@ -7,6 +7,7 @@ use brightstaff::router::plano_orchestrator::OrchestratorService;
 use brightstaff::state::memory::MemoryConversationalStorage;
 use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
+use brightstaff::trace_api::handle_trace_api;
 use brightstaff::utils::tracing::init_tracer;
 use bytes::Bytes;
 use common::configuration::{Agent, Configuration};
@@ -187,6 +188,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             async move {
                 let path = req.uri().path();
+                if let Some(response) = handle_trace_api(&req) {
+                    return Ok(response);
+                }
                 // Check if path starts with /agents
                 if path.starts_with("/agents") {
                     // Check if it matches one of the agent API paths

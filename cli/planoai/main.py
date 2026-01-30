@@ -69,6 +69,10 @@ click.rich_click.COMMAND_GROUPS = {
             "commands": ["cli-agent"],
         },
         {
+            "name": "Observability",
+            "commands": ["trace"],
+        },
+        {
             "name": "Utilities",
             "commands": ["validate", "generate-prompt-targets"],
         },
@@ -95,6 +99,7 @@ from planoai.core import (
     start_cli_agent,
 )
 from planoai.init_cmd import init as init_cmd
+from planoai.trace_cmd import trace as trace_cmd
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
@@ -889,6 +894,7 @@ main.add_command(cli_agent)
 main.add_command(generate_prompt_targets)
 main.add_command(validate)
 main.add_command(init_cmd, name="init")
+main.add_command(trace_cmd, name="trace")
 
 if __name__ == "__main__":
     main()
