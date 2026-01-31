@@ -32,7 +32,7 @@ export default function HomePage() {
               <span aria-hidden className="text-emerald-300">↗</span>
             </Link>
             <Link
-              href="https://github.com/katanemo/plano"
+              href="https://planoai.dev"
               className="flex items-center gap-2 text-[#31C887] hover:text-[#45e394] transition-colors"
             >
               <span>Plano - Open Source Agent Infrastructure</span>
