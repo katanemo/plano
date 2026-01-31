@@ -21,7 +21,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-4 font-light tracking-[-0.4px] max-w-2xl text-base sm:text-lg md:text-xl lg:text-2xl text-white/70">
             Bringing industry-leading research and open-source technologies to
-            accelerate AI initiatives.
+            accelerate the development of AI agents.
           </p>
           <div className="mt-18 flex flex-col gap-3 text-lg sm:text-xl lg:text-3xl font-light tracking-wide sm:tracking-[-0.03em] leading-snug">
             <Link
