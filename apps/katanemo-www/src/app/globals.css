@@ -1,0 +1,19 @@
+:root {
+  --katanemo-bg-start: #04171a;
+  --katanemo-bg-end: #0a292e;
+  --font-sans: var(--font-ibm-plex-sans);
+}
+
+html,
+body {
+  background: linear-gradient(
+    to bottom,
+    var(--katanemo-bg-start),
+    var(--katanemo-bg-end)
+  );
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-ibm-plex-sans, var(--font-sans));
+}
