@@ -11,4 +11,18 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
+    - name: Setup Rust toolchain
+      run: rustup toolchain install stable --profile minimal
+    - name: Cache Cargo dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          crates/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Fetch Cargo dependencies
+      run: cd crates && cargo fetch --locked
     - uses: pre-commit/action@v3.0.1
