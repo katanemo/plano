@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import LogoSlider from "../components/LogoSlider";
 
 export default function HomePage() {
   return (
@@ -23,25 +24,34 @@ export default function HomePage() {
             Bringing industry-leading research and open-source technologies to
             accelerate the development of AI agents.
           </p>
+          <p className="mt-6 sm:mt-12 font-light tracking-[-0.4px] max-w-2xl text-xs sm:text-sm md:text-sm lg:text-sm text-white/50">
+            Trusted by leading companies to deliver agents to production.
+          </p>
+          <LogoSlider />
           <div className="mt-18 flex flex-col gap-3 text-lg sm:text-xl lg:text-3xl font-light tracking-wide sm:tracking-[-0.03em] leading-snug">
             <Link
               href="https://huggingface.co/katanemo"
               className="flex items-center gap-2 text-[#31C887] hover:text-[#45e394] transition-colors"
             >
               <span>Models Research</span>
-              <span aria-hidden className="text-emerald-300">↗</span>
+              <span aria-hidden className="text-emerald-300">
+                ↗
+              </span>
             </Link>
             <Link
               href="https://planoai.dev"
               className="flex items-center gap-2 text-[#31C887] hover:text-[#45e394] transition-colors"
             >
               <span>Plano - Open Source Agent Infrastructure</span>
-              <span aria-hidden className="text-emerald-300">↗</span>
+              <span aria-hidden className="text-emerald-300">
+                ↗
+              </span>
             </Link>
           </div>
           <div className="mt-24">
             <div className="sm:max-w-7xl max-w-72 mb-4 text-sm sm:text-base lg:text-lg text-white/70 tracking-[-0.3px] sm:tracking-[0.8px]! font-light">
-            Move faster and more reliably by letting Katanemo do the heavy-lifting.
+              Move faster and more reliably by letting Katanemo do the
+              heavy-lifting.
             </div>
             <a
               href="mailto:interest@katanemo.com"
@@ -54,7 +64,6 @@ export default function HomePage() {
               © 2026 Katanemo Labs, Inc.
             </div>
           </div>
-
         </div>
         <div className="pointer-events-none absolute top-50 right-[-20vw] sm:right-[-10vw] md:right-[-5vw] lg:right-[-20vw] xl:right-[-7vw] 2xl:right-[-17vw] hidden lg:block">
           <Image
