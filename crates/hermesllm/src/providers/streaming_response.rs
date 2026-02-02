@@ -327,8 +327,7 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
         }
 
         // If has data, parse the data as a provider stream response (business logic layer)
-        if transformed_event.data.is_some() {
-            let data_str = transformed_event.data.as_ref().unwrap();
+        if let Some(data_str) = &transformed_event.data {
             let data_bytes = data_str.as_bytes();
             let transformed_response: ProviderStreamResponseType =
                 ProviderStreamResponseType::try_from((data_bytes, client_api, upstream_api))?;

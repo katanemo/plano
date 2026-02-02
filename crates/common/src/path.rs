@@ -51,17 +51,14 @@ pub fn replace_params_in_path(
 
     // add default values
     for param in prompt_target_params.iter() {
-        if !vars_replaced.contains(&param.name) && param.default.is_some() {
-            let default_val = param.default.as_ref().unwrap();
-            params.insert(param.name.clone(), default_val.clone());
-            if query_string_replaced.contains("?") {
-                query_string_replaced.push_str(&format!("&{}={}", param.name, default_val));
-            } else {
-                query_string_replaced.push_str(&format!(
-                    "?{}={}",
-                    param.name,
-                    param.default.as_ref().unwrap()
-                ));
+        if !vars_replaced.contains(&param.name) {
+            if let Some(default_val) = &param.default {
+                params.insert(param.name.clone(), default_val.clone());
+                if query_string_replaced.contains("?") {
+                    query_string_replaced.push_str(&format!("&{}={}", param.name, default_val));
+                } else {
+                    query_string_replaced.push_str(&format!("?{}={}", param.name, default_val));
+                }
             }
         }
     }
