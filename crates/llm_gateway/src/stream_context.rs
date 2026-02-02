@@ -1,11 +1,12 @@
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
 use http::StatusCode;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use proxy_wasm::hostcalls::get_current_time;
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 use std::num::NonZero;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::metrics::Metrics;
@@ -40,7 +41,7 @@ pub struct StreamContext {
     /// The API that should be used for the upstream provider (after compatibility mapping)
     resolved_api: Option<SupportedUpstreamAPIs>,
     llm_providers: Rc<LlmProviders>,
-    llm_provider: Option<Rc<LlmProvider>>,
+    llm_provider: Option<Arc<LlmProvider>>,
     request_id: Option<String>,
     start_time: SystemTime,
     ttft_duration: Option<Duration>,
@@ -128,16 +129,40 @@ impl StreamContext {
         }
     }
 
-    fn select_llm_provider(&mut self) {
+    fn select_llm_provider(&mut self) -> Result<(), String> {
         let provider_hint = self
             .get_http_request_header(ARCH_PROVIDER_HINT_HEADER)
             .map(|llm_name| llm_name.into());
 
-        // info!("llm_providers: {:?}", self.llm_providers);
-        self.llm_provider = Some(routing::get_llm_provider(
-            &self.llm_providers,
-            provider_hint,
-        ));
+        // Try to get provider with hint, fallback to default if error
+        // This handles prompt_gateway requests which don't set ARCH_PROVIDER_HINT_HEADER
+        // since prompt_gateway doesn't have access to model configuration.
+        // brightstaff (model proxy) always validates and sets the provider hint.
+        let provider = match routing::get_llm_provider(&self.llm_providers, provider_hint) {
+            Ok(provider) => provider,
+            Err(err) => {
+                // Try default provider as fallback
+                match self.llm_providers.default() {
+                    Some(default_provider) => {
+                        info!(
+                            "[PLANO_REQ_ID:{}] Provider selection failed, using default provider",
+                            self.request_identifier()
+                        );
+                        default_provider
+                    }
+                    None => {
+                        error!(
+                            "[PLANO_REQ_ID:{}] PROVIDER_SELECTION_FAILED: Error='{}' and no default provider configured",
+                            self.request_identifier(),
+                            err
+                        );
+                        return Err(err);
+                    }
+                }
+            }
+        };
+
+        self.llm_provider = Some(provider);
 
         info!(
             "[PLANO_REQ_ID:{}] PROVIDER_SELECTION: Hint='{}' -> Selected='{}'",
@@ -146,6 +171,8 @@ impl StreamContext {
                 .unwrap_or("none".to_string()),
             self.llm_provider.as_ref().unwrap().name
         );
+
+        Ok(())
     }
 
     fn modify_auth_headers(&mut self) -> Result<(), ServerError> {
@@ -764,7 +791,15 @@ impl HttpContext for StreamContext {
 
         // let routing_header_value = self.get_http_request_header(ARCH_ROUTING_HEADER);
 
-        self.select_llm_provider();
+        if let Err(err) = self.select_llm_provider() {
+            self.send_http_response(
+                400,
+                vec![],
+                Some(format!(r#"{{"error": "{}"}}"#, err).as_bytes()),
+            );
+            return Action::Continue;
+        }
+
         // Check if this is a supported API endpoint
         if SupportedAPIsFromClient::from_endpoint(&request_path).is_none() {
             self.send_http_response(404, vec![], Some(b"Unsupported endpoint"));

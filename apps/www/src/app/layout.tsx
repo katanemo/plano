@@ -3,11 +3,15 @@ import Script from "next/script";
 import "@katanemo/shared-styles/globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ConditionalLayout } from "@/components/ConditionalLayout";
+import { defaultMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = {
-  title: "Plano - Delivery Infrastructure for Agentic Apps",
-  description:
-    "Build agents faster, and deliver them reliably to production - by offloading the critical plumbing work to Plano!",
+  ...defaultMetadata,
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/PlanoIcon.svg",
+    apple: "/Logomark.png",
+  },
 };
 
 export default function RootLayout({
@@ -23,7 +27,7 @@ export default function RootLayout({
           src="https://www.googletagmanager.com/gtag/js?id=G-ML7B1X9HY2"
           strategy="afterInteractive"
         />
-        <Script id="google-analytics" strategy="afterInteractive">
+        <Script strategy="afterInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}

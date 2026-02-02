@@ -23,7 +23,13 @@ llm_providers:
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
 
-  # Anthropic Models
+  - model: openai/*
+    access_key: $OPENAI_API_KEY
+
+  # Anthropic - support all Claude models
+  - model: anthropic/*
+    access_key: $ANTHROPIC_API_KEY
+
   - model: anthropic/claude-sonnet-4-20250514
     access_key: $ANTHROPIC_API_KEY
 

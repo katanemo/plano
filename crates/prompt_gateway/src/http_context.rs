@@ -216,12 +216,12 @@ impl HttpContext for StreamContext {
             ("x-envoy-upstream-rq-timeout-ms", timeout_str.as_str()),
         ];
 
-        if self.request_id.is_some() {
-            headers.push((REQUEST_ID_HEADER, self.request_id.as_ref().unwrap()));
+        if let Some(request_id) = &self.request_id {
+            headers.push((REQUEST_ID_HEADER, request_id));
         }
 
-        if self.traceparent.is_some() {
-            headers.push((TRACE_PARENT_HEADER, self.traceparent.as_ref().unwrap()));
+        if let Some(traceparent) = &self.traceparent {
+            headers.push((TRACE_PARENT_HEADER, traceparent));
         }
 
         let call_args = CallArgs::new(

@@ -24,16 +24,18 @@ export function Hero() {
             >
               <div className="inline-flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 rounded-full bg-[rgba(185,191,255,0.4)] border border-[var(--secondary)] shadow backdrop-blur hover:bg-[rgba(185,191,255,0.6)] transition-colors cursor-pointer">
                 <span className="text-xs sm:text-sm font-medium text-black/65">
-                  v0.4.3
+                  v0.4.4
                 </span>
                 <span className="text-xs sm:text-sm font-medium text-black ">
                   —
                 </span>
                 <span className="text-xs sm:text-sm font-[600] tracking-[-0.6px]! text-black leading-tight">
                   <span className="hidden sm:inline">
-                    Signals: Trace Sampling & Preference Data for Continuous Improvement
+                    Signals: Trace Sampling for Fast Error Analysis
                   </span>
-                  <span className="sm:hidden">Signals: Trace Sampling & Preference Data for Continuous Improvement</span>
+                  <span className="sm:hidden">
+                    Signals: Trace Sampling for Fast Error Analysis
+                  </span>
                 </span>
               </div>
             </Link>
@@ -58,12 +60,20 @@ export function Hero() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-3 sm:gap-4">
             <Button asChild className="w-full sm:w-auto">
-              <Link href="https://docs.planoai.dev/get_started/quickstart" target="_blank" rel="noopener noreferrer">
+              <Link
+                href="https://docs.planoai.dev/get_started/quickstart"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Get started
               </Link>
             </Button>
             <Button variant="secondary" asChild className="w-full sm:w-auto">
-              <Link href="https://docs.planoai.dev" target="_blank" rel="noopener noreferrer">
+              <Link
+                href="https://docs.planoai.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Documentation
               </Link>
             </Button>

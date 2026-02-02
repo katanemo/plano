@@ -18,8 +18,8 @@ Fork the repository to create your own version of **Plano**:
 Once you've forked the repository, clone it to your local machine (replace `<your-username>` with your GitHub username):
 
 ```bash
-$ git clone git@github.com:<your-username>/plano.git
-$ cd plano
+git clone git@github.com:<your-username>/plano.git
+cd plano
 ```
 
 ### 3. Add Upstream Remote
@@ -27,15 +27,15 @@ $ cd plano
 Add the original repository as an upstream remote so you can keep your fork in sync:
 
 ```bash
-$ git remote add upstream git@github.com:katanemo/plano.git
+git remote add upstream git@github.com:katanemo/plano.git
 ```
 
 To sync your fork with the latest changes from the main repository:
 
 ```bash
-$ git fetch upstream
-$ git checkout main
-$ git merge upstream/main
+git fetch upstream
+git checkout main
+git merge upstream/main
 ```
 
 ### 4. Install Prerequisites
@@ -43,7 +43,7 @@ $ git merge upstream/main
 **Install uv** (Python package manager for the planoai CLI):
 
 ```bash
-$ curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Install pre-commit hooks:**
@@ -51,8 +51,8 @@ $ curl -LsSf https://astral.sh/uv/install.sh | sh
 Pre-commit hooks help maintain code quality by running automated checks before each commit. Install them with:
 
 ```bash
-$ pip install pre-commit
-$ pre-commit install
+pip install pre-commit
+pre-commit install
 ```
 
 The pre-commit hooks will automatically run:
@@ -66,17 +66,11 @@ The pre-commit hooks will automatically run:
 The planoai CLI is used to build, run, and manage Plano locally:
 
 ```bash
-$ cd cli
-$ uv sync
+cd cli
+uv sync
 ```
 
 This creates a virtual environment in `.venv` and installs all dependencies.
-
-Optionally, install planoai globally in editable mode:
-
-```bash
-$ uv tool install --editable .
-```
 
 Now you can use `planoai` commands from anywhere, or use `uv run planoai` from the `cli` directory.
 
@@ -85,7 +79,7 @@ Now you can use `planoai` commands from anywhere, or use `uv run planoai` from t
 Use a descriptive name for your branch (e.g., fix-bug-123, add-feature-x).
 
 ```bash
-$ git checkout -b <your-branch-name>
+git checkout -b <your-branch-name>
 ```
 
 ### 7. Make Your Changes
@@ -97,25 +91,25 @@ Make your changes in the relevant files. If you're adding new features or fixing
 **Run Rust tests:**
 
 ```bash
-$ cd crates
-$ cargo test
+cd crates
+cargo test
 ```
 
 For library tests only:
 ```bash
-$ cargo test --lib
+cargo test --lib
 ```
 
 **Run Python CLI tests:**
 
 ```bash
-$ cd cli
-$ uv run pytest
+cd cli
+uv run pytest
 ```
 
 Or with verbose output:
 ```bash
-$ uv run pytest -v
+uv run pytest -v
 ```
 
 **Run pre-commit checks manually:**
@@ -123,18 +117,10 @@ $ uv run pytest -v
 Before committing, you can run all pre-commit checks manually:
 
 ```bash
-$ pre-commit run --all-files
+pre-commit run --all-files
 ```
 
-This ensures your code passes all checks before you commit.
-
-### 9. Push Changes and Create a Pull Request
-
-Once your changes are tested and committed:
-
-```bash
-$ git push origin <your-branch-name>
-```
+### 9. Push changes, and create a Pull request
 
 Go back to the original Plano repository, and you should see a "Compare & pull request" button. Click that to submit a Pull Request (PR). In your PR description, clearly explain the changes you made and why they are necessary.
 

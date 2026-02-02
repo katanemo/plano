@@ -133,15 +133,15 @@ pub async fn router_chat_get_upstream_model(
         Ok(route) => match route {
             Some((_, model_name)) => Ok(RoutingResult { model_name }),
             None => {
-                // No route determined, use default model from request
+                // No route determined, return sentinel value "none"
+                // This signals to llm.rs to use the original validated request model
                 info!(
-                    "[PLANO_REQ_ID: {}] | ROUTER_REQ | No route determined, using default model from request: {}",
-                    request_id,
-                    chat_request.model
+                    "[PLANO_REQ_ID: {}] | ROUTER_REQ | No route determined, returning sentinel 'none'",
+                    request_id
                 );
 
                 Ok(RoutingResult {
-                    model_name: chat_request.model.clone(),
+                    model_name: "none".to_string(),
                 })
             }
         },

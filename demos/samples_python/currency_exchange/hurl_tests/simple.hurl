@@ -8,7 +8,7 @@ Content-Type: application/json
       "content": "convert 100 eur"
     }
   ],
-  "model": "none"
+  "model": "gpt-4o"
 }
 HTTP 200
 [Asserts]

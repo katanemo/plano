@@ -109,7 +109,7 @@ def test_openai_responses_api_non_streaming_with_tools_passthrough():
     ]
 
     resp = client.responses.create(
-        model="gpt-5",
+        model="openai/gpt-5-mini-2025-08-07",
         input="Call the echo tool",
         tools=tools,
     )
@@ -140,7 +140,7 @@ def test_openai_responses_api_with_streaming_with_tools_passthrough():
     ]
 
     stream = client.responses.create(
-        model="gpt-5",
+        model="openai/gpt-5-mini-2025-08-07",
         input="Call the echo tool",
         tools=tools,
         stream=True,
@@ -638,7 +638,7 @@ def test_openai_responses_api_mixed_content_types():
     # This test mimics the request that was failing:
     # One message with string content, another with array content
     resp = client.responses.create(
-        model="arch.title.v1",
+        model="openai/gpt-5-mini-2025-08-07",
         input=[
             {
                 "role": "developer",

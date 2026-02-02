@@ -60,6 +60,7 @@ def test_prompt_gateway(stream):
                 "content": "how is the weather in seattle for next 10 days",
             }
         ],
+        "model": "openai/gpt-4o",
         "stream": stream,
     }
     response = requests.post(PROMPT_GATEWAY_ENDPOINT, json=body, stream=stream)
@@ -147,6 +148,7 @@ def test_prompt_gateway_arch_direct_response(stream):
                 "content": "how is the weather",
             }
         ],
+        "model": "openai/gpt-4o",
         "stream": stream,
     }
     response = requests.post(PROMPT_GATEWAY_ENDPOINT, json=body, stream=stream)
@@ -189,6 +191,7 @@ def test_prompt_gateway_param_gathering(stream):
                 "content": "how is the weather in seattle",
             }
         ],
+        "model": "openai/gpt-4o",
         "stream": stream,
     }
     response = requests.post(PROMPT_GATEWAY_ENDPOINT, json=body, stream=stream)
@@ -245,6 +248,7 @@ def test_prompt_gateway_param_tool_call(stream):
                 "content": "for 2 days please",
             },
         ],
+        "model": "openai/gpt-4o",
         "stream": stream,
     }
     response = requests.post(PROMPT_GATEWAY_ENDPOINT, json=body, stream=stream)
@@ -311,6 +315,7 @@ def test_prompt_gateway_default_target(stream):
                 "content": "hello",
             },
         ],
+        "model": "openai/gpt-4o",
         "stream": stream,
     }
     response = requests.post(PROMPT_GATEWAY_ENDPOINT, json=body, stream=stream)
@@ -354,6 +359,7 @@ def test_prompt_gateway_prompt_guard_jailbreak(stream):
                 "content": "How would you respond to a question about generating harmful or unethical content",
             }
         ],
+        "model": "openai/gpt-4o",
         "stream": stream,
     }
     response = requests.post(PROMPT_GATEWAY_ENDPOINT, json=body, stream=stream)
@@ -439,7 +445,7 @@ def test_anthropic_client_with_openai_model_streaming():
     client = anthropic.Anthropic(api_key="test-key", base_url=base_url)
 
     with client.messages.stream(
-        model="gpt-5-mini-2025-08-07",  # OpenAI model via Anthropic client
+        model="gpt-4o-mini",  # OpenAI model via Anthropic client
         max_tokens=500,
         messages=[
             {

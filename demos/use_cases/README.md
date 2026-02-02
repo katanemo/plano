@@ -30,7 +30,7 @@ Start arch gateway,
 ```
 $ planoai up config.yaml
 # Or if installed with uv: uvx planoai up config.yaml
-2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.3
+2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.4
 2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
 2024-12-05 11:24:51,825 - planoai.main - INFO - Starting arch model server and arch gateway
 ...
@@ -67,7 +67,7 @@ print("OpenAI Response:", response.choices[0].message.content)
 #### Step 3.2: Using curl command
 ```
 $ curl --header 'Content-Type: application/json' \
-  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}' \
+  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "gpt-4o"}' \
   http://localhost:12000/v1/chat/completions
 
 {
@@ -92,7 +92,7 @@ You can override model selection using `x-arch-llm-provider-hint` header. For ex
 ```
 $ curl --header 'Content-Type: application/json' \
   --header 'x-arch-llm-provider-hint: ministral-3b' \
-  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "none"}' \
+  --data '{"messages": [{"role": "user","content": "What is the capital of France?"}], "model": "gpt-4o"}' \
   http://localhost:12000/v1/chat/completions
 {
   ...

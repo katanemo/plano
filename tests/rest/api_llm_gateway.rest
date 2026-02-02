@@ -107,7 +107,7 @@ Content-Type: application/json
 
 {
   "stream": true,
-  "model": "None",
+  "model": "gpt-4o",
   "messages": [
     {
       "role": "user",

@@ -3,12 +3,24 @@ name = "hermesllm"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "fetch_models"
+path = "src/bin/fetch_models.rs"
+required-features = ["model-fetch"]
+
 [dependencies]
 serde = {version = "1.0.219", features = ["derive"]}
 serde_json = "1.0.140"
+serde_yaml = "0.9.34-deprecated"
 serde_with = {version = "3.12.0", features = ["base64"]}
 thiserror = "2.0.12"
 aws-smithy-eventstream = "0.60"
 bytes = "1.10"
 uuid = { version = "1.11", features = ["v4"] }
 log = "0.4"
+chrono = { version = "0.4", optional = true }
+ureq = { version = "3.1", features = ["json"], optional = true }
+
+[features]
+default = []
+model-fetch = ["ureq", "chrono"]

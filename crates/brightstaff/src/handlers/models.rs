@@ -1,19 +1,17 @@
 use bytes::Bytes;
-use common::configuration::{IntoModels, LlmProvider};
-use hermesllm::apis::openai::Models;
+use common::llm_providers::LlmProviders;
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{Response, StatusCode};
 use serde_json;
 use std::sync::Arc;
 
 pub async fn list_models(
-    llm_providers: Arc<tokio::sync::RwLock<Vec<LlmProvider>>>,
+    llm_providers: Arc<tokio::sync::RwLock<LlmProviders>>,
 ) -> Response<BoxBody<Bytes, hyper::Error>> {
     let prov = llm_providers.read().await;
-    let providers = prov.clone();
-    let openai_models: Models = providers.into_models();
+    let models = prov.to_models();
 
-    match serde_json::to_string(&openai_models) {
+    match serde_json::to_string(&models) {
         Ok(json) => {
             let body = Full::new(Bytes::from(json))
                 .map_err(|never| match never {})

@@ -1,10 +1,9 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::{configuration, llm_providers::LlmProviders};
 use configuration::LlmProvider;
-use rand::{seq::IteratorRandom, thread_rng};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProviderHint {
     Default,
     Name(String),
@@ -22,33 +21,14 @@ impl From<String> for ProviderHint {
 pub fn get_llm_provider(
     llm_providers: &LlmProviders,
     provider_hint: Option<ProviderHint>,
-) -> Rc<LlmProvider> {
-    let maybe_provider = provider_hint.and_then(|hint| match hint {
-        ProviderHint::Default => llm_providers.default(),
-        // FIXME: should a non-existent name in the hint be more explicit? i.e, return a BAD_REQUEST?
-        ProviderHint::Name(name) => llm_providers.get(&name),
-    });
-
-    if let Some(provider) = maybe_provider {
-        return provider;
+) -> Result<Arc<LlmProvider>, String> {
+    match provider_hint {
+        Some(ProviderHint::Default) => llm_providers
+            .default()
+            .ok_or_else(|| "No default provider configured".to_string()),
+        Some(ProviderHint::Name(name)) => llm_providers
+            .get(&name)
+            .ok_or_else(|| format!("Model '{}' not found in configured providers", name)),
+        None => Err("No model specified in request".to_string()),
     }
-
-    if llm_providers.default().is_some() {
-        return llm_providers.default().unwrap();
-    }
-
-    let mut rng = thread_rng();
-    llm_providers
-        .iter()
-        .filter(|(_, provider)| {
-            provider
-                .model
-                .as_ref()
-                .map(|m| !m.starts_with("Arch"))
-                .unwrap_or(true)
-        })
-        .choose(&mut rng)
-        .expect("There should always be at least one non-Arch llm provider")
-        .1
-        .clone()
 }

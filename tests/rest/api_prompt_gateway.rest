@@ -82,7 +82,7 @@ POST {{prompt_endpoint}}/v1/chat/completions HTTP/1.1
 Content-Type: application/json
 
 {
-  "model": "None",
+  "model": "gpt-4o",
   "messages": [
     {
       "role": "user",

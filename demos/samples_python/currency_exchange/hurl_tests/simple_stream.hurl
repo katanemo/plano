@@ -9,7 +9,7 @@ Content-Type: application/json
     }
   ],
   "stream": true,
-  "model": "none"
+  "model": "gpt-4o"
 }
 HTTP 200
 [Asserts]

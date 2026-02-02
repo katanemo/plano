@@ -36,6 +36,45 @@ export const blogType = defineType({
           type: "block",
         },
         {
+          type: "code",
+          options: {
+            language: "typescript",
+            languageAlternatives: [
+              { title: "TypeScript", value: "typescript" },
+              { title: "JavaScript", value: "javascript" },
+              { title: "HTML", value: "html" },
+              { title: "CSS", value: "css" },
+              { title: "Bash", value: "sh" },
+              { title: "Python", value: "python" },
+              { title: "Markdown", value: "markdown" },
+              { title: "YAML", value: "yaml" },
+              { title: "JSON", value: "json" },
+              { title: "XML", value: "xml" },
+              { title: "SQL", value: "sql" },
+              { title: "Shell", value: "shell" },
+              { title: "PowerShell", value: "powershell" },
+              { title: "Batch", value: "batch" },
+            ],
+            withFilename: true,
+          },
+        },
+        {
+          type: "object",
+          name: "markdownBlock",
+          title: "Markdown",
+          fields: [
+            {
+              name: "markdown",
+              title: "Markdown",
+              type: "markdown",
+              description: "Markdown content with preview and image uploads",
+            },
+          ],
+        },
+        {
+          type: "table",
+        },
+        {
           type: "image",
           fields: [
             {
