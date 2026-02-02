@@ -1,11 +1,13 @@
 import os
+import re
+import string
+from fnmatch import fnmatch
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 import rich_click as click
 import requests
-import json
 from rich.console import Console
 from rich.text import Text
 from rich.tree import Tree
@@ -16,7 +18,6 @@ from planoai.consts import PLANO_COLOR
 @dataclass
 class TraceSummary:
     trace_id: str
-    request_id: str
     start_ns: int
     end_ns: int
 
@@ -39,7 +40,50 @@ def _trace_api_url() -> str:
 def _split_patterns(value: str | None) -> list[str]:
     if not value:
         return []
-    return [part.strip() for part in value.split(",") if part.strip()]
+    parts = [part.strip() for part in value.split(",")]
+    if any(not part for part in parts):
+        raise ValueError("Filter contains empty tokens.")
+    return parts
+
+
+def _is_hex(value: str, length: int) -> bool:
+    if len(value) != length:
+        return False
+    return all(char in string.hexdigits for char in value)
+
+
+def _parse_where_filters(where_filters: tuple[str, ...]) -> list[tuple[str, str]]:
+    parsed: list[tuple[str, str]] = []
+    invalid: list[str] = []
+    key_pattern = re.compile(r"^[A-Za-z0-9_.:-]+$")
+    for raw in where_filters:
+        if raw.count("=") != 1:
+            invalid.append(raw)
+            continue
+        key, value = raw.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value or not key_pattern.match(key):
+            invalid.append(raw)
+            continue
+        parsed.append((key, value))
+    if invalid:
+        invalid_list = ", ".join(invalid)
+        raise click.ClickException(
+            f"Invalid --where filter(s): {invalid_list}. Use key=value."
+        )
+    return parsed
+
+
+def _collect_attr_keys(traces: list[dict[str, Any]]) -> set[str]:
+    keys: set[str] = set()
+    for trace in traces:
+        for span in trace.get("spans", []):
+            for item in span.get("attributes", []):
+                key = item.get("key")
+                if key:
+                    keys.add(str(key))
+    return keys
 
 
 def _fetch_traces(endpoint: str, params: dict[str, Any]) -> dict:
@@ -54,7 +98,10 @@ def _fetch_traces(endpoint: str, params: dict[str, Any]) -> dict:
         ) from exc
     if response.status_code >= 400:
         raise click.ClickException(response.text)
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise click.ClickException("Trace API returned invalid JSON.") from exc
 
 
 def _attrs(span: dict[str, Any]) -> dict[str, str]:
@@ -81,17 +128,8 @@ def _span_time_ns(span: dict[str, Any], key: str) -> int:
         return 0
 
 
-def _extract_request_id(trace: dict[str, Any]) -> str:
-    request_ids = trace.get("request_ids") or []
-    if request_ids:
-        return request_ids[0]
-    for span in trace.get("spans", []):
-        attrs = _attrs(span)
-        if "x-request-id" in attrs:
-            return attrs["x-request-id"]
-        if "guid:x-request-id" in attrs:
-            return attrs["guid:x-request-id"]
-    return "unknown"
+def _trace_id_short(trace_id: str) -> str:
+    return trace_id[:8] if trace_id else "unknown"
 
 
 def _trace_summary(trace: dict[str, Any]) -> TraceSummary:
@@ -100,7 +138,6 @@ def _trace_summary(trace: dict[str, Any]) -> TraceSummary:
     end_ns = max((_span_time_ns(s, "endTimeUnixNano") for s in spans), default=0)
     return TraceSummary(
         trace_id=trace.get("trace_id", "unknown"),
-        request_id=_extract_request_id(trace),
         start_ns=start_ns,
         end_ns=end_ns,
     )
@@ -140,9 +177,8 @@ def _sorted_attr_items(attrs: dict[str, str]) -> list[tuple[str, str]]:
         "llm.response_bytes",
     ]
     prioritized = [(k, attrs[k]) for k in priority if k in attrs]
-    remaining = [
-        (k, v) for k, v in attrs.items() if k not in {k for k, _ in prioritized}
-    ]
+    prioritized_keys = {k for k, _ in prioritized}
+    remaining = [(k, v) for k, v in attrs.items() if k not in prioritized_keys]
     remaining.sort(key=lambda item: item[0])
     return prioritized + remaining
 
@@ -157,9 +193,9 @@ def _build_tree(trace: dict[str, Any], console: Console) -> None:
     end_ns = max((_span_time_ns(s, "endTimeUnixNano") for s in spans), default=0)
     total_ms = max(0, (end_ns - start_ns) / 1_000_000)
 
-    request_id = _extract_request_id(trace)
+    trace_id = trace.get("trace_id", "unknown")
     console.print(
-        f"\n[bold]Request:[/bold] {request_id} [dim]({total_ms:.0f}ms total)[/dim]\n"
+        f"\n[bold]Trace:[/bold] {trace_id} [dim]({total_ms:.0f}ms total)[/dim]\n"
     )
 
     span_by_id = {s.get("spanId"): s for s in spans if s.get("spanId")}
@@ -176,7 +212,6 @@ def _build_tree(trace: dict[str, Any], console: Console) -> None:
     for items in children.values():
         items.sort(key=lambda s: _span_time_ns(s, "startTimeUnixNano"))
     roots.sort(key=lambda s: _span_time_ns(s, "startTimeUnixNano"))
-
     tree = Tree("", guide_style="dim")
 
     def add_node(parent: Tree, span: dict[str, Any]) -> None:
@@ -206,14 +241,21 @@ def _build_tree(trace: dict[str, Any], console: Console) -> None:
         add_node(tree, root)
 
     console.print(tree)
+    console.print()
 
 
 def _select_request(
     console: Console, traces: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
-    import questionary
-    from questionary import Choice
-    from prompt_toolkit.styles import Style
+    try:
+        import questionary
+        from questionary import Choice
+        from prompt_toolkit.styles import Style
+    except ImportError as exc:
+        raise click.ClickException(
+            "Interactive selection requires 'questionary'. "
+            "Install it or rerun with --json."
+        ) from exc
 
     if not traces:
         return None
@@ -235,11 +277,11 @@ def _select_request(
     choices = []
     for trace in traces:
         summary = _trace_summary(trace)
-        label = f"{summary.request_id} ({summary.total_ms:.0f}ms total • {summary.timestamp})"
+        label = f"{_trace_id_short(summary.trace_id)} ({summary.total_ms:.0f}ms total • {summary.timestamp})"
         choices.append(Choice(label, value=trace))
 
     selected = questionary.select(
-        "Select a request to trace:",
+        "Select a trace to view:",
         choices=choices,
         style=style,
         pointer="❯",
@@ -265,43 +307,114 @@ def _select_request(
     multiple=True,
     help="Match traces that contain key=value. Repeatable (AND semantics).",
 )
-@click.option("--list", "list_only", is_flag=True, help="List request IDs only.")
+@click.option("--list", "list_only", is_flag=True, help="List trace IDs only.")
+@click.option(
+    "--no-interactive",
+    is_flag=True,
+    help="Disable interactive prompts and selections.",
+)
 @click.option("--limit", type=int, default=None, help="Limit results.")
 @click.option("--since", default=None, help="Look back window (e.g. 5m, 2h, 1d).")
 @click.option("--json", "json_out", is_flag=True, help="Output raw JSON.")
-def trace(target, filter_patterns, where_filters, list_only, limit, since, json_out):
+def trace(
+    target,
+    filter_patterns,
+    where_filters,
+    list_only,
+    no_interactive,
+    limit,
+    since,
+    json_out,
+):
     """Trace requests from the local OTLP log."""
     console = Console()
 
-    patterns = _split_patterns(filter_patterns)
+    try:
+        patterns = _split_patterns(filter_patterns)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     params: dict[str, Any] = {}
+    parsed_where = _parse_where_filters(where_filters)
     if patterns:
         params["filter"] = ",".join(patterns)
-    for item in where_filters:
+    for key, value in parsed_where:
         params.setdefault("where", [])
-        params["where"].append(item)
+        params["where"].append(f"{key}={value}")
     if list_only:
         params["list"] = "true"
+    if limit is not None and limit < 0:
+        raise click.ClickException("Limit must be greater than or equal to 0.")
     if limit is not None:
         params["limit"] = str(limit)
     if since:
         params["since"] = since
 
     if target is None:
-        target = "any" if list_only or since or limit or where_filters else "last"
+        target = "any" if list_only or since or limit else "last"
 
+    if list_only and target not in (None, "last", "any"):
+        raise click.ClickException("Target and --list cannot be used together.")
+
+    short_target = None
+    if isinstance(target, str) and target not in ("last", "any"):
+        target_lower = target.lower()
+        if len(target_lower) == 8:
+            if not _is_hex(target_lower, 8) or target_lower == "00000000":
+                raise click.ClickException("Short trace ID must be 8 hex characters.")
+            short_target = target_lower
+        elif len(target_lower) == 32:
+            if not _is_hex(target_lower, 32) or target_lower == "0" * 32:
+                raise click.ClickException("Trace ID must be 32 hex characters.")
+        else:
+            raise click.ClickException("Trace ID must be 8 or 32 hex characters.")
     if target == "last":
         endpoint = "/debug/traces/last"
     elif target == "any":
         endpoint = "/debug/traces/any"
+    elif short_target:
+        endpoint = "/debug/traces/any"
     else:
-        endpoint = f"/debug/traces/by-request/{target}"
+        endpoint = f"/debug/traces/{target}"
 
     # For interactive listing, fetch full trace details to show timing info
-    if list_only and console.is_terminal:
+    if list_only and console.is_terminal and not no_interactive:
         params.pop("list", None)
 
     data = _fetch_traces(endpoint, params)
+    validation_params = {k: v for k, v in params.items() if k not in {"where", "list"}}
+    validation_data = _fetch_traces(endpoint, validation_params)
+    validation_traces = validation_data.get("traces", [])
+    if short_target and validation_traces:
+        validation_traces = [
+            trace
+            for trace in validation_traces
+            if trace.get("trace_id", "").lower().startswith(short_target)
+        ]
+    if validation_traces:
+        available_keys = _collect_attr_keys(validation_traces)
+        if parsed_where:
+            missing_keys = [key for key, _ in parsed_where if key not in available_keys]
+            if missing_keys:
+                missing_list = ", ".join(missing_keys)
+                raise click.ClickException(f"Unknown --where key(s): {missing_list}")
+        if patterns:
+            unmatched = [
+                pattern
+                for pattern in patterns
+                if not any(fnmatch(key, pattern) for key in available_keys)
+            ]
+            if unmatched:
+                unmatched_list = ", ".join(unmatched)
+                console.print(
+                    f"[yellow]Warning:[/yellow] Filter key(s) not found: {unmatched_list}. "
+                    "Returning unfiltered traces."
+                )
+    if short_target and "traces" in data:
+        data["traces"] = [
+            trace
+            for trace in data.get("traces", [])
+            if trace.get("trace_id", "").lower().startswith(short_target)
+        ]
 
     if json_out:
         console.print_json(data=data)
@@ -309,24 +422,24 @@ def trace(target, filter_patterns, where_filters, list_only, limit, since, json_
 
     traces = data.get("traces", [])
     if list_only:
-        if traces and console.is_terminal:
+        if traces and console.is_terminal and not no_interactive:
             selected = _select_request(console, traces)
             if selected:
                 _build_tree(selected, console)
             return
 
         if traces:
-            request_ids = [_trace_summary(t).request_id for t in traces]
+            trace_ids = [_trace_id_short(_trace_summary(t).trace_id) for t in traces]
         else:
-            request_ids = data.get("request_ids", [])
+            trace_ids = data.get("trace_ids", [])
 
-        if not request_ids:
-            console.print("[yellow]No request IDs found.[/yellow]")
+        if not trace_ids:
+            console.print("[yellow]No trace IDs found.[/yellow]")
             return
 
-        console.print("\n[bold]Request IDs:[/bold]")
-        for req_id in request_ids:
-            console.print(f"  [dim]-[/dim] {req_id}")
+        console.print("\n[bold]Trace IDs:[/bold]")
+        for trace_id in trace_ids:
+            console.print(f"  [dim]-[/dim] {trace_id}")
         return
 
     if not traces:
