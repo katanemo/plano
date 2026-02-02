@@ -7,6 +7,7 @@ services:
     ports:
       - "12000:12000"
       - "8001:8001"
+      - "9091:9091" # tracing via CLI
     environment:
       - ARCH_CONFIG_PATH=/config/config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
