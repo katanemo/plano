@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 LLM_GATEWAY_ENDPOINT = os.getenv(
     "LLM_GATEWAY_ENDPOINT", "http://host.docker.internal:12000/v1"
 )
-FLIGHT_MODEL = "openai/gpt-4o"
+FLIGHT_MODEL = "openai/gpt-5.2"
 EXTRACTION_MODEL = "openai/gpt-4o-mini"
 
 AEROAPI_BASE_URL = "https://aeroapi.flightaware.com/aeroapi"
@@ -82,7 +82,7 @@ async def extract_flight_route(messages: list, request: Request) -> dict:
                 ],
             ],
             temperature=0.1,
-            max_tokens=100,
+            max_completion_tokens=100,
             extra_headers=extra_headers or None,
         )
 
@@ -124,7 +124,7 @@ async def resolve_airport_code(city_name: str, request: Request) -> Optional[str
                 {"role": "user", "content": city_name},
             ],
             temperature=0.1,
-            max_tokens=10,
+            max_completion_tokens=10,
             extra_headers=extra_headers or None,
         )
 
@@ -355,7 +355,7 @@ Ask the user to check the city name or provide a different city."""
             model=FLIGHT_MODEL,
             messages=response_messages,
             temperature=request_body.get("temperature", 0.7),
-            max_tokens=request_body.get("max_tokens", 1000),
+            max_completion_tokens=request_body.get("max_tokens", 3000),
             stream=True,
             extra_headers=extra_headers,
         )
