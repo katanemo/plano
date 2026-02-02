@@ -3,7 +3,7 @@ use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{Method, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -21,7 +21,6 @@ struct TraceQuery {
 #[derive(Default, Serialize, Deserialize)]
 struct TraceRecord {
     trace_id: String,
-    request_ids: HashSet<String>,
     spans: Vec<serde_json::Value>,
 }
 
@@ -368,14 +367,6 @@ fn collect_traces(lines: Vec<String>, query: &TraceQuery) -> (Vec<TraceRecord>, 
                         );
                     }
 
-                    let attrs = attribute_map(&span);
-                    if let Some(request_id) = attrs
-                        .get("x-request-id")
-                        .or_else(|| attrs.get("guid:x-request-id"))
-                    {
-                        entry.request_ids.insert(request_id.to_string());
-                    }
-
                     entry.spans.push(span_obj);
                 }
             }
@@ -412,12 +403,12 @@ fn collect_traces(lines: Vec<String>, query: &TraceQuery) -> (Vec<TraceRecord>, 
         }
     }
 
-    let request_ids = traces_vec
+    let trace_ids = traces_vec
         .iter()
-        .flat_map(|trace| trace.request_ids.iter().cloned())
+        .map(|trace| trace.trace_id.clone())
         .collect::<Vec<_>>();
 
-    (traces_vec, request_ids)
+    (traces_vec, trace_ids)
 }
 
 pub fn handle_trace_api(
@@ -459,31 +450,21 @@ pub fn handle_trace_api(
         }
     };
 
-    let (mut traces, mut request_ids) = collect_traces(lines, &query);
+    let (mut traces, mut trace_ids) = collect_traces(lines, &query);
 
     // Endpoint routing
     if segments.len() == 3 && segments[2] == "last" {
         traces.truncate(1);
-        request_ids.truncate(1);
+        trace_ids.truncate(1);
     } else if segments.len() == 3 && segments[2] != "last" && segments[2] != "any" {
         let trace_id = segments[2];
         traces.retain(|trace| trace.trace_id == trace_id);
-        request_ids = traces
-            .iter()
-            .flat_map(|trace| trace.request_ids.iter().cloned())
-            .collect();
-    } else if segments.len() == 4 && segments[2] == "by-request" {
-        let request_id = segments[3];
-        traces.retain(|trace| trace.request_ids.contains(request_id));
-        request_ids = traces
-            .iter()
-            .flat_map(|trace| trace.request_ids.iter().cloned())
-            .collect();
+        trace_ids = traces.iter().map(|trace| trace.trace_id.clone()).collect();
     }
 
     if let Some(limit) = query.limit {
         if query.list {
-            request_ids.truncate(limit);
+            trace_ids.truncate(limit);
         } else {
             traces.truncate(limit);
         }
@@ -491,7 +472,7 @@ pub fn handle_trace_api(
 
     if query.list {
         return Some(json_response(
-            json!({ "request_ids": request_ids }),
+            json!({ "trace_ids": trace_ids }),
             StatusCode::OK,
         ));
     }
