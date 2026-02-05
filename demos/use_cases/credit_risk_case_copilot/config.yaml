@@ -1,0 +1,122 @@
+version: v0.3.0
+
+# Define the standalone credit risk agents
+agents:
+  - id: loan_intake_agent
+    #url: http://localhost:10530/v1/agents/intake/chat/completions
+    url: http://host.docker.internal:10530/v1/agents/intake/chat/completions
+  - id: risk_scoring_agent
+    #url: http://localhost:10530/v1/agents/risk/chat/completions
+    url: http://host.docker.internal:10530/v1/agents/risk/chat/completions
+  - id: policy_compliance_agent
+    #url: http://localhost:10530/v1/agents/policy/chat/completions
+    url: http://host.docker.internal:10530/v1/agents/policy/chat/completions
+  - id: decision_memo_agent
+    #url: http://localhost:10530/v1/agents/memo/chat/completions
+    url: http://host.docker.internal:10530/v1/agents/memo/chat/completions
+
+# HTTP filter for PII redaction and prompt injection detection
+filters:
+  - id: pii_security_filter
+    #url: http://localhost:10550/v1/tools/pii_security_filter
+    url: http://host.docker.internal:10550/v1/tools/pii_security_filter
+    type: http
+
+# LLM providers with model routing
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+
+# ToDo: Debug model aliases
+# Model aliases for semantic naming
+model_aliases:
+  risk_fast:
+    target: openai/gpt-4o-mini
+  risk_reasoning:
+    target: openai/gpt-4o
+
+# Listeners
+listeners:
+  # Agent listener for routing credit risk requests
+  - type: agent
+    name: credit_risk_service
+    port: 8001
+    router: plano_orchestrator_v1
+    address: 0.0.0.0
+    agents:
+      - id: loan_intake_agent
+        description: |
+          Loan Intake Agent - Extracts and normalizes loan application data for downstream analysis.
+
+          CAPABILITIES:
+          * Normalize applicant data and calculate derived fields (e.g., DTI)
+          * Identify missing or inconsistent fields
+          * Produce structured intake JSON for other agents
+
+          USE CASES:
+          * "Normalize this loan application"
+          * "Extract and validate applicant data"
+
+          When requests focus on intake or data normalization for loan applications, route here.
+        filter_chain:
+          - pii_security_filter
+      - id: risk_scoring_agent
+        description: |
+          Risk Scoring Agent - Produces risk band, confidence score, and top drivers.
+
+          CAPABILITIES:
+          * Evaluate credit score, DTI, delinquencies, utilization
+          * Assign LOW/MEDIUM/HIGH risk bands with confidence
+          * Explain top 3 risk drivers with evidence
+
+          USE CASES:
+          * "Score the risk for this applicant"
+          * "Provide risk band and drivers"
+
+          When requests focus on risk scoring or drivers, route here.
+        filter_chain:
+          - pii_security_filter
+      - id: policy_compliance_agent
+        description: |
+          Policy Compliance Agent - Checks lending policy rules and required documents.
+
+          CAPABILITIES:
+          * Verify KYC, income, and address checks
+          * Flag policy exceptions (DTI, credit score, delinquencies)
+          * Determine required documents by risk band
+
+          USE CASES:
+          * "Check policy compliance"
+          * "List required documents"
+
+          When requests focus on policy checks or exceptions, route here.
+        filter_chain:
+          - pii_security_filter
+      - id: decision_memo_agent
+        description: |
+          Decision Memo Agent - Summarizes findings and recommends actions.
+
+          CAPABILITIES:
+          * Create concise decision memos
+          * Recommend APPROVE/CONDITIONAL_APPROVE/REFER/REJECT
+
+          USE CASES:
+          * "Draft a decision memo"
+          * "Recommend a credit decision"
+
+          When requests focus on final memo or recommendation, route here.
+        filter_chain:
+          - pii_security_filter
+
+  # Model listener for internal LLM gateway (used by agents)
+  - type: model
+    name: llm_gateway
+    address: 0.0.0.0
+    port: 12000
+
+# OpenTelemetry tracing
+tracing:
+  random_sampling: 100
