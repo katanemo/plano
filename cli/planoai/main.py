@@ -1,83 +1,13 @@
-import rich_click as click
 import os
-import sys
-import subprocess
 import multiprocessing
 import importlib.metadata
-import json
+import subprocess
+import sys
+import rich_click as click
 from planoai import targets
 
 # Brand color - Plano purple
 PLANO_COLOR = "#969FF4"
-
-# Configure rich-click styling
-click.rich_click.USE_RICH_MARKUP = True
-click.rich_click.USE_MARKDOWN = False
-click.rich_click.SHOW_ARGUMENTS = True
-click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
-click.rich_click.STYLE_ERRORS_SUGGESTION = "dim italic"
-click.rich_click.ERRORS_SUGGESTION = (
-    "Try running the '--help' flag for more information."
-)
-click.rich_click.ERRORS_EPILOGUE = ""
-
-# Custom colors matching Plano brand
-click.rich_click.STYLE_OPTION = f"dim {PLANO_COLOR}"
-click.rich_click.STYLE_ARGUMENT = f"dim {PLANO_COLOR}"
-click.rich_click.STYLE_COMMAND = f"bold {PLANO_COLOR}"
-click.rich_click.STYLE_SWITCH = "bold green"
-click.rich_click.STYLE_METAVAR = "bold yellow"
-click.rich_click.STYLE_USAGE = "bold"
-click.rich_click.STYLE_USAGE_COMMAND = f"bold dim {PLANO_COLOR}"
-click.rich_click.STYLE_HELPTEXT_FIRST_LINE = f"white italic"
-click.rich_click.STYLE_HELPTEXT = ""
-click.rich_click.STYLE_HEADER_TEXT = "bold"
-click.rich_click.STYLE_FOOTER_TEXT = "dim"
-click.rich_click.STYLE_OPTIONS_PANEL_BORDER = "dim"
-click.rich_click.ALIGN_OPTIONS_PANEL = "left"
-click.rich_click.MAX_WIDTH = 100
-
-# Option groups for better organization
-click.rich_click.OPTION_GROUPS = {
-    "planoai up": [
-        {
-            "name": "Configuration",
-            "options": ["--path", "file"],
-        },
-        {
-            "name": "Runtime Options",
-            "options": ["--foreground"],
-        },
-    ],
-    "planoai logs": [
-        {
-            "name": "Log Options",
-            "options": ["--debug", "--follow"],
-        },
-    ],
-}
-
-# Command groups for main help
-click.rich_click.COMMAND_GROUPS = {
-    "planoai": [
-        {
-            "name": "Gateway Commands",
-            "commands": ["up", "down", "build", "logs"],
-        },
-        {
-            "name": "Agent Commands",
-            "commands": ["cli-agent"],
-        },
-        {
-            "name": "Observability",
-            "commands": ["trace"],
-        },
-        {
-            "name": "Utilities",
-            "commands": ["validate", "generate-prompt-targets"],
-        },
-    ],
-}
 from planoai.docker_cli import (
     docker_validate_plano_schema,
     stream_gateway_logs,
@@ -86,7 +16,6 @@ from planoai.docker_cli import (
 from planoai.utils import (
     getLogger,
     get_llm_provider_access_keys,
-    has_ingress_listener,
     load_env_file_to_dict,
     set_log_level,
     stream_access_logs,
@@ -104,7 +33,6 @@ from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
-    SERVICE_NAME_ARCHGW,
 )
 
 log = getLogger(__name__)
@@ -119,12 +47,149 @@ LOGO = f"""[bold {PLANO_COLOR}]
  \\_|   |_|\\__,_|_| |_|\\___/
 [/bold {PLANO_COLOR}]"""
 
-# Command to build plano Docker images
-ARCHGW_DOCKERFILE = "./Dockerfile"
-
 # PyPI package name for version checking
 PYPI_PACKAGE_NAME = "planoai"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PACKAGE_NAME}/json"
+
+
+def _configure_rich_click() -> None:
+    click.rich_click.USE_RICH_MARKUP = True
+    click.rich_click.USE_MARKDOWN = False
+    click.rich_click.SHOW_ARGUMENTS = True
+    click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
+    click.rich_click.STYLE_ERRORS_SUGGESTION = "dim italic"
+    click.rich_click.ERRORS_SUGGESTION = (
+        "Try running the '--help' flag for more information."
+    )
+    click.rich_click.ERRORS_EPILOGUE = ""
+
+    # Custom colors matching Plano brand
+    click.rich_click.STYLE_OPTION = f"dim {PLANO_COLOR}"
+    click.rich_click.STYLE_ARGUMENT = f"dim {PLANO_COLOR}"
+    click.rich_click.STYLE_COMMAND = f"bold {PLANO_COLOR}"
+    click.rich_click.STYLE_SWITCH = "bold green"
+    click.rich_click.STYLE_METAVAR = "bold yellow"
+    click.rich_click.STYLE_USAGE = "bold"
+    click.rich_click.STYLE_USAGE_COMMAND = f"bold dim {PLANO_COLOR}"
+    click.rich_click.STYLE_HELPTEXT_FIRST_LINE = "white italic"
+    click.rich_click.STYLE_HELPTEXT = ""
+    click.rich_click.STYLE_HEADER_TEXT = "bold"
+    click.rich_click.STYLE_FOOTER_TEXT = "dim"
+    click.rich_click.STYLE_OPTIONS_PANEL_BORDER = "dim"
+    click.rich_click.ALIGN_OPTIONS_PANEL = "left"
+    click.rich_click.MAX_WIDTH = 100
+
+    # Option groups for better organization
+    click.rich_click.OPTION_GROUPS = {
+        "planoai up": [
+            {
+                "name": "Configuration",
+                "options": ["--path", "file"],
+            },
+            {
+                "name": "Runtime Options",
+                "options": ["--foreground"],
+            },
+        ],
+        "planoai logs": [
+            {
+                "name": "Log Options",
+                "options": ["--debug", "--follow"],
+            },
+        ],
+    }
+
+    # Command groups for main help
+    click.rich_click.COMMAND_GROUPS = {
+        "planoai": [
+            {
+                "name": "Gateway Commands",
+                "commands": ["up", "down", "build", "logs"],
+            },
+            {
+                "name": "Agent Commands",
+                "commands": ["cli-agent"],
+            },
+            {
+                "name": "Observability",
+                "commands": ["trace"],
+            },
+            {
+                "name": "Utilities",
+                "commands": ["validate", "generate-prompt-targets"],
+            },
+        ],
+    }
+
+
+def _console():
+    from rich.console import Console
+
+    return Console()
+
+
+def _print_cli_header(console) -> None:
+    console.print(
+        f"\n[bold {PLANO_COLOR}]Plano CLI[/bold {PLANO_COLOR}] [dim]v{get_version()}[/dim]\n"
+    )
+
+
+def _print_missing_keys(console, missing_keys: list[str]) -> None:
+    console.print(f"\n[red]✗[/red] [red]Missing API keys![/red]\n")
+    for key in missing_keys:
+        console.print(f"  [red]•[/red] [bold]{key}[/bold] not found")
+    console.print(f"\n[dim]Set the environment variable(s):[/dim]")
+    for key in missing_keys:
+        console.print(f'  [cyan]export {key}="your-api-key"[/cyan]')
+    console.print(f"\n[dim]Or create a .env file in the config directory.[/dim]\n")
+
+
+def _print_version(console, current_version: str) -> None:
+    console.print(
+        f"[bold {PLANO_COLOR}]plano[/bold {PLANO_COLOR}] version [cyan]{current_version}[/cyan]"
+    )
+
+
+def _maybe_check_updates(console, current_version: str) -> None:
+    if os.environ.get("PLANO_SKIP_VERSION_CHECK"):
+        return
+    latest_version = get_latest_version()
+    status = check_version_status(current_version, latest_version)
+
+    if status["is_outdated"]:
+        console.print(
+            f"\n[yellow]⚠ Update available:[/yellow] [bold]{status['latest']}[/bold]"
+        )
+        console.print(f"[dim]Run: uv pip install --upgrade {PYPI_PACKAGE_NAME}[/dim]")
+    elif latest_version:
+        console.print(f"[dim]✓ You're up to date[/dim]")
+
+
+def _build_table(title: str):
+    from rich.table import Table
+
+    return Table(
+        title=title,
+        border_style="dim",
+        show_header=True,
+        header_style=f"bold {PLANO_COLOR}",
+    )
+
+
+def _print_messages(console, items: list[str], template: str) -> None:
+    for item in items:
+        console.print(template.format(item=item))
+    console.print()
+
+
+def _print_section(console, title: str, lines: list[str]) -> None:
+    console.print(title)
+    for line in lines:
+        console.print(line)
+    console.print()
+
+
+_configure_rich_click()
 
 
 def get_version():
@@ -218,30 +283,12 @@ def check_version_status(current: str, latest: str | None) -> dict:
 def main(ctx, version):
     # Set log level from LOG_LEVEL env var only
     set_log_level(os.environ.get("LOG_LEVEL", "info"))
-    from rich.console import Console
-
-    console = Console()
+    console = _console()
 
     if version:
         current_version = get_version()
-        console.print(
-            f"[bold {PLANO_COLOR}]plano[/bold {PLANO_COLOR}] version [cyan]{current_version}[/cyan]"
-        )
-
-        # Check for updates (skip if PLANO_SKIP_VERSION_CHECK is set)
-        if not os.environ.get("PLANO_SKIP_VERSION_CHECK"):
-            latest_version = get_latest_version()
-            status = check_version_status(current_version, latest_version)
-
-            if status["is_outdated"]:
-                console.print(
-                    f"\n[yellow]⚠ Update available:[/yellow] [bold]{status['latest']}[/bold]"
-                )
-                console.print(
-                    f"[dim]Run: uv pip install --upgrade {PYPI_PACKAGE_NAME}[/dim]"
-                )
-            elif latest_version:
-                console.print(f"[dim]✓ You're up to date[/dim]")
+        _print_version(console, current_version)
+        _maybe_check_updates(console, current_version)
 
         ctx.exit()
 
@@ -303,24 +350,10 @@ def build():
 )
 def up(file, path, foreground):
     """Starts Plano."""
-    import time
-    from rich.console import Console
     from rich.status import Status
-    from planoai.docker_cli import (
-        docker_container_status as get_container_status,
-        docker_start_plano_detached,
-        docker_stop_container as docker_stop,
-        docker_remove_container,
-        health_check_endpoint,
-    )
-    from planoai.core import _get_gateway_ports, stream_gateway_logs
 
-    console = Console()
-
-    # Print header
-    console.print(
-        f"\n[bold {PLANO_COLOR}]Plano CLI[/bold {PLANO_COLOR}] [dim]v{get_version()}[/dim]\n"
-    )
+    console = _console()
+    _print_cli_header(console)
 
     # Use the utility function to find config file
     arch_config_file = find_config_file(path, file)
@@ -334,13 +367,12 @@ def up(file, path, foreground):
 
     with Status(
         "[dim]Validating configuration[/dim]", spinner="dots", spinner_style="dim"
-    ) as status:
+    ):
         (
             validation_return_code,
-            validation_stdout,
+            _,
             validation_stderr,
         ) = docker_validate_plano_schema(arch_config_file)
-        time.sleep(0.5)
 
     if validation_return_code != 0:
         console.print(f"[red]✗[/red] Validation failed")
@@ -384,13 +416,7 @@ def up(file, path, foreground):
                     env_stage[access_key] = env_file_dict[access_key]
 
     if missing_keys:
-        console.print(f"\n[red]✗[/red] [red]Missing API keys![/red]\n")
-        for key in missing_keys:
-            console.print(f"  [red]•[/red] [bold]{key}[/bold] not found")
-        console.print(f"\n[dim]Set the environment variable(s):[/dim]")
-        for key in missing_keys:
-            console.print(f'  [cyan]export {key}="your-api-key"[/cyan]')
-        console.print(f"\n[dim]Or create a .env file in the config directory.[/dim]\n")
+        _print_missing_keys(console, missing_keys)
         sys.exit(1)
 
     # Pass log level to the Docker container — supervisord uses LOG_LEVEL
@@ -398,151 +424,19 @@ def up(file, path, foreground):
     env_stage["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "info")
 
     env.update(env_stage)
-
-    start_time = time.time()
-
-    plano_status = get_container_status(PLANO_DOCKER_NAME)
-    if plano_status != "not found":
-        with console.status(
-            f"[{PLANO_COLOR}]Stopping existing instance...[/{PLANO_COLOR}]",
-            spinner="dots",
-        ):
-            docker_stop(PLANO_DOCKER_NAME)
-            docker_remove_container(PLANO_DOCKER_NAME)
-            time.sleep(1.0)
-
-    gateway_ports = _get_gateway_ports(arch_config_file)
-
-    max_retries = 3
-    retry_delay = 2.0
-
-    with console.status(
-        f"[{PLANO_COLOR}]Starting Plano...[/{PLANO_COLOR}]", spinner="dots"
-    ) as status:
-        for attempt in range(max_retries):
-            return_code, _, plano_stderr = docker_start_plano_detached(
-                arch_config_file,
-                env,
-                gateway_ports,
-            )
-
-            if return_code == 0:
-                break
-
-            if "address already in use" in plano_stderr and attempt < max_retries - 1:
-                plano_status = get_container_status(PLANO_DOCKER_NAME)
-                if plano_status != "not found":
-                    docker_stop(PLANO_DOCKER_NAME)
-                    docker_remove_container(PLANO_DOCKER_NAME)
-
-                time.sleep(retry_delay)
-                continue
-            console.print(f"[red]✗[/red] Failed to start Plano")
-            if plano_stderr:
-                console.print(f"  [dim]{plano_stderr.strip()}[/dim]")
-            sys.exit(1)
-
-        log_timeout = 120
-        consecutive_failures = 0
-        max_consecutive_failures = 10
-
-        while True:
-            plano_status = get_container_status(PLANO_DOCKER_NAME)
-            elapsed = time.time() - start_time
-
-            if plano_status == "exited":
-                console.print(f"[red]✗[/red] Plano container exited unexpectedly")
-                stream_gateway_logs(follow=False)
-                sys.exit(1)
-
-            if plano_status != "running":
-                console.print(
-                    f"[red]✗[/red] Plano container is not running (status: {plano_status})"
-                )
-                sys.exit(1)
-
-            if elapsed > log_timeout:
-                console.print(
-                    f"[red]✗[/red] Timeout waiting for Plano to become healthy"
-                )
-                sys.exit(1)
-
-            all_listeners_healthy = True
-            for port in gateway_ports:
-                if not health_check_endpoint(f"http://localhost:{port}/healthz"):
-                    all_listeners_healthy = False
-                    break
-
-            if all_listeners_healthy:
-                break
-
-            consecutive_failures += 1
-            if consecutive_failures >= max_consecutive_failures and elapsed > 5:
-                console.print(
-                    f"[red]✗[/red] Plano failed to become healthy after {elapsed:.1f}s"
-                )
-                console.print(
-                    f"[dim]Check logs with: docker logs {PLANO_DOCKER_NAME}[/dim]"
-                )
-                sys.exit(1)
-
-            status.update(
-                f"[{PLANO_COLOR}]Starting Plano...[/{PLANO_COLOR}] [dim]({elapsed:.1f}s)[/dim]"
-            )
-            time.sleep(0.5)
-
-    elapsed = time.time() - start_time
-    console.print(
-        f"[green]✓[/green] [bold]Plano is running and healthy![/bold] [dim]({elapsed:.1f}s)[/dim]"
-    )
-
-    console.print(f"\n[bold]Listening on:[/bold]")
-    for port in gateway_ports:
-        console.print(f"  [bold cyan]http://localhost:{port}[/bold cyan]")
-    console.print()
-
-    if foreground:
-        console.print(f"[dim]Streaming logs (Ctrl+C to stop)...[/dim]\n")
-        stream_gateway_logs(follow=True)
+    start_arch(arch_config_file, env, foreground=foreground)
 
 
 @click.command()
 def down():
     """Stops Plano."""
-    import time
-    from rich.console import Console
-    from planoai.docker_cli import (
-        docker_container_status as get_container_status,
-        docker_stop_container as docker_stop,
-        docker_remove_container,
-    )
-
-    console = Console()
-
-    # Print header
-    console.print(
-        f"\n[bold {PLANO_COLOR}]Plano CLI[/bold {PLANO_COLOR}] [dim]v{get_version()}[/dim]\n"
-    )
-
-    # Check if running
-    plano_status = get_container_status(PLANO_DOCKER_NAME)
-
-    if plano_status == "not found":
-        console.print(f"[yellow]![/yellow] Plano is not running\n")
-        return
-
-    start_time = time.time()
+    console = _console()
+    _print_cli_header(console)
 
     with console.status(
         f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]", spinner="dots"
     ):
-        docker_stop(PLANO_DOCKER_NAME)
-        docker_remove_container(PLANO_DOCKER_NAME)
-
-    elapsed = time.time() - start_time
-    console.print(
-        f"[green]✓[/green] Successfully shut down Plano! [dim]({elapsed:.1f}s)[/dim]\n"
-    )
+        stop_docker_container()
 
 
 @click.command()
@@ -784,11 +678,7 @@ def validate(config_file, path, quiet):
     If no CONFIG_FILE is provided, looks for config.yaml in the current directory
     or the directory specified by --path.
     """
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-
-    console = Console()
+    console = _console()
 
     # Determine config file path
     if config_file:
@@ -816,15 +706,11 @@ def validate(config_file, path, quiet):
 
     # Show errors
     if result["errors"]:
-        for error in result["errors"]:
-            console.print(f"  [red]✗ {error}[/red]")
-        console.print()
+        _print_messages(console, result["errors"], "  [red]✗ {item}[/red]")
 
     # Show warnings
     if result["warnings"]:
-        for warning in result["warnings"]:
-            console.print(f"  [yellow]⚠ {warning}[/yellow]")
-        console.print()
+        _print_messages(console, result["warnings"], "  [yellow]⚠ {item}[/yellow]")
 
     # Show summary (unless quiet mode)
     if not quiet and result["config"]:
@@ -832,11 +718,8 @@ def validate(config_file, path, quiet):
 
         # Model Providers table
         if summary["model_providers"]:
-            table = Table(
-                title=f"[bold {PLANO_COLOR}]Model Providers[/bold {PLANO_COLOR}]",
-                border_style="dim",
-                show_header=True,
-                header_style=f"bold {PLANO_COLOR}",
+            table = _build_table(
+                f"[bold {PLANO_COLOR}]Model Providers[/bold {PLANO_COLOR}]"
             )
             table.add_column("Model", style="cyan")
             table.add_column("Default", style="green", justify="center")
@@ -850,12 +733,7 @@ def validate(config_file, path, quiet):
 
         # Listeners table
         if summary["listeners"]:
-            table = Table(
-                title=f"[bold {PLANO_COLOR}]Listeners[/bold {PLANO_COLOR}]",
-                border_style="dim",
-                show_header=True,
-                header_style=f"bold {PLANO_COLOR}",
-            )
+            table = _build_table(f"[bold {PLANO_COLOR}]Listeners[/bold {PLANO_COLOR}]")
             table.add_column("Name", style="cyan")
             table.add_column("Type", style="magenta")
             table.add_column("Port", style="yellow", justify="right")
@@ -874,18 +752,18 @@ def validate(config_file, path, quiet):
                 status = f"[green]✓[/green]" if is_set else f"[yellow]○[/yellow]"
                 env_status.append(f"  {status} [dim]${env_var}[/dim]")
 
-            console.print(
-                f"[bold {PLANO_COLOR}]Environment Variables[/bold {PLANO_COLOR}]"
+            _print_section(
+                console,
+                f"[bold {PLANO_COLOR}]Environment Variables[/bold {PLANO_COLOR}]",
+                env_status,
             )
-            for line in env_status:
-                console.print(line)
-            console.print()
 
     # Exit with appropriate code
     if not result["valid"]:
         sys.exit(1)
 
 
+# add commands to the main group
 main.add_command(up)
 main.add_command(down)
 main.add_command(build)
