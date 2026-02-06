@@ -94,6 +94,7 @@ impl PipelineProcessor {
         trace_id: String,
         parent_span_id: String,
         span_id: String,
+        business_attrs: Option<&std::collections::HashMap<String, String>>,
     ) -> String {
         // let (trace_id, parent_span_id) = self.extract_trace_context();
 
@@ -125,6 +126,11 @@ impl PipelineProcessor {
         if !parent_span_id.is_empty() {
             span_builder = span_builder.with_parent_span_id(parent_span_id);
         }
+        if let Some(ba) = business_attrs {
+            for (key, value) in ba {
+                span_builder = span_builder.with_attribute(key, value);
+            }
+        }
 
         let span = span_builder.build();
         // Use plano(filter) as service name for filter execution spans
@@ -146,6 +152,7 @@ impl PipelineProcessor {
         trace_id: String,
         parent_span_id: String,
         span_id: Option<String>,
+        business_attrs: Option<&std::collections::HashMap<String, String>>,
     ) {
         // let (trace_id, parent_span_id) = self.extract_trace_context();
 
@@ -176,6 +183,11 @@ impl PipelineProcessor {
                 span_builder = span_builder.with_attribute(key, value);
             }
         }
+        if let Some(ba) = business_attrs {
+            for (key, value) in ba {
+                span_builder = span_builder.with_attribute(key, value);
+            }
+        }
 
         if !trace_id.is_empty() {
             span_builder = span_builder.with_trace_id(trace_id);
@@ -200,6 +212,7 @@ impl PipelineProcessor {
         trace_collector: Option<&std::sync::Arc<common::traces::TraceCollector>>,
         trace_id: String,
         parent_span_id: String,
+        business_attrs: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<Vec<Message>, PipelineError> {
         let mut chat_history_updated = chat_history.to_vec();
 
@@ -242,6 +255,7 @@ impl PipelineProcessor {
                         trace_collector,
                         trace_id.clone(),
                         filter_span_id.clone(),
+                        business_attrs,
                     )
                     .await?;
             } else {
@@ -253,6 +267,7 @@ impl PipelineProcessor {
                         trace_collector,
                         trace_id.clone(),
                         filter_span_id.clone(),
+                        business_attrs,
                     )
                     .await?;
             }
@@ -279,6 +294,7 @@ impl PipelineProcessor {
                     trace_id.clone(),
                     parent_span_id.clone(),
                     filter_span_id,
+                    business_attrs,
                 );
             }
         }
@@ -437,6 +453,7 @@ impl PipelineProcessor {
         trace_collector: Option<&std::sync::Arc<common::traces::TraceCollector>>,
         trace_id: String,
         filter_span_id: String,
+        business_attrs: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<Vec<Message>, PipelineError> {
         // Get or create MCP session
         let mcp_session_id = if let Some(session_id) = self.agent_id_session_map.get(&agent.id) {
@@ -508,6 +525,7 @@ impl PipelineProcessor {
                 trace_id.clone(),
                 filter_span_id.clone(),
                 Some(mcp_span_id),
+                business_attrs,
             );
         }
 
@@ -710,6 +728,7 @@ impl PipelineProcessor {
         trace_collector: Option<&std::sync::Arc<common::traces::TraceCollector>>,
         trace_id: String,
         filter_span_id: String,
+        business_attrs: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<Vec<Message>, PipelineError> {
         let tool_name = agent.tool.as_deref().unwrap_or(&agent.id);
 
@@ -790,6 +809,7 @@ impl PipelineProcessor {
                 trace_id.clone(),
                 filter_span_id.clone(),
                 Some(http_span_id),
+                business_attrs,
             );
         }
 

@@ -106,3 +106,9 @@ prompt_targets:
 tracing:
   # Random sampling percentage (1-100)
   random_sampling: 100
+  # Optional: map HTTP header names to OTEL span attribute keys so traces can be
+  # filtered by business context (e.g. per-tenant, per-workspace, per-user).
+  # span_attribute_headers:
+  #   X-Tenant-Id: tenant.id
+  #   X-Workspace-Id: workspace.id
+  #   X-User-Id: user.id
