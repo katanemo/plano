@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{ModelAlias, Tracing};
+use common::configuration::{ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -34,7 +34,6 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .boxed()
 }
 
-// ! we reached the limit of the number of arguments for a function
 #[allow(clippy::too_many_arguments)]
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
@@ -43,18 +42,31 @@ pub async fn llm_chat(
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
     trace_collector: Arc<TraceCollector>,
-    tracing_config: Arc<Option<Tracing>>, // ! right here
+    span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
-    let custom_attrs = extract_custom_trace_attributes(
-        &request_headers,
-        tracing_config
-            .as_ref()
-            .as_ref()
-            .and_then(|tracing| tracing.span_attribute_header_prefixes.as_deref()),
-    );
+    let mut header_prefixes: Option<&[String]> = None;
+    let mut static_attributes: Option<&HashMap<String, String>> = None;
+    if let Some(attrs) = span_attributes.as_ref() {
+        header_prefixes = attrs.header_prefixes.as_deref();
+        static_attributes = attrs.static_attributes.as_ref();
+    }
+    let mut custom_attrs = HashMap::new();
+    if let Some(static_attributes) = static_attributes {
+        for (key, value) in static_attributes {
+            custom_attrs.insert(key.clone(), value.clone());
+        }
+    }
+    if let Some(prefixes) = header_prefixes {
+        if !prefixes.is_empty() {
+            custom_attrs.extend(extract_custom_trace_attributes(
+                &request_headers,
+                Some(prefixes),
+            ));
+        }
+    }
     let request_id: String = match request_headers
         .get(REQUEST_ID_HEADER)
         .and_then(|h| h.to_str().ok())

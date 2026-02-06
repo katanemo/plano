@@ -112,7 +112,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ));
 
     let model_aliases = Arc::new(arch_config.model_aliases.clone());
-    let tracing_config = Arc::new(arch_config.tracing.clone());
+    let span_attributes = Arc::new(
+        arch_config
+            .tracing
+            .as_ref()
+            .and_then(|tracing| tracing.span_attributes.clone()),
+    );
 
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in arch_config.yaml
@@ -177,7 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
         let trace_collector = trace_collector.clone();
-        let tracing_config = tracing_config.clone();
+        let span_attributes = span_attributes.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
@@ -189,7 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
             let trace_collector = trace_collector.clone();
-            let tracing_config = tracing_config.clone();
+            let span_attributes = span_attributes.clone();
             let state_storage = state_storage.clone();
 
             async move {
@@ -210,7 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             agents_list,
                             listeners,
                             trace_collector,
-                            tracing_config,
+                            span_attributes,
                         )
                         .with_context(parent_cx)
                         .await;
@@ -229,7 +234,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             model_aliases,
                             llm_providers,
                             trace_collector,
-                            tracing_config,
+                            span_attributes,
                             state_storage,
                         )
                         .with_context(parent_cx)

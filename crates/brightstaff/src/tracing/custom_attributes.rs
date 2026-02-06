@@ -65,4 +65,30 @@ mod tests {
         assert_eq!(attrs.get("admin.level"), Some(&"3".to_string()));
         assert!(!attrs.contains_key("other.id"));
     }
+
+    #[test]
+    fn returns_empty_when_prefixes_missing_or_empty() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-katanemo-tenant-id", HeaderValue::from_static("ten_456"));
+
+        let attrs_none = extract_custom_trace_attributes(&headers, None);
+        assert!(attrs_none.is_empty());
+
+        let empty_prefixes: Vec<String> = Vec::new();
+        let attrs_empty = extract_custom_trace_attributes(&headers, Some(&empty_prefixes));
+        assert!(attrs_empty.is_empty());
+    }
+
+    #[test]
+    fn supports_multiple_prefixes() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-katanemo-tenant-id", HeaderValue::from_static("ten_456"));
+        headers.insert("x-tenant-user-id", HeaderValue::from_static("usr_789"));
+
+        let prefixes = vec!["x-katanemo-".to_string(), "x-tenant-".to_string()];
+        let attrs = extract_custom_trace_attributes(&headers, Some(&prefixes));
+
+        assert_eq!(attrs.get("tenant.id"), Some(&"ten_456".to_string()));
+        assert_eq!(attrs.get("user.id"), Some(&"usr_789".to_string()));
+    }
 }
