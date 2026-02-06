@@ -382,28 +382,10 @@ properties:
         type: integer
       trace_arch_internal:
         type: boolean
-    custom_attributes:
-      type: array
-      items:
-        type: object
-        properties:
-          key:
-            type: string
-          type:
-            type: string
-            enum:
-              - str
-              - bool
-              - float
-              - int
-          header:
-            type: string
-        additionalProperties: false
-        required:
-          - key
-          - type
-          - header
-      additionalProperties: false
+      custom_attribute_prefixes:
+        type: array
+        items:
+          type: string
   mode:
     type: string
     enum:

@@ -188,7 +188,7 @@ async fn handle_agent_chat(
         tracing_config
             .as_ref()
             .as_ref()
-            .and_then(|tracing| tracing.custom_attributes.as_deref()),
+            .and_then(|tracing| tracing.custom_attribute_prefixes.as_deref()),
     );
 
     let chat_request_bytes = request.collect().await?.to_bytes();
