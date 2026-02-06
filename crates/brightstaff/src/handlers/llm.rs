@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{ModelAlias, Tracing};
+use common::configuration::{ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -34,7 +34,6 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .boxed()
 }
 
-// ! we reached the limit of the number of arguments for a function
 #[allow(clippy::too_many_arguments)]
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
@@ -43,17 +42,14 @@ pub async fn llm_chat(
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
     trace_collector: Arc<TraceCollector>,
-    tracing_config: Arc<Option<Tracing>>, // ! right here
+    span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
     let custom_attrs = collect_custom_trace_attributes(
         &request_headers,
-        tracing_config
-            .as_ref()
-            .as_ref()
-            .and_then(|tracing| tracing.span_attribute_header_prefixes.as_deref()),
+        span_attributes.as_ref().as_ref(),
     );
     let request_id: String = match request_headers
         .get(REQUEST_ID_HEADER)

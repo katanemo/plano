@@ -382,10 +382,19 @@ properties:
         type: integer
       trace_arch_internal:
         type: boolean
-      span_attribute_header_prefixes:
-        type: array
-        items:
-          type: string
+      span_attributes:
+        type: object
+        properties:
+          header_prefixes:
+            type: array
+            items:
+              type: string
+          static:
+            type: object
+            additionalProperties:
+              type: string
+        additionalProperties: false
+      additionalProperties: false
   mode:
     type: string
     enum:
