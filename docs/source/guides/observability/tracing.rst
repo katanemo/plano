@@ -145,7 +145,8 @@ For complete details on all available signals, detection methods, and best pract
 Custom Span Attributes
 -------------------------------------------
 
-Plano can automatically attach **custom span attributes** derived from request headers. This lets you stamp
+Plano can automatically attach **custom span attributes** derived from request headers and **static** attributes
+defined in configuration. This lets you stamp
 traces with identifiers like workspace, tenant, or user IDs without changing application code or adding
 custom instrumentation.
 
@@ -159,18 +160,24 @@ How It Works
 ~~~~~~~~~~~~
 
 You configure one or more header prefixes. Any incoming HTTP header whose name starts with one of these
-prefixes is captured as a span attribute.
+prefixes is captured as a span attribute. You can also provide static attributes that are always injected.
 
 - The **prefix is only for matching**, not the resulting attribute key.
 - The attribute key is the header name **with the prefix removed**, then hyphens converted to dots.
+
+.. note::
+
+   Custom span attributes are attached to LLM spans when handling ``/v1/...`` requests via ``llm_chat``. For orchestrator requests to ``/agents/...``,
+   these attributes are added to both the orchestrator selection span and to each agent span created by ``agent_chat``.
 
 **Example**
 
 Configured prefix::
 
   tracing:
-    span_attribute_header_prefixes:
-      - x-katanemo-
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
 
 Incoming headers::
 
@@ -191,17 +198,28 @@ Add the prefix list under ``tracing`` in your config:
 
   tracing:
     random_sampling: 100
-    span_attribute_header_prefixes:
-      - x-katanemo-
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
+      static:
+        environment: production
+        service.version: "1.0.0"
+
+Static attributes are always injected alongside any header-derived attributes. If a header-derived
+attribute key matches a static key, the header value overrides the static value.
 
 You can provide multiple prefixes:
 
 .. code-block:: yaml
 
   tracing:
-    span_attribute_header_prefixes:
-      - x-katanemo-
-      - x-tenant-
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
+        - x-tenant-
+      static:
+        environment: production
+        service.version: "1.0.0"
 
 Notes and Examples
 ~~~~~~~~~~~~~~~~~~
@@ -216,8 +234,9 @@ Notes and Examples
 Config::
 
   tracing:
-    span_attribute_header_prefixes:
-      - x-katanemo-
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
 
 Request headers::
 
