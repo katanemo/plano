@@ -75,14 +75,14 @@ impl OrchestratorService {
             .generate_request(messages, &usage_preferences);
 
         debug!(
-            "sending request to arch-orchestrator model: {}, endpoint: {}",
-            self.orchestrator_model.get_model_name(),
-            self.orchestrator_url
+            model = %self.orchestrator_model.get_model_name(),
+            endpoint = %self.orchestrator_url,
+            "sending request to arch-orchestrator"
         );
 
         debug!(
-            "arch orchestrator request body: {}",
-            &serde_json::to_string(&orchestrator_request).unwrap(),
+            body = %serde_json::to_string(&orchestrator_request).unwrap(),
+            "arch orchestrator request"
         );
 
         let mut orchestration_request_headers = header::HeaderMap::new();
@@ -131,9 +131,9 @@ impl OrchestratorService {
             Ok(response) => response,
             Err(err) => {
                 warn!(
-                    "Failed to parse JSON: {}. Body: {}",
-                    err,
-                    &serde_json::to_string(&body).unwrap()
+                    error = %err,
+                    body = %serde_json::to_string(&body).unwrap(),
+                    "failed to parse json response"
                 );
                 return Err(OrchestrationError::JsonError(
                     err,
@@ -143,7 +143,7 @@ impl OrchestratorService {
         };
 
         if chat_completion_response.choices.is_empty() {
-            warn!("No choices in orchestrator response: {}", body);
+            warn!(body = %body, "no choices in orchestrator response");
             return Ok(None);
         }
 
@@ -152,10 +152,10 @@ impl OrchestratorService {
                 .orchestrator_model
                 .parse_response(content, &usage_preferences)?;
             info!(
-                "arch-orchestrator determined routes: {}, selected_routes: {:?}, response time: {}ms",
-                content.replace("\n", "\\n"),
-                parsed_response,
-                orchestrator_response_time.as_millis()
+                content = %content.replace("\n", "\\n"),
+                selected_routes = ?parsed_response,
+                response_time_ms = orchestrator_response_time.as_millis(),
+                "arch-orchestrator determined routes"
             );
 
             if let Some(ref parsed_response) = parsed_response {

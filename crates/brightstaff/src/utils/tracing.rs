@@ -8,6 +8,8 @@ use time::macros::format_description;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::fmt::{format, time::FormatTime, FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 struct BracketedTime;
@@ -30,7 +32,7 @@ struct BracketedFormatter;
 
 impl<S, N> FormatEvent<S, N> for BracketedFormatter
 where
-    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    S: Subscriber + for<'a> LookupSpan<'a>,
     N: for<'a> FormatFields<'a> + 'static,
 {
     fn format_event(
@@ -44,15 +46,36 @@ where
 
         write!(
             writer,
-            "[{}] ",
+            "[{}]",
             event.metadata().level().to_string().to_lowercase()
         )?;
 
+        // Extract request_id from span context if present
+        if let Some(scope) = ctx.event_scope() {
+            for span in scope.from_root() {
+                let extensions = span.extensions();
+                if let Some(fields) = extensions.get::<FormattedFields<N>>() {
+                    let fields_str = fields.fields.as_str();
+                    // Look for request_id in the formatted fields
+                    if let Some(start) = fields_str.find("request_id=") {
+                        let rest = &fields_str[start + 11..]; // Skip "request_id="
+                        let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
+                        let rid = &rest[..end];
+                        write!(writer, "[request_id={}]", rid)?;
+                        break;
+                    }
+                }
+            }
+        }
+
+        write!(writer, " ")?;
         ctx.field_format().format_fields(writer.by_ref(), event)?;
 
         writeln!(writer)
     }
 }
+
+use tracing_subscriber::fmt::FormattedFields;
 
 static INIT_LOGGER: OnceLock<SdkTracerProvider> = OnceLock::new();
 
@@ -94,10 +117,19 @@ pub fn init_tracer() -> &'static SdkTracerProvider {
                 tracing_opentelemetry::layer().with_tracer(provider.tracer("brightstaff"));
 
             // Combine the OpenTelemetry layer with fmt layer using the registry
+            let env_filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+            // Create fmt layer with span field formatting enabled (no ANSI to keep fields parseable)
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .event_format(BracketedFormatter)
+                .fmt_fields(format::DefaultFields::new())
+                .with_ansi(false);
+
             let subscriber = tracing_subscriber::registry()
                 .with(telemetry_layer)
-                .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-                .with(tracing_subscriber::fmt::layer().event_format(BracketedFormatter));
+                .with(env_filter)
+                .with(fmt_layer);
 
             tracing::subscriber::set_global_default(subscriber)
                 .expect("Failed to set tracing subscriber");
@@ -108,11 +140,18 @@ pub fn init_tracer() -> &'static SdkTracerProvider {
             let provider = SdkTracerProvider::builder().build();
             global::set_tracer_provider(provider.clone());
 
-            tracing_subscriber::fmt()
-                .with_env_filter(
-                    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-                )
+            let env_filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+            // Create fmt layer with span field formatting enabled (no ANSI to keep fields parseable)
+            let fmt_layer = tracing_subscriber::fmt::layer()
                 .event_format(BracketedFormatter)
+                .fmt_fields(format::DefaultFields::new())
+                .with_ansi(false);
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
                 .init();
 
             provider

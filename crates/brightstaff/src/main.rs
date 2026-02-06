@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // loading arch_config.yaml file
     let arch_config_path = env::var("ARCH_CONFIG_PATH_RENDERED")
         .unwrap_or_else(|_| "./arch_config_rendered.yaml".to_string());
-    info!("Loading arch_config.yaml from {}", arch_config_path);
+    info!(path = %arch_config_path, "loading arch_config.yaml");
 
     let config_contents =
         fs::read_to_string(&arch_config_path).expect("Failed to read arch_config.yaml");
@@ -125,7 +125,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(storage_config) = &arch_config.state_storage {
             let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
                 common::configuration::StateStorageType::Memory => {
-                    info!("Initialized conversation state storage: Memory");
+                    info!(
+                        storage_type = "memory",
+                        "initialized conversation state storage"
+                    );
                     Arc::new(MemoryConversationalStorage::new())
                 }
                 common::configuration::StateStorageType::Postgres => {
@@ -134,8 +137,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .as_ref()
                         .expect("connection_string is required for postgres state_storage");
 
-                    debug!("Postgres connection string (full): {}", connection_string);
-                    info!("Initializing conversation state storage: Postgres");
+                    debug!(connection_string = %connection_string, "postgres connection");
+                    info!(
+                        storage_type = "postgres",
+                        "initializing conversation state storage"
+                    );
                     Arc::new(
                         PostgreSQLConversationStorage::new(connection_string.clone())
                             .await
@@ -145,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             };
             Some(storage)
         } else {
-            info!("No state_storage configured - conversation state management disabled");
+            info!("no state_storage configured, conversation state management disabled");
             None
         };
 
@@ -250,7 +256,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         Ok(response)
                     }
                     _ => {
-                        debug!("No route for {} {}", req.method(), req.uri().path());
+                        debug!(method = %req.method(), path = %req.uri().path(), "no route found");
                         let mut not_found = Response::new(empty());
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
                         Ok(not_found)
@@ -260,13 +266,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         tokio::task::spawn(async move {
-            debug!("Accepted connection from {:?}", peer_addr);
+            debug!(peer = ?peer_addr, "accepted connection");
             if let Err(err) = http1::Builder::new()
                 // .serve_connection(io, service_fn(chat_completion))
                 .serve_connection(io, service)
                 .await
             {
-                warn!("Error serving connection: {:?}", err);
+                warn!(error = ?err, "error serving connection");
             }
         });
     }

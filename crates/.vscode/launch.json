@@ -13,7 +13,7 @@
       "env": {
         "RUST_LOG": "debug",
         "RUST_BACKTRACE": "1",
-        "ARCH_CONFIG_PATH_RENDERED": "../demos/use_cases/mcp_filter/config.yaml_rendered",
+        "ARCH_CONFIG_PATH_RENDERED": "../demos/use_cases/multi_agent_with_crewai_langchain/config.yaml_rendered",
         "OTEL_COLLECTOR_URL": "http://localhost:4317",
         "OTEL_TRACING_ENABLED": "true"
       },

@@ -10,7 +10,7 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::{Request, Response};
 use serde::ser::Error as SerError;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::agent_selector::{AgentSelectionError, AgentSelector};
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
@@ -39,90 +39,117 @@ pub async fn agent_chat(
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    match handle_agent_chat(request, orchestrator_service, agents_list, listeners).await {
-        Ok(response) => Ok(response),
-        Err(err) => {
-            // Check if this is a client error from the pipeline that should be cascaded
-            if let AgentFilterChainError::Pipeline(PipelineError::ClientError {
-                agent,
-                status,
-                body,
-            }) = &err
-            {
-                warn!(
-                    "Client error from agent '{}' (HTTP {}): {}",
-                    agent, status, body
-                );
+    // Extract request_id from headers or generate a new one
+    let request_id: String = match request
+        .headers()
+        .get(common::consts::REQUEST_ID_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        Some(id) => id,
+        None => uuid::Uuid::new_v4().to_string(),
+    };
 
-                // Create error response with the original status code and body
-                let error_json = serde_json::json!({
-                    "error": "ClientError",
-                    "agent": agent,
-                    "status": status,
-                    "agent_response": body
-                });
-
-                let json_string = error_json.to_string();
-                let mut response = Response::new(ResponseHandler::create_full_body(json_string));
-                *response.status_mut() =
-                    hyper::StatusCode::from_u16(*status).unwrap_or(hyper::StatusCode::BAD_REQUEST);
-                response.headers_mut().insert(
-                    hyper::header::CONTENT_TYPE,
-                    "application/json".parse().unwrap(),
-                );
-                return Ok(response);
-            }
-
-            // Print detailed error information with full error chain for other errors
-            let mut error_chain = Vec::new();
-            let mut current_error: &dyn std::error::Error = &err;
-
-            // Collect the full error chain
-            loop {
-                error_chain.push(current_error.to_string());
-                match current_error.source() {
-                    Some(source) => current_error = source,
-                    None => break,
-                }
-            }
-
-            // Log the complete error chain
-            warn!("Agent chat error chain: {:#?}", error_chain);
-            warn!("Root error: {:?}", err);
-
-            // Create structured error response as JSON
-            let error_json = serde_json::json!({
-                "error": {
-                    "type": "AgentFilterChainError",
-                    "message": err.to_string(),
-                    "error_chain": error_chain,
-                    "debug_info": format!("{:?}", err)
-                }
-            });
-
-            // Log the error for debugging
-            info!("Structured error info: {}", error_json);
-
-            // Return JSON error response
-            Ok(ResponseHandler::create_json_error_response(&error_json))
-        }
-    }
-}
-
-#[instrument(
-    name = "agent_chat_handler",
-    skip(request, orchestrator_service, agents_list, listeners),
-    level = "info",
-    fields(
+    // Create a span with request_id that will be included in all log lines
+    let request_span = info_span!(
+        "agent_chat_handler",
+        request_id = %request_id,
         http.method = %request.method(),
         http.path = %request.uri().path()
-    )
-)]
-async fn handle_agent_chat(
+    );
+
+    // Execute the handler inside the span
+    async {
+        match handle_agent_chat_inner(
+            request,
+            orchestrator_service,
+            agents_list,
+            listeners,
+            request_id,
+        )
+        .await
+        {
+            Ok(response) => Ok(response),
+            Err(err) => {
+                // Check if this is a client error from the pipeline that should be cascaded
+                if let AgentFilterChainError::Pipeline(PipelineError::ClientError {
+                    agent,
+                    status,
+                    body,
+                }) = &err
+                {
+                    warn!(
+                        agent = %agent,
+                        status = %status,
+                        body = %body,
+                        "client error from agent"
+                    );
+
+                    // Create error response with the original status code and body
+                    let error_json = serde_json::json!({
+                        "error": "ClientError",
+                        "agent": agent,
+                        "status": status,
+                        "agent_response": body
+                    });
+
+                    let json_string = error_json.to_string();
+                    let mut response =
+                        Response::new(ResponseHandler::create_full_body(json_string));
+                    *response.status_mut() = hyper::StatusCode::from_u16(*status)
+                        .unwrap_or(hyper::StatusCode::BAD_REQUEST);
+                    response.headers_mut().insert(
+                        hyper::header::CONTENT_TYPE,
+                        "application/json".parse().unwrap(),
+                    );
+                    return Ok(response);
+                }
+
+                // Print detailed error information with full error chain for other errors
+                let mut error_chain = Vec::new();
+                let mut current_error: &dyn std::error::Error = &err;
+
+                // Collect the full error chain
+                loop {
+                    error_chain.push(current_error.to_string());
+                    match current_error.source() {
+                        Some(source) => current_error = source,
+                        None => break,
+                    }
+                }
+
+                // Log the complete error chain
+                warn!(error_chain = ?error_chain, "agent chat error chain");
+                warn!(root_error = ?err, "root error");
+
+                // Create structured error response as JSON
+                let error_json = serde_json::json!({
+                    "error": {
+                        "type": "AgentFilterChainError",
+                        "message": err.to_string(),
+                        "error_chain": error_chain,
+                        "debug_info": format!("{:?}", err)
+                    }
+                });
+
+                // Log the error for debugging
+                info!(error = %error_json, "structured error info");
+
+                // Return JSON error response
+                Ok(ResponseHandler::create_json_error_response(&error_json))
+            }
+        }
+    }
+    .instrument(request_span)
+    .await
+}
+
+async fn handle_agent_chat_inner(
     request: Request<hyper::body::Incoming>,
     orchestrator_service: Arc<OrchestratorService>,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    request_id: String,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(orchestrator_service);
@@ -143,7 +170,7 @@ async fn handle_agent_chat(
             .await?
     };
 
-    info!("Handling request for listener: {}", listener.name);
+    info!(listener = %listener.name, "handling request");
 
     // Parse request body
     let request_path = request
@@ -158,12 +185,8 @@ async fn handle_agent_chat(
         let mut headers = request.headers().clone();
         headers.remove(common::consts::ENVOY_ORIGINAL_PATH_HEADER);
 
+        // Set the request_id in headers if not already present
         if !headers.contains_key(common::consts::REQUEST_ID_HEADER) {
-            let request_id = uuid::Uuid::new_v4().to_string();
-            info!(
-                "Request id not found in headers, generated new request id: {}",
-                request_id
-            );
             headers.insert(
                 common::consts::REQUEST_ID_HEADER,
                 hyper::header::HeaderValue::from_str(&request_id).unwrap(),
@@ -176,8 +199,8 @@ async fn handle_agent_chat(
     let chat_request_bytes = request.collect().await?.to_bytes();
 
     debug!(
-        "Received request body (raw utf8): {}",
-        String::from_utf8_lossy(&chat_request_bytes)
+        body = %String::from_utf8_lossy(&chat_request_bytes),
+        "received request body"
     );
 
     // Determine the API type from the endpoint
@@ -191,7 +214,7 @@ async fn handle_agent_chat(
     let client_request = match ProviderRequestType::try_from((&chat_request_bytes[..], &api_type)) {
         Ok(request) => request,
         Err(err) => {
-            warn!("Failed to parse request as ProviderRequestType: {}", err);
+            warn!("failed to parse request as ProviderRequestType: {}", err);
             let err_msg = format!("Failed to parse request: {}", err);
             return Err(AgentFilterChainError::RequestParsing(
                 serde_json::Error::custom(err_msg),
@@ -224,7 +247,10 @@ async fn handle_agent_chat(
         .select_agents(&message, &listener, traceparent.clone(), request_id.clone())
         .await?;
 
-    info!("Selected {} agent(s) for execution", selected_agents.len());
+    info!(
+        count = selected_agents.len(),
+        "selected agents for execution"
+    );
 
     // Execute agents sequentially, passing output from one to the next
     let mut current_messages = message.clone();
@@ -234,10 +260,10 @@ async fn handle_agent_chat(
         let is_last_agent = agent_index == agent_count - 1;
 
         debug!(
-            "Processing agent {}/{}: {}",
-            agent_index + 1,
-            agent_count,
-            selected_agent.id
+            agent_index = agent_index + 1,
+            total = agent_count,
+            agent = %selected_agent.id,
+            "processing agent"
         );
 
         // Get agent name
@@ -256,7 +282,7 @@ async fn handle_agent_chat(
         // Get agent details and invoke
         let agent = agent_map.get(&agent_name).unwrap();
 
-        debug!("Invoking agent: {}", agent_name);
+        debug!(agent = %agent_name, "invoking agent");
 
         let llm_response = pipeline_processor
             .invoke_agent(
@@ -270,8 +296,8 @@ async fn handle_agent_chat(
         // If this is the last agent, return the streaming response
         if is_last_agent {
             info!(
-                "Completed agent chain, returning response from last agent: {}",
-                agent_name
+                agent = %agent_name,
+                "completed agent chain, returning response"
             );
             return response_handler
                 .create_streaming_response(llm_response)
@@ -280,16 +306,13 @@ async fn handle_agent_chat(
         }
 
         // For intermediate agents, collect the full response and pass to next agent
-        debug!(
-            "Collecting response from intermediate agent: {}",
-            agent_name
-        );
+        debug!(agent = %agent_name, "collecting response from intermediate agent");
         let response_text = response_handler.collect_full_response(llm_response).await?;
 
         info!(
-            "Agent {} completed, passing {} character response to next agent",
-            agent_name,
-            response_text.len()
+            agent = %agent_name,
+            response_len = response_text.len(),
+            "agent completed, passing response to next agent"
         );
 
         // remove last message and add new one at the end

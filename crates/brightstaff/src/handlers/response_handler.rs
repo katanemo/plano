@@ -97,13 +97,13 @@ impl ResponseHandler {
                 let chunk = match item {
                     Ok(chunk) => chunk,
                     Err(err) => {
-                        warn!("Error receiving chunk: {:?}", err);
+                        warn!(error = ?err, "error receiving chunk");
                         break;
                     }
                 };
 
                 if tx.send(chunk).await.is_err() {
-                    warn!("Receiver dropped");
+                    warn!("receiver dropped");
                     break;
                 }
             }
@@ -164,11 +164,11 @@ impl ResponseHandler {
                         if let Some(content) = provider_response.content_delta() {
                             accumulated_text.push_str(content);
                         } else {
-                            info!("No content delta in provider response");
+                            info!("no content delta in provider response");
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to parse provider response: {:?}", e);
+                        warn!(error = ?e, "failed to parse provider response");
                     }
                 }
             }

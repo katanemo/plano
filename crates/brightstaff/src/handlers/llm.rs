@@ -15,7 +15,7 @@ use opentelemetry::trace::get_active_span;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, info_span, warn, Instrument};
 
 use crate::handlers::router_chat::router_chat_get_upstream_model;
 use crate::handlers::utils::{
@@ -34,17 +34,6 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .boxed()
 }
 
-#[instrument(
-    name = "llm_chat_handler",
-    skip_all,
-    fields(
-        http.method = %request.method(),
-        http.path = %request.uri().path(),
-        model.requested = tracing::field::Empty,
-        model.alias_resolved = tracing::field::Empty,
-        model.routing_resolved = tracing::field::Empty
-    )
-)]
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
@@ -61,16 +50,48 @@ pub async fn llm_chat(
         .map(|s| s.to_string())
     {
         Some(id) => id,
-        None => {
-            let generated_id = uuid::Uuid::new_v4().to_string();
-            warn!(
-                "[PLANO_REQ_ID:{}] | REQUEST_ID header missing, generated new ID",
-                generated_id
-            );
-            generated_id
-        }
+        None => uuid::Uuid::new_v4().to_string(),
     };
 
+    // Create a span with request_id that will be included in all log lines
+    let request_span = info_span!(
+        "llm_chat_handler",
+        request_id = %request_id,
+        http.method = %request.method(),
+        http.path = %request_path,
+        model.requested = tracing::field::Empty,
+        model.alias_resolved = tracing::field::Empty,
+        model.routing_resolved = tracing::field::Empty
+    );
+
+    // Execute the rest of the handler inside the span
+    llm_chat_inner(
+        request,
+        router_service,
+        full_qualified_llm_provider_url,
+        model_aliases,
+        llm_providers,
+        state_storage,
+        request_id,
+        request_path,
+        request_headers,
+    )
+    .instrument(request_span)
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn llm_chat_inner(
+    request: Request<hyper::body::Incoming>,
+    router_service: Arc<RouterService>,
+    full_qualified_llm_provider_url: String,
+    model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
+    llm_providers: Arc<RwLock<LlmProviders>>,
+    state_storage: Option<Arc<dyn StateStorage>>,
+    request_id: String,
+    request_path: String,
+    mut request_headers: hyper::HeaderMap,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Extract or generate traceparent - this establishes the trace context for all spans
     let traceparent: String = match request_headers
         .get(TRACE_PARENT_HEADER)
@@ -83,20 +104,18 @@ pub async fn llm_chat(
             let trace_id = Uuid::new_v4().to_string().replace("-", "");
             let generated_tp = format!("00-{}-0000000000000000-01", trace_id);
             warn!(
-                "[PLANO_REQ_ID:{}] | TRACE_PARENT header missing, generated new traceparent: {}",
-                request_id, generated_tp
+                generated_traceparent = %generated_tp,
+                "TRACE_PARENT header missing, generated new traceparent"
             );
             generated_tp
         }
     };
 
-    let mut request_headers = request_headers;
     let chat_request_bytes = request.collect().await?.to_bytes();
 
     debug!(
-        "[PLANO_REQ_ID:{}] | REQUEST_BODY (UTF8): {}",
-        request_id,
-        String::from_utf8_lossy(&chat_request_bytes)
+        body = %String::from_utf8_lossy(&chat_request_bytes),
+        "request body received"
     );
 
     let mut client_request = match ProviderRequestType::try_from((
@@ -106,13 +125,10 @@ pub async fn llm_chat(
         Ok(request) => request,
         Err(err) => {
             warn!(
-                "[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request as ProviderRequestType: {}",
-                request_id, err
+                error = %err,
+                "failed to parse request as ProviderRequestType"
             );
-            let err_msg = format!(
-                "[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request: {}",
-                request_id, err
-            );
+            let err_msg = format!("Failed to parse request: {}", err);
             let mut bad_request = Response::new(full(err_msg));
             *bad_request.status_mut() = StatusCode::BAD_REQUEST;
             return Ok(bad_request);
@@ -145,7 +161,7 @@ pub async fn llm_chat(
             "Model '{}' not found in configured providers",
             resolved_model
         );
-        warn!("[PLANO_REQ_ID:{}] | FAILURE | {}", request_id, err_msg);
+        warn!(model = %resolved_model, "model not found in configured providers");
         let mut bad_request = Response::new(full(err_msg));
         *bad_request.status_mut() = StatusCode::BAD_REQUEST;
         return Ok(bad_request);
@@ -172,10 +188,7 @@ pub async fn llm_chat(
     // This ensures upstream receives "gpt-4" not "openai/gpt-4"
     client_request.set_model(model_name_only.clone());
     if client_request.remove_metadata_key("archgw_preference_config") {
-        debug!(
-            "[PLANO_REQ_ID:{}] Removed archgw_preference_config from metadata",
-            request_id
-        );
+        debug!("removed archgw_preference_config from metadata");
     }
 
     // === v1/responses state management: Determine upstream API and combine input if needed ===
@@ -223,14 +236,17 @@ pub async fn llm_chat(
                             // Update both the request and original_input_items
                             responses_req.input = InputParam::Items(combined_input.clone());
                             original_input_items = combined_input;
-                            info!("[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Updated request with conversation history ({} items)", request_id, original_input_items.len());
+                            info!(
+                                items = original_input_items.len(),
+                                "updated request with conversation history"
+                            );
                         }
                         Err(StateStorageError::NotFound(_)) => {
                             // Return 409 Conflict when previous_response_id not found
-                            warn!("[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Previous response_id not found: {}", request_id, prev_resp_id);
+                            warn!(previous_response_id = %prev_resp_id, "previous response_id not found");
                             let err_msg = format!(
-                                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Conversation state not found for previous_response_id: {}",
-                                request_id, prev_resp_id
+                                "Conversation state not found for previous_response_id: {}",
+                                prev_resp_id
                             );
                             let mut conflict_response = Response::new(full(err_msg));
                             *conflict_response.status_mut() = StatusCode::CONFLICT;
@@ -239,8 +255,9 @@ pub async fn llm_chat(
                         Err(e) => {
                             // Log warning but continue on other storage errors
                             warn!(
-                                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Failed to retrieve conversation state for {}: {}",
-                                request_id, prev_resp_id, e
+                                previous_response_id = %prev_resp_id,
+                                error = %e,
+                                "failed to retrieve conversation state"
                             );
                             // Restore original_input_items since we passed ownership
                             original_input_items = extract_input_items(&responses_req.input);
@@ -248,10 +265,7 @@ pub async fn llm_chat(
                     }
                 }
             } else {
-                debug!(
-                    "[PLANO_REQ_ID:{}] | BRIGHT_STAFF | Upstream supports ResponsesAPI natively.",
-                    request_id
-                );
+                debug!("upstream supports ResponsesAPI natively");
             }
         }
     }
@@ -296,8 +310,10 @@ pub async fn llm_chat(
     });
 
     debug!(
-        "[PLANO_REQ_ID:{}] | ARCH_ROUTER URL | {}, Provider Hint: {}, Model for upstream: {}",
-        request_id, full_qualified_llm_provider_url, model_name, model_name_only
+        url = %full_qualified_llm_provider_url,
+        provider_hint = %model_name,
+        upstream_model = %model_name_only,
+        "Routing to upstream"
     );
 
     request_headers.insert(

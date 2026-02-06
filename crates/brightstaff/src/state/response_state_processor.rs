@@ -92,18 +92,16 @@ impl<P: StreamProcessor> ResponsesStateProcessor<P> {
                 match decoder.read_to_end(&mut decompressed) {
                     Ok(_) => {
                         debug!(
-                            "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Successfully decompressed {} bytes to {} bytes",
-                            self.request_id,
-                            self.chunk_buffer.len(),
-                            decompressed.len()
+                            original_bytes = self.chunk_buffer.len(),
+                            decompressed_bytes = decompressed.len(),
+                            "Successfully decompressed response"
                         );
                         decompressed
                     }
                     Err(e) => {
                         warn!(
-                            "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Failed to decompress gzip buffer: {}",
-                            self.request_id,
-                            e
+                            error = %e,
+                            "Failed to decompress gzip buffer"
                         );
                         self.chunk_buffer.clone()
                     }
@@ -111,9 +109,8 @@ impl<P: StreamProcessor> ResponsesStateProcessor<P> {
             }
             Some(encoding) => {
                 warn!(
-                    "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Unsupported Content-Encoding: {}. Only gzip is currently supported.",
-                    self.request_id,
-                    encoding
+                    encoding = %encoding,
+                    "Unsupported Content-Encoding, only gzip is supported"
                 );
                 self.chunk_buffer.clone()
             }
@@ -143,10 +140,9 @@ impl<P: StreamProcessor> ResponsesStateProcessor<P> {
                         serde_json::from_str::<ResponsesAPIStreamEvent>(data_str)
                     {
                         info!(
-                            "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Captured streaming response.completed: response_id={}, output_items={}",
-                            self.request_id,
-                            response.id,
-                            response.output.len()
+                            response_id = %response.id,
+                            output_items = response.output.len(),
+                            "Captured streaming response"
                         );
                         self.response_id = Some(response.id.clone());
                         self.output_items = Some(response.output.clone());
@@ -175,24 +171,20 @@ impl<P: StreamProcessor> ResponsesStateProcessor<P> {
         ) {
             Ok(response) => {
                 info!(
-                    "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Captured non-streaming response: response_id={}, output_items={}",
-                    self.request_id,
-                    response.id,
-                    response.output.len()
+                    response_id = %response.id,
+                    output_items = response.output.len(),
+                    "Captured non-streaming response"
                 );
                 self.response_id = Some(response.id.clone());
                 self.output_items = Some(response.output.clone());
             }
             Err(e) => {
-                // Log parse error with chunk preview for debugging
                 let chunk_preview = String::from_utf8_lossy(&decompressed);
                 let preview_len = chunk_preview.len().min(200);
                 warn!(
-                    "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Failed to parse non-streaming ResponsesAPIResponse: {}. Decompressed preview (first {} bytes): {}",
-                    self.request_id,
-                    e,
-                    preview_len,
-                    &chunk_preview[..preview_len]
+                    error = %e,
+                    preview = %&chunk_preview[..preview_len],
+                    "Failed to parse non-streaming ResponsesAPIResponse"
                 );
             }
         }
@@ -221,10 +213,7 @@ impl<P: StreamProcessor> StreamProcessor for ResponsesStateProcessor<P> {
 
         // Skip storage for OpenAI upstream
         if self.is_openai_upstream {
-            debug!(
-                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Skipping state storage for OpenAI upstream provider",
-                self.request_id
-            );
+            debug!("Skipping state storage for OpenAI upstream");
             return;
         }
 
@@ -234,8 +223,9 @@ impl<P: StreamProcessor> StreamProcessor for ResponsesStateProcessor<P> {
             let output_as_inputs = outputs_to_inputs(output_items);
 
             debug!(
-                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Converting outputs to inputs: output_items_count={}, converted_input_items_count={}",
-                self.request_id, output_items.len(), output_as_inputs.len()
+                output_items = output_items.len(),
+                converted_items = output_as_inputs.len(),
+                "Converting outputs to inputs"
             );
 
             // Combine original input + output as new input history
@@ -243,11 +233,9 @@ impl<P: StreamProcessor> StreamProcessor for ResponsesStateProcessor<P> {
             combined_input.extend(output_as_inputs);
 
             debug!(
-                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Storing state: original_input_count={}, combined_input_count={}, combined_json={}",
-                self.request_id,
-                self.original_input.len(),
-                combined_input.len(),
-                serde_json::to_string(&combined_input).unwrap_or_else(|_| "serialization_error".to_string())
+                original_input = self.original_input.len(),
+                combined_input = combined_input.len(),
+                "Storing conversation state"
             );
 
             let state = OpenAIConversationState {
@@ -270,28 +258,27 @@ impl<P: StreamProcessor> StreamProcessor for ResponsesStateProcessor<P> {
                 match storage.put(state).await {
                     Ok(()) => {
                         info!(
-                            "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Successfully stored conversation state for response_id: {}, items_count={}",
-                            request_id,
-                            response_id_clone,
-                            items_count
+                            request_id = %request_id,
+                            response_id = %response_id_clone,
+                            items = items_count,
+                            "Stored conversation state"
                         );
                     }
                     Err(e) => {
                         warn!(
-                            "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Failed to store conversation state for response_id {}: {}",
-                            request_id,
-                            response_id_clone,
-                            e
+                            request_id = %request_id,
+                            response_id = %response_id_clone,
+                            error = %e,
+                            "Failed to store conversation state"
                         );
                     }
                 }
             });
         } else {
             warn!(
-                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | No response_id captured from upstream response - cannot store conversation state. response_id present: {}, output present: {}",
-                self.request_id,
-                self.response_id.is_some(),
-                self.output_items.is_some()
+                has_response_id = self.response_id.is_some(),
+                has_output = self.output_items.is_some(),
+                "No response_id captured, cannot store conversation state"
             );
         }
     }

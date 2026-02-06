@@ -52,14 +52,14 @@ pub async fn router_chat_get_upstream_model(
             | ProviderRequestType::BedrockConverseStream(_)
             | ProviderRequestType::ResponsesAPIRequest(_),
         ) => {
-            warn!("Unexpected: got non-ChatCompletions request after converting to OpenAI format");
+            warn!("unexpected: got non-ChatCompletions request after converting to OpenAI format");
             return Err(RoutingError::internal_error(
                 "Request conversion failed".to_string(),
             ));
         }
         Err(err) => {
             warn!(
-                "Failed to convert request to ChatCompletionsRequest: {}",
+                "failed to convert request to ChatCompletionsRequest: {}",
                 err
             );
             return Err(RoutingError::internal_error(format!(
@@ -70,9 +70,8 @@ pub async fn router_chat_get_upstream_model(
     };
 
     debug!(
-        "[PLANO_REQ_ID: {:?}]: ROUTER_REQ: {}",
-        request_id,
-        &serde_json::to_string(&chat_request).unwrap()
+        request = %serde_json::to_string(&chat_request).unwrap(),
+        "router request"
     );
 
     // Extract usage preferences from metadata
@@ -108,11 +107,10 @@ pub async fn router_chat_get_upstream_model(
     };
 
     info!(
-        "[PLANO_REQ_ID: {:?}] | ROUTER_REQ | Usage preferences from request: {}, request_path: {}, latest message: {}",
-        request_id,
-        usage_preferences.is_some(),
-        request_path,
-        latest_message_for_log
+        has_usage_preferences = usage_preferences.is_some(),
+        path = %request_path,
+        latest_message = %latest_message_for_log,
+        "processing router request"
     );
 
     // Capture start time for routing span
@@ -135,10 +133,7 @@ pub async fn router_chat_get_upstream_model(
             None => {
                 // No route determined, return sentinel value "none"
                 // This signals to llm.rs to use the original validated request model
-                info!(
-                    "[PLANO_REQ_ID: {}] | ROUTER_REQ | No route determined, returning sentinel 'none'",
-                    request_id
-                );
+                info!("no route determined, using default model");
 
                 Ok(RoutingResult {
                     model_name: "none".to_string(),

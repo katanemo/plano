@@ -6,7 +6,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::{info, warn};
+use tracing::{info, warn, Instrument};
 
 use crate::signals::{SignalAnalyzer, TextBasedSignalAnalyzer};
 use hermesllm::apis::openai::Message;
@@ -88,7 +88,7 @@ impl StreamProcessor for ObservableStreamProcessor {
             chunk_count = self.chunk_count,
             duration_ms = self.start_time.elapsed().as_millis(),
             time_to_first_token_ms = ?self.time_to_first_token,
-            "Streaming completed"
+            "streaming completed"
         );
     }
 
@@ -97,7 +97,7 @@ impl StreamProcessor for ObservableStreamProcessor {
             service = %self.service_name,
             error = error_msg,
             duration_ms = self.start_time.elapsed().as_millis(),
-            "Stream error"
+            "stream error"
         );
     }
 }
@@ -119,49 +119,55 @@ where
 {
     let (tx, rx) = mpsc::channel::<Bytes>(buffer_size);
 
+    // Capture the current span so the spawned task inherits the request context
+    let current_span = tracing::Span::current();
+
     // Spawn a task to process and forward chunks
-    let processor_handle = tokio::spawn(async move {
-        let mut is_first_chunk = true;
+    let processor_handle = tokio::spawn(
+        async move {
+            let mut is_first_chunk = true;
 
-        while let Some(item) = byte_stream.next().await {
-            let chunk = match item {
-                Ok(chunk) => chunk,
-                Err(err) => {
-                    let err_msg = format!("Error receiving chunk: {:?}", err);
-                    warn!("{}", err_msg);
-                    processor.on_error(&err_msg);
-                    break;
+            while let Some(item) = byte_stream.next().await {
+                let chunk = match item {
+                    Ok(chunk) => chunk,
+                    Err(err) => {
+                        let err_msg = format!("Error receiving chunk: {:?}", err);
+                        warn!(error = %err_msg, "stream error");
+                        processor.on_error(&err_msg);
+                        break;
+                    }
+                };
+
+                // Call on_first_bytes for the first chunk
+                if is_first_chunk {
+                    processor.on_first_bytes();
+                    is_first_chunk = false;
                 }
-            };
 
-            // Call on_first_bytes for the first chunk
-            if is_first_chunk {
-                processor.on_first_bytes();
-                is_first_chunk = false;
-            }
-
-            // Process the chunk
-            match processor.process_chunk(chunk) {
-                Ok(Some(processed_chunk)) => {
-                    if tx.send(processed_chunk).await.is_err() {
-                        warn!("Receiver dropped");
+                // Process the chunk
+                match processor.process_chunk(chunk) {
+                    Ok(Some(processed_chunk)) => {
+                        if tx.send(processed_chunk).await.is_err() {
+                            warn!("receiver dropped");
+                            break;
+                        }
+                    }
+                    Ok(None) => {
+                        // Skip this chunk
+                        continue;
+                    }
+                    Err(err) => {
+                        warn!("processor error: {}", err);
+                        processor.on_error(&err);
                         break;
                     }
                 }
-                Ok(None) => {
-                    // Skip this chunk
-                    continue;
-                }
-                Err(err) => {
-                    warn!("Processor error: {}", err);
-                    processor.on_error(&err);
-                    break;
-                }
             }
-        }
 
-        processor.on_complete();
-    });
+            processor.on_complete();
+        }
+        .instrument(current_span),
+    );
 
     // Convert channel receiver to HTTP stream
     let stream = ReceiverStream::new(rx).map(|chunk| Ok::<_, hyper::Error>(Frame::data(chunk)));

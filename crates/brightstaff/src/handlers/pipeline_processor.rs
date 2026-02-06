@@ -116,7 +116,7 @@ impl PipelineProcessor {
         };
 
         for agent_name in filter_chain {
-            debug!("Processing filter agent: {}", agent_name);
+            debug!(agent = %agent_name, "processing filter agent");
 
             let agent = agent_map
                 .get(agent_name)
@@ -125,12 +125,12 @@ impl PipelineProcessor {
             let tool_name = agent.tool.as_deref().unwrap_or(&agent.id);
 
             info!(
-                "executing filter: {}/{}, url: {}, type: {}, conversation length: {}",
-                agent_name,
-                tool_name,
-                agent.url,
-                agent.agent_type.as_deref().unwrap_or("mcp"),
-                chat_history.len()
+                agent = %agent_name,
+                tool = %tool_name,
+                url = %agent.url,
+                agent_type = %agent.agent_type.as_deref().unwrap_or("mcp"),
+                conversation_len = chat_history.len(),
+                "executing filter"
             );
 
             if agent.agent_type.as_deref().unwrap_or("mcp") == "mcp" {
@@ -144,9 +144,9 @@ impl PipelineProcessor {
             }
 
             info!(
-                "Filter '{}' completed, updated conversation length: {}",
-                agent_name,
-                chat_history_updated.len()
+                agent = %agent_name,
+                updated_len = chat_history_updated.len(),
+                "filter completed"
             );
         }
 
@@ -214,9 +214,9 @@ impl PipelineProcessor {
         // Validate SSE format: first line should be "event: message"
         if lines.is_empty() || lines[0] != "event: message" {
             warn!(
-                "Invalid SSE response format from agent {}: expected 'event: message' as first line, got: {:?}",
-                agent_id,
-                lines.first()
+                agent = %agent_id,
+                first_line = ?lines.first(),
+                "invalid SSE response format"
             );
             return Err(PipelineError::NoContentInResponse(format!(
                 "Invalid SSE response format from agent {}: expected 'event: message' as first line",
@@ -233,9 +233,9 @@ impl PipelineProcessor {
 
         if data_lines.len() != 1 {
             warn!(
-                "Expected exactly one 'data:' line from agent {}, found {}",
-                agent_id,
-                data_lines.len()
+                agent = %agent_id,
+                found = data_lines.len(),
+                "expected exactly one 'data:' line"
             );
             return Err(PipelineError::NoContentInResponse(format!(
                 "Expected exactly one 'data:' line from agent {}, found {}",
@@ -453,7 +453,7 @@ impl PipelineProcessor {
         };
 
         let notification_body = serde_json::to_string(&initialized_notification)?;
-        debug!("Sending initialized notification for agent {}", agent_id);
+        debug!("sending initialized notification for agent {}", agent_id);
 
         let headers = self.build_mcp_headers(request_headers, agent_id, Some(session_id))?;
 
@@ -466,7 +466,7 @@ impl PipelineProcessor {
             .await?;
 
         info!(
-            "Initialized notification response status: {}",
+            "initialized notification response status: {}",
             response.status()
         );
 
@@ -474,7 +474,7 @@ impl PipelineProcessor {
     }
 
     async fn get_new_session_id(&self, agent_id: &str, request_headers: &HeaderMap) -> String {
-        info!("Initializing MCP session for agent {}", agent_id);
+        info!("initializing MCP session for agent {}", agent_id);
 
         let initialize_request = self.build_initialize_request();
         let headers = self
@@ -486,7 +486,7 @@ impl PipelineProcessor {
             .await
             .expect("Failed to initialize MCP session");
 
-        info!("Initialize response status: {}", response.status());
+        info!("initialize response status: {}", response.status());
 
         let session_id = response
             .headers()
@@ -496,7 +496,7 @@ impl PipelineProcessor {
             .to_string();
 
         info!(
-            "Created new MCP session for agent {}: {}",
+            "created new MCP session for agent {}: {}",
             agent_id, session_id
         );
 
@@ -631,7 +631,7 @@ impl PipelineProcessor {
 
         let request_body = ProviderRequestType::to_bytes(&original_request).unwrap();
         // let request_body = serde_json::to_string(&request)?;
-        debug!("Sending request to terminal agent {}", terminal_agent.id);
+        debug!("sending request to terminal agent {}", terminal_agent.id);
 
         let mut agent_headers = request_headers.clone();
         agent_headers.remove(hyper::header::CONTENT_LENGTH);
