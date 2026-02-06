@@ -4,20 +4,20 @@ use hyper::header::HeaderMap;
 
 pub fn extract_custom_trace_attributes(
     headers: &HeaderMap,
-    custom_attribute_prefixes: Option<&[String]>,
+    span_attribute_header_prefixes: Option<&[String]>,
 ) -> HashMap<String, String> {
     let mut attributes = HashMap::new();
-    let Some(custom_attribute_prefixes) = custom_attribute_prefixes else {
+    let Some(span_attribute_header_prefixes) = span_attribute_header_prefixes else {
         return attributes;
     };
-    if custom_attribute_prefixes.is_empty() {
+    if span_attribute_header_prefixes.is_empty() {
         return attributes;
     }
 
     for (name, value) in headers.iter() {
         let header_name = name.as_str();
         let mut matched_prefix: Option<&str> = None;
-        for prefix in custom_attribute_prefixes {
+        for prefix in span_attribute_header_prefixes {
             if header_name.starts_with(prefix) {
                 matched_prefix = Some(prefix.as_str());
                 break;

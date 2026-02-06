@@ -53,7 +53,7 @@ pub async fn llm_chat(
         tracing_config
             .as_ref()
             .as_ref()
-            .and_then(|tracing| tracing.custom_attribute_prefixes.as_deref()),
+            .and_then(|tracing| tracing.span_attribute_header_prefixes.as_deref()),
     );
     let request_id: String = match request_headers
         .get(REQUEST_ID_HEADER)

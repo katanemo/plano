@@ -382,7 +382,7 @@ properties:
         type: integer
       trace_arch_internal:
         type: boolean
-      custom_attribute_prefixes:
+      span_attribute_header_prefixes:
         type: array
         items:
           type: string

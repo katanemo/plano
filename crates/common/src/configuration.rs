@@ -90,7 +90,7 @@ pub struct Overrides {
 pub struct Tracing {
     pub sampling_rate: Option<f64>,
     pub trace_arch_internal: Option<bool>,
-    pub custom_attribute_prefixes: Option<Vec<String>>,
+    pub span_attribute_header_prefixes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
