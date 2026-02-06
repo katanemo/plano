@@ -4,12 +4,15 @@ import subprocess
 import sys
 import yaml
 import logging
+from rich.logging import RichHandler
 from planoai.consts import PLANO_DOCKER_NAME
 
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=False, markup=True)],
 )
 
 

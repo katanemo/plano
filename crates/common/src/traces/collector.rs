@@ -1,10 +1,7 @@
 use super::resource_span_builder::ResourceSpanBuilder;
 use super::shapes::Span;
 use std::collections::{HashMap, VecDeque};
-use std::fs::{create_dir_all, OpenOptions};
-use std::io::{BufWriter, Write};
-use std::path::Path;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, warn};
@@ -54,8 +51,6 @@ pub struct TraceCollector {
     otel_url: String,
     /// Whether tracing is enabled
     enabled: bool,
-    /// Optional OTLP JSONL log writer (append-only)
-    otlp_log: Option<StdMutex<BufWriter<std::fs::File>>>,
 }
 
 impl TraceCollector {
@@ -70,8 +65,6 @@ impl TraceCollector {
     /// Other parameters are read from environment variables:
     /// - `TRACE_FLUSH_INTERVAL_MS` - Flush interval in milliseconds (default: 1000)
     /// - `OTEL_COLLECTOR_URL` - OTEL collector endpoint (default: http://localhost:9903/v1/traces)
-    /// - `PLANO_LOCAL_OTLP_LOG_ENABLED` - Enable OTLP JSONL logging (default: true)
-    /// - `PLANO_LOCAL_OTLP_LOG_PATH` - OTLP JSONL log file path (default: /var/log/plano/otel.jsonl)
     pub fn new(enabled: Option<bool>) -> Self {
         let flush_interval_ms = std::env::var("TRACE_FLUSH_INTERVAL_MS")
             .ok()
@@ -80,33 +73,6 @@ impl TraceCollector {
 
         let otel_url = std::env::var("OTEL_COLLECTOR_URL")
             .unwrap_or_else(|_| "http://localhost:9903/v1/traces".to_string());
-
-        let otlp_log_enabled = std::env::var("PLANO_LOCAL_OTLP_LOG_ENABLED")
-            .ok()
-            .and_then(|s| s.parse::<bool>().ok())
-            .unwrap_or(true);
-
-        let otlp_log_path = std::env::var("PLANO_LOCAL_OTLP_LOG_PATH")
-            .unwrap_or_else(|_| "/var/log/plano/otel.jsonl".to_string());
-
-        let otlp_log = if otlp_log_enabled {
-            let path = Path::new(&otlp_log_path);
-            if let Some(parent) = path.parent() {
-                if let Err(err) = create_dir_all(parent) {
-                    warn!("Failed to create OTLP log directory {:?}: {}", parent, err);
-                }
-            }
-
-            match OpenOptions::new().create(true).append(true).open(path) {
-                Ok(file) => Some(StdMutex::new(BufWriter::new(file))),
-                Err(err) => {
-                    warn!("Failed to open OTLP log file {}: {}", otlp_log_path, err);
-                    None
-                }
-            }
-        } else {
-            None
-        };
 
         // Determine if tracing is enabled:
         // 1. Use explicit parameter if provided
@@ -120,11 +86,8 @@ impl TraceCollector {
         });
 
         debug!(
-            "TraceCollector initialized: flush_interval={}ms, url={}, enabled={}, otlp_log={}",
-            flush_interval_ms,
-            otel_url,
-            enabled,
-            otlp_log.is_some()
+            "TraceCollector initialized: flush_interval={}ms, url={}, enabled={}",
+            flush_interval_ms, otel_url, enabled
         );
 
         Self {
@@ -132,7 +95,6 @@ impl TraceCollector {
             flush_interval: Duration::from_millis(flush_interval_ms),
             otel_url,
             enabled,
-            otlp_log,
         }
     }
 
@@ -206,13 +168,8 @@ impl TraceCollector {
 
         // Build canonical OTEL payload structure - one ResourceSpan per service
         let resource_spans = self.build_resource_spans(service_batches);
-        let payload = serde_json::json!({
-            "resourceSpans": resource_spans
-        });
 
-        self.write_otlp_log(&payload);
-
-        match self.send_to_otel(&payload).await {
+        match self.send_to_otel(resource_spans).await {
             Ok(_) => {
                 debug!("Successfully flushed {} spans", total_spans);
                 Ok(())
@@ -239,36 +196,21 @@ impl TraceCollector {
             .collect()
     }
 
-    /// Send resource spans to OTEL collector
-    /// Serializes as {"resourceSpans": [...]} per OTEL spec
-    /// Writes to the OTLP JSONL log file
-    ///
-    /// # Arguments
-    /// * `payload` - The payload to write to the OTLP JSONL log file
-    fn write_otlp_log(&self, payload: &serde_json::Value) {
-        let Some(writer) = &self.otlp_log else {
-            return;
-        };
-
-        if let Ok(mut writer) = writer.try_lock() {
-            if let Ok(line) = serde_json::to_string(payload) {
-                if writer.write_all(line.as_bytes()).is_ok() && writer.write_all(b"\n").is_ok() {
-                    let _ = writer.flush();
-                }
-            }
-        }
-    }
-
     async fn send_to_otel(
         &self,
-        payload: &serde_json::Value,
+        resource_spans: Vec<super::shapes::ResourceSpan>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let client = reqwest::Client::new();
+
+        // Create OTEL payload with proper structure
+        let payload = serde_json::json!({
+            "resourceSpans": resource_spans
+        });
 
         let response = client
             .post(&self.otel_url)
             .header("Content-Type", "application/json")
-            .json(payload)
+            .json(&payload)
             .timeout(Duration::from_secs(5))
             .send()
             .await?;

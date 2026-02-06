@@ -1,10 +1,16 @@
+import json
 import os
 import re
 import string
-from fnmatch import fnmatch
+import threading
+import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from fnmatch import fnmatch
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import urlparse
 
 import rich_click as click
 import requests
@@ -13,6 +19,9 @@ from rich.text import Text
 from rich.tree import Tree
 
 from planoai.consts import PLANO_COLOR
+
+DEFAULT_TRACE_API_URL = "http://localhost:4318"
+MAX_TRACE_BODY_BYTES = 5_000_000
 
 
 @dataclass
@@ -34,7 +43,7 @@ class TraceSummary:
 
 
 def _trace_api_url() -> str:
-    return os.environ.get("PLANO_TRACE_API_URL", "http://localhost:9091")
+    return os.environ.get("PLANO_TRACE_API_URL", DEFAULT_TRACE_API_URL)
 
 
 def _split_patterns(value: str | None) -> list[str]:
@@ -86,22 +95,26 @@ def _collect_attr_keys(traces: list[dict[str, Any]]) -> set[str]:
     return keys
 
 
-def _fetch_traces(endpoint: str, params: dict[str, Any]) -> dict:
-    url = f"{_trace_api_url().rstrip('/')}{endpoint}"
+def _fetch_traces_raw() -> list[dict[str, Any]]:
+    url = f"{_trace_api_url().rstrip('/')}/traces"
     try:
-        response = requests.get(url, params=params, timeout=5)
+        response = requests.get(url, timeout=5)
     except requests.RequestException as exc:
         raise click.ClickException(
-            f"Trace API not reachable at {url}. "
-            "If Plano is running in Docker, expose port 9091 or set PLANO_TRACE_API_URL. "
-            "Start Plano with 'planoai up' if needed."
+            f"Trace listener not reachable at {url}. "
+            "Start it with 'planoai trace listen' or set PLANO_TRACE_API_URL."
         ) from exc
     if response.status_code >= 400:
         raise click.ClickException(response.text)
     try:
-        return response.json()
+        payload = response.json()
     except ValueError as exc:
         raise click.ClickException("Trace API returned invalid JSON.") from exc
+    if not isinstance(payload, dict) or "traces" not in payload:
+        raise click.ClickException("Trace API returned invalid traces.")
+    if not isinstance(payload["traces"], list):
+        raise click.ClickException("Trace API returned invalid traces.")
+    return payload["traces"]
 
 
 def _attrs(span: dict[str, Any]) -> dict[str, str]:
@@ -119,6 +132,259 @@ def _attrs(span: dict[str, Any]) -> dict[str, str]:
         if key is not None and value is not None:
             attrs[str(key)] = str(value)
     return attrs
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_since_seconds(value: str | None) -> int | None:
+    if not value:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if len(value) < 2:
+        return None
+    number, unit = value[:-1], value[-1]
+    try:
+        qty = int(number)
+    except ValueError:
+        return None
+    multiplier = {"m": 60, "h": 60 * 60, "d": 60 * 60 * 24}.get(unit)
+    if multiplier is None:
+        return None
+    return qty * multiplier
+
+
+def _matches_pattern(value: str, pattern: str) -> bool:
+    if pattern == "*":
+        return True
+    if "*" not in pattern:
+        return value == pattern
+    parts = [part for part in pattern.split("*") if part]
+    if not parts:
+        return True
+    remaining = value
+    for idx, part in enumerate(parts):
+        pos = remaining.find(part)
+        if pos == -1:
+            return False
+        if idx == 0 and not pattern.startswith("*") and pos != 0:
+            return False
+        remaining = remaining[pos + len(part) :]
+    if not pattern.endswith("*") and remaining:
+        return False
+    return True
+
+
+def _attribute_map(span: dict[str, Any]) -> dict[str, str]:
+    attrs = {}
+    for item in span.get("attributes", []):
+        key = item.get("key")
+        value_obj = item.get("value", {})
+        value = value_obj.get("stringValue")
+        if value is None and "intValue" in value_obj:
+            value = value_obj.get("intValue")
+        if value is None and "doubleValue" in value_obj:
+            value = value_obj.get("doubleValue")
+        if value is None and "boolValue" in value_obj:
+            value = value_obj.get("boolValue")
+        if key is not None and value is not None:
+            attrs[str(key)] = str(value)
+    return attrs
+
+
+def _filter_attributes(span: dict[str, Any], patterns: list[str]) -> dict[str, Any]:
+    if not patterns:
+        return span
+    attributes = span.get("attributes", [])
+    filtered = [
+        item
+        for item in attributes
+        if any(
+            _matches_pattern(str(item.get("key", "")), pattern) for pattern in patterns
+        )
+    ]
+    cloned = dict(span)
+    cloned["attributes"] = filtered
+    return cloned
+
+
+def _build_traces_from_payloads(
+    payloads: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    traces: dict[str, dict[str, Any]] = {}
+    trace_order: list[str] = []
+
+    for payload in payloads:
+        resource_spans = payload.get("resourceSpans", []) or []
+        for resource_span in resource_spans:
+            if not isinstance(resource_span, dict):
+                continue
+            service_name = "unknown"
+            resource = resource_span.get("resource", {}) or {}
+            for attr in resource.get("attributes", []) or []:
+                if not isinstance(attr, dict):
+                    continue
+                if attr.get("key") == "service.name":
+                    value_obj = attr.get("value", {}) or {}
+                    service_name = value_obj.get("stringValue", service_name)
+                    break
+
+            for scope_span in resource_span.get("scopeSpans", []) or []:
+                if not isinstance(scope_span, dict):
+                    continue
+                for span in scope_span.get("spans", []) or []:
+                    if not isinstance(span, dict):
+                        continue
+                    trace_id = str(span.get("traceId") or "")
+                    if not trace_id:
+                        continue
+                    if trace_id not in traces:
+                        traces[trace_id] = {"trace_id": trace_id, "spans": []}
+                        trace_order.append(trace_id)
+
+                    span_obj = dict(span)
+                    span_obj["service"] = service_name
+                    traces[trace_id]["spans"].append(span_obj)
+
+    trace_list = [traces[trace_id] for trace_id in trace_order if trace_id in traces]
+    trace_list.reverse()
+
+    trace_ids = [trace["trace_id"] for trace in trace_list]
+    return trace_list, trace_ids
+
+
+def _filter_traces(
+    traces: list[dict[str, Any]],
+    filter_patterns: list[str],
+    where_filters: list[tuple[str, str]],
+    since_seconds: int | None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    now_nanos = int(time.time() * 1_000_000_000)
+    since_nanos = now_nanos - (since_seconds * 1_000_000_000) if since_seconds else None
+
+    filtered_traces: list[dict[str, Any]] = []
+    for trace in traces:
+        spans = trace.get("spans", []) or []
+        if since_nanos is not None:
+            spans = [
+                span
+                for span in spans
+                if _safe_int(span.get("startTimeUnixNano", 0)) >= since_nanos
+            ]
+        if filter_patterns:
+            spans = [_filter_attributes(span, filter_patterns) for span in spans]
+        if not spans:
+            continue
+
+        candidate = dict(trace)
+        candidate["spans"] = spans
+        filtered_traces.append(candidate)
+
+    if where_filters:
+
+        def matches_where(trace: dict[str, Any]) -> bool:
+            for key, value in where_filters:
+                if not any(
+                    _attribute_map(span).get(key) == value
+                    for span in trace.get("spans", [])
+                ):
+                    return False
+            return True
+
+        filtered_traces = [trace for trace in filtered_traces if matches_where(trace)]
+
+    trace_ids = [trace.get("trace_id", "") for trace in filtered_traces]
+    return filtered_traces, trace_ids
+
+
+class _TraceBuffer:
+    def __init__(self, max_payloads: int = 10) -> None:
+        self._payloads: deque[dict[str, Any]] = deque(maxlen=max_payloads)
+        self._lock = threading.Lock()
+
+    def push(self, payload: dict[str, Any]) -> None:
+        with self._lock:
+            self._payloads.append(payload)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self._payloads)
+
+
+_TRACE_BUFFER = _TraceBuffer(max_payloads=10)
+
+
+class _TraceListenerHandler(BaseHTTPRequestHandler):
+    server_version = "plano-trace-listener/1.0"
+
+    def log_message(self, format, *args) -> None:
+        return
+
+    def _send_json(self, status_code: int, payload: dict[str, Any]) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:
+        if self.path != "/v1/traces":
+            self._send_json(404, {"error": "not_found"})
+            return
+        length = _safe_int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            self._send_json(400, {"error": "empty_body"})
+            return
+        if length > MAX_TRACE_BODY_BYTES:
+            self._send_json(413, {"error": "payload_too_large"})
+            return
+        body = self.rfile.read(length)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError:
+            self._send_json(400, {"error": "invalid_json"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "invalid_payload"})
+            return
+        _TRACE_BUFFER.push(payload)
+        self._send_json(200, {})
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path != "/traces":
+            self._send_json(404, {"error": "not_found"})
+            return
+        traces, _ = _build_traces_from_payloads(_TRACE_BUFFER.snapshot())
+        self._send_json(200, {"traces": traces})
+
+
+def _start_trace_listener(host: str, port: int) -> None:
+    server = ThreadingHTTPServer((host, port), _TraceListenerHandler)
+    console = Console()
+    console.print()
+    console.print(f"[bold {PLANO_COLOR}]Listening for traces...[/bold {PLANO_COLOR}]")
+    console.print(
+        f"[green]●[/green] OTLP/HTTP ingest: [cyan]http://{host}:{port}/v1/traces[/cyan]"
+    )
+    console.print(
+        f"[green]●[/green] Traces API: [cyan]http://{host}:{port}/traces[/cyan]"
+    )
+    console.print("[dim]Press Ctrl+C to stop.[/dim]")
+    console.print()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
 
 
 def _span_time_ns(span: dict[str, Any], key: str) -> int:
@@ -293,7 +559,6 @@ def _select_request(
     return selected
 
 
-@click.command()
 @click.argument("target", required=False)
 @click.option(
     "--filter",
@@ -316,7 +581,7 @@ def _select_request(
 @click.option("--limit", type=int, default=None, help="Limit results.")
 @click.option("--since", default=None, help="Look back window (e.g. 5m, 2h, 1d).")
 @click.option("--json", "json_out", is_flag=True, help="Output raw JSON.")
-def trace(
+def _run_trace_show(
     target,
     filter_patterns,
     where_filters,
@@ -326,28 +591,18 @@ def trace(
     since,
     json_out,
 ):
-    """Trace requests from the local OTLP log."""
+    """Trace requests from the local OTLP listener."""
     console = Console()
 
     try:
         patterns = _split_patterns(filter_patterns)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
-    params: dict[str, Any] = {}
+
     parsed_where = _parse_where_filters(where_filters)
-    if patterns:
-        params["filter"] = ",".join(patterns)
-    for key, value in parsed_where:
-        params.setdefault("where", [])
-        params["where"].append(f"{key}={value}")
-    if list_only:
-        params["list"] = "true"
     if limit is not None and limit < 0:
         raise click.ClickException("Limit must be greater than or equal to 0.")
-    if limit is not None:
-        params["limit"] = str(limit)
-    if since:
-        params["since"] = since
+    since_seconds = _parse_since_seconds(since)
 
     if target is None:
         target = "any" if list_only or since or limit else "last"
@@ -367,31 +622,10 @@ def trace(
                 raise click.ClickException("Trace ID must be 32 hex characters.")
         else:
             raise click.ClickException("Trace ID must be 8 or 32 hex characters.")
-    if target == "last":
-        endpoint = "/debug/traces/last"
-    elif target == "any":
-        endpoint = "/debug/traces/any"
-    elif short_target:
-        endpoint = "/debug/traces/any"
-    else:
-        endpoint = f"/debug/traces/{target}"
 
-    # For interactive listing, fetch full trace details to show timing info
-    if list_only and console.is_terminal and not no_interactive:
-        params.pop("list", None)
-
-    data = _fetch_traces(endpoint, params)
-    validation_params = {k: v for k, v in params.items() if k not in {"where", "list"}}
-    validation_data = _fetch_traces(endpoint, validation_params)
-    validation_traces = validation_data.get("traces", [])
-    if short_target and validation_traces:
-        validation_traces = [
-            trace
-            for trace in validation_traces
-            if trace.get("trace_id", "").lower().startswith(short_target)
-        ]
-    if validation_traces:
-        available_keys = _collect_attr_keys(validation_traces)
+    traces_raw = _fetch_traces_raw()
+    if traces_raw:
+        available_keys = _collect_attr_keys(traces_raw)
         if parsed_where:
             missing_keys = [key for key, _ in parsed_where if key not in available_keys]
             if missing_keys:
@@ -409,18 +643,38 @@ def trace(
                     f"[yellow]Warning:[/yellow] Filter key(s) not found: {unmatched_list}. "
                     "Returning unfiltered traces."
                 )
-    if short_target and "traces" in data:
-        data["traces"] = [
+
+    traces, trace_ids = _filter_traces(
+        traces_raw, patterns, parsed_where, since_seconds
+    )
+
+    if target == "last":
+        traces = traces[:1]
+        trace_ids = trace_ids[:1]
+    elif target not in (None, "any") and short_target is None:
+        traces = [trace for trace in traces if trace.get("trace_id") == target]
+        trace_ids = [trace.get("trace_id") for trace in traces]
+    if short_target:
+        traces = [
             trace
-            for trace in data.get("traces", [])
+            for trace in traces
             if trace.get("trace_id", "").lower().startswith(short_target)
         ]
+        trace_ids = [trace.get("trace_id") for trace in traces]
+
+    if limit is not None:
+        if list_only:
+            trace_ids = trace_ids[:limit]
+        else:
+            traces = traces[:limit]
 
     if json_out:
-        console.print_json(data=data)
+        if list_only:
+            console.print_json(data={"trace_ids": trace_ids})
+        else:
+            console.print_json(data={"traces": traces})
         return
 
-    traces = data.get("traces", [])
     if list_only:
         if traces and console.is_terminal and not no_interactive:
             selected = _select_request(console, traces)
@@ -430,8 +684,6 @@ def trace(
 
         if traces:
             trace_ids = [_trace_id_short(_trace_summary(t).trace_id) for t in traces]
-        else:
-            trace_ids = data.get("trace_ids", [])
 
         if not trace_ids:
             console.print("[yellow]No trace IDs found.[/yellow]")
@@ -448,3 +700,74 @@ def trace(
 
     trace_obj = traces[0]
     _build_tree(trace_obj, console)
+
+
+@click.group(invoke_without_command=True)
+@click.argument("target", required=False)
+@click.option(
+    "--filter",
+    "filter_patterns",
+    default="",
+    help="Limit displayed attributes to matching keys (wildcards supported).",
+)
+@click.option(
+    "--where",
+    "where_filters",
+    multiple=True,
+    help="Match traces that contain key=value. Repeatable (AND semantics).",
+)
+@click.option("--list", "list_only", is_flag=True, help="List trace IDs only.")
+@click.option(
+    "--no-interactive",
+    is_flag=True,
+    help="Disable interactive prompts and selections.",
+)
+@click.option("--limit", type=int, default=None, help="Limit results.")
+@click.option("--since", default=None, help="Look back window (e.g. 5m, 2h, 1d).")
+@click.option("--json", "json_out", is_flag=True, help="Output raw JSON.")
+@click.pass_context
+def trace(
+    ctx,
+    target,
+    filter_patterns,
+    where_filters,
+    list_only,
+    no_interactive,
+    limit,
+    since,
+    json_out,
+):
+    """Trace requests from the local OTLP listener."""
+    if ctx.invoked_subcommand:
+        return
+    if target == "listen" and not any(
+        [
+            filter_patterns,
+            where_filters,
+            list_only,
+            no_interactive,
+            limit,
+            since,
+            json_out,
+        ]
+    ):
+        _start_trace_listener("127.0.0.1", 4318)
+        return
+    _run_trace_show(
+        target,
+        filter_patterns,
+        where_filters,
+        list_only,
+        no_interactive,
+        limit,
+        since,
+        json_out,
+    )
+
+
+@trace.command("listen")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=4318, show_default=True)
+def trace_listen(host: str, port: int) -> None:
+    """Listen for OTLP/HTTP traces and serve traces."""
+    _start_trace_listener(host, port)
