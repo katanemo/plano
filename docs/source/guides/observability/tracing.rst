@@ -142,6 +142,90 @@ In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter tr
 For complete details on all available signals, detection methods, and best practices, see the :doc:`../../concepts/signals` guide.
 
 
+Custom Span Attributes
+-------------------------------------------
+
+Plano can automatically attach **custom span attributes** derived from request headers. This lets you stamp
+traces with identifiers like workspace, tenant, or user IDs without changing application code or adding
+custom instrumentation.
+
+**Why This Is Useful**
+
+- **Tenant-aware debugging**: Filter traces by ``workspace.id`` or ``tenant.id``.
+- **Customer-specific visibility**: Attribute performance or errors to a specific customer.
+- **Low overhead**: No code changes in agents or clients—just headers.
+
+How It Works
+~~~~~~~~~~~~
+
+You configure one or more header prefixes. Any incoming HTTP header whose name starts with one of these
+prefixes is captured as a span attribute.
+
+- The **prefix is only for matching**, not the resulting attribute key.
+- The attribute key is the header name **with the prefix removed**, then hyphens converted to dots.
+
+**Example**
+
+Configured prefix::
+
+  tracing:
+    span_attribute_header_prefixes:
+      - x-katanemo-
+
+Incoming headers::
+
+  X-Katanemo-Workspace-Id: ws_123
+  X-Katanemo-Tenant-Id: ten_456
+
+Resulting span attributes::
+
+  workspace.id = "ws_123"
+  tenant.id = "ten_456"
+
+Configuration
+~~~~~~~~~~~~~
+
+Add the prefix list under ``tracing`` in your config:
+
+.. code-block:: yaml
+
+  tracing:
+    random_sampling: 100
+    span_attribute_header_prefixes:
+      - x-katanemo-
+
+You can provide multiple prefixes:
+
+.. code-block:: yaml
+
+  tracing:
+    span_attribute_header_prefixes:
+      - x-katanemo-
+      - x-tenant-
+
+Notes and Examples
+~~~~~~~~~~~~~~~~~~
+
+- **Prefix must match exactly**: ``katanemo-`` does not match ``x-katanemo-`` headers.
+- **Trailing dash is recommended**: Without it, ``x-katanemo`` would also match ``x-katanemo-foo`` and
+  ``x-katanemofoo``.
+- **Keys are always strings**: Values are captured as string attributes.
+
+**Prefix mismatch example**
+
+Config::
+
+  tracing:
+    span_attribute_header_prefixes:
+      - x-katanemo-
+
+Request headers::
+
+  X-Other-User-Id: usr_999
+
+Result: no attributes are captured from ``X-Other-User-Id``.
+
+
 Benefits of Using ``Traceparent`` Headers
 -----------------------------------------
 
