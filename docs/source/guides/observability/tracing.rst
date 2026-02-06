@@ -141,6 +141,32 @@ In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter tr
 
 For complete details on all available signals, detection methods, and best practices, see the :doc:`../../concepts/signals` guide.
 
+Filtering traces by business context (tenant, workspace, user)
+--------------------------------------------------------------
+
+Traces include request paths and system metadata by default. To troubleshoot **per-tenant**, **per-workspace**, or **per-user** issues, you can enrich OTEL spans with business identifiers from HTTP headers.
+
+**Configuration**
+
+In your arch config, add a ``span_attribute_headers`` map under ``tracing``. Keys are HTTP header names; values are the span attribute keys that will appear in your tracing backend::
+
+   tracing:
+     random_sampling: 100
+     span_attribute_headers:
+       X-Tenant-Id: tenant.id
+       X-Workspace-Id: workspace.id
+       X-User-Id: user.id
+
+**Behavior**
+
+- Plano reads the listed headers from each incoming request (header names are matched case-insensitively).
+- The header values are added as span attributes on **all** spans for that request (routing, LLM, agent, and filter spans).
+- If a header is missing or empty, that attribute is omitted from the span.
+
+**Example**
+
+Clients send headers such as ``X-Tenant-Id: acme``, ``X-User-Id: user-42``. In Jaeger, Grafana Tempo, or Datadog you can then filter traces by ``tenant.id = acme`` or ``user.id = user-42`` to debug issues for a specific tenant or user.
+
 
 Benefits of Using ``Traceparent`` Headers
 -----------------------------------------

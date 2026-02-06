@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use bytes::Bytes;
+use common::configuration::Configuration;
 use common::consts::TRACE_PARENT_HEADER;
-use common::traces::{generate_random_span_id, parse_traceparent, SpanBuilder, SpanKind};
+use common::traces::{
+    generate_random_span_id, parse_traceparent, span_attributes_from_headers, SpanBuilder, SpanKind,
+};
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
@@ -42,6 +46,7 @@ pub async fn agent_chat(
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
     trace_collector: Arc<common::traces::TraceCollector>,
+    arch_config: Arc<Configuration>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     match handle_agent_chat(
         request,
@@ -49,6 +54,7 @@ pub async fn agent_chat(
         agents_list,
         listeners,
         trace_collector,
+        arch_config,
     )
     .await
     {
@@ -127,6 +133,7 @@ async fn handle_agent_chat(
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
     trace_collector: Arc<common::traces::TraceCollector>,
+    arch_config: Arc<Configuration>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(orchestrator_service);
@@ -175,6 +182,21 @@ async fn handle_agent_chat(
         }
 
         headers
+    };
+
+    // Enrich spans with business identifiers from request headers when configured
+    let business_attrs: HashMap<String, String> = {
+        let header_pairs: Vec<(String, String)> = request_headers
+            .iter()
+            .filter_map(|(k, v)| v.to_str().ok().map(|s| (k.as_str().to_string(), s.to_string())))
+            .collect();
+        span_attributes_from_headers(
+            header_pairs.into_iter(),
+            arch_config
+                .tracing
+                .as_ref()
+                .and_then(|t| t.span_attribute_headers.as_ref()),
+        )
     };
 
     let chat_request_bytes = request.collect().await?.to_bytes();
@@ -276,6 +298,9 @@ async fn handle_agent_chat(
     if let Some(parent_id) = parent_span_id.clone() {
         selection_span_builder = selection_span_builder.with_parent_span_id(parent_id);
     }
+    for (key, value) in &business_attrs {
+        selection_span_builder = selection_span_builder.with_attribute(key, value);
+    }
 
     let selection_span = selection_span_builder.build();
     trace_collector.record_span(operation_component::ORCHESTRATOR, selection_span);
@@ -314,6 +339,7 @@ async fn handle_agent_chat(
                 Some(&trace_collector),
                 trace_id.clone(),
                 span_id.clone(),
+                Some(&business_attrs),
             )
             .await?;
 
@@ -365,6 +391,9 @@ async fn handle_agent_chat(
         }
         if let Some(parent_id) = parent_span_id.clone() {
             span_builder = span_builder.with_parent_span_id(parent_id);
+        }
+        for (key, value) in &business_attrs {
+            span_builder = span_builder.with_attribute(key, value);
         }
 
         let span = span_builder.build();

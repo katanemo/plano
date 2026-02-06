@@ -1,6 +1,7 @@
 // Original tracing types (OTEL structures)
 mod shapes;
 // New tracing utilities
+mod business_attributes;
 mod constants;
 mod resource_span_builder;
 mod span_builder;
@@ -18,6 +19,7 @@ pub use shapes::{
 };
 
 // Re-export new utilities
+pub use business_attributes::span_attributes_from_headers;
 pub use constants::*;
 pub use resource_span_builder::ResourceSpanBuilder;
 pub use span_builder::{generate_random_span_id, SpanBuilder, SpanKind};

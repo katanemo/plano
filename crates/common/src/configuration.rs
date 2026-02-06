@@ -90,6 +90,12 @@ pub struct Overrides {
 pub struct Tracing {
     pub sampling_rate: Option<f64>,
     pub trace_arch_internal: Option<bool>,
+    /// Optional map of HTTP header names to OTEL span attribute keys.
+    /// When set, request headers are read and added as span attributes so traces
+    /// can be filtered by business context (e.g. tenant.id, workspace.id, user.id).
+    /// Example: {"X-Tenant-Id": "tenant.id", "X-Workspace-Id": "workspace.id", "X-User-Id": "user.id"}
+    #[serde(default)]
+    pub span_attribute_headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]

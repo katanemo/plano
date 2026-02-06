@@ -360,6 +360,13 @@ properties:
         type: integer
       trace_arch_internal:
         type: boolean
+      # Map HTTP header names to OTEL span attribute keys. Request headers are copied onto spans
+      # so traces can be filtered by business context (e.g. tenant.id, workspace.id, user.id).
+      span_attribute_headers:
+        type: object
+        additionalProperties:
+          type: string
+        description: "Optional. Example: {\"X-Tenant-Id\": \"tenant.id\", \"X-Workspace-Id\": \"workspace.id\", \"X-User-Id\": \"user.id\"}"
       additionalProperties: false
   mode:
     type: string

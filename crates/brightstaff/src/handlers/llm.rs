@@ -1,9 +1,9 @@
 use bytes::Bytes;
-use common::configuration::{LlmProvider, ModelAlias};
+use common::configuration::{Configuration, LlmProvider, ModelAlias};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
-use common::traces::TraceCollector;
+use common::traces::{span_attributes_from_headers, TraceCollector};
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
@@ -41,9 +41,25 @@ pub async fn llm_chat(
     llm_providers: Arc<RwLock<Vec<LlmProvider>>>,
     trace_collector: Arc<TraceCollector>,
     state_storage: Option<Arc<dyn StateStorage>>,
+    arch_config: Arc<Configuration>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
+
+    // Enrich spans with business identifiers from request headers when configured (e.g. tenant.id, workspace.id, user.id)
+    let business_attrs: HashMap<String, String> = {
+        let header_pairs: Vec<(String, String)> = request_headers
+            .iter()
+            .filter_map(|(k, v)| v.to_str().ok().map(|s| (k.as_str().to_string(), s.to_string())))
+            .collect();
+        span_attributes_from_headers(
+            header_pairs.into_iter(),
+            arch_config
+                .tracing
+                .as_ref()
+                .and_then(|t| t.span_attribute_headers.as_ref()),
+        )
+    };
     let request_id: String = match request_headers
         .get(REQUEST_ID_HEADER)
         .and_then(|h| h.to_str().ok())
@@ -229,6 +245,7 @@ pub async fn llm_chat(
         &traceparent,
         &request_path,
         &request_id,
+        Some(&business_attrs),
     )
     .await
     {
@@ -304,6 +321,7 @@ pub async fn llm_chat(
         user_message_preview,
         temperature,
         &llm_providers,
+        &business_attrs,
     )
     .await;
 
@@ -390,6 +408,7 @@ async fn build_llm_span(
     user_message_preview: Option<String>,
     temperature: Option<f32>,
     llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
+    business_attrs: &HashMap<String, String>,
 ) -> common::traces::Span {
     use crate::tracing::{http, llm, OperationNameBuilder};
     use common::traces::{parse_traceparent, SpanBuilder, SpanKind};
@@ -453,6 +472,10 @@ async fn build_llm_span(
 
     if let Some(preview) = user_message_preview {
         span_builder = span_builder.with_attribute(llm::USER_MESSAGE_PREVIEW, preview);
+    }
+
+    for (key, value) in business_attrs {
+        span_builder = span_builder.with_attribute(key, value);
     }
 
     span_builder.build()

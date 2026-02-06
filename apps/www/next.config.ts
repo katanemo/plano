@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -30,6 +31,7 @@ const nextConfig: NextConfig = {
   },
   // Turbopack config for dev mode (Next.js 16 default)
   turbopack: {
+    root: path.join(__dirname, "../.."), // Monorepo root so Next.js doesn't warn about multiple lockfiles
     resolveAlias: {
       // Turbopack should handle monorepo resolution automatically
       // but we can add specific aliases if needed

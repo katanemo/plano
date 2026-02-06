@@ -40,6 +40,7 @@ pub async fn router_chat_get_upstream_model(
     traceparent: &str,
     request_path: &str,
     request_id: &str,
+    span_business_attrs: Option<&HashMap<String, String>>,
 ) -> Result<RoutingResult, RoutingError> {
     // Clone metadata for routing before converting (which consumes client_request)
     let routing_metadata = client_request.metadata().clone();
@@ -137,6 +138,9 @@ pub async fn router_chat_get_upstream_model(
                 // Record successful routing span
                 let mut attrs: HashMap<String, String> = HashMap::new();
                 attrs.insert("route.selected_model".to_string(), model_name.clone());
+                if let Some(ba) = span_business_attrs {
+                    attrs.extend(ba.iter().map(|(k, v)| (k.clone(), v.clone())));
+                }
                 record_routing_span(
                     trace_collector,
                     traceparent,
@@ -159,6 +163,9 @@ pub async fn router_chat_get_upstream_model(
                 let default_model = chat_request.model.clone();
                 let mut attrs = HashMap::new();
                 attrs.insert("route.selected_model".to_string(), default_model.clone());
+                if let Some(ba) = span_business_attrs {
+                    attrs.extend(ba.iter().map(|(k, v)| (k.clone(), v.clone())));
+                }
                 record_routing_span(
                     trace_collector,
                     traceparent,
@@ -178,6 +185,9 @@ pub async fn router_chat_get_upstream_model(
             let mut attrs = HashMap::new();
             attrs.insert("route.selected_model".to_string(), "unknown".to_string());
             attrs.insert("error.message".to_string(), err.to_string());
+            if let Some(ba) = span_business_attrs {
+                attrs.extend(ba.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
             record_routing_span(
                 trace_collector,
                 traceparent,

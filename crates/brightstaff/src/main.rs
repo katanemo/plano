@@ -173,6 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listeners = listeners.clone();
         let trace_collector = trace_collector.clone();
         let state_storage = state_storage.clone();
+        let arch_config = Arc::clone(&arch_config);
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
             let orchestrator_service = Arc::clone(&orchestrator_service);
@@ -184,6 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let listeners = listeners.clone();
             let trace_collector = trace_collector.clone();
             let state_storage = state_storage.clone();
+            let arch_config = Arc::clone(&arch_config);
 
             async move {
                 let path = req.uri().path();
@@ -203,6 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             agents_list,
                             listeners,
                             trace_collector,
+                            arch_config,
                         )
                         .with_context(parent_cx)
                         .await;
@@ -222,6 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             llm_providers,
                             trace_collector,
                             state_storage,
+                            arch_config,
                         )
                         .with_context(parent_cx)
                         .await
