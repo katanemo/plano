@@ -15,13 +15,11 @@ def test_init_clean_writes_empty_config(tmp_path, monkeypatch):
     assert config_path.read_text(encoding="utf-8") == "\n"
 
 
-def test_init_template_builtin_writes_config_and_env(tmp_path, monkeypatch):
+def test_init_template_builtin_writes_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     runner = CliRunner()
-    result = runner.invoke(
-        init, ["--template", "use_cases/claude_code_router", "--yes"]
-    )
+    result = runner.invoke(init, ["--template", "coding_agent_routing"])
 
     assert result.exit_code == 0, result.output
 
@@ -29,12 +27,6 @@ def test_init_template_builtin_writes_config_and_env(tmp_path, monkeypatch):
     assert config_path.exists()
     config_text = config_path.read_text(encoding="utf-8")
     assert "llm_providers:" in config_text
-
-    env_path = tmp_path / ".env"
-    assert env_path.exists()
-    env_text = env_path.read_text(encoding="utf-8")
-    assert "OPENAI_API_KEY=" in env_text
-    assert "ANTHROPIC_API_KEY=" in env_text
 
 
 def test_init_refuses_overwrite_without_force(tmp_path, monkeypatch):
