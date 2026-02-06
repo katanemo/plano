@@ -20,7 +20,7 @@ from rich.tree import Tree
 
 from planoai.consts import PLANO_COLOR
 
-DEFAULT_TRACE_API_URL = "http://localhost:4318"
+DEFAULT_TRACE_API_URL = "http://127.0.0.1:4318"
 MAX_TRACE_BODY_BYTES = 5_000_000
 
 
@@ -96,7 +96,7 @@ def _collect_attr_keys(traces: list[dict[str, Any]]) -> set[str]:
 
 
 def _fetch_traces_raw() -> list[dict[str, Any]]:
-    url = f"{_trace_api_url().rstrip('/')}/traces"
+    url = f"{_trace_api_url().rstrip('/')}/v1/traces"
     try:
         response = requests.get(url, timeout=5)
     except requests.RequestException as exc:
@@ -104,8 +104,11 @@ def _fetch_traces_raw() -> list[dict[str, Any]]:
             f"Trace listener not reachable at {url}. "
             "Start it with 'planoai trace listen' or set PLANO_TRACE_API_URL."
         ) from exc
-    if response.status_code >= 400:
-        raise click.ClickException(response.text)
+    if response.status_code == 404:
+        raise click.ClickException(
+            f"An error occurred while fetching traces: {response.text}"
+            f"Make sure the trace listener is running and PLANO_TRACE_API_URL is set correctly."
+        )
     try:
         payload = response.json()
     except ValueError as exc:
@@ -359,7 +362,7 @@ class _TraceListenerHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/traces":
+        if parsed.path != "/v1/traces":
             self._send_json(404, {"error": "not_found"})
             return
         traces, _ = _build_traces_from_payloads(_TRACE_BUFFER.snapshot())
@@ -372,10 +375,7 @@ def _start_trace_listener(host: str, port: int) -> None:
     console.print()
     console.print(f"[bold {PLANO_COLOR}]Listening for traces...[/bold {PLANO_COLOR}]")
     console.print(
-        f"[green]●[/green] OTLP/HTTP ingest: [cyan]http://{host}:{port}/v1/traces[/cyan]"
-    )
-    console.print(
-        f"[green]●[/green] Traces API: [cyan]http://{host}:{port}/traces[/cyan]"
+        f"[green]●[/green] Running trace listener on [cyan]http://{host}:{port}/v1/traces[/cyan]"
     )
     console.print("[dim]Press Ctrl+C to stop.[/dim]")
     console.print()
