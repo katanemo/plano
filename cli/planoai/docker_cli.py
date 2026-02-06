@@ -48,8 +48,8 @@ def docker_start_plano_detached(
     env_args = [item for key, value in env.items() for item in ["-e", f"{key}={value}"]]
 
     port_mappings = [
+        "12001:12001",
         "19901:9901",
-        "9091:9091",
     ]
 
     for port in gateway_ports:
