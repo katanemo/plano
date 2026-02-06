@@ -55,5 +55,5 @@ listeners:
 
 tracing:
   random_sampling: 100
-  custom_attribute_prefixes:
+  span_attribute_header_prefixes:
     - x-katanemo-
