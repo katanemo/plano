@@ -53,7 +53,7 @@ pub async fn llm_chat(
         tracing_config
             .as_ref()
             .as_ref()
-            .and_then(|tracing| tracing.custom_attributes.as_deref()),
+            .and_then(|tracing| tracing.custom_attribute_prefixes.as_deref()),
     );
     let request_id: String = match request_headers
         .get(REQUEST_ID_HEADER)
@@ -434,7 +434,7 @@ async fn build_llm_span(
     tool_names: Option<Vec<String>>,
     user_message_preview: Option<String>,
     temperature: Option<f32>,
-    llm_providers: &Arc<RwLock<Vec<LlmProvider>>>,
+    llm_providers: &Arc<RwLock<LlmProviders>>,
     custom_attrs: &HashMap<String, String>,
 ) -> common::traces::Span {
     use crate::tracing::{http, llm, OperationNameBuilder};

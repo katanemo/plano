@@ -90,24 +90,7 @@ pub struct Overrides {
 pub struct Tracing {
     pub sampling_rate: Option<f64>,
     pub trace_arch_internal: Option<bool>,
-    pub custom_attributes: Option<Vec<CustomTraceAttribute>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomTraceAttribute {
-    pub key: String,
-    #[serde(rename = "type")]
-    pub value_type: CustomTraceAttributeType,
-    pub header: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum CustomTraceAttributeType {
-    Str,
-    Bool,
-    Float,
-    Int,
+    pub custom_attribute_prefixes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
