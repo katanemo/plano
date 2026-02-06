@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8001:8001"
+      - "11000:11000"
+      - "12001:12001"
     environment:
       - ARCH_CONFIG_PATH=/app/arch_config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
