@@ -5,13 +5,13 @@ Content-Type: application/json
   "messages": [
     {
       "role": "user",
-      "content": "hi"
+      "content": "Can you explain what this Python function does?\n\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)"
     }
   ],
-  "model": "none",
+  "model": "openai/gpt-4o-mini",
   "stream": true
 }
 HTTP 200
 [Asserts]
 header "content-type" matches /text\/event-stream/
-body matches /^data: .*?gpt-4o-mini.*?\n/
+body matches /^data: .*?gpt-4o.*?\n/

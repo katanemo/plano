@@ -183,8 +183,8 @@ impl StreamContext {
                     ("x-envoy-upstream-rq-timeout-ms", timeout_str.as_str()),
                 ];
 
-                if self.request_id.is_some() {
-                    headers.push((REQUEST_ID_HEADER, self.request_id.as_ref().unwrap()));
+                if let Some(request_id) = &self.request_id {
+                    headers.push((REQUEST_ID_HEADER, request_id));
                 }
 
                 let call_args = CallArgs::new(
@@ -437,12 +437,12 @@ impl StreamContext {
         .into_iter()
         .collect();
 
-        if self.request_id.is_some() {
-            headers.insert(REQUEST_ID_HEADER, self.request_id.as_ref().unwrap());
+        if let Some(request_id) = &self.request_id {
+            headers.insert(REQUEST_ID_HEADER, request_id);
         }
 
-        if self.traceparent.is_some() {
-            headers.insert(TRACE_PARENT_HEADER, self.traceparent.as_ref().unwrap());
+        if let Some(traceparent) = &self.traceparent {
+            headers.insert(TRACE_PARENT_HEADER, traceparent);
         }
 
         // override http headers that are set in the prompt target
@@ -648,23 +648,21 @@ impl StreamContext {
     }
 
     pub fn generate_tool_call_message(&mut self) -> Message {
-        if self.arch_fc_response.is_none() {
+        if let Some(arch_fc_response) = &self.arch_fc_response {
+            Message {
+                role: ASSISTANT_ROLE.to_string(),
+                content: Some(ContentType::Text(arch_fc_response.clone())),
+                model: Some(ARCH_FC_MODEL_NAME.to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            }
+        } else {
             info!("arch_fc_response is none, generating tool call message");
             Message {
                 role: ASSISTANT_ROLE.to_string(),
                 content: None,
                 model: Some(ARCH_FC_MODEL_NAME.to_string()),
                 tool_calls: self.tool_calls.clone(),
-                tool_call_id: None,
-            }
-        } else {
-            Message {
-                role: ASSISTANT_ROLE.to_string(),
-                content: Some(ContentType::Text(
-                    self.arch_fc_response.as_ref().unwrap().clone(),
-                )),
-                model: Some(ARCH_FC_MODEL_NAME.to_string()),
-                tool_calls: None,
                 tool_call_id: None,
             }
         }

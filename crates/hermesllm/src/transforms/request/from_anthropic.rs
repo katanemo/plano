@@ -174,7 +174,7 @@ impl TryFrom<MessagesMessage> for Vec<Message> {
             MessagesMessageContent::Single(text) => {
                 result.push(Message {
                     role: message.role.into(),
-                    content: MessageContent::Text(text),
+                    content: Some(MessageContent::Text(text)),
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
@@ -186,7 +186,7 @@ impl TryFrom<MessagesMessage> for Vec<Message> {
                 for (tool_use_id, result_text, _is_error) in tool_results {
                     result.push(Message {
                         role: Role::Tool,
-                        content: MessageContent::Text(result_text),
+                        content: Some(MessageContent::Text(result_text)),
                         name: None,
                         tool_calls: None,
                         tool_call_id: Some(tool_use_id),
@@ -260,7 +260,7 @@ impl From<MessagesSystemPrompt> for Message {
 
         Message {
             role: Role::System,
-            content: system_content,
+            content: Some(system_content),
             name: None,
             tool_calls: None,
             tool_call_id: None,
@@ -317,16 +317,19 @@ fn convert_anthropic_tool_choice(
 fn build_openai_content(
     content_parts: Vec<ContentPart>,
     tool_calls: &[ToolCall],
-) -> MessageContent {
-    if content_parts.len() == 1 && tool_calls.is_empty() {
+) -> Option<MessageContent> {
+    if content_parts.is_empty() && !tool_calls.is_empty() {
+        // For assistant messages with only tool calls, content is optional
+        None
+    } else if content_parts.len() == 1 && tool_calls.is_empty() {
         match &content_parts[0] {
-            ContentPart::Text { text } => MessageContent::Text(text.clone()),
-            _ => MessageContent::Parts(content_parts),
+            ContentPart::Text { text } => Some(MessageContent::Text(text.clone())),
+            _ => Some(MessageContent::Parts(content_parts)),
         }
     } else if content_parts.is_empty() {
-        MessageContent::Text("".to_string())
+        Some(MessageContent::Text("".to_string()))
     } else {
-        MessageContent::Parts(content_parts)
+        Some(MessageContent::Parts(content_parts))
     }
 }
 

@@ -238,7 +238,7 @@ POST {{model_server_endpoint}}/function_calling HTTP/1.1
 Content-Type: application/json
 
 {
-  "model": "None",
+  "model": "gpt-4o",
   "messages": [
     {
       "role": "user",

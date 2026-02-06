@@ -1,27 +1,9 @@
-"use client";
+import type { Metadata } from "next";
+import { pageMetadata } from "@/lib/metadata";
+import ResearchPageClient from "./ResearchPageClient";
 
-import {
-  ResearchHero,
-  ResearchGrid,
-  ResearchTimeline,
-  ResearchCTA,
-  ResearchCapabilities,
-  ResearchBenchmarks,
-  ResearchFamily,
-} from "@/components/research";
-import { UnlockPotentialSection } from "@/components/UnlockPotentialSection";
+export const metadata: Metadata = pageMetadata.research;
 
 export default function ResearchPage() {
-  return (
-    <>
-      <ResearchHero />
-      <ResearchGrid />
-      <ResearchTimeline />
-      <ResearchCTA />
-      <ResearchCapabilities />
-      <ResearchBenchmarks />
-      {/* <ResearchFamily /> */}
-      <UnlockPotentialSection variant="transparent" />
-    </>
-  );
+  return <ResearchPageClient />;
 }

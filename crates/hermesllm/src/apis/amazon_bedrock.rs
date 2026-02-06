@@ -225,7 +225,7 @@ impl ProviderRequest for ConverseRequest {
                 if let SystemContentBlock::Text { text } = sys_block {
                     openai_messages.push(Message {
                         role: Role::System,
-                        content: MessageContent::Text(text.clone()),
+                        content: Some(MessageContent::Text(text.clone())),
                         name: None,
                         tool_calls: None,
                         tool_call_id: None,
@@ -258,7 +258,7 @@ impl ProviderRequest for ConverseRequest {
 
                 openai_messages.push(Message {
                     role,
-                    content: MessageContent::Text(content),
+                    content: Some(MessageContent::Text(content)),
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
@@ -279,7 +279,7 @@ impl ProviderRequest for ConverseRequest {
         for msg in messages {
             match msg.role {
                 crate::apis::openai::Role::System => {
-                    if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
+                    if let Some(crate::apis::openai::MessageContent::Text(text)) = &msg.content {
                         system_blocks.push(SystemContentBlock::Text { text: text.clone() });
                     }
                 }
@@ -290,12 +290,13 @@ impl ProviderRequest for ConverseRequest {
                         _ => continue,
                     };
 
-                    let content =
-                        if let crate::apis::openai::MessageContent::Text(text) = &msg.content {
-                            vec![ContentBlock::Text { text: text.clone() }]
-                        } else {
-                            vec![]
-                        };
+                    let content = if let Some(crate::apis::openai::MessageContent::Text(text)) =
+                        &msg.content
+                    {
+                        vec![ContentBlock::Text { text: text.clone() }]
+                    } else {
+                        vec![]
+                    };
 
                     bedrock_messages.push(crate::apis::amazon_bedrock::Message { role, content });
                 }

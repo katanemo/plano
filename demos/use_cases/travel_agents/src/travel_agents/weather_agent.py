@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 LLM_GATEWAY_ENDPOINT = os.getenv(
     "LLM_GATEWAY_ENDPOINT", "http://host.docker.internal:12001/v1"
 )
-WEATHER_MODEL = "openai/gpt-4o"
+WEATHER_MODEL = "openai/gpt-5.2"
 LOCATION_MODEL = "openai/gpt-4o-mini"
 
 # Initialize OpenAI client for plano
@@ -117,7 +117,7 @@ If no city can be found, output: NOT_FOUND"""
                     ],
                 ],
                 temperature=0.1,
-                max_tokens=10,
+                max_completion_tokens=10,
                 extra_headers=extra_headers if extra_headers else None,
             )
 
@@ -372,7 +372,7 @@ Present the weather information to the user in a clear, readable format. If ther
             model=WEATHER_MODEL,
             messages=response_messages,
             temperature=request_body.get("temperature", 0.7),
-            max_tokens=request_body.get("max_tokens", 1000),
+            max_completion_tokens=request_body.get("max_tokens", 3000),
             stream=True,
             extra_headers=extra_headers,
         )

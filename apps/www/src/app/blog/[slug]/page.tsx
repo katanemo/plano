@@ -1,9 +1,11 @@
 import { client, urlFor } from "@/lib/sanity";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PortableText } from "@/components/PortableText";
 import { notFound } from "next/navigation";
 import { UnlockPotentialSection } from "@/components/UnlockPotentialSection";
+import { createBlogPostMetadata } from "@/lib/metadata";
 
 interface BlogPost {
   _id: string;
@@ -65,6 +67,30 @@ async function getAllBlogSlugs(): Promise<string[]> {
 export async function generateStaticParams() {
   const slugs = await getAllBlogSlugs();
   return slugs.map((slug) => ({ slug }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await getBlogPost(slug);
+
+  if (!post) {
+    return {
+      title: "Post Not Found | Plano Blog",
+      description: "The requested blog post could not be found.",
+    };
+  }
+
+  return createBlogPostMetadata({
+    title: post.title,
+    description: post.summary,
+    slug: post.slug.current,
+    publishedAt: post.publishedAt,
+    author: post.author?.name,
+  });
 }
 
 export default async function BlogPostPage({

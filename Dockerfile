@@ -1,5 +1,5 @@
 # build docker image for arch gateway
-FROM rust:1.92.0 AS builder
+FROM rust:1.93.0 AS builder
 RUN rustup -v target add wasm32-wasip1
 WORKDIR /arch
 COPY crates .

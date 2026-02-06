@@ -1,4 +1,7 @@
 import { defineConfig } from "sanity";
+import { codeInput } from "@sanity/code-input";
+import { table } from "@sanity/table";
+import { markdownSchema } from "sanity-plugin-markdown";
 import { structureTool } from "sanity/structure";
 import { schemaTypes } from "./schemaTypes";
 
@@ -11,7 +14,7 @@ export default defineConfig({
 
   basePath: "/studio",
 
-  plugins: [structureTool()],
+  plugins: [structureTool(), codeInput(), table(), markdownSchema()],
 
   schema: {
     types: schemaTypes,

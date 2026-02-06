@@ -22,6 +22,81 @@ LLM_GATEWAY_ENDPOINT = os.getenv(
 # =============================================================================
 
 
+def test_assistant_message_with_null_content_and_tool_calls():
+    """Test that assistant messages with null content and tool_calls are properly handled"""
+    logger.info(
+        "Testing assistant message with null content and tool_calls (multi-turn conversation)"
+    )
+
+    base_url = LLM_GATEWAY_ENDPOINT.replace("/v1/chat/completions", "")
+    client = openai.OpenAI(
+        api_key="test-key",
+        base_url=f"{base_url}/v1",
+    )
+
+    # Simulate a multi-turn conversation where:
+    # 1. User asks a question
+    # 2. Assistant makes a tool call (with null content)
+    # 3. Tool responds
+    # 4. Assistant should provide final answer
+    completion = client.chat.completions.create(
+        model="gpt-4o",
+        max_tokens=500,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a weather assistant. Use the get_weather tool to fetch weather information.",
+            },
+            {"role": "user", "content": "What's the weather in Seattle?"},
+            {
+                "role": "assistant",
+                "content": None,  # This is the key test - null content with tool_calls
+                "tool_calls": [
+                    {
+                        "id": "call_test123",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city": "Seattle"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_test123",
+                "content": '{"location": "Seattle", "temperature": "10°C", "condition": "Partly cloudy"}',
+            },
+        ],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather information for a city",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city": {"type": "string", "description": "City name"}
+                        },
+                        "required": ["city"],
+                    },
+                },
+            }
+        ],
+    )
+
+    response_content = completion.choices[0].message.content
+    logger.info(f"Response after tool call: {response_content}")
+
+    # The assistant should provide a final response using the tool result
+    assert response_content is not None
+    assert len(response_content) > 0
+    logger.info(
+        "✓ Assistant message with null content and tool_calls handled correctly"
+    )
+
+
 def test_openai_client_with_alias_arch_summarize_v1():
     """Test OpenAI client using model alias 'arch.summarize.v1' which should resolve to '4o-mini'"""
     logger.info("Testing OpenAI client with alias 'arch.summarize.v1' -> '4o-mini'")

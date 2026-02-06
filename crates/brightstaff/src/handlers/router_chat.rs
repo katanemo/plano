@@ -96,7 +96,9 @@ pub async fn router_chat_get_upstream_model(
         .messages
         .last()
         .map_or("None".to_string(), |msg| {
-            msg.content.to_string().replace('\n', "\\n")
+            msg.content
+                .as_ref()
+                .map_or("None".to_string(), |c| c.to_string().replace('\n', "\\n"))
         });
 
     const MAX_MESSAGE_LENGTH: usize = 50;
@@ -153,19 +155,25 @@ pub async fn router_chat_get_upstream_model(
                 Ok(RoutingResult { model_name })
             }
             None => {
-                // No route determined, use default model from request
+                // No route determined, return sentinel value "none"
+                // This signals to llm.rs to use the original validated request model
                 info!(
-                    "[PLANO_REQ_ID: {}] | ROUTER_REQ | No route determined, using default model from request: {}",
-                    request_id,
-                    chat_request.model
+                    "[PLANO_REQ_ID: {}] | ROUTER_REQ | No route determined, returning sentinel 'none'",
+                    request_id
                 );
 
-                let default_model = chat_request.model.clone();
                 let mut attrs = HashMap::new();
-                attrs.insert("route.selected_model".to_string(), default_model.clone());
-                if let Some(ba) = span_business_attrs {
-                    attrs.extend(ba.iter().map(|(k, v)| (k.clone(), v.clone())));
-                }
+let mut attrs = HashMap::new();
+
+attrs.insert(
+    "route.selected_model".to_string(),
+    default_model.clone().unwrap_or_else(|| "none".to_string()),
+);
+
+if let Some(ba) = span_business_attrs {
+    attrs.extend(ba.iter().map(|(k, v)| (k.clone(), v.clone())));
+}
+
                 record_routing_span(
                     trace_collector,
                     traceparent,
@@ -176,7 +184,7 @@ pub async fn router_chat_get_upstream_model(
                 .await;
 
                 Ok(RoutingResult {
-                    model_name: default_model,
+                    model_name: "none".to_string(),
                 })
             }
         },

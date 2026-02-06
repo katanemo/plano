@@ -49,6 +49,10 @@ services:
       - DEFAULT_MODEL=gpt-4o-mini
       - ENABLE_OPENAI_API=true
       - OPENAI_API_BASE_URL=http://host.docker.internal:8001/v1
+      - ENABLE_FOLLOW_UP_GENERATION=false
+      - ENABLE_TITLE_GENERATION=false
+      - ENABLE_TAGS_GENERATION=false
+      - ENABLE_AUTOCOMPLETE_GENERATION=false
     depends_on:
       - weather-agent
       - flight-agent

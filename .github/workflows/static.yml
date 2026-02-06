@@ -19,9 +19,8 @@ jobs:
       # Build and run the Docker container to generate the documentation
       - name: Build documentation using Docker
         run: |
-          cd ./docs
-          chmod +x build_docs.sh
-          ./build_docs.sh
+          chmod +x docs/build_docs.sh
+          sh docs/build_docs.sh
 
       - name: Copy CNAME to HTML Build Directory
         run: cp docs/CNAME docs/build/html/CNAME

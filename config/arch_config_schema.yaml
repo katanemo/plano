@@ -66,12 +66,34 @@ properties:
               type: string
               enum:
                 - plano_orchestrator_v1
+            max_retries:
+              type: integer
             type:
               type: string
               enum:
                 - model
                 - prompt
                 - agent
+            agents:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  description:
+                    type: string
+                  default:
+                    type: boolean
+                  filter_chain:
+                    type: array
+                    items:
+                      type: string
+                additionalProperties: false
+                required:
+                  - id
+                  - description
+          additionalProperties: false
           required:
             - type
             - name
