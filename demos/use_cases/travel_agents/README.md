@@ -52,7 +52,7 @@ docker compose up --build
 This starts:
 - Weather Agent on port 10510
 - Flight Agent on port 10520
-- Open WebUI on port 8080
+- AnythingLLM on port 3001
 
 ### 3. Start Plano Orchestrator
 
@@ -68,7 +68,7 @@ The gateway will start on port 8001 and route requests to the appropriate agents
 
 ### 4. Test the System
 
-**Option 1**: Use Open WebUI at http://localhost:8080
+**Option 1**: Use AnythingLLM at http://localhost:3001
 
 **Option 2**: Send requests directly to Plano Orchestrator:
 
@@ -183,14 +183,14 @@ Defines the two agents, their descriptions, and routing configuration. The agent
 Orchestrates the deployment of:
 - Weather Agent (builds from Dockerfile)
 - Flight Agent (builds from Dockerfile)
-- Open WebUI (for testing)
+- AnythingLLM (for testing)
 - Jaeger (for distributed tracing)
 
 ## Troubleshooting
 
 **Docker containers won't start**
 - Verify Docker and Docker Compose are installed
-- Check that ports 10510, 10520, 8080 are available
+- Check that ports 10510, 10520, 3001 are available
 - Review container logs: `docker compose logs weather-agent` or `docker compose logs flight-agent`
 
 **Plano won't start**
