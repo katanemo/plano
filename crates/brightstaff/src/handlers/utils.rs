@@ -9,6 +9,7 @@ use tokio_stream::StreamExt;
 use tracing::{info, warn, Instrument};
 
 use crate::signals::{SignalAnalyzer, TextBasedSignalAnalyzer};
+use crate::tracing::set_service_name;
 use hermesllm::apis::openai::Message;
 
 /// Trait for processing streaming chunks
@@ -41,7 +42,9 @@ impl ObservableStreamProcessor {
     /// Create a new passthrough processor
     ///
     /// # Arguments
-    /// * `service_name` - The service name for this span (e.g., "archgw(llm)")
+    /// * `service_name` - The service name for this span (e.g., "plano(llm)")
+    ///   This will be set as the `service.name.override` attribute on the current span,
+    ///   allowing the ServiceNameOverrideExporter to route spans to different services.
     /// * `start_time` - When the request started (for duration calculation)
     /// * `messages` - Optional conversation messages for signal analysis
     pub fn new(
@@ -49,8 +52,14 @@ impl ObservableStreamProcessor {
         start_time: Instant,
         messages: Option<Vec<Message>>,
     ) -> Self {
+        let service_name = service_name.into();
+
+        // Set the service name override on the current span for OpenTelemetry export
+        // This allows the ServiceNameOverrideExporter to route this span to the correct service
+        set_service_name(&service_name);
+
         Self {
-            service_name: service_name.into(),
+            service_name,
             total_bytes: 0,
             chunk_count: 0,
             start_time,

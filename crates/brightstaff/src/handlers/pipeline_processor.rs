@@ -9,12 +9,14 @@ use hermesllm::{ProviderRequest, ProviderRequestType};
 use hyper::header::HeaderMap;
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
+use opentelemetry::trace::get_active_span;
 use tracing::{debug, info, instrument, warn};
 
 use crate::handlers::jsonrpc::{
     JsonRpcId, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, JSON_RPC_VERSION,
     MCP_INITIALIZE, MCP_INITIALIZE_NOTIFICATION, TOOL_CALL_METHOD,
 };
+use crate::tracing::{operation_component, set_service_name};
 use uuid::Uuid;
 
 /// Errors that can occur during pipeline processing
@@ -91,14 +93,14 @@ impl PipelineProcessor {
         }
     }
 
-    /// Process the filter chain of agents (all except the terminal agent)
-    #[instrument(
-        skip(self, chat_history, agent_filter_chain, agent_map, request_headers),
-        fields(
-            filter_count = agent_filter_chain.filter_chain.as_ref().map(|fc| fc.len()).unwrap_or(0),
-            message_count = chat_history.len()
-        )
-    )]
+    // /// Process the filter chain of agents (all except the terminal agent)
+    // #[instrument(
+    //     skip(self, chat_history, agent_filter_chain, agent_map, request_headers),
+    //     fields(
+    //         filter_count = agent_filter_chain.filter_chain.as_ref().map(|fc| fc.len()).unwrap_or(0),
+    //         message_count = chat_history.len()
+    //     )
+    // )]
     #[allow(clippy::too_many_arguments)]
     pub async fn process_filter_chain(
         &mut self,
@@ -309,6 +311,9 @@ impl PipelineProcessor {
         agent: &Agent,
         request_headers: &HeaderMap,
     ) -> Result<Vec<Message>, PipelineError> {
+        // Set service name for this filter span
+        set_service_name(operation_component::AGENT_FILTER);
+
         // Update current span name to include filter name
         use opentelemetry::trace::get_active_span;
         get_active_span(|span| {
@@ -524,6 +529,9 @@ impl PipelineProcessor {
         agent: &Agent,
         request_headers: &HeaderMap,
     ) -> Result<Vec<Message>, PipelineError> {
+        // Set service name for this filter span
+        set_service_name(operation_component::AGENT_FILTER);
+
         // Update current span name to include filter name
         use opentelemetry::trace::get_active_span;
         get_active_span(|span| {
@@ -626,8 +634,17 @@ impl PipelineProcessor {
         terminal_agent: &Agent,
         request_headers: &HeaderMap,
     ) -> Result<reqwest::Response, PipelineError> {
+        // Set service name for agent invocation span
+        set_service_name(operation_component::AGENT);
+
         // let mut request = original_request.clone();
         original_request.set_messages(messages);
+
+        let request_url = "/v1/chat/completions";
+
+        get_active_span(|span| {
+            span.update_name(format!("(agent) {} {}", terminal_agent.id, request_url));
+        });
 
         let request_body = ProviderRequestType::to_bytes(&original_request).unwrap();
         // let request_body = serde_json::to_string(&request)?;
@@ -657,7 +674,7 @@ impl PipelineProcessor {
 
         let response = self
             .client
-            .post(format!("{}/v1/chat/completions", self.url))
+            .post(format!("{}{}", self.url, request_url))
             .headers(agent_headers)
             .body(request_body)
             .send()

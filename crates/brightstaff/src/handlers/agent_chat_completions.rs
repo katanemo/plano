@@ -9,6 +9,7 @@ use hermesllm::ProviderRequestType;
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::{Request, Response};
+use opentelemetry::trace::get_active_span;
 use serde::ser::Error as SerError;
 use tracing::{debug, info, info_span, warn, Instrument};
 
@@ -16,6 +17,7 @@ use super::agent_selector::{AgentSelectionError, AgentSelector};
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
 use super::response_handler::ResponseHandler;
 use crate::router::plano_orchestrator::OrchestratorService;
+use crate::tracing::{operation_component, set_service_name};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
@@ -52,7 +54,8 @@ pub async fn agent_chat(
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
-        "agent_chat_handler",
+        "(orchestrator)",
+        component = "orchestrator",
         request_id = %request_id,
         http.method = %request.method(),
         http.path = %request.uri().path()
@@ -60,6 +63,9 @@ pub async fn agent_chat(
 
     // Execute the handler inside the span
     async {
+        // Set service name for orchestrator operations
+        set_service_name(operation_component::ORCHESTRATOR);
+
         match handle_agent_chat_inner(
             request,
             orchestrator_service,
@@ -163,12 +169,16 @@ async fn handle_agent_chat_inner(
         .and_then(|name| name.to_str().ok());
 
     // Find the appropriate listener
-    let listener = {
+    let listener: common::configuration::Listener = {
         let listeners = listeners.read().await;
         agent_selector
             .find_listener(listener_name, &listeners)
             .await?
     };
+
+    get_active_span(|span| {
+        span.update_name(format!("(orchestrator) {}", listener.name));
+    });
 
     info!(listener = %listener.name, "handling request");
 

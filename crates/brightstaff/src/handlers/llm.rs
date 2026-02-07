@@ -26,7 +26,7 @@ use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
-use crate::tracing::operation_component;
+use crate::tracing::{operation_component, set_service_name};
 
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
@@ -55,7 +55,8 @@ pub async fn llm_chat(
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
-        "llm_chat_handler",
+        "llm",
+        component = "llm",
         request_id = %request_id,
         http.method = %request.method(),
         http.path = %request_path,
@@ -92,6 +93,9 @@ async fn llm_chat_inner(
     request_path: String,
     mut request_headers: hyper::HeaderMap,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    // Set service name for LLM operations
+    set_service_name(operation_component::LLM);
+
     // Extract or generate traceparent - this establishes the trace context for all spans
     let traceparent: String = match request_headers
         .get(TRACE_PARENT_HEADER)
@@ -148,20 +152,25 @@ async fn llm_chat_inner(
     let model_from_request = client_request.model().to_string();
     let _temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
-    let resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
+    let alias_resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
 
     // Record model information in span
     tracing::Span::current().record("model.requested", model_from_request.as_str());
-    tracing::Span::current().record("model.alias_resolved", resolved_model.as_str());
+    tracing::Span::current().record("model.alias_resolved", alias_resolved_model.as_str());
 
     // Validate that the requested model exists in configuration
     // This matches the validation in llm_gateway routing.rs
-    if llm_providers.read().await.get(&resolved_model).is_none() {
+    if llm_providers
+        .read()
+        .await
+        .get(&alias_resolved_model)
+        .is_none()
+    {
         let err_msg = format!(
             "Model '{}' not found in configured providers",
-            resolved_model
+            alias_resolved_model
         );
-        warn!(model = %resolved_model, "model not found in configured providers");
+        warn!(model = %alias_resolved_model, "model not found in configured providers");
         let mut bad_request = Response::new(full(err_msg));
         *bad_request.status_mut() = StatusCode::BAD_REQUEST;
         return Ok(bad_request);
@@ -169,10 +178,10 @@ async fn llm_chat_inner(
 
     // Handle provider/model slug format (e.g., "openai/gpt-4")
     // Extract just the model name for upstream (providers don't understand the slug)
-    let model_name_only = if let Some((_, model)) = resolved_model.split_once('/') {
+    let model_name_only = if let Some((_, model)) = alias_resolved_model.split_once('/') {
         model.to_string()
     } else {
-        resolved_model.clone()
+        alias_resolved_model.clone()
     };
 
     // Extract tool names and user message preview for span attributes
@@ -207,9 +216,9 @@ async fn llm_chat_inner(
             // Get the upstream path and check if it's ResponsesAPI
             let upstream_path = get_upstream_path(
                 &llm_providers,
-                &resolved_model,
+                &alias_resolved_model,
                 &request_path,
-                &resolved_model,
+                &alias_resolved_model,
                 is_streaming_request,
             )
             .await;
@@ -294,31 +303,39 @@ async fn llm_chat_inner(
     // Determine final model to use
     // Router returns "none" as a sentinel value when it doesn't select a specific model
     let router_selected_model = routing_result.model_name;
-    let model_name = if router_selected_model != "none" {
+    let resolved_model = if router_selected_model != "none" {
         // Router selected a specific model via routing preferences
         router_selected_model
     } else {
         // Router returned "none" sentinel, use validated resolved_model from request
-        resolved_model.clone()
+        alias_resolved_model.clone()
     };
 
     // Record the routed model in span
-    tracing::Span::current().record("model.routing_resolved", model_name.as_str());
+    tracing::Span::current().record("model.routing_resolved", resolved_model.as_str());
 
     get_active_span(|span| {
-        span.update_name(format!("llm_chat POST {} -> {}", request_path, model_name));
+        let span_name = if model_from_request == resolved_model {
+            format!("(llm) {} {}", request_path, resolved_model)
+        } else {
+            format!(
+                "(llm) {} {} -> {}",
+                request_path, model_from_request, resolved_model
+            )
+        };
+        span.update_name(span_name);
     });
 
     debug!(
         url = %full_qualified_llm_provider_url,
-        provider_hint = %model_name,
+        provider_hint = %resolved_model,
         upstream_model = %model_name_only,
         "Routing to upstream"
     );
 
     request_headers.insert(
         ARCH_PROVIDER_HINT_HEADER,
-        header::HeaderValue::from_str(&model_name).unwrap(),
+        header::HeaderValue::from_str(&resolved_model).unwrap(),
     );
 
     request_headers.insert(
@@ -385,8 +402,8 @@ async fn llm_chat_inner(
             base_processor,
             state_store,
             original_input_items,
+            alias_resolved_model.clone(),
             resolved_model.clone(),
-            model_name.clone(),
             is_streaming_request,
             false, // Not OpenAI upstream since should_manage_state is true
             content_encoding,

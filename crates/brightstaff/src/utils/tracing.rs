@@ -2,7 +2,6 @@ use std::fmt;
 use std::sync::OnceLock;
 
 use opentelemetry::global;
-use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use time::macros::format_description;
 use tracing::{Event, Subscriber};
@@ -11,6 +10,8 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
+
+use crate::tracing::ServiceNameOverrideExporter;
 
 struct BracketedTime;
 
@@ -96,14 +97,13 @@ pub fn init_tracer() -> &'static SdkTracerProvider {
         if tracing_enabled {
             // Set service name via environment if not already set
             if std::env::var("OTEL_SERVICE_NAME").is_err() {
-                std::env::set_var("OTEL_SERVICE_NAME", "brightstaff");
+                std::env::set_var("OTEL_SERVICE_NAME", "plano");
             }
 
-            let exporter = opentelemetry_otlp::SpanExporter::builder()
-                .with_tonic()
-                .with_endpoint(&otel_endpoint)
-                .build()
-                .expect("Failed to create OTLP span exporter");
+            // Create ServiceNameOverrideExporter to support per-span service names
+            // This allows spans to have different service names (e.g., plano(orchestrator),
+            // plano(filter), plano(llm)) by setting the "service.name.override" attribute
+            let exporter = ServiceNameOverrideExporter::new(&otel_endpoint);
 
             let provider = SdkTracerProvider::builder()
                 .with_batch_exporter(exporter)

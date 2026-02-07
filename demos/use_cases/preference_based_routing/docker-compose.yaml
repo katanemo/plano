@@ -1,5 +1,21 @@
 services:
 
+  plano:
+    build:
+      context: ../../../
+      dockerfile: Dockerfile
+    ports:
+      - "12000:12000"
+      - "12001:12001"
+    environment:
+      - ARCH_CONFIG_PATH=/app/arch_config.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY environment variable is required but not set}
+      - OTEL_TRACING_HTTP_ENDPOINT=http://host.docker.internal:4318/v1/traces
+    volumes:
+      - ./config.yaml:/app/arch_config.yaml:ro
+      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+
   open-web-ui:
     image: dyrnq/open-webui:main
     restart: always
