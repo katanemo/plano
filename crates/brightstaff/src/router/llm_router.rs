@@ -96,14 +96,14 @@ impl RouterService {
             .generate_request(messages, &usage_preferences);
 
         debug!(
-            "sending request to arch-router model: {}, endpoint: {}",
-            self.router_model.get_model_name(),
-            self.router_url
+            model = %self.router_model.get_model_name(),
+            endpoint = %self.router_url,
+            "sending request to arch-router"
         );
 
         debug!(
-            "arch request body: {}",
-            &serde_json::to_string(&router_request).unwrap(),
+            body = %serde_json::to_string(&router_request).unwrap(),
+            "arch router request"
         );
 
         let mut llm_route_request_headers = header::HeaderMap::new();
@@ -148,9 +148,9 @@ impl RouterService {
             Ok(response) => response,
             Err(err) => {
                 warn!(
-                    "Failed to parse JSON: {}. Body: {}",
-                    err,
-                    &serde_json::to_string(&body).unwrap()
+                    error = %err,
+                    body = %serde_json::to_string(&body).unwrap(),
+                    "failed to parse json response"
                 );
                 return Err(RoutingError::JsonError(
                     err,
@@ -160,7 +160,7 @@ impl RouterService {
         };
 
         if chat_completion_response.choices.is_empty() {
-            warn!("No choices in router response: {}", body);
+            warn!(body = %body, "no choices in router response");
             return Ok(None);
         }
 
@@ -169,10 +169,10 @@ impl RouterService {
                 .router_model
                 .parse_response(content, &usage_preferences)?;
             info!(
-                "arch-router determined route: {}, selected_model: {:?}, response time: {}ms",
-                content.replace("\n", "\\n"),
-                parsed_response,
-                router_response_time.as_millis()
+                content = %content.replace("\n", "\\n"),
+                selected_model = ?parsed_response,
+                response_time_ms = router_response_time.as_millis(),
+                "arch-router determined route"
             );
 
             if let Some(ref parsed_response) = parsed_response {

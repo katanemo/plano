@@ -75,7 +75,7 @@ impl AgentSelector {
             .cloned()
             .or_else(|| {
                 warn!(
-                    "No default agent found, routing request to first agent: {}",
+                    "no default agent found, routing request to first agent: {}",
                     agents[0].id
                 );
                 Some(agents[0].clone())
@@ -118,7 +118,7 @@ impl AgentSelector {
 
         // If only one agent, skip orchestration
         if agents.len() == 1 {
-            debug!("Only one agent available, skipping orchestration");
+            debug!("only one agent available, skipping orchestration");
             return Ok(vec![agents[0].clone()]);
         }
 
@@ -136,11 +136,11 @@ impl AgentSelector {
             .await
         {
             Ok(Some(routes)) => {
-                debug!("Determined {} agent(s) via orchestration", routes.len());
+                debug!(count = routes.len(), "determined agents via orchestration");
                 let mut selected_agents = Vec::new();
 
                 for (route_name, agent_name) in routes {
-                    debug!("Processing route: {}, agent: {}", route_name, agent_name);
+                    debug!(route = %route_name, agent = %agent_name, "processing route");
                     let selected_agent = agents
                         .iter()
                         .find(|a| a.id == agent_name)
@@ -155,14 +155,14 @@ impl AgentSelector {
                 }
 
                 if selected_agents.is_empty() {
-                    debug!("No agents determined using orchestration, using default agent");
+                    debug!("no agents determined via orchestration, using default");
                     Ok(vec![self.get_default_agent(agents, &listener.name)?])
                 } else {
                     Ok(selected_agents)
                 }
             }
             Ok(None) => {
-                debug!("No agents determined using orchestration, using default agent");
+                debug!("no agents determined using orchestration, using default agent");
                 Ok(vec![self.get_default_agent(agents, &listener.name)?])
             }
             Err(err) => Err(AgentSelectionError::OrchestrationError(err.to_string())),

@@ -47,13 +47,13 @@ This starts:
 - **Plano** (ports 12000, 8001) - routing and orchestration
 - **CrewAI Flight Agent** (port 10520) - flight search
 - **LangChain Weather Agent** (port 10510) - weather forecasts
-- **Open WebUI** (port 8080) - chat interface
+- **AnythingLLM** (port 3001) - chat interface
 - **Jaeger** (port 16686) - distributed tracing
 
 ### Try It Out
 
 1. **Open the Chat Interface**
-   - Navigate to [http://localhost:8080](http://localhost:8080)
+   - Navigate to [http://localhost:3001](http://localhost:3001)
    - Create an account (stored locally)
 
 2. **Ask Multi-Agent Questions**
@@ -75,9 +75,9 @@ This starts:
 ## Architecture
 
 ```
-┌─────────────┐
-│  Open WebUI │ (Chat Interface)
-└──────┬──────┘
+┌──────────────┐
+│ AnythingLLM  │ (Chat Interface)
+└──────┬───────┘
        │
        v
 ┌─────────────┐

@@ -6,7 +6,7 @@ COPY crates .
 RUN cargo build --release --target wasm32-wasip1 -p prompt_gateway -p llm_gateway
 RUN cargo build --release -p brightstaff
 
-FROM docker.io/envoyproxy/envoy:v1.36.4  AS envoy
+FROM docker.io/envoyproxy/envoy:v1.37.0  AS envoy
 
 FROM python:3.13.6-slim AS arch
 # Purge PAM to avoid CVE-2025-6020 and install needed tools

@@ -16,6 +16,8 @@ services:
       context: ../../../
       dockerfile: Dockerfile
     ports:
+      - "11000:11000"
+      - "12001:12001"
       - "12000:12000"
       - "8001:8001"
     environment:
@@ -31,12 +33,17 @@ services:
       - "16686:16686"
       - "4317:4317"
       - "4318:4318"
-  open-web-ui:
-    image: dyrnq/open-webui:main
+  anythingllm:
+    image: mintplexlabs/anythingllm
     restart: always
     ports:
-      - "8080:8080"
+      - "3001:3001"
+    cap_add:
+      - SYS_ADMIN
     environment:
-      - DEFAULT_MODEL=gpt-4o-mini
-      - ENABLE_OPENAI_API=true
-      - OPENAI_API_BASE_URL=http://host.docker.internal:8001/v1
+      - STORAGE_DIR=/app/server/storage
+      - LLM_PROVIDER=generic-openai
+      - GENERIC_OPEN_AI_BASE_PATH=http://plano:8001/v1
+      - GENERIC_OPEN_AI_MODEL_PREF=gpt-4o-mini
+      - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
+      - GENERIC_OPEN_AI_API_KEY=sk-placeholder

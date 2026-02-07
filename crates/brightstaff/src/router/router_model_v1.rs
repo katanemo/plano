@@ -94,12 +94,12 @@ impl RouterModel for RouterModelV1 {
             token_count += message_token_count;
             if token_count > self.max_token_length {
                 debug!(
-                      "RouterModelV1: token count {} exceeds max token length {}, truncating conversation, selected message count {}, total message count: {}",
-                      token_count,
-                      self.max_token_length
-                      , selected_messsage_count,
-                      messages_vec.len()
-                  );
+                    token_count = token_count,
+                    max_tokens = self.max_token_length,
+                    selected = selected_messsage_count,
+                    total = messages_vec.len(),
+                    "token count exceeds max, truncating conversation"
+                );
                 if message.role == Role::User {
                     // If message that exceeds max token length is from user, we need to keep it
                     selected_messages_list_reversed.push(message);
@@ -111,9 +111,7 @@ impl RouterModel for RouterModelV1 {
         }
 
         if selected_messages_list_reversed.is_empty() {
-            debug!(
-                "RouterModelV1: no messages selected, using the last message in the conversation"
-            );
+            debug!("no messages selected, using last message");
             if let Some(last_message) = messages_vec.last() {
                 selected_messages_list_reversed.push(last_message);
             }
@@ -122,12 +120,12 @@ impl RouterModel for RouterModelV1 {
         // ensure that first and last selected message is from user
         if let Some(first_message) = selected_messages_list_reversed.first() {
             if first_message.role != Role::User {
-                warn!("RouterModelV1: last message in the conversation is not from user, this may lead to incorrect routing");
+                warn!("last message is not from user, may lead to incorrect routing");
             }
         }
         if let Some(last_message) = selected_messages_list_reversed.last() {
             if last_message.role != Role::User {
-                warn!("RouterModelV1: first message in the conversation is not from user, this may lead to incorrect routing");
+                warn!("first message is not from user, may lead to incorrect routing");
             }
         }
 
@@ -206,8 +204,9 @@ impl RouterModel for RouterModelV1 {
                 return Ok(Some((selected_route, model_name)));
             } else {
                 warn!(
-                    "No matching model found for route: {}, usage preferences: {:?}",
-                    selected_route, usage_preferences
+                    route = %selected_route,
+                    preferences = ?usage_preferences,
+                    "no matching model found for route"
                 );
                 return Ok(None);
             }
@@ -219,8 +218,9 @@ impl RouterModel for RouterModelV1 {
         }
 
         warn!(
-            "No model found for route: {}, router model preferences: {:?}",
-            selected_route, self.llm_route_to_model_map
+            route = %selected_route,
+            preferences = ?self.llm_route_to_model_map,
+            "no model found for route"
         );
 
         Ok(None)

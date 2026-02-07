@@ -6,7 +6,7 @@ This demo shows how you can use user preferences to route user prompts to approp
 Make sure your machine is up to date with [latest version of plano]([url](https://github.com/katanemo/plano/tree/main?tab=readme-ov-file#prerequisites)). And you have activated the virtual environment.
 
 
-1. start the openwebui
+1. start anythingllm
 ```bash
 (venv) $ cd demos/use_cases/preference_based_routing
 (venv) $ docker compose up -d
@@ -24,7 +24,7 @@ Make sure your machine is up to date with [latest version of plano]([url](https:
 ...
 ```
 
-3. open openwebui http://localhost:8080/
+3. open AnythingLLM http://localhost:3001/
 
 # Testing out preference based routing
 

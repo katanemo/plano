@@ -25,8 +25,7 @@
     "[python]": {
       "editor.defaultFormatter": "ms-python.black-formatter",
       "editor.formatOnSave": true
-    },
-    "rust-analyzer.cargo.features": ["trace-collection"]
+    }
   },
   "extensions": {
     "recommendations": [
