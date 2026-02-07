@@ -314,16 +314,16 @@ async fn llm_chat_inner(
     // Record the routed model in span
     tracing::Span::current().record("model.routing_resolved", resolved_model.as_str());
 
+    let span_name = if model_from_request == resolved_model {
+        format!("POST {} {}", request_path, resolved_model)
+    } else {
+        format!(
+            "POST {} {} -> {}",
+            request_path, model_from_request, resolved_model
+        )
+    };
     get_active_span(|span| {
-        let span_name = if model_from_request == resolved_model {
-            format!("POST {} {}", request_path, resolved_model)
-        } else {
-            format!(
-                "POST {} {} -> {}",
-                request_path, model_from_request, resolved_model
-            )
-        };
-        span.update_name(span_name);
+        span.update_name(span_name.clone());
     });
 
     debug!(
@@ -380,6 +380,7 @@ async fn llm_chat_inner(
     // Create base processor for metrics and tracing
     let base_processor = ObservableStreamProcessor::new(
         operation_component::LLM,
+        span_name,
         request_start_time,
         Some(messages_for_signals),
     );
