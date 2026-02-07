@@ -63,7 +63,7 @@ where
                         let rest = &fields_str[start + 11..]; // Skip "request_id="
                         let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
                         let rid = &rest[..end];
-                        write!(writer, "[request_id={}]", rid)?;
+                        write!(writer, " request_id={}", rid)?;
                         break;
                     }
                 }

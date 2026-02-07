@@ -55,4 +55,4 @@ listeners:
 
 tracing:
   random_sampling: 100
-  opentracing_grpc_endpoint: $OTEL_TRACING_GRPC_ENDPOINT
+  opentracing_grpc_endpoint: http://jaeger:4317
