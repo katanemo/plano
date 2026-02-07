@@ -27,3 +27,7 @@ bytes = "1.10"
 
 [dev-dependencies]
 serial_test = "3.1.1"
+
+[features]
+default = []
+aws-sigv4 = ["common/aws-sigv4"]
