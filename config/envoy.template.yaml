@@ -54,6 +54,7 @@ static_resources:
                       service_name: plano(inbound)
                   random_sampling:
                     value: {{ arch_tracing.random_sampling }}
+                  operation: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
                 {% endif %}
                 stat_prefix: plano(inbound)
                 codec_type: AUTO
@@ -303,6 +304,7 @@ static_resources:
                       service_name: plano(inbound)
                   random_sampling:
                     value: {{ arch_tracing.random_sampling }}
+                  operation: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
                 {% endif %}
                 stat_prefix: {{ listener.name | replace(" ", "_") }}_traffic
                 codec_type: AUTO
@@ -402,6 +404,7 @@ static_resources:
                       service_name: plano(outbound)
                   random_sampling:
                     value: {{ arch_tracing.random_sampling }}
+                  operation: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
                 {% endif %}
                 stat_prefix: egress_traffic
                 codec_type: AUTO

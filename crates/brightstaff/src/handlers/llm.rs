@@ -316,10 +316,10 @@ async fn llm_chat_inner(
 
     get_active_span(|span| {
         let span_name = if model_from_request == resolved_model {
-            format!("(llm) {} {}", request_path, resolved_model)
+            format!("POST {} {}", request_path, resolved_model)
         } else {
             format!(
-                "(llm) {} {} -> {}",
+                "POST {} {} -> {}",
                 request_path, model_from_request, resolved_model
             )
         };
