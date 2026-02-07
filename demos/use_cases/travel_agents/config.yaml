@@ -7,7 +7,7 @@ agents:
     url: http://host.docker.internal:10520
 
 model_providers:
-  - model: openai/gpt-4o
+  - model: openai/gpt-5.2
     access_key: $OPENAI_API_KEY
     default: true
   - model: openai/gpt-4o-mini

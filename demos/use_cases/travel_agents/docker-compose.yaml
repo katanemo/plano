@@ -40,20 +40,19 @@ services:
     command: ["uv", "run", "python", "src/travel_agents/flight_agent.py"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
-  anythingllm:
-    image: mintplexlabs/anythingllm
+  open-web-ui:
+    image: dyrnq/open-webui:main
     restart: always
     ports:
-      - "3001:3001"
-    cap_add:
-      - SYS_ADMIN
+      - "8080:8080"
     environment:
-      - STORAGE_DIR=/app/server/storage
-      - LLM_PROVIDER=generic-openai
-      - GENERIC_OPEN_AI_BASE_PATH=http://plano:8001/v1
-      - GENERIC_OPEN_AI_MODEL_PREF=gpt-4o-mini
-      - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
-      - GENERIC_OPEN_AI_API_KEY=sk-placeholder
+      - DEFAULT_MODEL=gpt-4o-mini
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://host.docker.internal:8001/v1
+      - ENABLE_FOLLOW_UP_GENERATION=false
+      - ENABLE_TITLE_GENERATION=false
+      - ENABLE_TAGS_GENERATION=false
+      - ENABLE_AUTOCOMPLETE_GENERATION=false
     depends_on:
       - weather-agent
       - flight-agent

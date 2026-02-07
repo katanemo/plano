@@ -562,7 +562,7 @@ export const LogoLoop = React.memo<LogoLoopProps>(
 LogoLoop.displayName = "LogoLoop";
 
 const logos: LogoItem[] = [
-  { src: "/logos/chase.svg", alt: "Chase" },
+  { src: "/logos/clubcentric.svg", alt: "ClubCentric" },
   { src: "/logos/hp.svg", alt: "HP" },
   { src: "/logos/huggingface.svg", alt: "Hugging Face" },
   { src: "/logos/sandisk.svg", alt: "SanDisk" },
