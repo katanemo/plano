@@ -1,4 +1,6 @@
 pub mod api;
+pub mod aws_credentials;
+pub mod aws_sigv4;
 pub mod configuration;
 pub mod consts;
 pub mod errors;

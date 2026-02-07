@@ -59,6 +59,16 @@ pub enum StateStorageType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AwsCredentialsConfig {
+    #[serde(rename = "AWS_ACCESS_KEY_ID")]
+    pub access_key_id: Option<String>,
+    #[serde(rename = "AWS_SECRET_ACCESS_KEY")]
+    pub secret_access_key: Option<String>,
+    #[serde(rename = "AWS_SESSION_TOKEN")]
+    pub session_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration {
     pub version: String,
     pub endpoints: Option<HashMap<String, Endpoint>>,
@@ -77,6 +87,8 @@ pub struct Configuration {
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,
     pub state_storage: Option<StateStorageConfig>,
+    #[serde(rename = "aws_credentials")]
+    pub aws_credentials: Option<AwsCredentialsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

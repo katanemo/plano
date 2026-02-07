@@ -128,6 +128,16 @@ properties:
               timeout:
                 type: string
             additionalProperties: false
+  aws_credentials:
+    type: object
+    properties:
+      AWS_ACCESS_KEY_ID:
+        type: string
+      AWS_SECRET_ACCESS_KEY:
+        type: string
+      AWS_SESSION_TOKEN:
+        type: string
+    additionalProperties: false
   endpoints:
     type: object
     patternProperties:
