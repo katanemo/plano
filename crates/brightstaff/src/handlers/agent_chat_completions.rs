@@ -177,7 +177,7 @@ async fn handle_agent_chat_inner(
     };
 
     get_active_span(|span| {
-        span.update_name(format!("(orchestrator) {}", listener.name));
+        span.update_name(listener.name.to_string());
     });
 
     info!(listener = %listener.name, "handling request");

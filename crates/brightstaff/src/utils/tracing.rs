@@ -85,7 +85,7 @@ pub fn init_tracer() -> &'static SdkTracerProvider {
         global::set_text_map_propagator(TraceContextPropagator::new());
 
         // Get OTEL collector URL from environment
-        let otel_endpoint = std::env::var("OTEL_COLLECTOR_URL")
+        let otel_endpoint = std::env::var("OTEL_TRACING_GRPC_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:4317".to_string());
 
         let tracing_enabled = std::env::var("OTEL_TRACING_ENABLED")

@@ -21,4 +21,4 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:?error}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:?error}
-      - OTEL_TRACING_HTTP_ENDPOINT=http://host.docker.internal:4318/v1/traces
+      - OTEL_TRACING_GRPC_ENDPOINT=http://host.docker.internal:4317

@@ -11,20 +11,22 @@ services:
       - ARCH_CONFIG_PATH=/app/arch_config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY environment variable is required but not set}
-      - OTEL_TRACING_HTTP_ENDPOINT=http://host.docker.internal:4318/v1/traces
+      - OTEL_TRACING_GRPC_ENDPOINT=http://host.docker.internal:4317
+      - OTEL_TRACING_ENABLED=true
+      - RUST_LOG=debug
     volumes:
       - ./config.yaml:/app/arch_config.yaml:ro
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
 
-  open-web-ui:
-    image: dyrnq/open-webui:main
-    restart: always
-    ports:
-      - "8080:8080"
-    environment:
-      - DEFAULT_MODELS=gpt-4o-mini
-      - ENABLE_OPENAI_API=true
-      - OPENAI_API_BASE_URL=http://host.docker.internal:12000/v1
+  # open-web-ui:
+  #   image: dyrnq/open-webui:main
+  #   restart: always
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - DEFAULT_MODELS=gpt-4o-mini
+  #     - ENABLE_OPENAI_API=true
+  #     - OPENAI_API_BASE_URL=http://host.docker.internal:12000/v1
 
   jaeger:
     build:
@@ -34,12 +36,12 @@ services:
       - "4317:4317"
       - "4318:4318"
 
-  prometheus:
-    build:
-      context: ../../shared/prometheus
+  # prometheus:
+  #   build:
+  #     context: ../../shared/prometheus
 
-  grafana:
-    build:
-      context: ../../shared/grafana
-    ports:
-      - "3000:3000"
+  # grafana:
+  #   build:
+  #     context: ../../shared/grafana
+  #   ports:
+  #     - "3000:3000"

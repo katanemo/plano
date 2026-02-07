@@ -445,7 +445,6 @@ dependencies = [
  "pretty_assertions",
  "proxy-wasm",
  "rand 0.8.5",
- "reqwest",
  "serde",
  "serde_json",
  "serde_with",
@@ -454,7 +453,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tiktoken-rs",
  "tokio",
- "tracing",
  "url",
  "urlencoding",
 ]

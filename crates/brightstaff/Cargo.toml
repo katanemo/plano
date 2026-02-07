@@ -8,7 +8,7 @@ async-openai = "0.30.1"
 async-trait = "0.1"
 bytes = "1.10.1"
 chrono = "0.4"
-common = { version = "0.1.0", path = "../common", features = ["trace-collection"] }
+common = { version = "0.1.0", path = "../common" }
 eventsource-client = "0.15.0"
 eventsource-stream = "0.2.3"
 flate2 = "1.0"

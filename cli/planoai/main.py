@@ -153,7 +153,7 @@ def up(file, path, foreground):
 
     # Set the ARCH_CONFIG_FILE environment variable
     env_stage = {
-        "OTEL_TRACING_HTTP_ENDPOINT": "http://host.docker.internal:4318/v1/traces",
+        "OTEL_TRACING_GRPC_ENDPOINT": "http://host.docker.internal:4317",
     }
     env = os.environ.copy()
     # Remove PATH variable if present

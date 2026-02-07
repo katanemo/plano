@@ -643,7 +643,7 @@ impl PipelineProcessor {
         let request_url = "/v1/chat/completions";
 
         get_active_span(|span| {
-            span.update_name(format!("(agent) {} {}", terminal_agent.id, request_url));
+            span.update_name(format!("{} {}", terminal_agent.id, request_url));
         });
 
         let request_body = ProviderRequestType::to_bytes(&original_request).unwrap();
