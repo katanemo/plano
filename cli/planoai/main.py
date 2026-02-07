@@ -26,6 +26,7 @@ from planoai.core import (
     start_cli_agent,
 )
 from planoai.consts import (
+    DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
     SERVICE_NAME_ARCHGW,
@@ -153,7 +154,7 @@ def up(file, path, foreground):
 
     # Set the ARCH_CONFIG_FILE environment variable
     env_stage = {
-        "OTEL_TRACING_GRPC_ENDPOINT": "http://host.docker.internal:4317",
+        "OTEL_TRACING_GRPC_ENDPOINT": DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     }
     env = os.environ.copy()
     # Remove PATH variable if present

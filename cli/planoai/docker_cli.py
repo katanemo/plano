@@ -116,11 +116,18 @@ def stream_gateway_logs(follow, service="plano"):
 
 
 def docker_validate_plano_schema(arch_config_file):
+    import os
+
+    env = os.environ.copy()
+    env.pop("PATH", None)
+    env_args = [item for key, value in env.items() for item in ["-e", f"{key}={value}"]]
+
     result = subprocess.run(
         [
             "docker",
             "run",
             "--rm",
+            *env_args,
             "-v",
             f"{arch_config_file}:/app/arch_config.yaml:ro",
             "--entrypoint",

@@ -12,6 +12,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::tracing::ServiceNameOverrideExporter;
+use common::configuration::Tracing;
 
 struct BracketedTime;
 
@@ -80,18 +81,20 @@ use tracing_subscriber::fmt::FormattedFields;
 
 static INIT_LOGGER: OnceLock<SdkTracerProvider> = OnceLock::new();
 
-pub fn init_tracer() -> &'static SdkTracerProvider {
+pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvider {
     INIT_LOGGER.get_or_init(|| {
         global::set_text_map_propagator(TraceContextPropagator::new());
 
-        // Get OTEL collector URL from environment
-        let otel_endpoint = std::env::var("OTEL_TRACING_GRPC_ENDPOINT")
-            .unwrap_or_else(|_| "http://localhost:4317".to_string());
+        // Get OTEL endpoint and sampling from config.yaml tracing section
+        let otel_endpoint = tracing_config.and_then(|t| t.opentracing_grpc_endpoint.clone());
 
-        let tracing_enabled = std::env::var("OTEL_TRACING_ENABLED")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(false);
+        let random_sampling = tracing_config.and_then(|t| t.random_sampling).unwrap_or(0);
+
+        let tracing_enabled = random_sampling > 0 && otel_endpoint.is_some();
+        eprintln!(
+            "initializing tracing: tracing_enabled={}, otel_endpoint={:?}, random_sampling={}",
+            tracing_enabled, otel_endpoint, random_sampling
+        );
 
         // Create OTLP exporter to send spans to collector
         if tracing_enabled {
@@ -103,7 +106,7 @@ pub fn init_tracer() -> &'static SdkTracerProvider {
             // Create ServiceNameOverrideExporter to support per-span service names
             // This allows spans to have different service names (e.g., plano(orchestrator),
             // plano(filter), plano(llm)) by setting the "service.name.override" attribute
-            let exporter = ServiceNameOverrideExporter::new(&otel_endpoint);
+            let exporter = ServiceNameOverrideExporter::new(otel_endpoint.as_ref().unwrap());
 
             let provider = SdkTracerProvider::builder()
                 .with_batch_exporter(exporter)

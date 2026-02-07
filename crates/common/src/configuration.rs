@@ -90,6 +90,8 @@ pub struct Overrides {
 pub struct Tracing {
     pub sampling_rate: Option<f64>,
     pub trace_arch_internal: Option<bool>,
+    pub random_sampling: Option<u32>,
+    pub opentracing_grpc_endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]

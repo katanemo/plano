@@ -1030,35 +1030,7 @@ static_resources:
           - endpoint:
               address:
                 socket_address:
-                  address: host.docker.internal
-                  port_value: 4317
-    - name: opentelemetry_collector_http
-      type: STRICT_DNS
-      dns_lookup_family: V4_ONLY
-      lb_policy: ROUND_ROBIN
-      typed_extension_protocol_options:
-      load_assignment:
-        cluster_name: opentelemetry_collector_http
-        endpoints:
-        - lb_endpoints:
-          - endpoint:
-              address:
-                socket_address:
-                  address: host.docker.internal
-                  port_value: 4318
-          # Circuit breaker configuration to prevent overwhelming OTEL collector
-      circuit_breakers:
-        thresholds:
-          - priority: DEFAULT
-            max_connections: 100
-            max_pending_requests: 100
-            max_requests: 100
-            max_retries: 3
-      # Health checking and outlier detection
-      outlier_detection:
-        consecutive_5xx: 5
-        interval: 10s
-        base_ejection_time: 30s
-        max_ejection_percent: 50
-        enforcing_consecutive_5xx: 100
+                  {% set _otel_endpoint = arch_tracing.opentracing_grpc_endpoint | default('host.docker.internal:4317') | replace("http://", "") | replace("https://", "") %}
+                  address: {{ _otel_endpoint.split(":") | first }}
+                  port_value: {{ _otel_endpoint.split(":") | last }}
 {% endif %}

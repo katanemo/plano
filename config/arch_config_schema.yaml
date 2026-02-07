@@ -382,6 +382,8 @@ properties:
         type: integer
       trace_arch_internal:
         type: boolean
+      opentracing_grpc_endpoint:
+        type: string
       additionalProperties: false
   mode:
     type: string
