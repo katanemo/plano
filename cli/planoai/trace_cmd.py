@@ -444,10 +444,19 @@ class _OTLPTraceServicer(trace_service_pb2_grpc.TraceServiceServicer):
                     span_dict = _proto_span_to_dict(span, service_name)
                     _TRACE_STORE.merge_spans(trace_id, [span_dict])
                     short_id = trace_id[:8]
+                    short_span = span.span_id.hex()[:8]
+                    ts = datetime.now().strftime("%H:%M:%S")
+                    dur_ns = span.end_time_unix_nano - span.start_time_unix_nano
+                    dur_s = dur_ns / 1_000_000_000
+                    dur_str = f"{dur_s:.3f}".rstrip("0").rstrip(".")
+                    dur_str = f"{dur_str}s"
                     self._console.print(
-                        f"  [dim]←[/dim] span [cyan]{span.name}[/cyan] "
-                        f"trace=[yellow]{short_id}[/yellow] "
-                        f"service=[bold {_service_color(service_name)}]{service_name}[/bold {_service_color(service_name)}]"
+                        f"[dim]{ts}[/dim] "
+                        f"trace=[yellow]{short_id}[/yellow], "
+                        f"span=[yellow]{short_span}[/yellow], "
+                        f"[bold {_service_color(service_name)}]{service_name}[/bold {_service_color(service_name)}] "
+                        f"[cyan]{span.name}[/cyan] "
+                        f"[dim]({dur_str})[/dim]"
                     )
 
         return trace_service_pb2.ExportTraceServiceResponse()
