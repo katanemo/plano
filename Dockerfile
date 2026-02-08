@@ -1,4 +1,4 @@
-# build docker image for arch gateway
+# build docker image for plano
 FROM rust:1.93.0 AS builder
 RUN rustup -v target add wasm32-wasip1
 WORKDIR /arch
