@@ -74,7 +74,7 @@ impl RootContext for FilterContext {
 
     fn create_http_context(&self, context_id: u32) -> Option<Box<dyn HttpContext>> {
         trace!(
-            "||| create_http_context called with context_id: {:?} |||",
+            "create_http_context called with context_id: {:?}",
             context_id
         );
 
@@ -107,10 +107,7 @@ impl Context for FilterContext {
         _body_size: usize,
         _num_trailers: usize,
     ) {
-        trace!(
-            "||| on_http_call_response called with token_id: {:?} |||",
-            token_id
-        );
+        trace!("on_http_call_response called with token_id: {:?}", token_id);
 
         let _callout_data = self
             .callouts
@@ -119,7 +116,7 @@ impl Context for FilterContext {
             .expect("invalid token_id");
 
         if let Some(status) = self.get_http_call_response_header(":status") {
-            trace!("trace response status: {:?}", status);
+            trace!("response status: {:?}", status);
         };
     }
 }

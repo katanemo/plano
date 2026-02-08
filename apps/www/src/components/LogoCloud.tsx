@@ -19,8 +19,8 @@ const customerLogos = [
     src: "/logos/sandisk.svg",
   },
   {
-    name: "Chase",
-    src: "/logos/chase.svg",
+    name: "ClubCentric",
+    src: "/logos/clubcentric.svg",
   },
 ];
 
@@ -34,6 +34,7 @@ export function LogoCloud() {
             const isTMobile = index === 1; // T-Mobile is before HP
             const isHP = index === 2; // HP is in center
             const isSanDisk = index === 3; // SanDisk is after HP
+            const isClubCentric = index === 4; // ClubCentric is after SanDisk
 
             // Custom spacing for logos around HP on large screens
             let spacingClass = "lg:mx-6 xl:mx-8"; // Default spacing
@@ -42,7 +43,9 @@ export function LogoCloud() {
             } else if (isHP) {
               spacingClass = "lg:mx-3 xl:mx-4"; // Smaller gaps on both sides
             } else if (isSanDisk) {
-              spacingClass = "lg:ml-3 xl:ml-4 lg:mr-6 xl:mr-8"; // Smaller gap from HP
+              spacingClass = "lg:ml-3 xl:ml-5 lg:mr-6 xl:mr-14"; // Smaller gap from HP
+            } else if (isClubCentric) {
+              spacingClass = "lg:mx-3 xl:mx-4 mb-1"; // Smaller gaps on both sides
             }
 
             return (

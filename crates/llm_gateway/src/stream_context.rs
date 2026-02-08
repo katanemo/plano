@@ -97,7 +97,7 @@ impl StreamContext {
             .as_ref()
             .filter(|id| !id.is_empty())
             .cloned()
-            .unwrap_or_else(|| "NO_REQUEST_ID".to_string())
+            .unwrap_or_else(|| "no_request_id".to_string())
     }
     fn llm_provider(&self) -> &LlmProvider {
         self.llm_provider
@@ -145,14 +145,14 @@ impl StreamContext {
                 match self.llm_providers.default() {
                     Some(default_provider) => {
                         info!(
-                            "[PLANO_REQ_ID:{}] Provider selection failed, using default provider",
+                            "request_id={}: provider selection failed, using default provider",
                             self.request_identifier()
                         );
                         default_provider
                     }
                     None => {
                         error!(
-                            "[PLANO_REQ_ID:{}] PROVIDER_SELECTION_FAILED: Error='{}' and no default provider configured",
+                            "request_id={}: provider selection failed, error='{}' and no default provider configured",
                             self.request_identifier(),
                             err
                         );
@@ -165,7 +165,7 @@ impl StreamContext {
         self.llm_provider = Some(provider);
 
         info!(
-            "[PLANO_REQ_ID:{}] PROVIDER_SELECTION: Hint='{}' -> Selected='{}'",
+            "request_id={}: provider selected, hint='{}' selected='{}'",
             self.request_identifier(),
             self.get_http_request_header(ARCH_PROVIDER_HINT_HEADER)
                 .unwrap_or("none".to_string()),
@@ -180,12 +180,12 @@ impl StreamContext {
             // Check if client provided an Authorization header
             if self.get_http_request_header("Authorization").is_none() {
                 warn!(
-                    "[PLANO_REQ_ID:{}] AUTH_PASSTHROUGH: passthrough_auth enabled but no Authorization header present in client request",
+                    "request_id={}: passthrough_auth enabled but no authorization header present in client request",
                     self.request_identifier()
                 );
             } else {
                 debug!(
-                    "[PLANO_REQ_ID:{}] AUTH_PASSTHROUGH: preserving client Authorization header for provider '{}'",
+                    "request_id={}: preserving client authorization header for provider '{}'",
                     self.request_identifier(),
                     self.llm_provider().name
                 );
@@ -249,7 +249,11 @@ impl StreamContext {
     }
 
     fn send_server_error(&self, error: ServerError, override_status_code: Option<StatusCode>) {
-        warn!("server error occurred: {}", error);
+        warn!(
+            "request_id={}: server error occurred: {}",
+            self.request_identifier(),
+            error
+        );
         self.send_http_response(
             override_status_code
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
@@ -269,7 +273,7 @@ impl StreamContext {
         let token_count = tokenizer::token_count(model, json_string).unwrap_or(0);
 
         debug!(
-            "[PLANO_REQ_ID:{}] TOKEN_COUNT: model='{}' input_tokens={}",
+            "request_id={}: token count, model='{}' input_tokens={}",
             self.request_identifier(),
             model,
             token_count
@@ -283,7 +287,7 @@ impl StreamContext {
         // Check if rate limiting needs to be applied.
         if let Some(selector) = self.ratelimit_selector.take() {
             info!(
-                "[PLANO_REQ_ID:{}] RATELIMIT_CHECK: model='{}' selector='{}:{}'",
+                "request_id={}: ratelimit check, model='{}' selector='{}:{}'",
                 self.request_identifier(),
                 model,
                 selector.key,
@@ -296,7 +300,7 @@ impl StreamContext {
             )?;
         } else {
             debug!(
-                "[PLANO_REQ_ID:{}] RATELIMIT_SKIP: model='{}' (no selector)",
+                "request_id={}: ratelimit skip, model='{}' (no selector)",
                 self.request_identifier(),
                 model
             );
@@ -315,7 +319,7 @@ impl StreamContext {
                 Ok(duration) => {
                     let duration_ms = duration.as_millis();
                     info!(
-                        "[PLANO_REQ_ID:{}] TIME_TO_FIRST_TOKEN: {}ms",
+                        "request_id={}: time to first token {}ms",
                         self.request_identifier(),
                         duration_ms
                     );
@@ -324,7 +328,7 @@ impl StreamContext {
                 }
                 Err(e) => {
                     warn!(
-                        "[PLANO_REQ_ID:{}] TIME_MEASUREMENT_ERROR: {:?}",
+                        "request_id={}: time measurement error: {:?}",
                         self.request_identifier(),
                         e
                     );
@@ -340,7 +344,7 @@ impl StreamContext {
                 // Convert the duration to milliseconds
                 let duration_ms = duration.as_millis();
                 info!(
-                    "[PLANO_REQ_ID:{}] REQUEST_COMPLETE: latency={}ms tokens={}",
+                    "request_id={}: request complete, latency={}ms tokens={}",
                     self.request_identifier(),
                     duration_ms,
                     self.response_tokens
@@ -356,7 +360,7 @@ impl StreamContext {
                     self.metrics.time_per_output_token.record(tpot);
 
                     info!(
-                        "[PLANO_REQ_ID:{}] TOKEN_THROUGHPUT: time_per_token={}ms tokens_per_second={}",
+                        "request_id={}: token throughput, time_per_token={}ms tokens_per_second={}",
                         self.request_identifier(),
                         tpot,
                         1000 / tpot
@@ -366,7 +370,11 @@ impl StreamContext {
                 }
             }
             Err(e) => {
-                warn!("SystemTime error: {:?}", e);
+                warn!(
+                    "request_id={}: system time error: {:?}",
+                    self.request_identifier(),
+                    e
+                );
             }
         }
         // Record the output sequence length
@@ -379,7 +387,7 @@ impl StreamContext {
         if self.streaming_response {
             let chunk_size = body_size;
             debug!(
-                "[PLANO_REQ_ID:{}] UPSTREAM_RESPONSE_CHUNK: streaming=true chunk_size={}",
+                "request_id={}: upstream response chunk, streaming=true chunk_size={}",
                 self.request_identifier(),
                 chunk_size
             );
@@ -387,7 +395,7 @@ impl StreamContext {
                 Some(chunk) => chunk,
                 None => {
                     warn!(
-                        "[PLANO_REQ_ID:{}] UPSTREAM_RESPONSE_ERROR: empty chunk, size={}",
+                        "request_id={}: upstream response error, empty chunk size={}",
                         self.request_identifier(),
                         chunk_size
                     );
@@ -397,7 +405,7 @@ impl StreamContext {
 
             if streaming_chunk.len() != chunk_size {
                 warn!(
-                    "[PLANO_REQ_ID:{}] UPSTREAM_RESPONSE_MISMATCH: expected={} actual={}",
+                    "request_id={}: upstream response size mismatch, expected={} actual={}",
                     self.request_identifier(),
                     chunk_size,
                     streaming_chunk.len()
@@ -409,14 +417,17 @@ impl StreamContext {
                 return Err(Action::Continue);
             }
             debug!(
-                "[PLANO_REQ_ID:{}] UPSTREAM_RESPONSE_COMPLETE: streaming=false body_size={}",
+                "request_id={}: upstream response complete, streaming=false body_size={}",
                 self.request_identifier(),
                 body_size
             );
             match self.get_http_response_body(0, body_size) {
                 Some(body) => Ok(body),
                 None => {
-                    warn!("non streaming response body empty");
+                    warn!(
+                        "request_id={}: non streaming response body empty",
+                        self.request_identifier()
+                    );
                     Err(Action::Continue)
                 }
             }
@@ -429,7 +440,7 @@ impl StreamContext {
         provider_id: ProviderId,
     ) -> Result<Vec<u8>, Action> {
         debug!(
-            "[PLANO_REQ_ID:{}] STREAMING_PROCESS: client={:?} provider_id={:?} chunk_size={}",
+            "request_id={}: streaming process, client={:?} provider_id={:?} chunk_size={}",
             self.request_identifier(),
             self.client_api,
             provider_id,
@@ -460,7 +471,11 @@ impl StreamContext {
                     {
                         Ok(buffer) => Some(buffer),
                         Err(e) => {
-                            warn!("Failed to create SSE buffer: {}", e);
+                            warn!(
+                                "request_id={}: failed to create sse buffer: {}",
+                                self.request_identifier(),
+                                e
+                            );
                             return Err(Action::Continue);
                         }
                     };
@@ -477,7 +492,7 @@ impl StreamContext {
                             Ok(events) => {
                                 if has_buffered {
                                     debug!(
-                                        "[PLANO_REQ_ID:{}] SSE_INCOMPLETE_BUFFERED: {} bytes buffered for next chunk",
+                                        "request_id={}: sse incomplete buffered, {} bytes buffered for next chunk",
                                         self.request_identifier(),
                                         buffered_size
                                     );
@@ -486,7 +501,7 @@ impl StreamContext {
                             }
                             Err(e) => {
                                 warn!(
-                                    "[PLANO_REQ_ID:{}] SSE_CHUNK_PROCESS_ERROR: {}",
+                                    "request_id={}: sse chunk process error: {}",
                                     self.request_identifier(),
                                     e
                                 );
@@ -495,7 +510,10 @@ impl StreamContext {
                         }
                     }
                     None => {
-                        warn!("SSE chunk processor unexpectedly missing");
+                        warn!(
+                            "request_id={}: sse chunk processor unexpectedly missing",
+                            self.request_identifier()
+                        );
                         return Err(Action::Continue);
                     }
                 };
@@ -510,7 +528,7 @@ impl StreamContext {
 
                                 if provider_response.is_final() {
                                     debug!(
-                                        "[PLANO_REQ_ID:{}] STREAMING_FINAL_CHUNK: total_tokens={}",
+                                        "request_id={}: streaming final chunk, total_tokens={}",
                                         self.request_identifier(),
                                         self.response_tokens
                                     );
@@ -520,7 +538,7 @@ impl StreamContext {
                                     let estimated_tokens = content.len() / 4;
                                     self.response_tokens += estimated_tokens.max(1);
                                     debug!(
-                                        "[PLANO_REQ_ID:{}] STREAMING_TOKEN_UPDATE: delta_chars={} estimated_tokens={} total_tokens={}",
+                                        "request_id={}: streaming token update, delta_chars={} estimated_tokens={} total_tokens={}",
                                         self.request_identifier(),
                                         content.len(),
                                         estimated_tokens.max(1),
@@ -530,7 +548,7 @@ impl StreamContext {
                             }
                             Err(e) => {
                                 warn!(
-                                    "[PLANO_REQ_ID:{}] STREAMING_CHUNK_ERROR: {}",
+                                    "request_id={}: streaming chunk error: {}",
                                     self.request_identifier(),
                                     e
                                 );
@@ -552,7 +570,7 @@ impl StreamContext {
                         if !bytes.is_empty() {
                             let content = String::from_utf8_lossy(&bytes);
                             debug!(
-                                "[PLANO_REQ_ID:{}] UPSTREAM_TRANSFORMED_CLIENT_RESPONSE: size={} content={}",
+                                "request_id={}: upstream transformed client response, size={} content={}",
                                 self.request_identifier(),
                                 bytes.len(),
                                 content
@@ -561,13 +579,19 @@ impl StreamContext {
                         Ok(bytes)
                     }
                     None => {
-                        warn!("SSE buffer unexpectedly missing after initialization");
+                        warn!(
+                            "request_id={}: sse buffer unexpectedly missing after initialization",
+                            self.request_identifier()
+                        );
                         Err(Action::Continue)
                     }
                 }
             }
             None => {
-                warn!("Missing client_api for non-streaming response");
+                warn!(
+                    "request_id={}: missing client_api for non-streaming response",
+                    self.request_identifier()
+                );
                 Err(Action::Continue)
             }
         }
@@ -590,7 +614,7 @@ impl StreamContext {
                 Ok(buffer) => Some(buffer),
                 Err(e) => {
                     warn!(
-                        "[PLANO_REQ_ID:{}] BEDROCK_BUFFER_INIT_ERROR: {}",
+                        "request_id={}: bedrock buffer init error: {}",
                         self.request_identifier(),
                         e
                     );
@@ -620,7 +644,7 @@ impl StreamContext {
                                 let estimated_tokens = content.len() / 4;
                                 self.response_tokens += estimated_tokens.max(1);
                                 debug!(
-                                    "[PLANO_REQ_ID:{}] BEDROCK_TOKEN_UPDATE: delta_chars={} estimated_tokens={} total_tokens={}",
+                                    "request_id={}: bedrock token update, delta_chars={} estimated_tokens={} total_tokens={}",
                                     self.request_identifier(),
                                     content.len(),
                                     estimated_tokens.max(1),
@@ -638,7 +662,7 @@ impl StreamContext {
                         }
                         Err(e) => {
                             warn!(
-                                "[PLANO_REQ_ID:{}] BEDROCK_FRAME_CONVERSION_ERROR: {}",
+                                "request_id={}: bedrock frame conversion error: {}",
                                 self.request_identifier(),
                                 e
                             );
@@ -648,7 +672,7 @@ impl StreamContext {
                 Some(DecodedFrame::Incomplete) => {
                     // Incomplete frame - buffer retains partial data, wait for more bytes
                     debug!(
-                        "[PLANO_REQ_ID:{}] BEDROCK_INCOMPLETE_FRAME: waiting for more data",
+                        "request_id={}: bedrock incomplete frame, waiting for more data",
                         self.request_identifier()
                     );
                     break;
@@ -656,7 +680,7 @@ impl StreamContext {
                 None => {
                     // Decode error
                     warn!(
-                        "[PLANO_REQ_ID:{}] BEDROCK_DECODE_ERROR",
+                        "request_id={}: bedrock decode error",
                         self.request_identifier()
                     );
                     return Err(Action::Continue);
@@ -671,7 +695,7 @@ impl StreamContext {
                 if !bytes.is_empty() {
                     let content = String::from_utf8_lossy(&bytes);
                     debug!(
-                        "[PLANO_REQ_ID:{}] UPSTREAM_TRANSFORMED_CLIENT_RESPONSE: size={} content={}",
+                        "request_id={}: upstream transformed client response, size={} content={}",
                         self.request_identifier(),
                         bytes.len(),
                         content
@@ -681,7 +705,7 @@ impl StreamContext {
             }
             None => {
                 warn!(
-                    "[PLANO_REQ_ID:{}] BEDROCK_BUFFER_MISSING",
+                    "request_id={}: bedrock buffer missing",
                     self.request_identifier()
                 );
                 Err(Action::Continue)
@@ -695,7 +719,7 @@ impl StreamContext {
         provider_id: ProviderId,
     ) -> Result<Vec<u8>, Action> {
         debug!(
-            "[PLANO_REQ_ID:{}] NON_STREAMING_PROCESS: provider_id={:?} body_size={}",
+            "request_id={}: non-streaming process, provider_id={:?} body_size={}",
             self.request_identifier(),
             provider_id,
             body.len()
@@ -707,7 +731,7 @@ impl StreamContext {
                     Ok(response) => response,
                     Err(e) => {
                         warn!(
-                            "[PLANO_REQ_ID:{}] UPSTREAM_RESPONSE_PARSE_ERROR: {} | body: {}",
+                            "request_id={}: upstream response parse error: {} | body: {}",
                             self.request_identifier(),
                             e,
                             String::from_utf8_lossy(body)
@@ -722,7 +746,7 @@ impl StreamContext {
             }
             None => {
                 warn!(
-                    "[PLANO_REQ_ID:{}] UPSTREAM_RESPONSE_ERROR: missing client_api",
+                    "request_id={}: upstream response error, missing client_api",
                     self.request_identifier()
                 );
                 return Err(Action::Continue);
@@ -734,7 +758,7 @@ impl StreamContext {
             response.extract_usage_counts()
         {
             debug!(
-                "[PLANO_REQ_ID:{}] RESPONSE_USAGE: prompt_tokens={} completion_tokens={} total_tokens={}",
+                "request_id={}: response usage, prompt_tokens={} completion_tokens={} total_tokens={}",
                 self.request_identifier(),
                 prompt_tokens,
                 completion_tokens,
@@ -743,7 +767,7 @@ impl StreamContext {
             self.response_tokens = completion_tokens;
         } else {
             warn!(
-                "[PLANO_REQ_ID:{}] RESPONSE_USAGE: no usage information found",
+                "request_id={}: response usage, no usage information found",
                 self.request_identifier()
             );
         }
@@ -751,14 +775,18 @@ impl StreamContext {
         match serde_json::to_vec(&response) {
             Ok(bytes) => {
                 debug!(
-                    "[PLANO_REQ_ID:{}] CLIENT_RESPONSE_PAYLOAD: {}",
+                    "request_id={}: client response payload: {}",
                     self.request_identifier(),
                     String::from_utf8_lossy(&bytes)
                 );
                 Ok(bytes)
             }
             Err(e) => {
-                warn!("Failed to serialize normalized response: {}", e);
+                warn!(
+                    "request_id={}: failed to serialize normalized response: {}",
+                    self.request_identifier(),
+                    e
+                );
                 self.send_server_error(
                     ServerError::LogicError(format!("Response serialization error: {}", e)),
                     Some(StatusCode::INTERNAL_SERVER_ERROR),
@@ -819,7 +847,7 @@ impl HttpContext for StreamContext {
                 Some(provider_id.compatible_api_for_client(api, self.streaming_response));
 
             debug!(
-                "[PLANO_REQ_ID:{}] ROUTING_INFO: provider='{}' client_api={:?} resolved_api={:?} request_path='{}'",
+                "request_id={}: routing info, provider='{}' client_api={:?} resolved_api={:?} request_path='{}'",
                 self.request_identifier(),
                 provider.to_provider_id(),
                 api,
@@ -863,7 +891,7 @@ impl HttpContext for StreamContext {
 
     fn on_http_request_body(&mut self, body_size: usize, end_of_stream: bool) -> Action {
         debug!(
-            "[PLANO_REQ_ID:{}] REQUEST_BODY_CHUNK: bytes={} end_stream={}",
+            "request_id={}: request body chunk, bytes={} end_stream={}",
             self.request_identifier(),
             body_size,
             end_of_stream
@@ -902,14 +930,14 @@ impl HttpContext for StreamContext {
         let mut deserialized_client_request: ProviderRequestType = match self.client_api.as_ref() {
             Some(the_client_api) => {
                 info!(
-                    "[PLANO_REQ_ID:{}] CLIENT_REQUEST_RECEIVED: api={:?} body_size={}",
+                    "request_id={}: client request received, api={:?} body_size={}",
                     self.request_identifier(),
                     the_client_api,
                     body_bytes.len()
                 );
 
                 debug!(
-                    "[PLANO_REQ_ID:{}] CLIENT_REQUEST_PAYLOAD: {}",
+                    "request_id={}: client request payload: {}",
                     self.request_identifier(),
                     String::from_utf8_lossy(&body_bytes)
                 );
@@ -918,7 +946,7 @@ impl HttpContext for StreamContext {
                     Ok(deserialized) => deserialized,
                     Err(e) => {
                         warn!(
-                            "[PLANO_REQ_ID:{}] CLIENT_REQUEST_PARSE_ERROR: {} | body: {}",
+                            "request_id={}: client request parse error: {} | body: {}",
                             self.request_identifier(),
                             e,
                             String::from_utf8_lossy(&body_bytes)
@@ -953,7 +981,7 @@ impl HttpContext for StreamContext {
             Some(model_name) => model_name,
             None => {
                 warn!(
-                    "[PLANO_REQ_ID:{}] MODEL_RESOLUTION_ERROR: no model specified | req_model='{}' provider='{}' config_model={:?}",
+                    "request_id={}: model resolution error, no model specified | req_model='{}' provider='{}' config_model={:?}",
                     self.request_identifier(),
                     model_requested,
                     self.llm_provider().name,
@@ -981,7 +1009,7 @@ impl HttpContext for StreamContext {
         self.user_message = deserialized_client_request.get_recent_user_message();
 
         info!(
-            "[PLANO_REQ_ID:{}] MODEL_RESOLUTION: req_model='{}' -> resolved_model='{}' provider='{}' streaming={}",
+            "request_id={}: model resolved, req_model='{}' -> resolved_model='{}' provider='{}' streaming={}",
             self.request_identifier(),
             model_requested,
             resolved_model,
@@ -1008,56 +1036,68 @@ impl HttpContext for StreamContext {
         }
 
         // Convert chat completion request to llm provider specific request using provider interface
-        let serialized_body_bytes_upstream =
-            match self.resolved_api.as_ref() {
-                Some(upstream) => {
-                    info!(
-                    "[PLANO_REQ_ID:{}] UPSTREAM_TRANSFORM: client_api={:?} -> upstream_api={:?}",
-                    self.request_identifier(), self.client_api, upstream
+        let serialized_body_bytes_upstream = match self.resolved_api.as_ref() {
+            Some(upstream) => {
+                info!(
+                    "request_id={}: upstream transform, client_api={:?} -> upstream_api={:?}",
+                    self.request_identifier(),
+                    self.client_api,
+                    upstream
                 );
 
-                    match ProviderRequestType::try_from((deserialized_client_request, upstream)) {
-                        Ok(request) => {
-                            debug!(
-                                "[PLANO_REQ_ID:{}] UPSTREAM_REQUEST_PAYLOAD: {}",
-                                self.request_identifier(),
-                                String::from_utf8_lossy(&request.to_bytes().unwrap_or_default())
-                            );
+                match ProviderRequestType::try_from((deserialized_client_request, upstream)) {
+                    Ok(request) => {
+                        debug!(
+                            "request_id={}: upstream request payload: {}",
+                            self.request_identifier(),
+                            String::from_utf8_lossy(&request.to_bytes().unwrap_or_default())
+                        );
 
-                            match request.to_bytes() {
-                                Ok(bytes) => bytes,
-                                Err(e) => {
-                                    warn!("Failed to serialize request body: {}", e);
-                                    self.send_server_error(
-                                        ServerError::LogicError(format!(
-                                            "Request serialization error: {}",
-                                            e
-                                        )),
-                                        Some(StatusCode::BAD_REQUEST),
-                                    );
-                                    return Action::Pause;
-                                }
+                        match request.to_bytes() {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                warn!(
+                                    "request_id={}: failed to serialize request body: {}",
+                                    self.request_identifier(),
+                                    e
+                                );
+                                self.send_server_error(
+                                    ServerError::LogicError(format!(
+                                        "Request serialization error: {}",
+                                        e
+                                    )),
+                                    Some(StatusCode::BAD_REQUEST),
+                                );
+                                return Action::Pause;
                             }
                         }
-                        Err(e) => {
-                            warn!("Failed to create provider request: {}", e);
-                            self.send_server_error(
-                                ServerError::LogicError(format!("Provider request error: {}", e)),
-                                Some(StatusCode::BAD_REQUEST),
-                            );
-                            return Action::Pause;
-                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "request_id={}: failed to create provider request: {}",
+                            self.request_identifier(),
+                            e
+                        );
+                        self.send_server_error(
+                            ServerError::LogicError(format!("Provider request error: {}", e)),
+                            Some(StatusCode::BAD_REQUEST),
+                        );
+                        return Action::Pause;
                     }
                 }
-                None => {
-                    warn!("No upstream API resolved");
-                    self.send_server_error(
-                        ServerError::LogicError("No upstream API resolved".into()),
-                        Some(StatusCode::BAD_REQUEST),
-                    );
-                    return Action::Pause;
-                }
-            };
+            }
+            None => {
+                warn!(
+                    "request_id={}: no upstream api resolved",
+                    self.request_identifier()
+                );
+                self.send_server_error(
+                    ServerError::LogicError("No upstream API resolved".into()),
+                    Some(StatusCode::BAD_REQUEST),
+                );
+                return Action::Pause;
+            }
+        };
 
         self.set_http_request_body(0, body_size, &serialized_body_bytes_upstream);
         Action::Continue
@@ -1070,7 +1110,7 @@ impl HttpContext for StreamContext {
                 self.upstream_status_code = StatusCode::from_u16(status_code).ok();
 
                 debug!(
-                    "[PLANO_REQ_ID:{}] UPSTREAM_RESPONSE_STATUS: {}",
+                    "request_id={}: upstream response status: {}",
                     self.request_identifier(),
                     status_code
                 );
@@ -1090,14 +1130,17 @@ impl HttpContext for StreamContext {
 
     fn on_http_response_body(&mut self, body_size: usize, end_of_stream: bool) -> Action {
         if self.request_body_sent_time.is_none() {
-            debug!("on_http_response_body: request body not sent, not doing any processing in llm filter");
+            debug!(
+                "request_id={}: request body not sent, skipping processing in llm filter",
+                self.request_identifier()
+            );
             return Action::Continue;
         }
 
         let current_time = get_current_time().unwrap();
         if end_of_stream && body_size == 0 {
             debug!(
-                "[PLANO_REQ_ID:{}] RESPONSE_BODY_COMPLETE: total_bytes={}",
+                "request_id={}: response body complete, total_bytes={}",
                 self.request_identifier(),
                 body_size
             );
@@ -1109,7 +1152,7 @@ impl HttpContext for StreamContext {
         if let Some(status_code) = &self.upstream_status_code {
             if status_code.is_client_error() || status_code.is_server_error() {
                 info!(
-                    "[PLANO_REQ_ID:{}] UPSTREAM_ERROR_RESPONSE: status={} body_size={}",
+                    "request_id={}: upstream error response, status={} body_size={}",
                     self.request_identifier(),
                     status_code.as_u16(),
                     body_size
@@ -1119,7 +1162,7 @@ impl HttpContext for StreamContext {
                 if body_size > 0 {
                     if let Ok(body) = self.read_raw_response_body(body_size) {
                         debug!(
-                            "[PLANO_REQ_ID:{}] UPSTREAM_ERROR_BODY: {}",
+                            "request_id={}: upstream error body: {}",
                             self.request_identifier(),
                             String::from_utf8_lossy(&body)
                         );
@@ -1141,7 +1184,7 @@ impl HttpContext for StreamContext {
                     None => "None".to_string(),
                 };
                 info!(
-                    "[PLANO_REQ_ID:{}], UNSUPPORTED API: {}",
+                    "request_id={}: unsupported api: {}",
                     self.request_identifier(),
                     api_info
                 );
@@ -1155,7 +1198,7 @@ impl HttpContext for StreamContext {
         };
 
         debug!(
-            "[PLANO_REQ_ID:{}] UPSTREAM_RAW_RESPONSE: body_size={} content={}",
+            "request_id={}: upstream raw response, body_size={} content={}",
             self.request_identifier(),
             body.len(),
             String::from_utf8_lossy(&body)

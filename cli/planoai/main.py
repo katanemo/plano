@@ -29,6 +29,7 @@ from planoai.core import (
 from planoai.init_cmd import init as init_cmd
 from planoai.trace_cmd import trace as trace_cmd
 from planoai.consts import (
+    DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
@@ -380,7 +381,7 @@ def up(file, path, foreground):
 
     # Set up environment
     env_stage = {
-        "OTEL_TRACING_GRPC_ENDPOINT": "http://host.docker.internal:4317",
+        "OTEL_TRACING_GRPC_ENDPOINT": DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     }
     env = os.environ.copy()
     env.pop("PATH", None)

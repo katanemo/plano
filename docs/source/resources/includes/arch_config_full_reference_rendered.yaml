@@ -130,5 +130,6 @@ prompt_targets:
     required: true
     type: int
 tracing:
+  opentracing_grpc_endpoint: http://host.docker.internal:4317
   random_sampling: 100
 version: v0.3.0

@@ -50,19 +50,22 @@ fn empty() -> BoxBody<Bytes, hyper::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let _tracer_provider = init_tracer();
     let bind_address = env::var("BIND_ADDRESS").unwrap_or_else(|_| BIND_ADDRESS.to_string());
 
-    // loading arch_config.yaml file
+    // loading arch_config.yaml file (before tracing init so we can read tracing config)
     let arch_config_path = env::var("ARCH_CONFIG_PATH_RENDERED")
         .unwrap_or_else(|_| "./arch_config_rendered.yaml".to_string());
-    info!(path = %arch_config_path, "loading arch_config.yaml");
+    eprintln!("loading arch_config.yaml from {}", arch_config_path);
 
     let config_contents =
         fs::read_to_string(&arch_config_path).expect("Failed to read arch_config.yaml");
 
     let config: Configuration =
         serde_yaml::from_str(&config_contents).expect("Failed to parse arch_config.yaml");
+
+    // Initialize tracing using config.yaml tracing section
+    let _tracer_provider = init_tracer(config.tracing.as_ref());
+    info!(path = %arch_config_path, "loaded arch_config.yaml");
 
     let arch_config = Arc::new(config);
 
