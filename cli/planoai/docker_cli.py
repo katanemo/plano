@@ -35,7 +35,7 @@ def docker_stop_container(container: str) -> str:
 
 def docker_remove_container(container: str) -> str:
     result = subprocess.run(
-        ["docker", "rm", container], capture_output=True, text=True, check=False
+        ["docker", "rm", "-f", container], capture_output=True, text=True, check=False
     )
     return result.returncode
 
@@ -48,7 +48,7 @@ def docker_start_plano_detached(
     env_args = [item for key, value in env.items() for item in ["-e", f"{key}={value}"]]
 
     port_mappings = [
-        f"{12001}:{12001}",
+        "12001:12001",
         "19901:9901",
     ]
 

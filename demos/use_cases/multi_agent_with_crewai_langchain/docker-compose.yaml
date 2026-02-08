@@ -9,7 +9,7 @@ services:
     environment:
       - ARCH_CONFIG_PATH=/app/arch_config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
-      - OTEL_TRACING_GRPC_ENDPOINT=http://jaeger:4317
+      - OTEL_TRACING_GRPC_ENDPOINT=http://host.docker.internal:4317
     volumes:
       - ./config.yaml:/app/arch_config.yaml:ro
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
@@ -51,10 +51,10 @@ services:
       - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
       - GENERIC_OPEN_AI_API_KEY=sk-placeholder
 
-  jaeger:
-    build:
-      context: ../../shared/jaeger
-    restart: always
-    ports:
-      - "16686:16686"  # Jaeger UI
-      - "4317:4317"    # OTLP gRPC receiver
+  # jaeger:
+  #   build:
+  #     context: ../../shared/jaeger
+  #   restart: always
+  #   ports:
+  #     - "16686:16686"  # Jaeger UI
+  #     - "4317:4317"    # OTLP gRPC receiver
