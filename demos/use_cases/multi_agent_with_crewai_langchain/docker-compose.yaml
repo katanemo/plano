@@ -53,11 +53,11 @@ services:
       - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
       - GENERIC_OPEN_AI_API_KEY=sk-placeholder
 
-  jaeger:
-    build:
-      context: ../../shared/jaeger
-    restart: always
-    ports:
-      - "16686:16686"  # Jaeger UI
-      - "4317:4317"    # OTLP gRPC receiver
-      - "4318:4318"    # OTLP HTTP receiver
+  # jaeger:
+  #   build:
+  #     context: ../../shared/jaeger
+  #   restart: always
+  #   ports:
+  #     - "16686:16686"  # Jaeger UI
+  #     - "4317:4317"    # OTLP gRPC receiver
+  #     - "4318:4318"    # OTLP HTTP receiver

@@ -4,24 +4,28 @@ import re
 import string
 import threading
 import time
-from collections import deque
+from collections import OrderedDict
+from concurrent import futures
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from fnmatch import fnmatch
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
 
+import grpc
 import rich_click as click
-import requests
+from opentelemetry.proto.collector.trace.v1 import (
+    trace_service_pb2,
+    trace_service_pb2_grpc,
+)
 from rich.console import Console
 from rich.text import Text
 from rich.tree import Tree
 
 from planoai.consts import PLANO_COLOR
 
-DEFAULT_TRACE_API_URL = "http://127.0.0.1:4318"
-MAX_TRACE_BODY_BYTES = 5_000_000
+DEFAULT_GRPC_PORT = 4317
+MAX_TRACES = 50
+MAX_SPANS_PER_TRACE = 500
 
 
 @dataclass
@@ -40,10 +44,6 @@ class TraceSummary:
             return "unknown"
         dt = datetime.fromtimestamp(self.start_ns / 1_000_000_000, tz=timezone.utc)
         return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _trace_api_url() -> str:
-    return os.environ.get("PLANO_TRACE_API_URL", DEFAULT_TRACE_API_URL)
 
 
 def _split_patterns(value: str | None) -> list[str]:
@@ -96,28 +96,24 @@ def _collect_attr_keys(traces: list[dict[str, Any]]) -> set[str]:
 
 
 def _fetch_traces_raw() -> list[dict[str, Any]]:
-    url = f"{_trace_api_url().rstrip('/')}/v1/traces"
+    port = os.environ.get("PLANO_TRACE_PORT", str(DEFAULT_GRPC_PORT))
+    target = f"127.0.0.1:{port}"
     try:
-        response = requests.get(url, timeout=5)
-    except requests.RequestException as exc:
-        raise click.ClickException(
-            f"Trace listener not reachable at {url}. "
-            "Start it with 'planoai trace listen' or set PLANO_TRACE_API_URL."
-        ) from exc
-    if response.status_code == 404:
-        raise click.ClickException(
-            f"An error occurred while fetching traces: {response.text}"
-            f"Make sure the trace listener is running and PLANO_TRACE_API_URL is set correctly."
+        channel = grpc.insecure_channel(target)
+        stub = channel.unary_unary(
+            "/plano.TraceQuery/GetTraces",
+            request_serializer=lambda x: x,
+            response_deserializer=lambda x: x,
         )
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise click.ClickException("Trace API returned invalid JSON.") from exc
-    if not isinstance(payload, dict) or "traces" not in payload:
-        raise click.ClickException("Trace API returned invalid traces.")
-    if not isinstance(payload["traces"], list):
-        raise click.ClickException("Trace API returned invalid traces.")
-    return payload["traces"]
+        response = stub(b"", timeout=3)
+        channel.close()
+        data = json.loads(response)
+        traces = data.get("traces", [])
+        if isinstance(traces, list):
+            return traces
+    except Exception:
+        pass
+    return []
 
 
 def _attrs(span: dict[str, Any]) -> dict[str, str]:
@@ -217,51 +213,6 @@ def _filter_attributes(span: dict[str, Any], patterns: list[str]) -> dict[str, A
     return cloned
 
 
-def _build_traces_from_payloads(
-    payloads: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[str]]:
-    traces: dict[str, dict[str, Any]] = {}
-    trace_order: list[str] = []
-
-    for payload in payloads:
-        resource_spans = payload.get("resourceSpans", []) or []
-        for resource_span in resource_spans:
-            if not isinstance(resource_span, dict):
-                continue
-            service_name = "unknown"
-            resource = resource_span.get("resource", {}) or {}
-            for attr in resource.get("attributes", []) or []:
-                if not isinstance(attr, dict):
-                    continue
-                if attr.get("key") == "service.name":
-                    value_obj = attr.get("value", {}) or {}
-                    service_name = value_obj.get("stringValue", service_name)
-                    break
-
-            for scope_span in resource_span.get("scopeSpans", []) or []:
-                if not isinstance(scope_span, dict):
-                    continue
-                for span in scope_span.get("spans", []) or []:
-                    if not isinstance(span, dict):
-                        continue
-                    trace_id = str(span.get("traceId") or "")
-                    if not trace_id:
-                        continue
-                    if trace_id not in traces:
-                        traces[trace_id] = {"trace_id": trace_id, "spans": []}
-                        trace_order.append(trace_id)
-
-                    span_obj = dict(span)
-                    span_obj["service"] = service_name
-                    traces[trace_id]["spans"].append(span_obj)
-
-    trace_list = [traces[trace_id] for trace_id in trace_order if trace_id in traces]
-    trace_list.reverse()
-
-    trace_ids = [trace["trace_id"] for trace in trace_list]
-    return trace_list, trace_ids
-
-
 def _filter_traces(
     traces: list[dict[str, Any]],
     filter_patterns: list[str],
@@ -306,85 +257,246 @@ def _filter_traces(
     return filtered_traces, trace_ids
 
 
-class _TraceBuffer:
-    def __init__(self, max_payloads: int = 10) -> None:
-        self._payloads: deque[dict[str, Any]] = deque(maxlen=max_payloads)
+class _TraceStore:
+    """Thread-safe in-memory store backed by a fixed-length deque.
+
+    Spans may arrive with **different** ``traceId`` values but are
+    linked via ``parentSpanId``.  This store groups them into logical
+    traces by following parent-child span relationships, so all
+    connected spans end up under a single trace group regardless of
+    the ``traceId`` they were emitted with.
+    """
+
+    def __init__(self, max_traces: int = MAX_TRACES) -> None:
+        self._traces: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._seen_spans: dict[str, set[str]] = {}
+        # span_id → group key (the trace_id used as the dict key)
+        self._span_to_group: dict[str, str] = {}
+        # parent_span_id → group key for spans whose parent arrived first
+        self._parent_to_group: dict[str, str] = {}
+        self._max_traces = max_traces
         self._lock = threading.Lock()
 
-    def push(self, payload: dict[str, Any]) -> None:
+    def _evict_oldest(self) -> None:
+        """Remove the oldest trace group (caller must hold *_lock*)."""
+        if not self._traces:
+            return
+        oldest_id, oldest = self._traces.popitem(last=False)
+        self._seen_spans.pop(oldest_id, None)
+        for span in oldest.get("spans", []):
+            sid = span.get("spanId", "")
+            self._span_to_group.pop(sid, None)
+            self._parent_to_group.pop(sid, None)
+
+    def _merge_groups(self, src_key: str, dst_key: str) -> None:
+        """Move all spans from *src_key* group into *dst_key* (caller holds lock)."""
+        if src_key == dst_key or src_key not in self._traces:
+            return
+        src = self._traces.pop(src_key)
+        dst = self._traces[dst_key]
+        dst_seen = self._seen_spans[dst_key]
+        src_seen = self._seen_spans.pop(src_key, set())
+        for span in src.get("spans", []):
+            sid = span.get("spanId", "")
+            if sid and sid not in dst_seen:
+                dst["spans"].append(span)
+                dst_seen.add(sid)
+            self._span_to_group[sid] = dst_key
+        for sid in src_seen:
+            self._span_to_group[sid] = dst_key
+        # Update parent→group mappings that pointed to src.
+        for pid, gid in list(self._parent_to_group.items()):
+            if gid == src_key:
+                self._parent_to_group[pid] = dst_key
+
+    def merge_spans(self, trace_id: str, spans: list[dict[str, Any]]) -> None:
+        """Merge *spans* into the correct trace group.
+
+        The group is determined by following ``parentSpanId`` /
+        ``spanId`` links, falling back to *trace_id* when no link
+        exists.
+        """
         with self._lock:
-            self._payloads.append(payload)
+            for span in spans:
+                span_id = span.get("spanId", "")
+                parent_id = span.get("parentSpanId", "")
+
+                # Determine which group this span belongs to.
+                group_key: str | None = None
+
+                # 1. Does the parent already live in a group?
+                if parent_id and parent_id in self._span_to_group:
+                    group_key = self._span_to_group[parent_id]
+
+                # 2. Is this span already known as a parent of another group?
+                if group_key is None and span_id and span_id in self._parent_to_group:
+                    group_key = self._parent_to_group.pop(span_id)
+
+                # 3. Fall back to the wire trace_id.
+                if group_key is None:
+                    group_key = trace_id
+
+                # Create the group if needed.
+                if group_key not in self._traces:
+                    if len(self._traces) >= self._max_traces:
+                        self._evict_oldest()
+                    self._traces[group_key] = {"trace_id": group_key, "spans": []}
+                    self._seen_spans[group_key] = set()
+                else:
+                    self._traces.move_to_end(group_key)
+
+                # Insert span (deduplicate).
+                seen = self._seen_spans[group_key]
+                if span_id and span_id in seen:
+                    continue
+                if span_id:
+                    seen.add(span_id)
+                    self._span_to_group[span_id] = group_key
+                if len(self._traces[group_key]["spans"]) < MAX_SPANS_PER_TRACE:
+                    self._traces[group_key]["spans"].append(span)
+
+                # Record parent link so future spans can find this group.
+                if parent_id and parent_id not in self._span_to_group:
+                    self._parent_to_group[parent_id] = group_key
+
+                # If this span's span_id is the parent of an existing
+                # *different* group, merge that group into this one.
+                if span_id and span_id in self._parent_to_group:
+                    other = self._parent_to_group.pop(span_id)
+                    if other != group_key and other in self._traces:
+                        self._merge_groups(other, group_key)
 
     def snapshot(self) -> list[dict[str, Any]]:
+        """Return traces ordered newest-first."""
         with self._lock:
-            return list(self._payloads)
+            traces = list(self._traces.values())
+        traces.reverse()
+        return traces
 
 
-_TRACE_BUFFER = _TraceBuffer(max_payloads=10)
+_TRACE_STORE = _TraceStore()
 
 
-class _TraceListenerHandler(BaseHTTPRequestHandler):
-    server_version = "plano-trace-listener/1.0"
-
-    def log_message(self, format, *args) -> None:
-        return
-
-    def _send_json(self, status_code: int, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_POST(self) -> None:
-        if self.path != "/v1/traces":
-            self._send_json(404, {"error": "not_found"})
-            return
-        length = _safe_int(self.headers.get("Content-Length", "0"))
-        if length <= 0:
-            self._send_json(400, {"error": "empty_body"})
-            return
-        if length > MAX_TRACE_BODY_BYTES:
-            self._send_json(413, {"error": "payload_too_large"})
-            return
-        body = self.rfile.read(length)
-        try:
-            payload = json.loads(body.decode("utf-8"))
-        except json.JSONDecodeError:
-            self._send_json(400, {"error": "invalid_json"})
-            return
-        if not isinstance(payload, dict):
-            self._send_json(400, {"error": "invalid_payload"})
-            return
-        _TRACE_BUFFER.push(payload)
-        self._send_json(200, {})
-
-    def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path != "/v1/traces":
-            self._send_json(404, {"error": "not_found"})
-            return
-        traces, _ = _build_traces_from_payloads(_TRACE_BUFFER.snapshot())
-        self._send_json(200, {"traces": traces})
+def _anyvalue_to_python(value_obj: Any) -> Any:
+    """Convert an opentelemetry AnyValue protobuf to a Python primitive."""
+    if hasattr(value_obj, "string_value") and value_obj.HasField("value"):
+        kind = value_obj.WhichOneof("value")
+        if kind == "string_value":
+            return value_obj.string_value
+        if kind == "int_value":
+            return value_obj.int_value
+        if kind == "double_value":
+            return value_obj.double_value
+        if kind == "bool_value":
+            return value_obj.bool_value
+    return None
 
 
-def _start_trace_listener(host: str, port: int) -> None:
-    server = ThreadingHTTPServer((host, port), _TraceListenerHandler)
+def _proto_span_to_dict(span: Any, service_name: str) -> dict[str, Any]:
+    """Convert a protobuf Span message to the dict format used internally."""
+    span_dict: dict[str, Any] = {
+        "traceId": span.trace_id.hex(),
+        "spanId": span.span_id.hex(),
+        "parentSpanId": span.parent_span_id.hex() if span.parent_span_id else "",
+        "name": span.name,
+        "startTimeUnixNano": str(span.start_time_unix_nano),
+        "endTimeUnixNano": str(span.end_time_unix_nano),
+        "service": service_name,
+        "attributes": [],
+    }
+    for kv in span.attributes:
+        py_val = _anyvalue_to_python(kv.value)
+        if py_val is not None:
+            value_dict: dict[str, Any] = {}
+            if isinstance(py_val, str):
+                value_dict["stringValue"] = py_val
+            elif isinstance(py_val, bool):
+                value_dict["boolValue"] = py_val
+            elif isinstance(py_val, int):
+                value_dict["intValue"] = str(py_val)
+            elif isinstance(py_val, float):
+                value_dict["doubleValue"] = py_val
+            span_dict["attributes"].append({"key": kv.key, "value": value_dict})
+    return span_dict
+
+
+class _OTLPTraceServicer(trace_service_pb2_grpc.TraceServiceServicer):
+    """gRPC servicer that receives OTLP ExportTraceServiceRequest and
+    merges incoming spans into the global _TRACE_STORE by trace_id."""
+
+    _console = Console(stderr=True)
+
+    def Export(self, request, context):  # noqa: N802
+        for resource_spans in request.resource_spans:
+            service_name = "unknown"
+            for attr in resource_spans.resource.attributes:
+                if attr.key == "service.name":
+                    val = _anyvalue_to_python(attr.value)
+                    if val is not None:
+                        service_name = str(val)
+                    break
+
+            for scope_spans in resource_spans.scope_spans:
+                for span in scope_spans.spans:
+                    trace_id = span.trace_id.hex()
+                    if not trace_id:
+                        continue
+                    span_dict = _proto_span_to_dict(span, service_name)
+                    _TRACE_STORE.merge_spans(trace_id, [span_dict])
+                    short_id = trace_id[:8]
+                    self._console.print(
+                        f"  [dim]←[/dim] span [cyan]{span.name}[/cyan] "
+                        f"trace=[yellow]{short_id}[/yellow] "
+                        f"service=[bold {_service_color(service_name)}]{service_name}[/bold {_service_color(service_name)}]"
+                    )
+
+        return trace_service_pb2.ExportTraceServiceResponse()
+
+
+class _TraceQueryHandler(grpc.GenericRpcHandler):
+    """gRPC handler that serves stored traces to the CLI show command."""
+
+    def service(self, handler_call_details):
+        if handler_call_details.method == "/plano.TraceQuery/GetTraces":
+            return grpc.unary_unary_rpc_method_handler(
+                self._get_traces,
+                request_deserializer=lambda x: x,
+                response_serializer=lambda x: x,
+            )
+        return None
+
+    @staticmethod
+    def _get_traces(_request, _context):
+        traces = _TRACE_STORE.snapshot()
+        return json.dumps({"traces": traces}, separators=(",", ":")).encode("utf-8")
+
+
+def _start_trace_listener(host: str, grpc_port: int) -> None:
     console = Console()
+
+    grpc_server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=4),
+        handlers=[_TraceQueryHandler()],
+    )
+    trace_service_pb2_grpc.add_TraceServiceServicer_to_server(
+        _OTLPTraceServicer(), grpc_server
+    )
+    grpc_server.add_insecure_port(f"{host}:{grpc_port}")
+    grpc_server.start()
+
     console.print()
     console.print(f"[bold {PLANO_COLOR}]Listening for traces...[/bold {PLANO_COLOR}]")
     console.print(
-        f"[green]●[/green] Running trace listener on [cyan]http://{host}:{port}/v1/traces[/cyan]"
+        f"[green]●[/green] gRPC (OTLP receiver) on [cyan]{host}:{grpc_port}[/cyan]"
     )
     console.print("[dim]Press Ctrl+C to stop.[/dim]")
     console.print()
     try:
-        server.serve_forever()
+        grpc_server.wait_for_termination()
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        grpc_server.stop(grace=2)
 
 
 def _span_time_ns(span: dict[str, Any], key: str) -> int:
@@ -751,7 +863,7 @@ def trace(
             json_out,
         ]
     ):
-        _start_trace_listener("127.0.0.1", 4318)
+        _start_trace_listener("0.0.0.0", DEFAULT_GRPC_PORT)
         return
     _run_trace_show(
         target,
@@ -766,8 +878,14 @@ def trace(
 
 
 @trace.command("listen")
-@click.option("--host", default="127.0.0.1", show_default=True)
-@click.option("--port", type=int, default=4318, show_default=True)
+@click.option("--host", default="0.0.0.0", show_default=True)
+@click.option(
+    "--port",
+    type=int,
+    default=DEFAULT_GRPC_PORT,
+    show_default=True,
+    help="gRPC port for receiving OTLP traces.",
+)
 def trace_listen(host: str, port: int) -> None:
-    """Listen for OTLP/HTTP traces and serve traces."""
+    """Listen for OTLP/gRPC traces."""
     _start_trace_listener(host, port)
