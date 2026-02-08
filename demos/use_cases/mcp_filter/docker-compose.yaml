@@ -16,6 +16,8 @@ services:
       context: ../../../
       dockerfile: Dockerfile
     ports:
+      - "11000:11000"
+      - "12001:12001"
       - "12000:12000"
       - "8001:8001"
     environment:

@@ -21,14 +21,8 @@ url = "2.5.4"
 hermesllm = { version = "0.1.0", path = "../hermesllm" }
 serde_with = "3.13.0"
 
-# Optional dependencies for trace collection (not available in WASM)
-tokio = { version = "1.44", features = ["sync", "time"], optional = true }
-reqwest = { version = "0.12", features = ["json"], optional = true }
-tracing = { version = "0.1", optional = true }
-
 [features]
 default = []
-trace-collection = ["tokio", "reqwest", "tracing"]
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

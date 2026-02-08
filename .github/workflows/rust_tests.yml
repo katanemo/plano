@@ -29,6 +29,3 @@ jobs:
 
       - name: Run unit tests
         run: cargo test --lib
-
-      - name: Run trace integration tests
-        run: cargo test -p common --features trace-collection traces::tests::trace_integration_test

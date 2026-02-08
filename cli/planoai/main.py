@@ -380,7 +380,7 @@ def up(file, path, foreground):
 
     # Set up environment
     env_stage = {
-        "OTEL_TRACING_HTTP_ENDPOINT": "http://host.docker.internal:4318/v1/traces",
+        "OTEL_TRACING_GRPC_ENDPOINT": "http://host.docker.internal:4317",
     }
     env = os.environ.copy()
     env.pop("PATH", None)

@@ -3,11 +3,15 @@ use std::sync::OnceLock;
 
 use opentelemetry::global;
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider};
-use opentelemetry_stdout::SpanExporter;
 use time::macros::format_description;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::fmt::{format, time::FormatTime, FmtContext, FormatEvent, FormatFields};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
+
+use crate::tracing::ServiceNameOverrideExporter;
 
 struct BracketedTime;
 
@@ -29,7 +33,7 @@ struct BracketedFormatter;
 
 impl<S, N> FormatEvent<S, N> for BracketedFormatter
 where
-    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    S: Subscriber + for<'a> LookupSpan<'a>,
     N: for<'a> FormatFields<'a> + 'static,
 {
     fn format_event(
@@ -43,36 +47,114 @@ where
 
         write!(
             writer,
-            "[{}] ",
+            "[{}]",
             event.metadata().level().to_string().to_lowercase()
         )?;
 
+        // Extract request_id from span context if present
+        if let Some(scope) = ctx.event_scope() {
+            for span in scope.from_root() {
+                let extensions = span.extensions();
+                if let Some(fields) = extensions.get::<FormattedFields<N>>() {
+                    let fields_str = fields.fields.as_str();
+                    // Look for request_id in the formatted fields
+                    if let Some(start) = fields_str.find("request_id=") {
+                        let rest = &fields_str[start + 11..]; // Skip "request_id="
+                        let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
+                        let rid = &rest[..end];
+                        write!(writer, "[request_id={}]", rid)?;
+                        break;
+                    }
+                }
+            }
+        }
+
+        write!(writer, " ")?;
         ctx.field_format().format_fields(writer.by_ref(), event)?;
 
         writeln!(writer)
     }
 }
 
+use tracing_subscriber::fmt::FormattedFields;
+
 static INIT_LOGGER: OnceLock<SdkTracerProvider> = OnceLock::new();
 
 pub fn init_tracer() -> &'static SdkTracerProvider {
     INIT_LOGGER.get_or_init(|| {
         global::set_text_map_propagator(TraceContextPropagator::new());
-        // Install stdout exporter pipeline to be able to retrieve the collected spans.
-        // For the demonstration, use `Sampler::AlwaysOn` sampler to sample all traces.
-        let provider = SdkTracerProvider::builder()
-            .with_simple_exporter(SpanExporter::default())
-            .build();
 
-        global::set_tracer_provider(provider.clone());
+        // Get OTEL collector URL from environment
+        let otel_endpoint = std::env::var("OTEL_TRACING_GRPC_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:4317".to_string());
 
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-            )
-            .event_format(BracketedFormatter)
-            .init();
+        let tracing_enabled = std::env::var("OTEL_TRACING_ENABLED")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(false);
 
-        provider
+        // Create OTLP exporter to send spans to collector
+        if tracing_enabled {
+            // Set service name via environment if not already set
+            if std::env::var("OTEL_SERVICE_NAME").is_err() {
+                std::env::set_var("OTEL_SERVICE_NAME", "plano");
+            }
+
+            // Create ServiceNameOverrideExporter to support per-span service names
+            // This allows spans to have different service names (e.g., plano(orchestrator),
+            // plano(filter), plano(llm)) by setting the "service.name.override" attribute
+            let exporter = ServiceNameOverrideExporter::new(&otel_endpoint);
+
+            let provider = SdkTracerProvider::builder()
+                .with_batch_exporter(exporter)
+                .build();
+
+            global::set_tracer_provider(provider.clone());
+
+            // Create OpenTelemetry tracing layer using TracerProvider trait
+            use opentelemetry::trace::TracerProvider as _;
+            let telemetry_layer =
+                tracing_opentelemetry::layer().with_tracer(provider.tracer("brightstaff"));
+
+            // Combine the OpenTelemetry layer with fmt layer using the registry
+            let env_filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+            // Create fmt layer with span field formatting enabled (no ANSI to keep fields parseable)
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .event_format(BracketedFormatter)
+                .fmt_fields(format::DefaultFields::new())
+                .with_ansi(false);
+
+            let subscriber = tracing_subscriber::registry()
+                .with(telemetry_layer)
+                .with(env_filter)
+                .with(fmt_layer);
+
+            tracing::subscriber::set_global_default(subscriber)
+                .expect("Failed to set tracing subscriber");
+
+            provider
+        } else {
+            // Tracing disabled - use no-op provider
+            let provider = SdkTracerProvider::builder().build();
+            global::set_tracer_provider(provider.clone());
+
+            let env_filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+            // Create fmt layer with span field formatting enabled (no ANSI to keep fields parseable)
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .event_format(BracketedFormatter)
+                .fmt_fields(format::DefaultFields::new())
+                .with_ansi(false);
+
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .init();
+
+            provider
+        }
     })
 }

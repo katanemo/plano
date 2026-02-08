@@ -112,15 +112,7 @@ mod tests {
 
         let headers = HeaderMap::new();
         let result = pipeline_processor
-            .process_filter_chain(
-                &request.messages,
-                &test_pipeline,
-                &agent_map,
-                &headers,
-                None,
-                String::new(),
-                String::new(),
-            )
+            .process_filter_chain(&request.messages, &test_pipeline, &agent_map, &headers)
             .await;
 
         println!("Pipeline processing result: {:?}", result);
