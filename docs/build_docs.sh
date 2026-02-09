@@ -1,3 +1,5 @@
+set -e
+
 docker build -f docs/Dockerfile . -t sphinx
 
 # Clean build output locally
