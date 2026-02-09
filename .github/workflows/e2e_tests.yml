@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 # Shared env vars for all jobs that run tests
 env:
   PLANO_DOCKER_IMAGE: katanemo/plano:e2e
