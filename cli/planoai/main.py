@@ -16,6 +16,7 @@ from planoai.utils import (
     get_llm_provider_access_keys,
     has_ingress_listener,
     load_env_file_to_dict,
+    set_log_level,
     stream_access_logs,
     find_config_file,
     find_repo_root,
@@ -67,6 +68,8 @@ def get_version():
 @click.option("--version", is_flag=True, help="Show the plano cli version and exit.")
 @click.pass_context
 def main(ctx, version):
+    # Set log level from LOG_LEVEL env var only
+    set_log_level(os.environ.get("LOG_LEVEL", "info"))
     if version:
         click.echo(f"plano cli version: {get_version()}")
         ctx.exit()
@@ -191,6 +194,10 @@ def up(file, path, foreground):
                     sys.exit(1)
                 else:
                     env_stage[access_key] = env_file_dict[access_key]
+
+    # Pass log level to the Docker container — supervisord uses LOG_LEVEL
+    # to set RUST_LOG (brightstaff) and envoy component log levels
+    env_stage["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "info")
 
     env.update(env_stage)
     start_arch(arch_config_file, env, foreground=foreground)
