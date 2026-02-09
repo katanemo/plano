@@ -42,7 +42,7 @@ cd -
 
 # Run both test suites that share this config in a single pytest invocation
 log "running e2e tests for model alias routing + openai responses api"
-uv run pytest test_model_alias_routing.py test_openai_responses_api_client.py
+uv run pytest -n auto test_model_alias_routing.py test_openai_responses_api_client.py
 
 # Cleanup
 log "shutting down"
