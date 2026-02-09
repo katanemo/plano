@@ -1,1 +1,45 @@
-crates/target/*
+# Rust build artifacts
+crates/target/
+
+# Git
+.git/
+.gitignore
+
+# Documentation & website
+docs/
+apps/
+packages/
+
+# CI / IDE / editor files
+.vscode/
+.idea/
+*.code-workspace
+.github/
+
+# Test & demo files
+tests/
+http_tests/
+demos/
+
+# CLI dev artifacts (tests, venv, cache)
+cli/.venv/
+cli/.pytest_cache/
+cli/.coverage
+cli/dist/
+cli/test/
+cli/__pycache__/
+cli/planoai/__pycache__/
+
+# Python model server
+archgw_modelserver/
+arch_tools/
+
+# Misc
+*.md
+!cli/README.md
+LICENSE
+turbo.json
+package.json
+*.sh
+!cli/build_cli.sh
+arch_config.yaml_rendered
