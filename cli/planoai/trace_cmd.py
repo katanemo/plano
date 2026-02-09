@@ -591,23 +591,10 @@ def _build_tree(trace: dict[str, Any], console: Console) -> None:
         f"\n[bold]Trace:[/bold] {trace_id} [dim]({total_ms:.0f}ms total)[/dim]\n"
     )
 
-    span_by_id = {s.get("spanId"): s for s in spans if s.get("spanId")}
-    children: dict[str, list[dict[str, Any]]] = {}
-    roots: list[dict[str, Any]] = []
-
-    for span in spans:
-        parent_id = span.get("parentSpanId")
-        if parent_id and parent_id in span_by_id:
-            children.setdefault(parent_id, []).append(span)
-        else:
-            roots.append(span)
-
-    for items in children.values():
-        items.sort(key=lambda s: _span_time_ns(s, "startTimeUnixNano"))
-    roots.sort(key=lambda s: _span_time_ns(s, "startTimeUnixNano"))
+    spans.sort(key=lambda s: _span_time_ns(s, "startTimeUnixNano"))
     tree = Tree("", guide_style="dim")
 
-    def add_node(parent: Tree, span: dict[str, Any]) -> None:
+    for span in spans:
         service = span.get("service", "plano(unknown)")
         name = span.get("name", "")
         offset_ms = max(
@@ -619,19 +606,13 @@ def _build_tree(trace: dict[str, Any], console: Console) -> None:
         if name:
             label.append(f" {name}", style="dim white")
 
-        node = parent.add(label)
+        node = tree.add(label)
         attrs = _attrs(span)
         for key, value in _sorted_attr_items(attrs):
             attr_line = Text()
             attr_line.append(f"{key}: ", style="white")
             attr_line.append(str(value), style=f"{PLANO_COLOR}")
             node.add(attr_line)
-
-        for child in children.get(span.get("spanId"), []):
-            add_node(node, child)
-
-    for root in roots:
-        add_node(tree, root)
 
     console.print(tree)
     console.print()
