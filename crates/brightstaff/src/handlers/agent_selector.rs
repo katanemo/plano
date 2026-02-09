@@ -108,7 +108,6 @@ impl AgentSelector {
         &self,
         messages: &[Message],
         listener: &Listener,
-        trace_parent: Option<String>,
         request_id: Option<String>,
     ) -> Result<Vec<AgentFilterChain>, AgentSelectionError> {
         let agents = listener
@@ -132,7 +131,7 @@ impl AgentSelector {
 
         match self
             .orchestrator_service
-            .determine_orchestration(messages, trace_parent, Some(usage_preferences), request_id)
+            .determine_orchestration(messages, Some(usage_preferences), request_id)
             .await
         {
             Ok(Some(routes)) => {

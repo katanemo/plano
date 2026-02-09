@@ -390,22 +390,6 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                {% if "random_sampling" in arch_tracing and arch_tracing["random_sampling"] > 0 %}
-                generate_request_id: true
-                tracing:
-                  provider:
-                    name: envoy.tracers.opentelemetry
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
-                      grpc_service:
-                        envoy_grpc:
-                          cluster_name: opentelemetry_collector
-                        timeout: 0.250s
-                      service_name: plano(outbound)
-                  random_sampling:
-                    value: {{ arch_tracing.random_sampling }}
-                  operation: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
-                {% endif %}
                 stat_prefix: egress_traffic
                 codec_type: AUTO
                 scheme_header_transformation:
@@ -483,6 +467,22 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                {% if "random_sampling" in arch_tracing and arch_tracing["random_sampling"] > 0 %}
+                generate_request_id: true
+                tracing:
+                  provider:
+                    name: envoy.tracers.opentelemetry
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: opentelemetry_collector
+                        timeout: 0.250s
+                      service_name: plano(outbound)
+                  random_sampling:
+                    value: {{ arch_tracing.random_sampling }}
+                  operation: "%REQ(:METHOD)% %REQ(:AUTHORITY)%%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                {% endif %}
                 stat_prefix: egress_traffic
                 codec_type: AUTO
                 scheme_header_transformation:

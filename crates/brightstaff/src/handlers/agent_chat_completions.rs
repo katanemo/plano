@@ -1,7 +1,7 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use bytes::Bytes;
-use common::consts::TRACE_PARENT_HEADER;
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
@@ -234,12 +234,6 @@ async fn handle_agent_chat_inner(
 
     let message: Vec<OpenAIMessage> = client_request.get_messages();
 
-    // Extract trace parent for routing
-    let traceparent = request_headers
-        .iter()
-        .find(|(key, _)| key.as_str() == TRACE_PARENT_HEADER)
-        .map(|(_, value)| value.to_str().unwrap_or_default().to_string());
-
     let request_id = request_headers
         .get(common::consts::REQUEST_ID_HEADER)
         .and_then(|val| val.to_str().ok())
@@ -253,9 +247,35 @@ async fn handle_agent_chat_inner(
     };
 
     // Select appropriate agents using arch orchestrator llm model
+    let selection_start = Instant::now();
     let selected_agents = agent_selector
-        .select_agents(&message, &listener, traceparent.clone(), request_id.clone())
+        .select_agents(&message, &listener, request_id.clone())
         .await?;
+
+    // Record selection attributes on the current orchestrator span
+    let selection_elapsed_ms = selection_start.elapsed().as_secs_f64() * 1000.0;
+    get_active_span(|span| {
+        span.set_attribute(opentelemetry::KeyValue::new(
+            "selection.listener",
+            listener.name.clone(),
+        ));
+        span.set_attribute(opentelemetry::KeyValue::new(
+            "selection.agent_count",
+            selected_agents.len() as i64,
+        ));
+        span.set_attribute(opentelemetry::KeyValue::new(
+            "selection.agents",
+            selected_agents
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+        ));
+        span.set_attribute(opentelemetry::KeyValue::new(
+            "selection.determination_ms",
+            format!("{:.2}", selection_elapsed_ms),
+        ));
+    });
 
     info!(
         count = selected_agents.len(),
@@ -267,17 +287,16 @@ async fn handle_agent_chat_inner(
     let agent_count = selected_agents.len();
 
     for (agent_index, selected_agent) in selected_agents.iter().enumerate() {
+        // Get agent name
+        let agent_name = selected_agent.id.clone();
         let is_last_agent = agent_index == agent_count - 1;
 
         debug!(
             agent_index = agent_index + 1,
             total = agent_count,
-            agent = %selected_agent.id,
+            agent = %agent_name,
             "processing agent"
         );
-
-        // Get agent name
-        let agent_name = selected_agent.id.clone();
 
         // Process the filter chain
         let chat_history = pipeline_processor
@@ -294,14 +313,29 @@ async fn handle_agent_chat_inner(
 
         debug!(agent = %agent_name, "invoking agent");
 
-        let llm_response = pipeline_processor
-            .invoke_agent(
-                &chat_history,
-                client_request.clone(),
-                agent,
-                &request_headers,
-            )
-            .await?;
+        let agent_span = info_span!(
+            "agent",
+            agent_id = %agent_name,
+            message_count = chat_history.len(),
+        );
+
+        let llm_response = async {
+            set_service_name(operation_component::AGENT);
+            get_active_span(|span| {
+                span.update_name(format!("{} /v1/chat/completions", agent_name));
+            });
+
+            pipeline_processor
+                .invoke_agent(
+                    &chat_history,
+                    client_request.clone(),
+                    agent,
+                    &request_headers,
+                )
+                .await
+        }
+        .instrument(agent_span.clone())
+        .await?;
 
         // If this is the last agent, return the streaming response
         if is_last_agent {
@@ -309,15 +343,28 @@ async fn handle_agent_chat_inner(
                 agent = %agent_name,
                 "completed agent chain, returning response"
             );
-            return response_handler
-                .create_streaming_response(llm_response)
-                .await
-                .map_err(AgentFilterChainError::from);
+            // Capture the orchestrator span (parent of the agent span) so it
+            // stays open for the full streaming duration alongside the agent span.
+            let orchestrator_span = tracing::Span::current();
+            return async {
+                response_handler
+                    .create_streaming_response(
+                        llm_response,
+                        tracing::Span::current(), // agent span (inner)
+                        orchestrator_span,        // orchestrator span (outer)
+                    )
+                    .await
+                    .map_err(AgentFilterChainError::from)
+            }
+            .instrument(agent_span)
+            .await;
         }
 
         // For intermediate agents, collect the full response and pass to next agent
         debug!(agent = %agent_name, "collecting response from intermediate agent");
-        let response_text = response_handler.collect_full_response(llm_response).await?;
+        let response_text = async { response_handler.collect_full_response(llm_response).await }
+            .instrument(agent_span)
+            .await?;
 
         info!(
             agent = %agent_name,

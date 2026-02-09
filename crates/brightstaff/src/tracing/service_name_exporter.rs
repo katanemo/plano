@@ -47,10 +47,21 @@ const ALL_SERVICE_NAMES: &[&str] = &[
     operation_component::INBOUND,
     operation_component::ROUTING,
     operation_component::ORCHESTRATOR,
-    operation_component::HANDOFF,
     operation_component::AGENT_FILTER,
     operation_component::AGENT,
     operation_component::LLM,
+];
+
+/// Span attribute keys to remove before export.
+const FILTERED_ATTR_KEYS: &[&str] = &[
+    "busy_ns",
+    "idle_ns",
+    "thread.id",
+    "thread.name",
+    "code.file.path",
+    "code.line.number",
+    "code.module.name",
+    "target",
 ];
 
 /// A SpanExporter that supports per-span `service.name` overrides.
@@ -114,6 +125,11 @@ impl SpanExporter for ServiceNameOverrideExporter {
         let mut spans_by_service: HashMap<String, Vec<SpanData>> = HashMap::new();
 
         for span in batch {
+            let mut span = span;
+
+            span.attributes
+                .retain(|kv| !FILTERED_ATTR_KEYS.contains(&kv.key.as_str()));
+
             let service_name = span
                 .attributes
                 .iter()

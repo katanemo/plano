@@ -9,7 +9,6 @@ use hermesllm::{ProviderRequest, ProviderRequestType};
 use hyper::header::HeaderMap;
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
-use opentelemetry::trace::get_active_span;
 use tracing::{debug, info, instrument, warn};
 
 use crate::handlers::jsonrpc::{
@@ -620,13 +619,8 @@ impl PipelineProcessor {
     }
 
     /// Send request to terminal agent and return the raw response for streaming
-    #[instrument(
-        skip(self, messages, original_request, terminal_agent, request_headers),
-        fields(
-            agent_id = %terminal_agent.id,
-            message_count = messages.len()
-        )
-    )]
+    /// Note: The caller is responsible for creating the plano(agent) span that wraps
+    /// both this call and the subsequent response consumption.
     pub async fn invoke_agent(
         &self,
         messages: &[Message],
@@ -634,17 +628,10 @@ impl PipelineProcessor {
         terminal_agent: &Agent,
         request_headers: &HeaderMap,
     ) -> Result<reqwest::Response, PipelineError> {
-        // Set service name for agent invocation span
-        set_service_name(operation_component::AGENT);
-
         // let mut request = original_request.clone();
         original_request.set_messages(messages);
 
         let request_url = "/v1/chat/completions";
-
-        get_active_span(|span| {
-            span.update_name(format!("{} {}", terminal_agent.id, request_url));
-        });
 
         let request_body = ProviderRequestType::to_bytes(&original_request).unwrap();
         // let request_body = serde_json::to_string(&request)?;

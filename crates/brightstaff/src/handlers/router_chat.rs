@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::router::llm_router::RouterService;
+use crate::tracing::routing;
 
 pub struct RoutingResult {
     pub model_name: String,
@@ -114,8 +115,7 @@ pub async fn router_chat_get_upstream_model(
     );
 
     // Capture start time for routing span
-    let _routing_start_time = std::time::Instant::now();
-    let _routing_start_system_time = std::time::SystemTime::now();
+    let routing_start_time = std::time::Instant::now();
 
     // Attempt to determine route using the router service
     let routing_result = router_service
@@ -127,12 +127,20 @@ pub async fn router_chat_get_upstream_model(
         )
         .await;
 
+    let determination_ms = routing_start_time.elapsed().as_millis() as i64;
+    let current_span = tracing::Span::current();
+    current_span.record(routing::ROUTE_DETERMINATION_MS, determination_ms);
+
     match routing_result {
         Ok(route) => match route {
-            Some((_, model_name)) => Ok(RoutingResult { model_name }),
+            Some((_, model_name)) => {
+                current_span.record("route.selected_model", model_name.as_str());
+                Ok(RoutingResult { model_name })
+            }
             None => {
                 // No route determined, return sentinel value "none"
                 // This signals to llm.rs to use the original validated request model
+                current_span.record("route.selected_model", "none");
                 info!("no route determined, using default model");
 
                 Ok(RoutingResult {
@@ -140,9 +148,12 @@ pub async fn router_chat_get_upstream_model(
                 })
             }
         },
-        Err(err) => Err(RoutingError::internal_error(format!(
-            "Failed to determine route: {}",
-            err
-        ))),
+        Err(err) => {
+            current_span.record("route.selected_model", "unknown");
+            Err(RoutingError::internal_error(format!(
+                "Failed to determine route: {}",
+                err
+            )))
+        }
     }
 }

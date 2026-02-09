@@ -12,6 +12,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::header::{self};
 use hyper::{Request, Response, StatusCode};
 use opentelemetry::trace::get_active_span;
+use opentelemetry::{global, propagation::Injector};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -32,6 +33,19 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
         .map_err(|never| match never {})
         .boxed()
+}
+
+/// Adapter to inject OpenTelemetry trace context into Hyper HeaderMap
+struct HeaderMapInjector<'a>(&'a mut header::HeaderMap);
+
+impl<'a> Injector for HeaderMapInjector<'a> {
+    fn set(&mut self, key: &str, value: String) {
+        if let Ok(name) = header::HeaderName::from_bytes(key.as_bytes()) {
+            if let Ok(val) = header::HeaderValue::from_str(&value) {
+                self.0.insert(name, val);
+            }
+        }
+    }
 }
 
 pub async fn llm_chat(
@@ -60,9 +74,6 @@ pub async fn llm_chat(
         request_id = %request_id,
         http.method = %request.method(),
         http.path = %request_path,
-        model.requested = tracing::field::Empty,
-        model.alias_resolved = tracing::field::Empty,
-        model.routing_resolved = tracing::field::Empty
     );
 
     // Execute the rest of the handler inside the span
@@ -154,10 +165,6 @@ async fn llm_chat_inner(
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
 
-    // Record model information in span
-    tracing::Span::current().record("model.requested", model_from_request.as_str());
-    tracing::Span::current().record("model.alias_resolved", alias_resolved_model.as_str());
-
     // Validate that the requested model exists in configuration
     // This matches the validation in llm_gateway routing.rs
     if llm_providers
@@ -191,7 +198,7 @@ async fn llm_chat_inner(
         .map(|msg| truncate_message(&msg, 50));
 
     // Extract messages for signal analysis (clone before moving client_request)
-    let messages_for_signals = client_request.get_messages();
+    let messages_for_signals = Some(client_request.get_messages());
 
     // Set the model to just the model name (without provider prefix)
     // This ensures upstream receives "gpt-4" not "openai/gpt-4"
@@ -283,13 +290,29 @@ async fn llm_chat_inner(
     let client_request_bytes_for_upstream = ProviderRequestType::to_bytes(&client_request).unwrap();
 
     // Determine routing using the dedicated router_chat module
-    let routing_result = match router_chat_get_upstream_model(
-        router_service,
-        client_request, // Pass the original request - router_chat will convert it
-        &traceparent,
-        &request_path,
-        &request_id,
-    )
+    // This gets its own span for latency and error tracking
+    let routing_span = info_span!(
+        "routing",
+        component = "routing",
+        http.method = "POST",
+        http.target = %request_path,
+        model.requested = %model_from_request,
+        model.alias_resolved = %alias_resolved_model,
+        route.selected_model = tracing::field::Empty,
+        routing.determination_ms = tracing::field::Empty,
+    );
+    let routing_result = match async {
+        set_service_name(operation_component::ROUTING);
+        router_chat_get_upstream_model(
+            router_service,
+            client_request, // Pass the original request - router_chat will convert it
+            &traceparent,
+            &request_path,
+            &request_id,
+        )
+        .await
+    }
+    .instrument(routing_span)
     .await
     {
         Ok(result) => result,
@@ -310,9 +333,6 @@ async fn llm_chat_inner(
         // Router returned "none" sentinel, use validated resolved_model from request
         alias_resolved_model.clone()
     };
-
-    // Record the routed model in span
-    tracing::Span::current().record("model.routing_resolved", resolved_model.as_str());
 
     let span_name = if model_from_request == resolved_model {
         format!("POST {} {}", request_path, resolved_model)
@@ -345,12 +365,18 @@ async fn llm_chat_inner(
     // remove content-length header if it exists
     request_headers.remove(header::CONTENT_LENGTH);
 
+    // Inject current LLM span's trace context so upstream spans are children of plano(llm)
+    global::get_text_map_propagator(|propagator| {
+        let cx = tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
+        propagator.inject_context(&cx, &mut HeaderMapInjector(&mut request_headers));
+    });
+
     // Capture start time right before sending request to upstream
     let request_start_time = std::time::Instant::now();
     let _request_start_system_time = std::time::SystemTime::now();
 
     let llm_response = match reqwest::Client::new()
-        .post(full_qualified_llm_provider_url)
+        .post(&full_qualified_llm_provider_url)
         .headers(request_headers)
         .body(client_request_bytes_for_upstream)
         .send()
@@ -382,7 +408,7 @@ async fn llm_chat_inner(
         operation_component::LLM,
         span_name,
         request_start_time,
-        Some(messages_for_signals),
+        messages_for_signals,
     );
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===

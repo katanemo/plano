@@ -2,19 +2,30 @@ use std::{collections::HashMap, sync::Arc};
 
 use common::{
     configuration::{AgentUsagePreference, OrchestrationPreference},
-    consts::{
-        ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME, REQUEST_ID_HEADER,
-        TRACE_PARENT_HEADER,
-    },
+    consts::{ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME, REQUEST_ID_HEADER},
 };
 use hermesllm::apis::openai::{ChatCompletionsResponse, Message};
 use hyper::header;
+use opentelemetry::{global, propagation::Injector};
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
 use crate::router::orchestrator_model_v1::{self};
 
 use super::orchestrator_model::OrchestratorModel;
+
+/// Adapter to inject OpenTelemetry trace context into Hyper HeaderMap
+struct HeaderMapInjector<'a>(&'a mut header::HeaderMap);
+
+impl<'a> Injector for HeaderMapInjector<'a> {
+    fn set(&mut self, key: &str, value: String) {
+        if let Ok(header_name) = header::HeaderName::from_bytes(key.as_bytes()) {
+            if let Ok(header_value) = header::HeaderValue::from_str(&value) {
+                self.0.insert(header_name, header_value);
+            }
+        }
+    }
+}
 
 pub struct OrchestratorService {
     orchestrator_url: String,
@@ -57,7 +68,6 @@ impl OrchestratorService {
     pub async fn determine_orchestration(
         &self,
         messages: &[Message],
-        trace_parent: Option<String>,
         usage_preferences: Option<Vec<AgentUsagePreference>>,
         request_id: Option<String>,
     ) -> Result<Option<Vec<(String, String)>>> {
@@ -96,12 +106,15 @@ impl OrchestratorService {
             header::HeaderValue::from_str(PLANO_ORCHESTRATOR_MODEL_NAME).unwrap(),
         );
 
-        if let Some(trace_parent) = trace_parent {
-            orchestration_request_headers.insert(
-                header::HeaderName::from_static(TRACE_PARENT_HEADER),
-                header::HeaderValue::from_str(&trace_parent).unwrap(),
+        // Inject OpenTelemetry trace context from current span
+        global::get_text_map_propagator(|propagator| {
+            let cx =
+                tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
+            propagator.inject_context(
+                &cx,
+                &mut HeaderMapInjector(&mut orchestration_request_headers),
             );
-        }
+        });
 
         if let Some(request_id) = request_id {
             orchestration_request_headers.insert(

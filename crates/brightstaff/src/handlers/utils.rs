@@ -12,7 +12,7 @@ use tracing::{info, warn, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
-use crate::tracing::{set_service_name, signals as signal_constants};
+use crate::tracing::{llm, set_service_name, signals as signal_constants};
 use hermesllm::apis::openai::Message;
 
 /// Trait for processing streaming chunks
@@ -92,6 +92,18 @@ impl StreamProcessor for ObservableStreamProcessor {
     }
 
     fn on_complete(&mut self) {
+        // Record time-to-first-token as an OTel span attribute + event (streaming only)
+        if let Some(ttft) = self.time_to_first_token {
+            let span = tracing::Span::current();
+            let otel_context = span.context();
+            let otel_span = otel_context.span();
+            otel_span.set_attribute(KeyValue::new(llm::TIME_TO_FIRST_TOKEN_MS, ttft as i64));
+            otel_span.add_event(
+                llm::TIME_TO_FIRST_TOKEN_MS,
+                vec![KeyValue::new(llm::TIME_TO_FIRST_TOKEN_MS, ttft as i64)],
+            );
+        }
+
         // Analyze signals if messages are available and record as span attributes
         if let Some(ref messages) = self.messages {
             let analyzer: Box<dyn SignalAnalyzer> = Box::new(TextBasedSignalAnalyzer::new());

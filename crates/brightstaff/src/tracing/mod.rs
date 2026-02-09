@@ -6,13 +6,12 @@ pub use constants::{
 };
 pub use service_name_exporter::{ServiceNameOverrideExporter, SERVICE_NAME_OVERRIDE_KEY};
 
-use opentelemetry::trace::TraceContextExt;
+use opentelemetry::trace::get_active_span;
 use opentelemetry::KeyValue;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-/// Sets the service name override on the current tracing span.
+/// Sets the service name override on the current active OpenTelemetry span.
 ///
-/// This function adds the `service.name.override` attribute to the underlying
+/// This function adds the `service.name.override` attribute to the active
 /// OpenTelemetry span, which allows observability backends to filter and group
 /// spans by their logical service (e.g., `plano(llm)`, `plano(filter)`).
 ///
@@ -27,28 +26,10 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 /// set_service_name(operation_component::LLM);
 /// ```
 pub fn set_service_name(service_name: &str) {
-    let span = tracing::Span::current();
-    let otel_context = span.context();
-    let otel_span = otel_context.span();
-    otel_span.set_attribute(KeyValue::new(
-        SERVICE_NAME_OVERRIDE_KEY,
-        service_name.to_string(),
-    ));
-}
-
-/// Sets the service name override on the given tracing span.
-///
-/// Use this when you have a specific span reference and want to set
-/// the service name override attribute on it.
-///
-/// # Arguments
-/// * `span` - The tracing span to set the service name on
-/// * `service_name` - The service name to use (e.g., `operation_component::LLM`)
-pub fn set_service_name_on_span(span: &tracing::Span, service_name: &str) {
-    let otel_context = span.context();
-    let otel_span = otel_context.span();
-    otel_span.set_attribute(KeyValue::new(
-        SERVICE_NAME_OVERRIDE_KEY,
-        service_name.to_string(),
-    ));
+    get_active_span(|span| {
+        span.set_attribute(KeyValue::new(
+            SERVICE_NAME_OVERRIDE_KEY,
+            service_name.to_string(),
+        ));
+    });
 }
