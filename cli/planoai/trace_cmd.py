@@ -539,7 +539,9 @@ def _trace_summary(trace: dict[str, Any]) -> TraceSummary:
 def _service_color(service: str) -> str:
     service = service.lower()
     if "inbound" in service:
-        return "grey50"
+        return "white"
+    if "outbound" in service:
+        return "white"
     if "orchestrator" in service:
         return PLANO_COLOR
     if "routing" in service:
@@ -608,10 +610,13 @@ def _build_tree(trace: dict[str, Any], console: Console) -> None:
 
         node = tree.add(label)
         attrs = _attrs(span)
-        for key, value in _sorted_attr_items(attrs):
+        sorted_items = list(_sorted_attr_items(attrs))
+        for idx, (key, value) in enumerate(sorted_items):
             attr_line = Text()
             attr_line.append(f"{key}: ", style="white")
             attr_line.append(str(value), style=f"{PLANO_COLOR}")
+            if idx == len(sorted_items) - 1:
+                attr_line.append("\n")
             node.add(attr_line)
 
     console.print(tree)
