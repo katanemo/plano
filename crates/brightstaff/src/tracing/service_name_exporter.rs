@@ -124,11 +124,15 @@ impl SpanExporter for ServiceNameOverrideExporter {
         // Group spans by their effective service name
         let mut spans_by_service: HashMap<String, Vec<SpanData>> = HashMap::new();
 
+        let should_filter = !tracing::enabled!(tracing::Level::DEBUG);
+
         for span in batch {
             let mut span = span;
 
-            span.attributes
-                .retain(|kv| !FILTERED_ATTR_KEYS.contains(&kv.key.as_str()));
+            if should_filter {
+                span.attributes
+                    .retain(|kv| !FILTERED_ATTR_KEYS.contains(&kv.key.as_str()));
+            }
 
             let service_name = span
                 .attributes
