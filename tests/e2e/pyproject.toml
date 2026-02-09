@@ -13,6 +13,7 @@ dependencies = [
     "pytest-sugar>=1.0.0",
     "deepdiff>=8.0.1",
     "pytest-retry>=1.6.3",
+    "pytest-xdist>=3.5.0",
     "anthropic>=0.66.0",
     "openai>=1.0.0",
 ]

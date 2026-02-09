@@ -3,52 +3,94 @@ name: e2e tests
 on:
   push:
     branches:
-      - main  # Run tests on pushes to the main branch
+      - main
   pull_request:
 
-jobs:
-  e2e_tests:
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
 
+# Shared env vars for all jobs that run tests
+env:
+  PLANO_DOCKER_IMAGE: katanemo/plano:e2e
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build the Docker image once, with cache
+  # ──────────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-
-      # --- Disk inspection & cleanup section (added to free space on GitHub runner) ---
-      - name: Check disk usage before cleanup
-        run: |
-          echo "=== Disk usage before cleanup ==="
-          df -h
-          echo "=== Repo size ==="
-          du -sh .
+        uses: actions/checkout@v4
 
       - name: Free disk space on runner
         run: |
-          echo "=== Cleaning preinstalled SDKs and toolchains to free space ==="
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          # If you still hit disk issues, uncomment this to free more space.
-          # It just removes cached tool versions; setup-python will re-download what it needs.
-          # sudo rm -rf /opt/hostedtoolcache || true
-
-          echo "=== Docker cleanup (before our builds/compose) ==="
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           docker system prune -af || true
           docker volume prune -f || true
 
-          echo "=== Disk usage after cleanup ==="
-          df -h
-      # --- End disk cleanup section ---
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build plano image (with GHA cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: ${{ env.PLANO_DOCKER_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save image as artifact
+        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} -o /tmp/plano-image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp/plano-image.tar
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Job 2a: prompt_gateway tests
+  # ──────────────────────────────────────────────
+  test-prompt-gateway:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/uv.lock
 
-      - name: Run e2e tests
+      - name: Run prompt_gateway tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
@@ -56,7 +98,106 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
           AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
-          GROK_API_KEY : ${{ secrets.GROK_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         run: |
-          python -mvenv venv
-          source venv/bin/activate && cd tests/e2e && bash run_e2e_tests.sh
+          cd tests/e2e && bash run_prompt_gateway_tests.sh
+
+  # ──────────────────────────────────────────────
+  # Job 2b: model_alias_routing + responses API tests
+  # ──────────────────────────────────────────────
+  test-model-alias-routing:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/uv.lock
+
+      - name: Run model alias routing tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+        run: |
+          cd tests/e2e && bash run_model_alias_tests.sh
+
+  # ──────────────────────────────────────────────
+  # Job 2c: responses API with state storage tests
+  # ──────────────────────────────────────────────
+  test-responses-api-with-state:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/uv.lock
+
+      - name: Run responses API with state tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+        run: |
+          cd tests/e2e && bash run_responses_state_tests.sh
