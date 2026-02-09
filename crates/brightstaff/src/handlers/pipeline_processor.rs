@@ -8,7 +8,7 @@ use hermesllm::apis::openai::Message;
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use hyper::header::HeaderMap;
 use opentelemetry::global;
-use opentelemetry::propagation::Injector;
+use opentelemetry_http::HeaderInjector;
 use tracing::{debug, info, instrument, warn};
 
 use crate::handlers::jsonrpc::{
@@ -49,19 +49,6 @@ pub enum PipelineError {
         status: u16,
         body: String,
     },
-}
-
-/// Adapter to inject OpenTelemetry trace context into Hyper HeaderMap
-struct HeaderMapInjector<'a>(&'a mut HeaderMap);
-
-impl<'a> Injector for HeaderMapInjector<'a> {
-    fn set(&mut self, key: &str, value: String) {
-        if let Ok(header_name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
-            if let Ok(header_value) = hyper::header::HeaderValue::from_str(&value) {
-                self.0.insert(header_name, header_value);
-            }
-        }
-    }
 }
 
 /// Service for processing agent pipelines
@@ -169,7 +156,7 @@ impl PipelineProcessor {
         global::get_text_map_propagator(|propagator| {
             let cx =
                 tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderMapInjector(&mut headers));
+            propagator.inject_context(&cx, &mut HeaderInjector(&mut headers));
         });
 
         headers.insert(
@@ -546,7 +533,7 @@ impl PipelineProcessor {
         global::get_text_map_propagator(|propagator| {
             let cx =
                 tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderMapInjector(&mut agent_headers));
+            propagator.inject_context(&cx, &mut HeaderInjector(&mut agent_headers));
         });
 
         agent_headers.insert(
@@ -645,7 +632,7 @@ impl PipelineProcessor {
         global::get_text_map_propagator(|propagator| {
             let cx =
                 tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderMapInjector(&mut agent_headers));
+            propagator.inject_context(&cx, &mut HeaderInjector(&mut agent_headers));
         });
 
         agent_headers.insert(

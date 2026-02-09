@@ -11,8 +11,9 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::header::{self};
 use hyper::{Request, Response, StatusCode};
+use opentelemetry::global;
 use opentelemetry::trace::get_active_span;
-use opentelemetry::{global, propagation::Injector};
+use opentelemetry_http::HeaderInjector;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -33,19 +34,6 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
         .map_err(|never| match never {})
         .boxed()
-}
-
-/// Adapter to inject OpenTelemetry trace context into Hyper HeaderMap
-struct HeaderMapInjector<'a>(&'a mut header::HeaderMap);
-
-impl<'a> Injector for HeaderMapInjector<'a> {
-    fn set(&mut self, key: &str, value: String) {
-        if let Ok(name) = header::HeaderName::from_bytes(key.as_bytes()) {
-            if let Ok(val) = header::HeaderValue::from_str(&value) {
-                self.0.insert(name, val);
-            }
-        }
-    }
 }
 
 pub async fn llm_chat(
@@ -368,7 +356,7 @@ async fn llm_chat_inner(
     // Inject current LLM span's trace context so upstream spans are children of plano(llm)
     global::get_text_map_propagator(|propagator| {
         let cx = tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-        propagator.inject_context(&cx, &mut HeaderMapInjector(&mut request_headers));
+        propagator.inject_context(&cx, &mut HeaderInjector(&mut request_headers));
     });
 
     // Capture start time right before sending request to upstream
