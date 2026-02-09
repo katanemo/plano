@@ -80,7 +80,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/pyproject.toml
 
       - name: Run prompt_gateway tests
         env:
@@ -125,7 +130,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/pyproject.toml
 
       - name: Run model alias routing tests
         env:
@@ -170,7 +180,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/pyproject.toml
 
       - name: Run responses API with state tests
         env:
