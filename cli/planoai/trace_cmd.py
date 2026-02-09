@@ -553,11 +553,36 @@ def _service_color(service: str) -> str:
     return "white"
 
 
+# Attributes to show for inbound/outbound spans when not verbose (trimmed view).
+_INBOUND_OUTBOUND_ATTR_KEYS = (
+    "http.method",
+    "http.target",
+    "http.status_code",
+    "url.scheme",
+    "guid:x-request-id",
+    "request_size",
+    "response_size",
+)
+
+
+def _trim_attrs_for_display(
+    attrs: dict[str, str], service: str, verbose: bool
+) -> dict[str, str]:
+    if verbose:
+        return attrs
+    if "inbound" in service.lower() or "outbound" in service.lower():
+        attrs = {k: v for k, v in attrs.items() if k in _INBOUND_OUTBOUND_ATTR_KEYS}
+    return {k: v for k, v in attrs.items() if k != "service.name.override"}
+
+
 def _sorted_attr_items(attrs: dict[str, str]) -> list[tuple[str, str]]:
     priority = [
         "http.method",
         "http.target",
         "http.status_code",
+        "guid:x-request-id",
+        "request_size",
+        "response_size",
         "routing.determination_ms",
         "route.selected_model",
         "selection.agents",
@@ -578,7 +603,7 @@ def _sorted_attr_items(attrs: dict[str, str]) -> list[tuple[str, str]]:
     return prioritized + remaining
 
 
-def _build_tree(trace: dict[str, Any], console: Console) -> None:
+def _build_tree(trace: dict[str, Any], console: Console, verbose: bool = False) -> None:
     spans = trace.get("spans", [])
     if not spans:
         console.print("[yellow]No spans found for this trace.[/yellow]")
@@ -609,7 +634,7 @@ def _build_tree(trace: dict[str, Any], console: Console) -> None:
             label.append(f" {name}", style="dim white")
 
         node = tree.add(label)
-        attrs = _attrs(span)
+        attrs = _trim_attrs_for_display(_attrs(span), service, verbose)
         sorted_items = list(_sorted_attr_items(attrs))
         for idx, (key, value) in enumerate(sorted_items):
             attr_line = Text()
@@ -694,6 +719,12 @@ def _select_request(
 @click.option("--limit", type=int, default=None, help="Limit results.")
 @click.option("--since", default=None, help="Look back window (e.g. 5m, 2h, 1d).")
 @click.option("--json", "json_out", is_flag=True, help="Output raw JSON.")
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show all span attributes; default trims inbound/outbound to a few keys.",
+)
 def _run_trace_show(
     target,
     filter_patterns,
@@ -703,6 +734,7 @@ def _run_trace_show(
     limit,
     since,
     json_out,
+    verbose,
 ):
     """Trace requests from the local OTLP listener."""
     console = Console()
@@ -792,7 +824,7 @@ def _run_trace_show(
         if traces and console.is_terminal and not no_interactive:
             selected = _select_request(console, traces)
             if selected:
-                _build_tree(selected, console)
+                _build_tree(selected, console, verbose=verbose)
             return
 
         if traces:
@@ -812,7 +844,7 @@ def _run_trace_show(
         return
 
     trace_obj = traces[0]
-    _build_tree(trace_obj, console)
+    _build_tree(trace_obj, console, verbose=verbose)
 
 
 @click.group(invoke_without_command=True)
@@ -838,6 +870,12 @@ def _run_trace_show(
 @click.option("--limit", type=int, default=None, help="Limit results.")
 @click.option("--since", default=None, help="Look back window (e.g. 5m, 2h, 1d).")
 @click.option("--json", "json_out", is_flag=True, help="Output raw JSON.")
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show all span attributes; default trims inbound/outbound to a few keys.",
+)
 @click.pass_context
 def trace(
     ctx,
@@ -849,6 +887,7 @@ def trace(
     limit,
     since,
     json_out,
+    verbose,
 ):
     """Trace requests from the local OTLP listener."""
     if ctx.invoked_subcommand:
@@ -862,6 +901,7 @@ def trace(
             limit,
             since,
             json_out,
+            verbose,
         ]
     ):
         _start_trace_listener("0.0.0.0", DEFAULT_GRPC_PORT)
@@ -875,6 +915,7 @@ def trace(
         limit,
         since,
         json_out,
+        verbose,
     )
 
 
