@@ -100,23 +100,6 @@ pub trait StateStorage: Send + Sync {
     }
 }
 
-/// Storage backend type enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StorageBackend {
-    Memory,
-    Supabase,
-}
-
-impl StorageBackend {
-    pub fn parse_backend(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "memory" => Some(StorageBackend::Memory),
-            "supabase" => Some(StorageBackend::Supabase),
-            _ => None,
-        }
-    }
-}
-
 // === Utility functions for state management ===
 
 /// Extract input items from InputParam, converting text to structured format

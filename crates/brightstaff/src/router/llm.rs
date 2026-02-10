@@ -4,14 +4,15 @@ use common::{
     configuration::{LlmProvider, ModelUsagePreference, RoutingPreference},
     consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER},
 };
-use hermesllm::apis::openai::{ChatCompletionsResponse, Message};
+use hermesllm::apis::openai::Message;
 use hyper::header;
 use thiserror::Error;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use crate::router::router_model_v1::{self};
-
+use super::http::{self, post_and_extract_content};
 use super::router_model::RouterModel;
+
+use crate::router::router_model_v1;
 
 pub struct RouterService {
     router_url: String,
@@ -24,11 +25,8 @@ pub struct RouterService {
 
 #[derive(Debug, Error)]
 pub enum RoutingError {
-    #[error("Failed to send request: {0}")]
-    RequestError(#[from] reqwest::Error),
-
-    #[error("Failed to parse JSON: {0}, JSON: {1}")]
-    JsonError(serde_json::Error, String),
+    #[error(transparent)]
+    Http(#[from] http::HttpError),
 
     #[error("Router model error: {0}")]
     RouterModelError(#[from] super::router_model::RoutingModelError),
@@ -101,87 +99,48 @@ impl RouterService {
             "sending request to arch-router"
         );
 
-        debug!(
-            body = %serde_json::to_string(&router_request).unwrap(),
-            "arch router request"
-        );
+        let body = serde_json::to_string(&router_request).unwrap();
+        debug!(body = %body, "arch router request");
 
-        let mut llm_route_request_headers = header::HeaderMap::new();
-        llm_route_request_headers.insert(
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
         );
-
-        llm_route_request_headers.insert(
+        headers.insert(
             header::HeaderName::from_static(ARCH_PROVIDER_HINT_HEADER),
             header::HeaderValue::from_str(&self.routing_provider_name).unwrap(),
         );
-
-        llm_route_request_headers.insert(
+        headers.insert(
             header::HeaderName::from_static(TRACE_PARENT_HEADER),
             header::HeaderValue::from_str(traceparent).unwrap(),
         );
-
-        llm_route_request_headers.insert(
+        headers.insert(
             header::HeaderName::from_static(REQUEST_ID_HEADER),
             header::HeaderValue::from_str(request_id).unwrap(),
         );
-
-        llm_route_request_headers.insert(
+        headers.insert(
             header::HeaderName::from_static("model"),
             header::HeaderValue::from_static("arch-router"),
         );
 
-        let start_time = std::time::Instant::now();
-        let res = self
-            .client
-            .post(&self.router_url)
-            .headers(llm_route_request_headers)
-            .body(serde_json::to_string(&router_request).unwrap())
-            .send()
-            .await?;
-
-        let body = res.text().await?;
-        let router_response_time = start_time.elapsed();
-
-        let chat_completion_response: ChatCompletionsResponse = match serde_json::from_str(&body) {
-            Ok(response) => response,
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    body = %serde_json::to_string(&body).unwrap(),
-                    "failed to parse json response"
-                );
-                return Err(RoutingError::JsonError(
-                    err,
-                    format!("Failed to parse JSON: {}", body),
-                ));
-            }
+        let Some((content, elapsed)) =
+            post_and_extract_content(&self.client, &self.router_url, headers, body).await?
+        else {
+            return Ok(None);
         };
 
-        if chat_completion_response.choices.is_empty() {
-            warn!(body = %body, "no choices in router response");
-            return Ok(None);
-        }
+        let parsed = self
+            .router_model
+            .parse_response(&content, &usage_preferences)?;
 
-        if let Some(content) = &chat_completion_response.choices[0].message.content {
-            let parsed_response = self
-                .router_model
-                .parse_response(content, &usage_preferences)?;
-            info!(
-                content = %content.replace("\n", "\\n"),
-                selected_model = ?parsed_response,
-                response_time_ms = router_response_time.as_millis(),
-                "arch-router determined route"
-            );
+        info!(
+            content = %content.replace("\n", "\\n"),
+            selected_model = ?parsed,
+            response_time_ms = elapsed.as_millis(),
+            "arch-router determined route"
+        );
 
-            if let Some(ref parsed_response) = parsed_response {
-                return Ok(Some(parsed_response.clone()));
-            }
-
-            Ok(None)
-        } else {
-            Ok(None)
-        }
+        Ok(parsed)
     }
 }

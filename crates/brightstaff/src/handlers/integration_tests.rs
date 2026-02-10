@@ -3,12 +3,11 @@ use std::sync::Arc;
 use hermesllm::apis::openai::{ChatCompletionsRequest, Message, MessageContent, Role};
 use hyper::header::HeaderMap;
 
-use crate::handlers::agent_selector::{AgentSelectionError, AgentSelector};
-use crate::handlers::pipeline_processor::PipelineProcessor;
-use crate::router::plano_orchestrator::OrchestratorService;
-use common::errors::BrightStaffError;
-use http_body_util::BodyExt;
-use hyper::StatusCode;
+use crate::handlers::agents::pipeline::PipelineProcessor;
+use crate::handlers::agents::selector::{AgentSelectionError, AgentSelector};
+use crate::handlers::response::ResponseHandler;
+use crate::router::orchestrator::OrchestratorService;
+
 /// Integration test that demonstrates the modular agent chat flow
 /// This test shows how the three main components work together:
 /// 1. AgentSelector - selects the appropriate agents based on orchestration
@@ -129,24 +128,8 @@ mod tests {
         }
 
         // Test 4: Error Response Creation
-        let err = BrightStaffError::ModelNotFound("gpt-5-secret".to_string());
-        let response = err.into_response();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-        // Helper to extract body as JSON
-        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-
-        assert_eq!(body["error"]["code"], "ModelNotFound");
-        assert_eq!(
-            body["error"]["details"]["rejected_model_id"],
-            "gpt-5-secret"
-        );
-        assert!(body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("gpt-5-secret"));
+        let error_response = ResponseHandler::create_bad_request("Test error");
+        assert_eq!(error_response.status(), hyper::StatusCode::BAD_REQUEST);
 
         println!("✅ All modular components working correctly!");
     }
@@ -165,21 +148,12 @@ mod tests {
             AgentSelectionError::ListenerNotFound(_)
         ));
 
-        let technical_reason = "Database connection timed out";
-        let err = BrightStaffError::InternalServerError(technical_reason.to_string());
-
-        let response = err.into_response();
-
-        // --- 1. EXTRACT BYTES ---
-        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
-
-        // --- 2. DECLARE body_json HERE ---
-        let body_json: serde_json::Value =
-            serde_json::from_slice(&body_bytes).expect("Failed to parse JSON body");
-
-        // --- 3. USE body_json ---
-        assert_eq!(body_json["error"]["code"], "InternalServerError");
-        assert_eq!(body_json["error"]["details"]["reason"], technical_reason);
+        // Test error response creation
+        let error_response = ResponseHandler::create_internal_error("Pipeline failed");
+        assert_eq!(
+            error_response.status(),
+            hyper::StatusCode::INTERNAL_SERVER_ERROR
+        );
 
         println!("✅ Error handling working correctly!");
     }

@@ -2,36 +2,34 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use bytes::Bytes;
-use common::configuration::SpanAttributes;
-use common::errors::BrightStaffError;
-use common::llm_providers::LlmProviders;
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
 use hermesllm::ProviderRequestType;
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
-use hyper::{Request, Response, StatusCode};
+use hyper::{Request, Response};
 use opentelemetry::trace::get_active_span;
 use serde::ser::Error as SerError;
-use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
 
-use super::agent_selector::{AgentSelectionError, AgentSelector};
-use super::pipeline_processor::{PipelineError, PipelineProcessor};
-use super::response_handler::ResponseHandler;
-use crate::router::plano_orchestrator::OrchestratorService;
-use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
+use super::pipeline::{PipelineError, PipelineProcessor};
+use super::selector::{AgentSelectionError, AgentSelector};
+use crate::handlers::errors::build_error_chain_response;
+use crate::handlers::request::extract_request_id;
+use crate::handlers::response::ResponseHandler;
+use crate::router::orchestrator::OrchestratorService;
+use crate::tracing::{operation_component, set_service_name};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
 pub enum AgentFilterChainError {
-    #[error("Forwarded error: {0}")]
-    Brightstaff(#[from] BrightStaffError),
     #[error("Agent selection error: {0}")]
     Selection(#[from] AgentSelectionError),
     #[error("Pipeline processing error: {0}")]
     Pipeline(#[from] PipelineError),
+    #[error("Response handling error: {0}")]
+    Response(#[from] crate::handlers::response::ResponseError),
     #[error("Request parsing error: {0}")]
     RequestParsing(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
@@ -41,24 +39,10 @@ pub enum AgentFilterChainError {
 pub async fn agent_chat(
     request: Request<hyper::body::Incoming>,
     orchestrator_service: Arc<OrchestratorService>,
-    _: String,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
-    span_attributes: Arc<Option<SpanAttributes>>,
-    llm_providers: Arc<RwLock<LlmProviders>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let custom_attrs =
-        collect_custom_trace_attributes(request.headers(), span_attributes.as_ref().as_ref());
-    // Extract request_id from headers or generate a new one
-    let request_id: String = match request
-        .headers()
-        .get(common::consts::REQUEST_ID_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
-    {
-        Some(id) => id,
-        None => uuid::Uuid::new_v4().to_string(),
-    };
+    let request_id = extract_request_id(&request);
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -79,9 +63,7 @@ pub async fn agent_chat(
             orchestrator_service,
             agents_list,
             listeners,
-            llm_providers,
             request_id,
-            custom_attrs,
         )
         .await
         {
@@ -101,7 +83,6 @@ pub async fn agent_chat(
                         "client error from agent"
                     );
 
-                    // Create error response with the original status code and body
                     let error_json = serde_json::json!({
                         "error": "ClientError",
                         "agent": agent,
@@ -109,52 +90,19 @@ pub async fn agent_chat(
                         "agent_response": body
                     });
 
-                    let status_code = hyper::StatusCode::from_u16(*status)
-                        .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
-
                     let json_string = error_json.to_string();
-                    return Ok(BrightStaffError::ForwardedError {
-                        status_code,
-                        message: json_string,
-                    }
-                    .into_response());
+                    let mut response =
+                        Response::new(ResponseHandler::create_full_body(json_string));
+                    *response.status_mut() = hyper::StatusCode::from_u16(*status)
+                        .unwrap_or(hyper::StatusCode::BAD_REQUEST);
+                    response.headers_mut().insert(
+                        hyper::header::CONTENT_TYPE,
+                        "application/json".parse().unwrap(),
+                    );
+                    return Ok(response);
                 }
 
-                // Print detailed error information with full error chain for other errors
-                let mut error_chain = Vec::new();
-                let mut current_error: &dyn std::error::Error = &err;
-
-                // Collect the full error chain
-                loop {
-                    error_chain.push(current_error.to_string());
-                    match current_error.source() {
-                        Some(source) => current_error = source,
-                        None => break,
-                    }
-                }
-
-                // Log the complete error chain
-                warn!(error_chain = ?error_chain, "agent chat error chain");
-                warn!(root_error = ?err, "root error");
-
-                // Create structured error response as JSON
-                let error_json = serde_json::json!({
-                    "error": {
-                        "type": "AgentFilterChainError",
-                        "message": err.to_string(),
-                        "error_chain": error_chain,
-                        "debug_info": format!("{:?}", err)
-                    }
-                });
-
-                // Log the error for debugging
-                info!(error = %error_json, "structured error info");
-
-                Ok(BrightStaffError::ForwardedError {
-                    status_code: StatusCode::BAD_REQUEST,
-                    message: error_json.to_string(),
-                }
-                .into_response())
+                build_error_chain_response(&err)
             }
         }
     }
@@ -167,9 +115,7 @@ async fn handle_agent_chat_inner(
     orchestrator_service: Arc<OrchestratorService>,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
-    llm_providers: Arc<RwLock<LlmProviders>>,
     request_id: String,
-    custom_attrs: std::collections::HashMap<String, String>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(orchestrator_service);
@@ -192,9 +138,6 @@ async fn handle_agent_chat_inner(
 
     get_active_span(|span| {
         span.update_name(listener.name.to_string());
-        for (key, value) in &custom_attrs {
-            span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
-        }
     });
 
     info!(listener = %listener.name, "handling request");
@@ -238,33 +181,16 @@ async fn handle_agent_chat_inner(
             AgentFilterChainError::RequestParsing(serde_json::Error::custom(err_msg))
         })?;
 
-    let mut client_request =
-        match ProviderRequestType::try_from((&chat_request_bytes[..], &api_type)) {
-            Ok(request) => request,
-            Err(err) => {
-                warn!("failed to parse request as ProviderRequestType: {}", err);
-                let err_msg = format!("Failed to parse request: {}", err);
-                return Err(AgentFilterChainError::RequestParsing(
-                    serde_json::Error::custom(err_msg),
-                ));
-            }
-        };
-
-    // If model is not specified in the request, resolve from default provider
-    if client_request.model().is_empty() {
-        match llm_providers.read().await.default() {
-            Some(default_provider) => {
-                let default_model = default_provider.name.clone();
-                info!(default_model = %default_model, "no model specified in request, using default provider");
-                client_request.set_model(default_model);
-            }
-            None => {
-                let err_msg = "No model specified in request and no default provider configured";
-                warn!("{}", err_msg);
-                return Ok(BrightStaffError::NoModelSpecified.into_response());
-            }
+    let client_request = match ProviderRequestType::try_from((&chat_request_bytes[..], &api_type)) {
+        Ok(request) => request,
+        Err(err) => {
+            warn!("failed to parse request as ProviderRequestType: {}", err);
+            let err_msg = format!("Failed to parse request: {}", err);
+            return Err(AgentFilterChainError::RequestParsing(
+                serde_json::Error::custom(err_msg),
+            ));
         }
-    }
+    };
 
     let message: Vec<OpenAIMessage> = client_request.get_messages();
 
@@ -357,9 +283,6 @@ async fn handle_agent_chat_inner(
             set_service_name(operation_component::AGENT);
             get_active_span(|span| {
                 span.update_name(format!("{} /v1/chat/completions", agent_name));
-                for (key, value) in &custom_attrs {
-                    span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
-                }
             });
 
             pipeline_processor

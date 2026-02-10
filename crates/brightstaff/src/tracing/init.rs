@@ -11,7 +11,7 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-use crate::tracing::ServiceNameOverrideExporter;
+use super::ServiceNameOverrideExporter;
 use common::configuration::Tracing;
 
 struct BracketedTime;
@@ -96,17 +96,13 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
             tracing_enabled, otel_endpoint, random_sampling
         );
 
-        // Create OTLP exporter to send spans to collector
-        if tracing_enabled {
-            // Set service name via environment if not already set
-            if std::env::var("OTEL_SERVICE_NAME").is_err() {
-                std::env::set_var("OTEL_SERVICE_NAME", "plano");
-            }
-
+        // Create OTLP exporter to send spans to collector.
+        // Use `if let` to destructure the endpoint, avoiding an unwrap.
+        if let Some(endpoint) = otel_endpoint.as_deref().filter(|_| tracing_enabled) {
             // Create ServiceNameOverrideExporter to support per-span service names
             // This allows spans to have different service names (e.g., plano(orchestrator),
             // plano(filter), plano(llm)) by setting the "service.name.override" attribute
-            let exporter = ServiceNameOverrideExporter::new(otel_endpoint.as_ref().unwrap());
+            let exporter = ServiceNameOverrideExporter::new(endpoint);
 
             let provider = SdkTracerProvider::builder()
                 .with_batch_exporter(exporter)
