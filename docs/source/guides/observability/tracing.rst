@@ -171,7 +171,7 @@ How to Initiate A Trace
 Tracing with the CLI
 --------------------
 
-The Plano CLI ships with a local OTLP/HTTP listener and a trace viewer so you can inspect spans without wiring a full observability backend. This is ideal for development, debugging, and quick QA.
+The Plano CLI ships with a local OTLP/gRPC listener and a trace viewer so you can inspect spans without wiring a full observability backend. This is ideal for development, debugging, and quick QA.
 
 Quick Start
 ~~~~~~~~~~~
@@ -182,10 +182,9 @@ Quick Start
 
   $ planoai trace listen
 
-2. Send requests through Plano as usual. The listener accepts OTLP/HTTP at:
+2. Send requests through Plano as usual. The listener accepts OTLP/gRPC on:
 
-   - ``http://127.0.0.1:4318/v1/traces`` (ingest)
-   - ``http://127.0.0.1:4318/traces`` (query API)
+   - ``127.0.0.1:4317`` (default)
 
 3. View the most recent trace:
 
@@ -223,11 +222,18 @@ Return JSON for automation:
   $ planoai trace --json
   $ planoai trace --list --json
 
-Point the CLI at a different trace API:
+Show full span attributes (disable default compact view):
 
 .. code-block:: console
 
-  $ export PLANO_TRACE_API_URL="http://localhost:4318"
+  $ planoai trace --verbose
+  $ planoai trace -v
+
+Point the CLI at a different local listener port:
+
+.. code-block:: console
+
+  $ export PLANO_TRACE_PORT=50051
   $ planoai trace --list
 
 Notes
@@ -236,6 +242,7 @@ Notes
 - ``--where`` accepts repeatable ``key=value`` filters and uses AND semantics.
 - ``--filter`` supports wildcards (``*``) to limit displayed attributes.
 - ``--no-interactive`` disables prompts when listing traces.
+- By default, inbound/outbound spans use a compact attribute view.
 
 
 Trace Propagation
@@ -507,13 +514,16 @@ CLI Reference
   - ``--limit <n>``: limit the number of traces returned.
   - ``--since <window>``: look back window (``5m``, ``2h``, ``1d``).
   - ``--json``: output raw JSON instead of formatted output.
+  - ``--verbose, -v``: show all span attributes. By default, inbound/outbound
+    spans are displayed in a compact view.
 
   **Environment**
 
-  - ``PLANO_TRACE_API_URL``: base URL for the trace API (defaults to ``http://localhost:4318``).
+  - ``PLANO_TRACE_PORT``: gRPC port used by ``planoai trace`` to query traces
+    (defaults to ``4317``).
 
 ``planoai trace listen``
-  Start a local OTLP/HTTP listener and trace API.
+  Start a local OTLP/gRPC listener.
 
   **Synopsis**
 
@@ -523,8 +533,8 @@ CLI Reference
 
   **Options**
 
-  - ``--host <host>``: bind address (default: ``127.0.0.1``).
-  - ``--port <port>``: listener port (default: ``4318``).
+  - ``--host <host>``: bind address (default: ``0.0.0.0``).
+  - ``--port <port>``: gRPC listener port (default: ``4317``).
 
 External References
 ~~~~~~~~~~~~~~~~~~~
