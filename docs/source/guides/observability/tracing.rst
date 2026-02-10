@@ -176,17 +176,28 @@ The Plano CLI ships with a local OTLP/gRPC listener and a trace viewer so you ca
 Quick Start
 ~~~~~~~~~~~
 
-1. Start the local listener:
+You can enable tracing in either of these ways:
+
+1. Start the local listener explicitly:
 
 .. code-block:: console
 
   $ planoai trace listen
 
-2. Send requests through Plano as usual. The listener accepts OTLP/gRPC on:
+2. Or start Plano with tracing enabled (auto-starts the local OTLP listener):
 
-   - ``127.0.0.1:4317`` (default)
+.. code-block:: console
 
-3. View the most recent trace:
+  $ planoai up --with-tracing
+
+  # Optional: choose a different listener port
+  $ planoai up --with-tracing --tracing-port 4318
+
+3. Send requests through Plano as usual. The listener accepts OTLP/gRPC on:
+
+   - ``0.0.0.0:4317`` (default)
+
+4. View the most recent trace:
 
 .. code-block:: console
 

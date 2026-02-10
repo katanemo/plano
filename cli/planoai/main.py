@@ -1,6 +1,5 @@
 import os
 import multiprocessing
-import importlib.metadata
 import subprocess
 import sys
 import rich_click as click
@@ -34,6 +33,8 @@ from planoai.consts import (
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
+from planoai.rich_click_config import configure_rich_click
+from planoai.versioning import check_version_status, get_latest_version, get_version
 
 log = getLogger(__name__)
 
@@ -59,80 +60,6 @@ LOGO = f"""[bold {PLANO_COLOR}]
  | |   | | (_| | | | | (_) |
  \\_|   |_|\\__,_|_| |_|\\___/
 [/bold {PLANO_COLOR}]"""
-
-# PyPI package name for version checking
-PYPI_PACKAGE_NAME = "planoai"
-PYPI_URL = f"https://pypi.org/pypi/{PYPI_PACKAGE_NAME}/json"
-
-
-def _configure_rich_click() -> None:
-    click.rich_click.USE_RICH_MARKUP = True
-    click.rich_click.USE_MARKDOWN = False
-    click.rich_click.SHOW_ARGUMENTS = True
-    click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
-    click.rich_click.STYLE_ERRORS_SUGGESTION = "dim italic"
-    click.rich_click.ERRORS_SUGGESTION = (
-        "Try running the '--help' flag for more information."
-    )
-    click.rich_click.ERRORS_EPILOGUE = ""
-
-    # Custom colors matching Plano brand
-    click.rich_click.STYLE_OPTION = f"dim {PLANO_COLOR}"
-    click.rich_click.STYLE_ARGUMENT = f"dim {PLANO_COLOR}"
-    click.rich_click.STYLE_COMMAND = f"bold {PLANO_COLOR}"
-    click.rich_click.STYLE_SWITCH = "bold green"
-    click.rich_click.STYLE_METAVAR = "bold yellow"
-    click.rich_click.STYLE_USAGE = "bold"
-    click.rich_click.STYLE_USAGE_COMMAND = f"bold dim {PLANO_COLOR}"
-    click.rich_click.STYLE_HELPTEXT_FIRST_LINE = "white italic"
-    click.rich_click.STYLE_HELPTEXT = ""
-    click.rich_click.STYLE_HEADER_TEXT = "bold"
-    click.rich_click.STYLE_FOOTER_TEXT = "dim"
-    click.rich_click.STYLE_OPTIONS_PANEL_BORDER = "dim"
-    click.rich_click.ALIGN_OPTIONS_PANEL = "left"
-    click.rich_click.MAX_WIDTH = 100
-
-    # Option groups for better organization
-    click.rich_click.OPTION_GROUPS = {
-        "planoai up": [
-            {
-                "name": "Configuration",
-                "options": ["--path", "file"],
-            },
-            {
-                "name": "Runtime Options",
-                "options": ["--foreground", "--with-tracing", "--tracing-port"],
-            },
-        ],
-        "planoai logs": [
-            {
-                "name": "Log Options",
-                "options": ["--debug", "--follow"],
-            },
-        ],
-    }
-
-    # Command groups for main help
-    click.rich_click.COMMAND_GROUPS = {
-        "planoai": [
-            {
-                "name": "Gateway Commands",
-                "commands": ["up", "down", "build", "logs"],
-            },
-            {
-                "name": "Agent Commands",
-                "commands": ["cli-agent"],
-            },
-            {
-                "name": "Observability",
-                "commands": ["trace"],
-            },
-            {
-                "name": "Utilities",
-                "commands": ["generate-prompt-targets"],
-            },
-        ],
-    }
 
 
 def _console():
@@ -173,121 +100,12 @@ def _maybe_check_updates(console, current_version: str) -> None:
         console.print(
             f"\n[yellow]⚠ Update available:[/yellow] [bold]{status['latest']}[/bold]"
         )
-        console.print(f"[dim]Run: uv pip install --upgrade {PYPI_PACKAGE_NAME}[/dim]")
+        console.print("[dim]Run: uv pip install --upgrade planoai[/dim]")
     elif latest_version:
         console.print(f"[dim]✓ You're up to date[/dim]")
 
 
-def _build_table(title: str):
-    from rich.table import Table
-
-    return Table(
-        title=title,
-        border_style="dim",
-        show_header=True,
-        header_style=f"bold {PLANO_COLOR}",
-    )
-
-
-def _print_messages(console, items: list[str], template: str) -> None:
-    for item in items:
-        console.print(template.format(item=item))
-    console.print()
-
-
-def _print_section(console, title: str, lines: list[str]) -> None:
-    console.print(title)
-    for line in lines:
-        console.print(line)
-    console.print()
-
-
-_configure_rich_click()
-
-
-def get_version():
-    try:
-        # First try to get version from package metadata (for installed packages)
-        version = importlib.metadata.version("planoai")
-        return version
-    except importlib.metadata.PackageNotFoundError:
-        # Fallback to version defined in __init__.py (for development)
-        try:
-            from planoai import __version__
-
-            return __version__
-        except ImportError:
-            return "version not found"
-
-
-def get_latest_version(timeout: float = 2.0) -> str | None:
-    """Fetch the latest version from PyPI.
-
-    Args:
-        timeout: Request timeout in seconds
-
-    Returns:
-        Latest version string or None if fetch failed
-    """
-    import requests
-
-    try:
-        response = requests.get(PYPI_URL, timeout=timeout)
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("info", {}).get("version")
-    except (requests.RequestException, ValueError):
-        # Network error or invalid JSON - fail silently
-        pass
-    return None
-
-
-def parse_version(version_str: str) -> tuple:
-    """Parse version string into comparable tuple.
-
-    Handles versions like "0.4.1", "1.0.0", "0.4.1a1"
-    """
-    import re
-
-    # Remove any pre-release suffixes for comparison
-    clean_version = re.split(r"[a-zA-Z]", version_str)[0]
-    parts = clean_version.split(".")
-    return tuple(int(p) for p in parts if p.isdigit())
-
-
-def check_version_status(current: str, latest: str | None) -> dict:
-    """Compare current version with latest and return status.
-
-    Returns:
-        dict with keys: is_outdated, current, latest, message
-    """
-    if latest is None:
-        return {
-            "is_outdated": False,
-            "current": current,
-            "latest": None,
-            "message": None,
-        }
-
-    try:
-        current_tuple = parse_version(current)
-        latest_tuple = parse_version(latest)
-        is_outdated = current_tuple < latest_tuple
-
-        return {
-            "is_outdated": is_outdated,
-            "current": current,
-            "latest": latest,
-            "message": f"Update available: {latest}" if is_outdated else None,
-        }
-    except (ValueError, TypeError):
-        # Version parsing failed
-        return {
-            "is_outdated": False,
-            "current": current,
-            "latest": latest,
-            "message": None,
-        }
+configure_rich_click(PLANO_COLOR)
 
 
 @click.group(invoke_without_command=True)

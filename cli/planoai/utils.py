@@ -4,7 +4,6 @@ import subprocess
 import sys
 import yaml
 import logging
-from rich.logging import RichHandler
 from planoai.consts import PLANO_DOCKER_NAME
 
 

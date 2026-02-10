@@ -56,14 +56,12 @@ services:
     depends_on:
       - weather-agent
       - flight-agent
-
-  # # enable for tracing via Jaeger
-  # jaeger:
-  #   build:
-  #     context: ../../shared/jaeger
-  #   container_name: jaeger
-  #   restart: always
-  #   ports:
-  #     - "16686:16686"  # Jaeger UI
-  #     - "4317:4317"    # OTLP gRPC receiver
-  #     - "4318:4318"    # OTLP HTTP receiver
+  jaeger:
+    build:
+      context: ../../shared/jaeger
+    container_name: jaeger
+    restart: always
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
