@@ -10,7 +10,6 @@ services:
     environment:
       - ARCH_CONFIG_PATH=/config/config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
-      - OTEL_COLLECTOR_URL=http://host.docker.internal:4318/v1/traces # tracing via CLI
     volumes:
       - ./config.yaml:/app/arch_config.yaml
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem

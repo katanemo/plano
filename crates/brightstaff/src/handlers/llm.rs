@@ -28,7 +28,7 @@ use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
-use crate::tracing::{operation_component, set_service_name};
+use crate::tracing::{llm as tracing_llm, operation_component, set_service_name};
 
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
@@ -62,6 +62,10 @@ pub async fn llm_chat(
         request_id = %request_id,
         http.method = %request.method(),
         http.path = %request_path,
+        llm.model = tracing::field::Empty,
+        llm.tools = tracing::field::Empty,
+        llm.user_message_preview = tracing::field::Empty,
+        llm.temperature = tracing::field::Empty,
     );
 
     // Execute the rest of the handler inside the span
@@ -149,7 +153,7 @@ async fn llm_chat_inner(
     // Model alias resolution: update model field in client_request immediately
     // This ensures all downstream objects use the resolved model
     let model_from_request = client_request.model().to_string();
-    let _temperature = client_request.get_temperature();
+    let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
 
@@ -180,10 +184,25 @@ async fn llm_chat_inner(
     };
 
     // Extract tool names and user message preview for span attributes
-    let _tool_names = client_request.get_tool_names();
-    let _user_message_preview = client_request
+    let tool_names = client_request.get_tool_names();
+    let user_message_preview = client_request
         .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
+    let span = tracing::Span::current();
+    if let Some(temp) = temperature {
+        span.record(tracing_llm::TEMPERATURE, tracing::field::display(temp));
+    }
+    if let Some(tools) = &tool_names {
+        let formatted_tools = tools
+            .iter()
+            .map(|name| format!("{}(...)", name))
+            .collect::<Vec<_>>()
+            .join("\n");
+        span.record(tracing_llm::TOOLS, formatted_tools.as_str());
+    }
+    if let Some(preview) = &user_message_preview {
+        span.record(tracing_llm::USER_MESSAGE_PREVIEW, preview.as_str());
+    }
 
     // Extract messages for signal analysis (clone before moving client_request)
     let messages_for_signals = Some(client_request.get_messages());
@@ -321,6 +340,7 @@ async fn llm_chat_inner(
         // Router returned "none" sentinel, use validated resolved_model from request
         alias_resolved_model.clone()
     };
+    tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
 
     let span_name = if model_from_request == resolved_model {
         format!("POST {} {}", request_path, resolved_model)

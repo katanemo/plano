@@ -46,12 +46,14 @@ class TraceSummary:
         return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _split_patterns(value: str | None) -> list[str]:
-    if not value:
-        return []
-    parts = [part.strip() for part in value.split(",")]
-    if any(not part for part in parts):
-        raise ValueError("Filter contains empty tokens.")
+def _parse_filter_patterns(filter_patterns: tuple[str, ...]) -> list[str]:
+    parts: list[str] = []
+    for raw in filter_patterns:
+        for token in raw.split(","):
+            part = token.strip()
+            if not part:
+                raise ValueError("Filter contains empty tokens.")
+            parts.append(part)
     return parts
 
 
@@ -624,6 +626,12 @@ def _sorted_attr_items(attrs: dict[str, str]) -> list[tuple[str, str]]:
     return prioritized + remaining
 
 
+def _display_attr_value(key: str, value: str) -> str:
+    if key == "http.status_code" and value != "200":
+        return f"{value} ⚠️"
+    return value
+
+
 def _build_tree(trace: dict[str, Any], console: Console, verbose: bool = False) -> None:
     spans = trace.get("spans", [])
     if not spans:
@@ -660,7 +668,10 @@ def _build_tree(trace: dict[str, Any], console: Console, verbose: bool = False) 
         for idx, (key, value) in enumerate(sorted_items):
             attr_line = Text()
             attr_line.append(f"{key}: ", style="white")
-            attr_line.append(str(value), style=f"{PLANO_COLOR}")
+            attr_line.append(
+                _display_attr_value(key, str(value)),
+                style=f"{PLANO_COLOR}",
+            )
             if idx == len(sorted_items) - 1:
                 attr_line.append("\n")
             node.add(attr_line)
@@ -722,8 +733,11 @@ def _select_request(
 @click.option(
     "--filter",
     "filter_patterns",
-    default="",
-    help="Limit displayed attributes to matching keys (wildcards supported).",
+    multiple=True,
+    help=(
+        "Limit displayed attributes to matching keys "
+        "(wildcards supported). Repeatable."
+    ),
 )
 @click.option(
     "--where",
@@ -761,7 +775,7 @@ def _run_trace_show(
     console = Console()
 
     try:
-        patterns = _split_patterns(filter_patterns)
+        patterns = _parse_filter_patterns(filter_patterns)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -873,8 +887,11 @@ def _run_trace_show(
 @click.option(
     "--filter",
     "filter_patterns",
-    default="",
-    help="Limit displayed attributes to matching keys (wildcards supported).",
+    multiple=True,
+    help=(
+        "Limit displayed attributes to matching keys "
+        "(wildcards supported). Repeatable."
+    ),
 )
 @click.option(
     "--where",
