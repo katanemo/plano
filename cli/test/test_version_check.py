@@ -1,6 +1,6 @@
 import pytest
 from unittest import mock
-from planoai.main import (
+from planoai.versioning import (
     get_version,
     get_latest_version,
     parse_version,
