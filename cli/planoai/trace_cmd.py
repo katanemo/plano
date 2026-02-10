@@ -486,9 +486,12 @@ class _TraceQueryHandler(grpc.GenericRpcHandler):
         return json.dumps({"traces": traces}, separators=(",", ":")).encode("utf-8")
 
 
-def _start_trace_listener(host: str, grpc_port: int) -> None:
-    console = Console()
+def _create_trace_server(host: str, grpc_port: int) -> grpc.Server:
+    """Create, bind, and start an OTLP/gRPC trace-collection server.
 
+    Returns the running ``grpc.Server``.  The caller is responsible
+    for calling ``server.stop()`` when done.
+    """
     grpc_server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=4),
         handlers=[_TraceQueryHandler()],
@@ -498,6 +501,13 @@ def _start_trace_listener(host: str, grpc_port: int) -> None:
     )
     grpc_server.add_insecure_port(f"{host}:{grpc_port}")
     grpc_server.start()
+    return grpc_server
+
+
+def _start_trace_listener(host: str, grpc_port: int) -> None:
+    """Start the OTLP/gRPC listener and block until interrupted."""
+    console = Console()
+    grpc_server = _create_trace_server(host, grpc_port)
 
     console.print()
     console.print(f"[bold {PLANO_COLOR}]Listening for traces...[/bold {PLANO_COLOR}]")
@@ -512,6 +522,17 @@ def _start_trace_listener(host: str, grpc_port: int) -> None:
         pass
     finally:
         grpc_server.stop(grace=2)
+
+
+def start_trace_listener_background(
+    host: str = "0.0.0.0", grpc_port: int = DEFAULT_GRPC_PORT
+) -> grpc.Server:
+    """Start the trace listener in the background (non-blocking).
+
+    Returns the running ``grpc.Server`` so the caller can call
+    ``server.stop()`` later.
+    """
+    return _create_trace_server(host, grpc_port)
 
 
 def _span_time_ns(span: dict[str, Any], key: str) -> int:

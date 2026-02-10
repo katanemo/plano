@@ -28,7 +28,7 @@ from planoai.core import (
     start_cli_agent,
 )
 from planoai.init_cmd import init as init_cmd
-from planoai.trace_cmd import trace as trace_cmd
+from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
@@ -36,6 +36,19 @@ from planoai.consts import (
 )
 
 log = getLogger(__name__)
+
+
+def _is_port_in_use(port: int) -> bool:
+    """Check if a TCP port is already bound on localhost."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("0.0.0.0", port))
+            return False
+        except OSError:
+            return True
+
 
 # ref https://patorjk.com/software/taag/#p=display&f=Doom&t=Plano&x=none&v=4&h=4&w=80&we=false
 LOGO = f"""[bold {PLANO_COLOR}]
@@ -88,7 +101,7 @@ def _configure_rich_click() -> None:
             },
             {
                 "name": "Runtime Options",
-                "options": ["--foreground"],
+                "options": ["--foreground", "--with-tracing", "--tracing-port"],
             },
         ],
         "planoai logs": [
@@ -348,7 +361,20 @@ def build():
     help="Run Plano in the foreground. Default is False",
     is_flag=True,
 )
-def up(file, path, foreground):
+@click.option(
+    "--with-tracing",
+    default=False,
+    help="Start a local OTLP trace collector on port 4317.",
+    is_flag=True,
+)
+@click.option(
+    "--tracing-port",
+    default=4317,
+    type=int,
+    help="Port for the OTLP trace collector (default: 4317).",
+    show_default=True,
+)
+def up(file, path, foreground, with_tracing, tracing_port):
     """Starts Plano."""
     from rich.status import Status
 
@@ -423,8 +449,56 @@ def up(file, path, foreground):
     # to set RUST_LOG (brightstaff) and envoy component log levels
     env_stage["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "info")
 
+    # Start the local OTLP trace collector if --with-tracing is set
+    trace_server = None
+    if with_tracing:
+        if _is_port_in_use(tracing_port):
+            # A listener is already running (e.g. `planoai trace listen`)
+            console.print(
+                f"[green]✓[/green] Trace collector already running on port [cyan]{tracing_port}[/cyan]"
+            )
+        else:
+            try:
+                trace_server = start_trace_listener_background(grpc_port=tracing_port)
+                console.print(
+                    f"[green]✓[/green] Trace collector listening on [cyan]0.0.0.0:{tracing_port}[/cyan]"
+                )
+            except Exception as e:
+                console.print(
+                    f"[red]✗[/red] Failed to start trace collector on port {tracing_port}: {e}"
+                )
+                console.print(
+                    f"\n[dim]Check if another process is using port {tracing_port}:[/dim]"
+                )
+                console.print(f"  [cyan]lsof -i :{tracing_port}[/cyan]")
+                console.print(f"\n[dim]Or use a different port:[/dim]")
+                console.print(
+                    f"  [cyan]planoai up --with-tracing --tracing-port 4318[/cyan]\n"
+                )
+                sys.exit(1)
+
+        # Update the OTEL endpoint so the gateway sends traces to the right port
+        env_stage[
+            "OTEL_TRACING_GRPC_ENDPOINT"
+        ] = f"http://host.docker.internal:{tracing_port}"
+
     env.update(env_stage)
-    start_arch(arch_config_file, env, foreground=foreground)
+    try:
+        start_arch(arch_config_file, env, foreground=foreground)
+
+        # When tracing is enabled but --foreground is not, keep the process
+        # alive so the OTLP collector continues to receive spans.
+        if trace_server is not None and not foreground:
+            console.print(
+                f"[dim]Plano is running. Trace collector active on port {tracing_port}. Press Ctrl+C to stop.[/dim]"
+            )
+            trace_server.wait_for_termination()
+    except KeyboardInterrupt:
+        if trace_server is not None:
+            console.print(f"\n[dim]Stopping trace collector...[/dim]")
+    finally:
+        if trace_server is not None:
+            trace_server.stop(grace=2)
 
 
 @click.command()
