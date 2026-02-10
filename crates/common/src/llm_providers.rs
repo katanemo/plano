@@ -80,6 +80,29 @@ impl LlmProviders {
 
         None
     }
+
+    /// Get an alternative provider that is not the one specified by current_name.
+    /// Prefers the default provider if it's different, otherwise picks the first non-internal provider.
+    pub fn get_alternative(&self, current_name: &str) -> Option<Arc<LlmProvider>> {
+        // Try to find a default provider that is not the current one
+        if let Some(default_provider) = &self.default {
+            if default_provider.name != current_name {
+                return Some(Arc::clone(default_provider));
+            }
+        }
+
+        // Otherwise just pick the first canonical non-internal provider that is not the current one
+        self.providers.iter().find_map(|(key, provider)| {
+            if provider.internal != Some(true)
+                && provider.name != current_name
+                && key == &provider.name
+            {
+                Some(Arc::clone(provider))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -278,6 +301,7 @@ mod tests {
             internal: None,
             stream: None,
             passthrough_auth: None,
+            retry_on_ratelimit: None,
         }
     }
 
@@ -333,5 +357,57 @@ mod tests {
         assert!(llm_providers
             .wildcard_providers
             .contains_key("custom-provider"));
+    }
+
+    #[test]
+    fn test_get_alternative_prefers_default() {
+        let primary = create_test_provider("primary", Some("gpt-4".to_string()));
+        let mut secondary = create_test_provider("secondary", Some("gpt-4-alt".to_string()));
+        secondary.default = Some(true);
+        let tertiary = create_test_provider("tertiary", Some("gpt-4-other".to_string()));
+
+        let providers = vec![primary, secondary, tertiary];
+        let llm_providers = LlmProviders::try_from(providers).unwrap();
+
+        // If we are at primary, should return secondary (default)
+        let alt = llm_providers.get_alternative("primary");
+        assert_eq!(alt.unwrap().name, "secondary");
+
+        // If we are at tertiary, should return secondary (default)
+        let alt = llm_providers.get_alternative("tertiary");
+        assert_eq!(alt.unwrap().name, "secondary");
+
+        // If we are at secondary (the default), should return something else (primary or tertiary)
+        let alt = llm_providers.get_alternative("secondary");
+        let alt_name = alt.unwrap().name.clone();
+        assert!(alt_name == "primary" || alt_name == "tertiary");
+    }
+
+    #[test]
+    fn test_get_alternative_skips_internal() {
+        let primary = create_test_provider("primary", Some("gpt-4".to_string()));
+        let mut internal = create_test_provider("internal", Some("router".to_string()));
+        internal.internal = Some(true);
+        let secondary = create_test_provider("secondary", Some("gpt-4-alt".to_string()));
+
+        let providers = vec![primary, internal, secondary];
+        let llm_providers = LlmProviders::try_from(providers).unwrap();
+
+        // Should return secondary, NOT internal
+        let alt = llm_providers.get_alternative("primary");
+        assert_eq!(alt.unwrap().name, "secondary");
+    }
+
+    #[test]
+    fn test_get_alternative_returns_none_if_no_other_available() {
+        let primary = create_test_provider("primary", Some("gpt-4".to_string()));
+        let mut internal = create_test_provider("internal", Some("router".to_string()));
+        internal.internal = Some(true);
+
+        let providers = vec![primary, internal];
+        let llm_providers = LlmProviders::try_from(providers).unwrap();
+
+        let alt = llm_providers.get_alternative("primary");
+        assert!(alt.is_none());
     }
 }
