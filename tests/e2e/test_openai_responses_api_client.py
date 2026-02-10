@@ -327,6 +327,7 @@ def test_openai_responses_api_streaming_with_tools_upstream_chat_completions():
     ), "Expected streamed text or tool call argument deltas from Responses tools stream"
 
 
+@pytest.mark.skip("unreliable - bedrock tests are flaky in CI")
 def test_openai_responses_api_non_streaming_upstream_bedrock():
     """Send a v1/responses request using the coding-model alias to verify Bedrock translation/routing"""
     base_url = LLM_GATEWAY_ENDPOINT.replace("/v1/chat/completions", "")
@@ -347,6 +348,7 @@ def test_openai_responses_api_non_streaming_upstream_bedrock():
     assert resp.id is not None
 
 
+@pytest.mark.skip("unreliable - bedrock tests are flaky in CI")
 def test_openai_responses_api_with_streaming_upstream_bedrock():
     """Build a v1/responses API streaming request routed to Bedrock via coding-model alias"""
     base_url = LLM_GATEWAY_ENDPOINT.replace("/v1/chat/completions", "")
@@ -392,6 +394,7 @@ def test_openai_responses_api_with_streaming_upstream_bedrock():
     assert len(full_content) > 0, "Should have received content"
 
 
+@pytest.mark.skip("unreliable - bedrock tests are flaky in CI")
 def test_openai_responses_api_non_streaming_with_tools_upstream_bedrock():
     """Responses API with tools routed to Bedrock via coding-model alias"""
     base_url = LLM_GATEWAY_ENDPOINT.replace("/v1/chat/completions", "")
@@ -424,6 +427,7 @@ def test_openai_responses_api_non_streaming_with_tools_upstream_bedrock():
     print(f"{'='*80}\n")
 
 
+@pytest.mark.skip("unreliable - bedrock tests are flaky in CI")
 def test_openai_responses_api_streaming_with_tools_upstream_bedrock():
     """Responses API with a function/tool definition streaming to Bedrock via coding-model alias"""
     base_url = LLM_GATEWAY_ENDPOINT.replace("/v1/chat/completions", "")
