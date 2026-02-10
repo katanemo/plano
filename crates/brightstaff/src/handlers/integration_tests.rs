@@ -3,10 +3,10 @@ use std::sync::Arc;
 use hermesllm::apis::openai::{ChatCompletionsRequest, Message, MessageContent, Role};
 use hyper::header::HeaderMap;
 
-use crate::handlers::agent_selector::{AgentSelectionError, AgentSelector};
-use crate::handlers::pipeline_processor::PipelineProcessor;
-use crate::handlers::response_handler::ResponseHandler;
-use crate::router::plano_orchestrator::OrchestratorService;
+use crate::handlers::agents::pipeline::PipelineProcessor;
+use crate::handlers::agents::selector::{AgentSelectionError, AgentSelector};
+use crate::handlers::response::ResponseHandler;
+use crate::router::orchestrator::OrchestratorService;
 
 /// Integration test that demonstrates the modular agent chat flow
 /// This test shows how the three main components work together:

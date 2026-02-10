@@ -7,7 +7,7 @@ use common::configuration::{
 use hermesllm::apis::openai::Message;
 use tracing::{debug, warn};
 
-use crate::router::plano_orchestrator::OrchestratorService;
+use crate::router::orchestrator::OrchestratorService;
 
 /// Errors that can occur during agent selection
 #[derive(Debug, thiserror::Error)]

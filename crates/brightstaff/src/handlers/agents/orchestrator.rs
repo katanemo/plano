@@ -13,10 +13,12 @@ use opentelemetry::trace::get_active_span;
 use serde::ser::Error as SerError;
 use tracing::{debug, info, info_span, warn, Instrument};
 
-use super::agent_selector::{AgentSelectionError, AgentSelector};
-use super::pipeline_processor::{PipelineError, PipelineProcessor};
-use super::response_handler::ResponseHandler;
-use crate::router::plano_orchestrator::OrchestratorService;
+use super::pipeline::{PipelineError, PipelineProcessor};
+use super::selector::{AgentSelectionError, AgentSelector};
+use crate::handlers::errors::build_error_chain_response;
+use crate::handlers::request::extract_request_id;
+use crate::handlers::response::ResponseHandler;
+use crate::router::orchestrator::OrchestratorService;
 use crate::tracing::{operation_component, set_service_name};
 
 /// Main errors for agent chat completions
@@ -27,7 +29,7 @@ pub enum AgentFilterChainError {
     #[error("Pipeline processing error: {0}")]
     Pipeline(#[from] PipelineError),
     #[error("Response handling error: {0}")]
-    Response(#[from] super::response_handler::ResponseError),
+    Response(#[from] crate::handlers::response::ResponseError),
     #[error("Request parsing error: {0}")]
     RequestParsing(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
@@ -37,20 +39,10 @@ pub enum AgentFilterChainError {
 pub async fn agent_chat(
     request: Request<hyper::body::Incoming>,
     orchestrator_service: Arc<OrchestratorService>,
-    _: String,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    // Extract request_id from headers or generate a new one
-    let request_id: String = match request
-        .headers()
-        .get(common::consts::REQUEST_ID_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
-    {
-        Some(id) => id,
-        None => uuid::Uuid::new_v4().to_string(),
-    };
+    let request_id = extract_request_id(&request);
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -91,7 +83,6 @@ pub async fn agent_chat(
                         "client error from agent"
                     );
 
-                    // Create error response with the original status code and body
                     let error_json = serde_json::json!({
                         "error": "ClientError",
                         "agent": agent,
@@ -111,38 +102,7 @@ pub async fn agent_chat(
                     return Ok(response);
                 }
 
-                // Print detailed error information with full error chain for other errors
-                let mut error_chain = Vec::new();
-                let mut current_error: &dyn std::error::Error = &err;
-
-                // Collect the full error chain
-                loop {
-                    error_chain.push(current_error.to_string());
-                    match current_error.source() {
-                        Some(source) => current_error = source,
-                        None => break,
-                    }
-                }
-
-                // Log the complete error chain
-                warn!(error_chain = ?error_chain, "agent chat error chain");
-                warn!(root_error = ?err, "root error");
-
-                // Create structured error response as JSON
-                let error_json = serde_json::json!({
-                    "error": {
-                        "type": "AgentFilterChainError",
-                        "message": err.to_string(),
-                        "error_chain": error_chain,
-                        "debug_info": format!("{:?}", err)
-                    }
-                });
-
-                // Log the error for debugging
-                info!(error = %error_json, "structured error info");
-
-                // Return JSON error response
-                Ok(ResponseHandler::create_json_error_response(&error_json))
+                build_error_chain_response(&err)
             }
         }
     }

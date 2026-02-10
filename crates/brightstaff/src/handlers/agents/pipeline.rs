@@ -11,7 +11,7 @@ use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use tracing::{debug, info, instrument, warn};
 
-use crate::handlers::jsonrpc::{
+use super::jsonrpc::{
     JsonRpcId, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, JSON_RPC_VERSION,
     MCP_INITIALIZE, MCP_INITIALIZE_NOTIFICATION, TOOL_CALL_METHOD,
 };
