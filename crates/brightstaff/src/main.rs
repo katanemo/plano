@@ -17,12 +17,13 @@ use common::consts::{
 use common::llm_providers::LlmProviders;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
+use hyper::header::HeaderValue;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use opentelemetry::global;
 use opentelemetry::trace::FutureExt;
-use opentelemetry::{global, Context};
 use opentelemetry_http::HeaderExtractor;
 use std::sync::Arc;
 use std::{env, fs};
@@ -38,13 +39,6 @@ const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract the OpenTelemetry context propagated via HTTP headers.
-fn extract_context_from_request(req: &Request<Incoming>) -> Context {
-    global::get_text_map_propagator(|propagator| {
-        propagator.extract(&HeaderExtractor(req.headers()))
-    })
-}
-
 /// An empty HTTP body (used for 404 / OPTIONS responses).
 fn empty() -> BoxBody<Bytes, hyper::Error> {
     Empty::<Bytes>::new()
@@ -56,18 +50,18 @@ fn empty() -> BoxBody<Bytes, hyper::Error> {
 fn cors_preflight() -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let mut response = Response::new(empty());
     *response.status_mut() = StatusCode::NO_CONTENT;
-    let headers = response.headers_mut();
-    headers.insert("Allow", "GET, OPTIONS".parse().unwrap());
-    headers.insert("Access-Control-Allow-Origin", "*".parse().unwrap());
-    headers.insert(
+    let h = response.headers_mut();
+    h.insert("Allow", HeaderValue::from_static("GET, OPTIONS"));
+    h.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    h.insert(
         "Access-Control-Allow-Headers",
-        "Authorization, Content-Type".parse().unwrap(),
+        HeaderValue::from_static("Authorization, Content-Type"),
     );
-    headers.insert(
+    h.insert(
         "Access-Control-Allow-Methods",
-        "GET, POST, OPTIONS".parse().unwrap(),
+        HeaderValue::from_static("GET, POST, OPTIONS"),
     );
-    headers.insert("Content-Type", "application/json".parse().unwrap());
+    h.insert("Content-Type", HeaderValue::from_static("application/json"));
     Ok(response)
 }
 
@@ -203,7 +197,7 @@ async fn route(
     req: Request<Incoming>,
     state: Arc<AppState>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let parent_cx = extract_context_from_request(&req);
+    let parent_cx = global::get_text_map_propagator(|p| p.extract(&HeaderExtractor(req.headers())));
     let path = req.uri().path().to_string();
 
     // --- Agent routes (/agents/...) ---
@@ -312,11 +306,6 @@ async fn run_server(state: Arc<AppState>) -> Result<(), Box<dyn std::error::Erro
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = load_config()?;
     let _tracer_provider = init_tracer(config.tracing.as_ref());
-
-    let arch_config_path = env::var("ARCH_CONFIG_PATH_RENDERED")
-        .unwrap_or_else(|_| "./arch_config_rendered.yaml".to_string());
-    info!(path = %arch_config_path, "loaded arch_config.yaml");
-
     let state = Arc::new(init_app_state(&config).await?);
     run_server(state).await
 }
