@@ -15,10 +15,10 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::pipeline::{PipelineError, PipelineProcessor};
 use super::selector::{AgentSelectionError, AgentSelector};
+use crate::app_state::AppState;
 use crate::handlers::errors::build_error_chain_response;
 use crate::handlers::request::extract_request_id;
 use crate::handlers::response::ResponseHandler;
-use crate::router::orchestrator::OrchestratorService;
 use crate::tracing::{operation_component, set_service_name};
 
 /// Main errors for agent chat completions
@@ -38,9 +38,7 @@ pub enum AgentFilterChainError {
 
 pub async fn agent_chat(
     request: Request<hyper::body::Incoming>,
-    orchestrator_service: Arc<OrchestratorService>,
-    agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
-    listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    state: Arc<AppState>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_id = extract_request_id(&request);
 
@@ -58,15 +56,7 @@ pub async fn agent_chat(
         // Set service name for orchestrator operations
         set_service_name(operation_component::ORCHESTRATOR);
 
-        match handle_agent_chat_inner(
-            request,
-            orchestrator_service,
-            agents_list,
-            listeners,
-            request_id,
-        )
-        .await
-        {
+        match handle_agent_chat_inner(request, state, request_id).await {
             Ok(response) => Ok(response),
             Err(err) => {
                 // Check if this is a client error from the pipeline that should be cascaded
@@ -112,13 +102,11 @@ pub async fn agent_chat(
 
 async fn handle_agent_chat_inner(
     request: Request<hyper::body::Incoming>,
-    orchestrator_service: Arc<OrchestratorService>,
-    agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
-    listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    state: Arc<AppState>,
     request_id: String,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
-    let agent_selector = AgentSelector::new(orchestrator_service);
+    let agent_selector = AgentSelector::new(Arc::clone(&state.orchestrator_service));
     let mut pipeline_processor = PipelineProcessor::default();
     let response_handler = ResponseHandler::new();
 
@@ -130,7 +118,7 @@ async fn handle_agent_chat_inner(
 
     // Find the appropriate listener
     let listener: common::configuration::Listener = {
-        let listeners = listeners.read().await;
+        let listeners = state.listeners.read().await;
         agent_selector
             .find_listener(listener_name, &listeners)
             .await?
@@ -143,12 +131,10 @@ async fn handle_agent_chat_inner(
     info!(listener = %listener.name, "handling request");
 
     // Parse request body
-    let request_path = request
-        .uri()
-        .path()
-        .to_string()
+    let full_path = request.uri().path().to_string();
+    let request_path = full_path
         .strip_prefix("/agents")
-        .unwrap()
+        .unwrap_or(&full_path)
         .to_string();
 
     let request_headers = {
@@ -201,7 +187,7 @@ async fn handle_agent_chat_inner(
 
     // Create agent map for pipeline processing and agent selection
     let agent_map = {
-        let agents = agents_list.read().await;
+        let agents = state.agents_list.read().await;
         let agents = agents.as_ref().ok_or_else(|| {
             AgentFilterChainError::RequestParsing(serde_json::Error::custom("No agents configured"))
         })?;
@@ -340,7 +326,10 @@ async fn handle_agent_chat_inner(
         );
 
         // remove last message and add new one at the end
-        let last_message = current_messages.pop().unwrap();
+        let Some(last_message) = current_messages.pop() else {
+            warn!(agent = %agent_name, "no messages in conversation history");
+            break;
+        };
 
         // Create a new message with the agent's response as assistant message
         // and add it to the conversation history

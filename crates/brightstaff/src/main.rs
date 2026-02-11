@@ -145,6 +145,7 @@ async fn init_app_state(
         listeners: Arc::new(RwLock::new(config.listeners.clone())),
         state_storage,
         llm_provider_url,
+        http_client: reqwest::Client::new(),
     })
 }
 
@@ -206,31 +207,18 @@ async fn route(
             stripped,
             CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH
         ) {
-            return agent_chat(
-                req,
-                Arc::clone(&state.orchestrator_service),
-                Arc::clone(&state.agents_list),
-                Arc::clone(&state.listeners),
-            )
-            .with_context(parent_cx)
-            .await;
+            return agent_chat(req, Arc::clone(&state))
+                .with_context(parent_cx)
+                .await;
         }
     }
 
     // --- Standard routes ---
     match (req.method(), path.as_str()) {
         (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
-            let url = format!("{}{}", state.llm_provider_url, path);
-            llm_chat(
-                req,
-                Arc::clone(&state.router_service),
-                url,
-                Arc::clone(&state.model_aliases),
-                Arc::clone(&state.llm_providers),
-                state.state_storage.clone(),
-            )
-            .with_context(parent_cx)
-            .await
+            llm_chat(req, Arc::clone(&state))
+                .with_context(parent_cx)
+                .await
         }
         (&Method::POST, "/function_calling") => {
             let url = format!("{}/v1/chat/completions", state.llm_provider_url);

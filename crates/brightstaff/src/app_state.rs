@@ -22,4 +22,6 @@ pub struct AppState {
     pub listeners: Arc<RwLock<Vec<Listener>>>,
     pub state_storage: Option<Arc<dyn StateStorage>>,
     pub llm_provider_url: String,
+    /// Shared HTTP client for upstream LLM requests (connection pooling / keep-alive).
+    pub http_client: reqwest::Client,
 }

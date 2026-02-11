@@ -88,12 +88,11 @@ pub trait StateStorage: Send + Sync {
         combined_input.extend(current_input);
 
         debug!(
-            "PLANO | BRIGHTSTAFF | STATE_STORAGE | RESP_ID:{} | Merged state: prev_items={}, current_items={}, total_items={}, combined_json={}",
-            prev_state.response_id,
-            prev_count,
-            current_count,
-            combined_input.len(),
-            serde_json::to_string(&combined_input).unwrap_or_else(|_| "serialization_error".to_string())
+            response_id = %prev_state.response_id,
+            prev_items = prev_count,
+            current_items = current_count,
+            total_items = combined_input.len(),
+            "merged conversation state"
         );
 
         combined_input

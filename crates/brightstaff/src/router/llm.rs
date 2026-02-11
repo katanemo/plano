@@ -99,7 +99,8 @@ impl RouterService {
             "sending request to arch-router"
         );
 
-        let body = serde_json::to_string(&router_request).unwrap();
+        let body = serde_json::to_string(&router_request)
+            .map_err(super::router_model::RoutingModelError::from)?;
         debug!(body = %body, "arch router request");
 
         let mut headers = header::HeaderMap::new();
