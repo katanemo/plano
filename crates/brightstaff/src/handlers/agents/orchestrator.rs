@@ -202,7 +202,9 @@ async fn handle_agent_chat_inner(
     // Create agent map for pipeline processing and agent selection
     let agent_map = {
         let agents = agents_list.read().await;
-        let agents = agents.as_ref().unwrap();
+        let agents = agents.as_ref().ok_or_else(|| {
+            AgentFilterChainError::RequestParsing(serde_json::Error::custom("No agents configured"))
+        })?;
         agent_selector.create_agent_map(agents)
     };
 
@@ -269,7 +271,12 @@ async fn handle_agent_chat_inner(
             .await?;
 
         // Get agent details and invoke
-        let agent = agent_map.get(&agent_name).unwrap();
+        let agent = agent_map.get(&agent_name).ok_or_else(|| {
+            AgentFilterChainError::RequestParsing(serde_json::Error::custom(format!(
+                "Selected agent '{}' not found in configuration",
+                agent_name
+            )))
+        })?;
 
         debug!(agent = %agent_name, "invoking agent");
 
