@@ -8,7 +8,7 @@
 @queryRewriter = {{host}}:10501
 @contextBuilder = {{host}}:10502
 
-# Plano agent listener (the thing Open WebUI calls)
+# Plano agent listener (the thing AnythingLLM calls)
 @planoAgent = {{host}}:8001
 
 

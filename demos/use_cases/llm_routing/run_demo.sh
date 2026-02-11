@@ -18,11 +18,7 @@ start_demo() {
     echo ".env file created with OPENAI_API_KEY."
   fi
 
-  # Step 3: Start Plano
-  echo "Starting Plano with config.yaml..."
-  planoai up config.yaml
-
-  # Step 4: Start LLM Routing
+  # Step 3: Start LLM Routing
   echo "Starting LLM Routing using Docker Compose..."
   docker compose up -d  # Run in detached mode
 }
@@ -32,10 +28,6 @@ stop_demo() {
   # Step 1: Stop Docker Compose services
   echo "Stopping LLM Routing using Docker Compose..."
   docker compose down
-
-  # Step 2: Stop Plano
-  echo "Stopping Plano..."
-  planoai down
 }
 
 # Main script logic

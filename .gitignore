@@ -117,8 +117,6 @@ docs/build/
 # Plano - Demos
 demos/function_calling/ollama/models/
 demos/function_calling/ollama/id_ed*
-demos/function_calling/open-webui/
-demos/function_calling/open-webui/
 demos/shared/signoz/data
 
 # Plano - Miscellaneous
