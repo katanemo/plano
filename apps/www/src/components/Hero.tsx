@@ -24,7 +24,7 @@ export function Hero() {
             >
               <div className="inline-flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1 rounded-full bg-[rgba(185,191,255,0.4)] border border-[var(--secondary)] shadow backdrop-blur hover:bg-[rgba(185,191,255,0.6)] transition-colors cursor-pointer">
                 <span className="text-xs sm:text-sm font-medium text-black/65">
-                  v0.4.5
+                  v0.4.6
                 </span>
                 <span className="text-xs sm:text-sm font-medium text-black ">
                   —
