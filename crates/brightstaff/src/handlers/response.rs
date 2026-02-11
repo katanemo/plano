@@ -155,7 +155,9 @@ impl ResponseHandler {
             let upstream_api =
                 SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
 
-            let sse_iter = SseStreamIter::try_from(response_bytes.as_ref()).unwrap();
+            let sse_iter = SseStreamIter::try_from(response_bytes.as_ref()).map_err(|e| {
+                ResponseError::StreamError(format!("Failed to parse SSE stream: {}", e))
+            })?;
             let mut accumulated_text = String::new();
 
             for sse_event in sse_iter {
@@ -165,7 +167,13 @@ impl ResponseHandler {
                 }
 
                 let transformed_event =
-                    SseEvent::try_from((sse_event, &client_api, &upstream_api)).unwrap();
+                    match SseEvent::try_from((sse_event, &client_api, &upstream_api)) {
+                        Ok(event) => event,
+                        Err(e) => {
+                            warn!(error = ?e, "failed to transform SSE event, skipping");
+                            continue;
+                        }
+                    };
 
                 // Try to get provider response and extract content delta
                 match transformed_event.provider_response() {

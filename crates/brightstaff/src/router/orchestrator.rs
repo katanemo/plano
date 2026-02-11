@@ -74,7 +74,8 @@ impl OrchestratorService {
             "sending request to arch-orchestrator"
         );
 
-        let body = serde_json::to_string(&orchestrator_request).unwrap();
+        let body = serde_json::to_string(&orchestrator_request)
+            .map_err(super::orchestrator_model::OrchestratorModelError::from)?;
         debug!(body = %body, "arch orchestrator request");
 
         let mut headers = header::HeaderMap::new();

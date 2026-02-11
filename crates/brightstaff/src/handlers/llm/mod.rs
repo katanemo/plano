@@ -20,11 +20,11 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 mod router;
 
+use crate::app_state::AppState;
 use crate::handlers::request::extract_request_id;
 use crate::handlers::utils::{
     create_streaming_response, truncate_message, ObservableStreamProcessor,
 };
-use crate::router::llm::RouterService;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
@@ -40,11 +40,7 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
-    router_service: Arc<RouterService>,
-    full_qualified_llm_provider_url: String,
-    model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
-    llm_providers: Arc<RwLock<LlmProviders>>,
-    state_storage: Option<Arc<dyn StateStorage>>,
+    state: Arc<AppState>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
@@ -64,29 +60,14 @@ pub async fn llm_chat(
     );
 
     // Execute the rest of the handler inside the span
-    llm_chat_inner(
-        request,
-        router_service,
-        full_qualified_llm_provider_url,
-        model_aliases,
-        llm_providers,
-        state_storage,
-        request_id,
-        request_path,
-        request_headers,
-    )
-    .instrument(request_span)
-    .await
+    llm_chat_inner(request, state, request_id, request_path, request_headers)
+        .instrument(request_span)
+        .await
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn llm_chat_inner(
     request: Request<hyper::body::Incoming>,
-    router_service: Arc<RouterService>,
-    full_qualified_llm_provider_url: String,
-    model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
-    llm_providers: Arc<RwLock<LlmProviders>>,
-    state_storage: Option<Arc<dyn StateStorage>>,
+    state: Arc<AppState>,
     request_id: String,
     request_path: String,
     mut request_headers: hyper::HeaderMap,
@@ -96,14 +77,20 @@ async fn llm_chat_inner(
 
     let traceparent = extract_or_generate_traceparent(&request_headers);
 
+    let full_qualified_llm_provider_url = format!("{}{}", state.llm_provider_url, request_path);
+
     // --- Phase 1: Parse and validate the incoming request ---
-    let parsed =
-        match parse_and_validate_request(request, &request_path, &model_aliases, &llm_providers)
-            .await
-        {
-            Ok(p) => p,
-            Err(response) => return Ok(response),
-        };
+    let parsed = match parse_and_validate_request(
+        request,
+        &request_path,
+        &state.model_aliases,
+        &state.llm_providers,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(response) => return Ok(response),
+    };
 
     let PreparedRequest {
         mut client_request,
@@ -139,8 +126,8 @@ async fn llm_chat_inner(
     let state_ctx = match resolve_conversation_state(
         &mut client_request,
         is_responses_api_client,
-        &state_storage,
-        &llm_providers,
+        &state.state_storage,
+        &state.llm_providers,
         &alias_resolved_model,
         &request_path,
         is_streaming_request,
@@ -177,7 +164,7 @@ async fn llm_chat_inner(
     let routing_result = match async {
         set_service_name(operation_component::ROUTING);
         router_chat_get_upstream_model(
-            router_service,
+            Arc::clone(&state.router_service),
             client_request,
             &traceparent,
             &request_path,
@@ -207,6 +194,7 @@ async fn llm_chat_inner(
 
     // --- Phase 4: Forward to upstream and stream back ---
     send_upstream(
+        &state.http_client,
         &full_qualified_llm_provider_url,
         &mut request_headers,
         client_request_bytes_for_upstream,
@@ -218,7 +206,7 @@ async fn llm_chat_inner(
         is_streaming_request,
         messages_for_signals,
         state_ctx,
-        state_storage,
+        state.state_storage.clone(),
         request_id,
     )
     .await
@@ -458,6 +446,7 @@ async fn resolve_conversation_state(
 
 #[allow(clippy::too_many_arguments)]
 async fn send_upstream(
+    http_client: &reqwest::Client,
     upstream_url: &str,
     request_headers: &mut hyper::HeaderMap,
     body: bytes::Bytes,
@@ -509,7 +498,7 @@ async fn send_upstream(
 
     let request_start_time = std::time::Instant::now();
 
-    let llm_response = match reqwest::Client::new()
+    let llm_response = match http_client
         .post(upstream_url)
         .headers(request_headers.clone())
         .body(body)
