@@ -35,10 +35,9 @@ path = "planoai/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["planoai"]
-include = ["planoai/templates/*.yaml"]
 
 [tool.hatch.build.targets.sdist]
-include = ["planoai/templates/*.yaml"]
+include = ["planoai/**"]
 
 [tool.pytest.ini_options]
 addopts = ["-v"]
