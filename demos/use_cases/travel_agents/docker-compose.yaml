@@ -1,9 +1,7 @@
 
 services:
   plano:
-    build:
-      context: ../../../
-      dockerfile: Dockerfile
+    image: katanemo/plano:0.4.6
     ports:
       - "12000:12000"
       - "8001:8001"
@@ -56,12 +54,3 @@ services:
     depends_on:
       - weather-agent
       - flight-agent
-  jaeger:
-    build:
-      context: ../../shared/jaeger
-    container_name: jaeger
-    restart: always
-    ports:
-      - "16686:16686"  # Jaeger UI
-      - "4317:4317"    # OTLP gRPC receiver
-      - "4318:4318"    # OTLP HTTP receiver
