@@ -22,6 +22,12 @@
     }
   ],
   "settings": {
+    "search.exclude": {
+      "**/target": true
+    },
+    "files.exclude": {
+      "**/target": true
+    },
     "[python]": {
       "editor.defaultFormatter": "ms-python.black-formatter",
       "editor.formatOnSave": true

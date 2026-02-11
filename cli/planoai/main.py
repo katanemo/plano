@@ -1,11 +1,12 @@
-import click
 import os
-import sys
-import subprocess
 import multiprocessing
-import importlib.metadata
-import json
+import subprocess
+import sys
+import rich_click as click
 from planoai import targets
+
+# Brand color - Plano purple
+PLANO_COLOR = "#969FF4"
 from planoai.docker_cli import (
     docker_validate_plano_schema,
     stream_gateway_logs,
@@ -14,7 +15,6 @@ from planoai.docker_cli import (
 from planoai.utils import (
     getLogger,
     get_llm_provider_access_keys,
-    has_ingress_listener,
     load_env_file_to_dict,
     set_log_level,
     stream_access_logs,
@@ -26,60 +26,106 @@ from planoai.core import (
     stop_docker_container,
     start_cli_agent,
 )
+from planoai.init_cmd import init as init_cmd
+from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
-    SERVICE_NAME_ARCHGW,
 )
+from planoai.rich_click_config import configure_rich_click
+from planoai.versioning import check_version_status, get_latest_version, get_version
 
 log = getLogger(__name__)
 
-# ref https://patorjk.com/software/taag/#p=display&f=Doom&t=Plano&x=none&v=4&h=4&w=80&we=false
-logo = r"""
-______ _
-| ___ \ |
-| |_/ / | __ _ _ __   ___
-|  __/| |/ _` | '_ \ / _ \
-| |   | | (_| | | | | (_) |
-\_|   |_|\__,_|_| |_|\___/
 
-"""
+def _is_port_in_use(port: int) -> bool:
+    """Check if a TCP port is already bound on localhost."""
+    import socket
 
-# Command to build plano Docker images
-ARCHGW_DOCKERFILE = "./Dockerfile"
-
-
-def get_version():
-    try:
-        # First try to get version from package metadata (for installed packages)
-        version = importlib.metadata.version("planoai")
-        return version
-    except importlib.metadata.PackageNotFoundError:
-        # Fallback to version defined in __init__.py (for development)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            from planoai import __version__
+            s.bind(("0.0.0.0", port))
+            return False
+        except OSError:
+            return True
 
-            return __version__
-        except ImportError:
-            return "version not found"
+
+# ref https://patorjk.com/software/taag/#p=display&f=Doom&t=Plano&x=none&v=4&h=4&w=80&we=false
+LOGO = f"""[bold {PLANO_COLOR}]
+ ______ _
+ | ___ \\ |
+ | |_/ / | __ _ _ __   ___
+ |  __/| |/ _` | '_ \\ / _ \\
+ | |   | | (_| | | | | (_) |
+ \\_|   |_|\\__,_|_| |_|\\___/
+[/bold {PLANO_COLOR}]"""
+
+
+def _console():
+    from rich.console import Console
+
+    return Console()
+
+
+def _print_cli_header(console) -> None:
+    console.print(
+        f"\n[bold {PLANO_COLOR}]Plano CLI[/bold {PLANO_COLOR}] [dim]v{get_version()}[/dim]\n"
+    )
+
+
+def _print_missing_keys(console, missing_keys: list[str]) -> None:
+    console.print(f"\n[red]✗[/red] [red]Missing API keys![/red]\n")
+    for key in missing_keys:
+        console.print(f"  [red]•[/red] [bold]{key}[/bold] not found")
+    console.print(f"\n[dim]Set the environment variable(s):[/dim]")
+    for key in missing_keys:
+        console.print(f'  [cyan]export {key}="your-api-key"[/cyan]')
+    console.print(f"\n[dim]Or create a .env file in the config directory.[/dim]\n")
+
+
+def _print_version(console, current_version: str) -> None:
+    console.print(
+        f"[bold {PLANO_COLOR}]plano[/bold {PLANO_COLOR}] version [cyan]{current_version}[/cyan]"
+    )
+
+
+def _maybe_check_updates(console, current_version: str) -> None:
+    if os.environ.get("PLANO_SKIP_VERSION_CHECK"):
+        return
+    latest_version = get_latest_version()
+    status = check_version_status(current_version, latest_version)
+
+    if status["is_outdated"]:
+        console.print(
+            f"\n[yellow]⚠ Update available:[/yellow] [bold]{status['latest']}[/bold]"
+        )
+        console.print("[dim]Run: uv pip install --upgrade planoai[/dim]")
+    elif latest_version:
+        console.print(f"[dim]✓ You're up to date[/dim]")
+
+
+configure_rich_click(PLANO_COLOR)
 
 
 @click.group(invoke_without_command=True)
-@click.option("--version", is_flag=True, help="Show the plano cli version and exit.")
+@click.option("--version", is_flag=True, help="Show the Plano CLI version and exit.")
 @click.pass_context
 def main(ctx, version):
     # Set log level from LOG_LEVEL env var only
     set_log_level(os.environ.get("LOG_LEVEL", "info"))
+    console = _console()
+
     if version:
-        click.echo(f"plano cli version: {get_version()}")
+        current_version = get_version()
+        _print_version(console, current_version)
+        _maybe_check_updates(console, current_version)
+
         ctx.exit()
 
-    log.info(f"Starting plano cli version: {get_version()}")
-
     if ctx.invoked_subcommand is None:
-        click.echo("""Plano (AI-native proxy and dataplane for agentic apps) CLI""")
-        click.echo(logo)
+        console.print(LOGO)
+        console.print("[dim]The Delivery Infrastructure for Agentic Apps[/dim]\n")
         click.echo(ctx.get_help())
 
 
@@ -133,81 +179,156 @@ def build():
     help="Run Plano in the foreground. Default is False",
     is_flag=True,
 )
-def up(file, path, foreground):
+@click.option(
+    "--with-tracing",
+    default=False,
+    help="Start a local OTLP trace collector on port 4317.",
+    is_flag=True,
+)
+@click.option(
+    "--tracing-port",
+    default=4317,
+    type=int,
+    help="Port for the OTLP trace collector (default: 4317).",
+    show_default=True,
+)
+def up(file, path, foreground, with_tracing, tracing_port):
     """Starts Plano."""
+    from rich.status import Status
+
+    console = _console()
+    _print_cli_header(console)
+
     # Use the utility function to find config file
     arch_config_file = find_config_file(path, file)
 
     # Check if the file exists
     if not os.path.exists(arch_config_file):
-        log.info(f"Error: {arch_config_file} does not exist.")
-        return
-
-    log.info(f"Validating {arch_config_file}")
-    (
-        validation_return_code,
-        validation_stdout,
-        validation_stderr,
-    ) = docker_validate_plano_schema(arch_config_file)
-    if validation_return_code != 0:
-        log.info(f"Error: Validation failed. Exiting")
-        log.info(f"Validation stdout: {validation_stdout}")
-        log.info(f"Validation stderr: {validation_stderr}")
+        console.print(
+            f"[red]✗[/red] Config file not found: [dim]{arch_config_file}[/dim]"
+        )
         sys.exit(1)
 
-    # Set the ARCH_CONFIG_FILE environment variable
+    with Status(
+        "[dim]Validating configuration[/dim]", spinner="dots", spinner_style="dim"
+    ):
+        (
+            validation_return_code,
+            _,
+            validation_stderr,
+        ) = docker_validate_plano_schema(arch_config_file)
+
+    if validation_return_code != 0:
+        console.print(f"[red]✗[/red] Validation failed")
+        if validation_stderr:
+            console.print(f"  [dim]{validation_stderr.strip()}[/dim]")
+        sys.exit(1)
+
+    console.print(f"[green]✓[/green] Configuration valid")
+
+    # Set up environment
     env_stage = {
         "OTEL_TRACING_GRPC_ENDPOINT": DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     }
     env = os.environ.copy()
-    # Remove PATH variable if present
     env.pop("PATH", None)
-    # check if access_keys are preesnt in the config file
-    access_keys = get_llm_provider_access_keys(arch_config_file=arch_config_file)
 
-    # remove duplicates
+    # Check access keys
+    access_keys = get_llm_provider_access_keys(arch_config_file=arch_config_file)
     access_keys = set(access_keys)
-    # remove the $ from the access_keys
     access_keys = [item[1:] if item.startswith("$") else item for item in access_keys]
 
+    missing_keys = []
     if access_keys:
         if file:
-            app_env_file = os.path.join(
-                os.path.dirname(os.path.abspath(file)), ".env"
-            )  # check the .env file in the path
+            app_env_file = os.path.join(os.path.dirname(os.path.abspath(file)), ".env")
         else:
             app_env_file = os.path.abspath(os.path.join(path, ".env"))
 
-        if not os.path.exists(
-            app_env_file
-        ):  # check to see if the environment variables in the current environment or not
+        if not os.path.exists(app_env_file):
             for access_key in access_keys:
                 if env.get(access_key) is None:
-                    log.info(f"Access Key: {access_key} not found. Exiting Start")
-                    sys.exit(1)
+                    missing_keys.append(access_key)
                 else:
                     env_stage[access_key] = env.get(access_key)
-        else:  # .env file exists, use that to send parameters to Arch
+        else:
             env_file_dict = load_env_file_to_dict(app_env_file)
             for access_key in access_keys:
                 if env_file_dict.get(access_key) is None:
-                    log.info(f"Access Key: {access_key} not found. Exiting Start")
-                    sys.exit(1)
+                    missing_keys.append(access_key)
                 else:
                     env_stage[access_key] = env_file_dict[access_key]
+
+    if missing_keys:
+        _print_missing_keys(console, missing_keys)
+        sys.exit(1)
 
     # Pass log level to the Docker container — supervisord uses LOG_LEVEL
     # to set RUST_LOG (brightstaff) and envoy component log levels
     env_stage["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "info")
 
+    # Start the local OTLP trace collector if --with-tracing is set
+    trace_server = None
+    if with_tracing:
+        if _is_port_in_use(tracing_port):
+            # A listener is already running (e.g. `planoai trace listen`)
+            console.print(
+                f"[green]✓[/green] Trace collector already running on port [cyan]{tracing_port}[/cyan]"
+            )
+        else:
+            try:
+                trace_server = start_trace_listener_background(grpc_port=tracing_port)
+                console.print(
+                    f"[green]✓[/green] Trace collector listening on [cyan]0.0.0.0:{tracing_port}[/cyan]"
+                )
+            except Exception as e:
+                console.print(
+                    f"[red]✗[/red] Failed to start trace collector on port {tracing_port}: {e}"
+                )
+                console.print(
+                    f"\n[dim]Check if another process is using port {tracing_port}:[/dim]"
+                )
+                console.print(f"  [cyan]lsof -i :{tracing_port}[/cyan]")
+                console.print(f"\n[dim]Or use a different port:[/dim]")
+                console.print(
+                    f"  [cyan]planoai up --with-tracing --tracing-port 4318[/cyan]\n"
+                )
+                sys.exit(1)
+
+        # Update the OTEL endpoint so the gateway sends traces to the right port
+        env_stage[
+            "OTEL_TRACING_GRPC_ENDPOINT"
+        ] = f"http://host.docker.internal:{tracing_port}"
+
     env.update(env_stage)
-    start_arch(arch_config_file, env, foreground=foreground)
+    try:
+        start_arch(arch_config_file, env, foreground=foreground)
+
+        # When tracing is enabled but --foreground is not, keep the process
+        # alive so the OTLP collector continues to receive spans.
+        if trace_server is not None and not foreground:
+            console.print(
+                f"[dim]Plano is running. Trace collector active on port {tracing_port}. Press Ctrl+C to stop.[/dim]"
+            )
+            trace_server.wait_for_termination()
+    except KeyboardInterrupt:
+        if trace_server is not None:
+            console.print(f"\n[dim]Stopping trace collector...[/dim]")
+    finally:
+        if trace_server is not None:
+            trace_server.stop(grace=2)
 
 
 @click.command()
 def down():
-    """Stops Arch."""
-    stop_docker_container()
+    """Stops Plano."""
+    console = _console()
+    _print_cli_header(console)
+
+    with console.status(
+        f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]", spinner="dots"
+    ):
+        stop_docker_container()
 
 
 @click.command()
@@ -306,12 +427,15 @@ def cli_agent(type, file, path, settings):
         sys.exit(1)
 
 
+# add commands to the main group
 main.add_command(up)
 main.add_command(down)
 main.add_command(build)
 main.add_command(logs)
 main.add_command(cli_agent)
 main.add_command(generate_prompt_targets)
+main.add_command(init_cmd, name="init")
+main.add_command(trace_cmd, name="trace")
 
 if __name__ == "__main__":
     main()
