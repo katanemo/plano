@@ -424,8 +424,11 @@ async fn llm_chat_inner(
                 let max_retries = provider.max_retries.unwrap_or(1);
                 if provider.retry_on_ratelimit == Some(true) && (attempts - 1) < max_retries as usize
                 {
-                    // Exponential backoff: base interval 25ms
-                    let backoff_ms = 25 * 2u64.pow(attempts as u32 - 1);
+                    // Configurable exponential backoff
+                    let base_ms = provider.retry_backoff_base_ms.unwrap_or(25);
+                    let max_ms = provider.retry_backoff_max_ms.unwrap_or(1000);
+                    let backoff_ms = (base_ms * 2u64.pow(attempts as u32 - 1)).min(max_ms);
+
                     debug!(
                         request_id = %request_id,
                         "429 received, retrying after {}ms (attempt {})",

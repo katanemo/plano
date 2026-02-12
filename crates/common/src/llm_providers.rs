@@ -313,6 +313,8 @@ mod tests {
             retry_on_ratelimit: None,
             max_retries: None,
             retry_to_same_provider: None,
+            retry_backoff_base_ms: None,
+            retry_backoff_max_ms: None,
         }
     }
 

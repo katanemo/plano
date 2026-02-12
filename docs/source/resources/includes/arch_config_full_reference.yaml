@@ -40,6 +40,8 @@ model_providers:
     retry_on_ratelimit: true
     max_retries: 2
     retry_to_same_provider: false # If false, Arch will pick another random model from the list
+    retry_backoff_base_ms: 25 # Base delay for exponential backoff
+    retry_backoff_max_ms: 1000 # Maximum delay for exponential backoff
 
   # Example: Passthrough authentication for LiteLLM or similar proxies
   # When passthrough_auth is true, client's Authorization header is forwarded
