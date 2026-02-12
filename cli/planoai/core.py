@@ -167,7 +167,7 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
     env = os.environ.copy()
     env.update(
         {
-            "ANTHROPIC_AUTH_TOKEN": "test",  # Use test token for arch
+            "ANTHROPIC_AUTH_TOKEN": "test",  # Use test token for plano
             "ANTHROPIC_API_KEY": "",
             "ANTHROPIC_BASE_URL": f"http://{host}:{port}",
             "NO_PROXY": host,
@@ -220,7 +220,7 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
 
     # Use claude from PATH
     claude_path = "claude"
-    log.info(f"Connecting Claude Code Agent to Arch at {host}:{port}")
+    log.info(f"Connecting Claude Code Agent to Plano at {host}:{port}")
 
     try:
         subprocess.run([claude_path] + claude_args, env=env, check=True)

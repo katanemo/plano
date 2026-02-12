@@ -182,7 +182,7 @@ pub mod signals {
 // Operation Names
 // =============================================================================
 
-/// Canonical operation name components for Arch Gateway
+/// Canonical operation name components for Plano Gateway
 pub mod operation_component {
     /// Inbound request handling
     pub const INBOUND: &str = "plano(inbound)";

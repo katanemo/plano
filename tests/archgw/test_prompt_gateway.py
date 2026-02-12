@@ -18,7 +18,7 @@ def httpserver_listen_address():
 from common import (
     PROMPT_GATEWAY_ENDPOINT,
     TEST_CASE_FIXTURES,
-    get_arch_messages,
+    get_plano_messages,
 )
 
 
@@ -83,10 +83,10 @@ def test_prompt_gateway(httpserver: HTTPServer):
     assert assistant_message["role"] == "assistant"
     assert "content" in assistant_message
     assert "weather" in assistant_message["content"]
-    # now verify arch_messages (tool call and api response) that are sent as response metadata
-    arch_messages = get_arch_messages(response_json)
-    assert len(arch_messages) == 2
-    tool_calls_message = arch_messages[0]
+    # now verify plano_messages (tool call and api response) that are sent as response metadata
+    plano_messages = get_plano_messages(response_json)
+    assert len(plano_messages) == 2
+    tool_calls_message = plano_messages[0]
     tool_calls = tool_calls_message.get("tool_calls", [])
     assert len(tool_calls) > 0
     tool_call = normalize_tool_call_arguments(tool_calls[0]["function"])

@@ -33,8 +33,8 @@ cli/__pycache__/
 cli/planoai/__pycache__/
 
 # Python model server
-archgw_modelserver/
-arch_tools/
+plano_modelserver/
+plano_tools/
 
 # Misc
 *.md
