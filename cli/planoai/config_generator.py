@@ -84,6 +84,7 @@ def validate_and_render_schema():
         config.get("agents", []), config.get("filters", [])
     )
     clusters = build_clusters(config.get("endpoints", {}), agent_endpoints)
+    config["endpoints"] = clusters
     log.info("Defined clusters: %s", clusters)
 
     validate_prompt_targets(config, clusters)
@@ -91,6 +92,7 @@ def validate_and_render_schema():
     tracing = validate_tracing(
         config.get("tracing", {}), DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
     )
+    config["tracing"] = tracing
 
     updated_providers, llms_with_endpoint, model_name_keys = process_model_providers(
         listeners, config.get("routing", {})
