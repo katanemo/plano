@@ -1,0 +1,803 @@
+{
+    "traces": [
+      {
+        "trace_id": "86f21585168a31a23578d77096cc143b",
+        "spans": [
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "1d6159b920daf4e9",
+            "parentSpanId": "c5d6cd3cfb32b551",
+            "name": "POST archfc.katanemo.dev/v1/chat/completions",
+            "startTimeUnixNano": "1770937700292451000",
+            "endTimeUnixNano": "1770937700552403000",
+            "service": "plano(outbound)",
+            "attributes": [
+              {
+                "key": "node_id",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "zone",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "guid:x-request-id",
+                "value": {
+                  "stringValue": "0e1acd44-41ea-9681-9944-f2f1bec65faf"
+                }
+              },
+              {
+                "key": "http.url",
+                "value": {
+                  "stringValue": "https://archfc.katanemo.dev/v1/chat/completions"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "downstream_cluster",
+                "value": {
+                  "stringValue": "-"
+                }
+              },
+              {
+                "key": "user_agent",
+                "value": {
+                  "stringValue": "-"
+                }
+              },
+              {
+                "key": "http.protocol",
+                "value": {
+                  "stringValue": "HTTP/1.1"
+                }
+              },
+              {
+                "key": "peer.address",
+                "value": {
+                  "stringValue": "127.0.0.1"
+                }
+              },
+              {
+                "key": "request_size",
+                "value": {
+                  "stringValue": "3293"
+                }
+              },
+              {
+                "key": "response_size",
+                "value": {
+                  "stringValue": "341"
+                }
+              },
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "proxy"
+                }
+              },
+              {
+                "key": "upstream_cluster",
+                "value": {
+                  "stringValue": "arch"
+                }
+              },
+              {
+                "key": "upstream_cluster.name",
+                "value": {
+                  "stringValue": "arch"
+                }
+              },
+              {
+                "key": "http.status_code",
+                "value": {
+                  "stringValue": "200"
+                }
+              },
+              {
+                "key": "response_flags",
+                "value": {
+                  "stringValue": "-"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "4234f793a77a40c8",
+            "parentSpanId": "445f868c5c36294e",
+            "name": "routing",
+            "startTimeUnixNano": "1770937700576995630",
+            "endTimeUnixNano": "1770937700577104880",
+            "service": "plano(routing)",
+            "attributes": [
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "routing"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "http.target",
+                "value": {
+                  "stringValue": "/v1/chat/completions"
+                }
+              },
+              {
+                "key": "model.requested",
+                "value": {
+                  "stringValue": "openai/gpt-4o-mini"
+                }
+              },
+              {
+                "key": "model.alias_resolved",
+                "value": {
+                  "stringValue": "openai/gpt-4o-mini"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(routing)"
+                }
+              },
+              {
+                "key": "routing.determination_ms",
+                "value": {
+                  "intValue": "0"
+                }
+              },
+              {
+                "key": "route.selected_model",
+                "value": {
+                  "stringValue": "none"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "445f868c5c36294e",
+            "parentSpanId": "8311d2245d859e71",
+            "name": "POST /v1/chat/completions openai/gpt-4o-mini",
+            "startTimeUnixNano": "1770937700576869630",
+            "endTimeUnixNano": "1770937701151370214",
+            "service": "plano(llm)",
+            "attributes": [
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "llm"
+                }
+              },
+              {
+                "key": "request_id",
+                "value": {
+                  "stringValue": "0e1acd44-41ea-9681-9944-f2f1bec65faf"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "http.path",
+                "value": {
+                  "stringValue": "/v1/chat/completions"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(llm)"
+                }
+              },
+              {
+                "key": "llm.temperature",
+                "value": {
+                  "stringValue": "0.1"
+                }
+              },
+              {
+                "key": "llm.user_message_preview",
+                "value": {
+                  "stringValue": "What’s the weather in Seattle?"
+                }
+              },
+              {
+                "key": "llm.model",
+                "value": {
+                  "stringValue": "openai/gpt-4o-mini"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(llm)"
+                }
+              },
+              {
+                "key": "llm.time_to_first_token",
+                "value": {
+                  "intValue": "572"
+                }
+              },
+              {
+                "key": "signals.quality",
+                "value": {
+                  "stringValue": "Good"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "da348b97890a6c9b",
+            "parentSpanId": "",
+            "name": "POST /v1/chat/completions",
+            "startTimeUnixNano": "1770937700183402000",
+            "endTimeUnixNano": "1770937704394122000",
+            "service": "plano(inbound)",
+            "attributes": [
+              {
+                "key": "node_id",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "zone",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "guid:x-request-id",
+                "value": {
+                  "stringValue": "0e1acd44-41ea-9681-9944-f2f1bec65faf"
+                }
+              },
+              {
+                "key": "http.url",
+                "value": {
+                  "stringValue": "https://localhost/v1/chat/completions"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "downstream_cluster",
+                "value": {
+                  "stringValue": "-"
+                }
+              },
+              {
+                "key": "user_agent",
+                "value": {
+                  "stringValue": "Python/3.11 aiohttp/3.13.2"
+                }
+              },
+              {
+                "key": "http.protocol",
+                "value": {
+                  "stringValue": "HTTP/1.1"
+                }
+              },
+              {
+                "key": "peer.address",
+                "value": {
+                  "stringValue": "172.18.0.1"
+                }
+              },
+              {
+                "key": "request_size",
+                "value": {
+                  "stringValue": "125"
+                }
+              },
+              {
+                "key": "response_size",
+                "value": {
+                  "stringValue": "34401"
+                }
+              },
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "proxy"
+                }
+              },
+              {
+                "key": "upstream_cluster",
+                "value": {
+                  "stringValue": "bright_staff"
+                }
+              },
+              {
+                "key": "upstream_cluster.name",
+                "value": {
+                  "stringValue": "bright_staff"
+                }
+              },
+              {
+                "key": "http.status_code",
+                "value": {
+                  "stringValue": "200"
+                }
+              },
+              {
+                "key": "response_flags",
+                "value": {
+                  "stringValue": "-"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "79a116cf7d63602a",
+            "parentSpanId": "8b6345129425cf4a",
+            "name": "POST api.openai.com/v1/chat/completions",
+            "startTimeUnixNano": "1770937702607128000",
+            "endTimeUnixNano": "1770937704391625000",
+            "service": "plano(outbound)",
+            "attributes": [
+              {
+                "key": "node_id",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "zone",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "guid:x-request-id",
+                "value": {
+                  "stringValue": "0e1acd44-41ea-9681-9944-f2f1bec65faf"
+                }
+              },
+              {
+                "key": "http.url",
+                "value": {
+                  "stringValue": "https://api.openai.com/v1/chat/completions"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "downstream_cluster",
+                "value": {
+                  "stringValue": "-"
+                }
+              },
+              {
+                "key": "user_agent",
+                "value": {
+                  "stringValue": "AsyncOpenAI/Python 2.17.0"
+                }
+              },
+              {
+                "key": "http.protocol",
+                "value": {
+                  "stringValue": "HTTP/1.1"
+                }
+              },
+              {
+                "key": "peer.address",
+                "value": {
+                  "stringValue": "127.0.0.1"
+                }
+              },
+              {
+                "key": "request_size",
+                "value": {
+                  "stringValue": "1927"
+                }
+              },
+              {
+                "key": "response_size",
+                "value": {
+                  "stringValue": "20646"
+                }
+              },
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "proxy"
+                }
+              },
+              {
+                "key": "upstream_cluster",
+                "value": {
+                  "stringValue": "openai"
+                }
+              },
+              {
+                "key": "upstream_cluster.name",
+                "value": {
+                  "stringValue": "openai"
+                }
+              },
+              {
+                "key": "http.status_code",
+                "value": {
+                  "stringValue": "200"
+                }
+              },
+              {
+                "key": "response_flags",
+                "value": {
+                  "stringValue": "-"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "60508ba7960d51bc",
+            "parentSpanId": "445f868c5c36294e",
+            "name": "POST api.openai.com/v1/chat/completions",
+            "startTimeUnixNano": "1770937700589205000",
+            "endTimeUnixNano": "1770937701149191000",
+            "service": "plano(outbound)",
+            "attributes": [
+              {
+                "key": "node_id",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "zone",
+                "value": {
+                  "stringValue": ""
+                }
+              },
+              {
+                "key": "guid:x-request-id",
+                "value": {
+                  "stringValue": "0e1acd44-41ea-9681-9944-f2f1bec65faf"
+                }
+              },
+              {
+                "key": "http.url",
+                "value": {
+                  "stringValue": "https://api.openai.com/v1/chat/completions"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "downstream_cluster",
+                "value": {
+                  "stringValue": "-"
+                }
+              },
+              {
+                "key": "user_agent",
+                "value": {
+                  "stringValue": "AsyncOpenAI/Python 2.17.0"
+                }
+              },
+              {
+                "key": "http.protocol",
+                "value": {
+                  "stringValue": "HTTP/1.1"
+                }
+              },
+              {
+                "key": "peer.address",
+                "value": {
+                  "stringValue": "127.0.0.1"
+                }
+              },
+              {
+                "key": "request_size",
+                "value": {
+                  "stringValue": "930"
+                }
+              },
+              {
+                "key": "response_size",
+                "value": {
+                  "stringValue": "346"
+                }
+              },
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "proxy"
+                }
+              },
+              {
+                "key": "upstream_cluster",
+                "value": {
+                  "stringValue": "openai"
+                }
+              },
+              {
+                "key": "upstream_cluster.name",
+                "value": {
+                  "stringValue": "openai"
+                }
+              },
+              {
+                "key": "http.status_code",
+                "value": {
+                  "stringValue": "200"
+                }
+              },
+              {
+                "key": "response_flags",
+                "value": {
+                  "stringValue": "-"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "8311d2245d859e71",
+            "parentSpanId": "c5d6cd3cfb32b551",
+            "name": "weather_agent /v1/chat/completions",
+            "startTimeUnixNano": "1770937700553490130",
+            "endTimeUnixNano": "1770937704393946299",
+            "service": "plano(agent)",
+            "attributes": [
+              {
+                "key": "agent_id",
+                "value": {
+                  "stringValue": "weather_agent"
+                }
+              },
+              {
+                "key": "message_count",
+                "value": {
+                  "stringValue": "1"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(agent)"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "9eb8a70a8c167f85",
+            "parentSpanId": "8b6345129425cf4a",
+            "name": "routing",
+            "startTimeUnixNano": "1770937702591610381",
+            "endTimeUnixNano": "1770937702592150423",
+            "service": "plano(routing)",
+            "attributes": [
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "routing"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "http.target",
+                "value": {
+                  "stringValue": "/v1/chat/completions"
+                }
+              },
+              {
+                "key": "model.requested",
+                "value": {
+                  "stringValue": "openai/gpt-5.2"
+                }
+              },
+              {
+                "key": "model.alias_resolved",
+                "value": {
+                  "stringValue": "openai/gpt-5.2"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(routing)"
+                }
+              },
+              {
+                "key": "routing.determination_ms",
+                "value": {
+                  "intValue": "0"
+                }
+              },
+              {
+                "key": "route.selected_model",
+                "value": {
+                  "stringValue": "none"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "c5d6cd3cfb32b551",
+            "parentSpanId": "da348b97890a6c9b",
+            "name": "travel_booking_service",
+            "startTimeUnixNano": "1770937700188669630",
+            "endTimeUnixNano": "1770937704393949091",
+            "service": "plano(orchestrator)",
+            "attributes": [
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "orchestrator"
+                }
+              },
+              {
+                "key": "request_id",
+                "value": {
+                  "stringValue": "0e1acd44-41ea-9681-9944-f2f1bec65faf"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "http.path",
+                "value": {
+                  "stringValue": "/agents/v1/chat/completions"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(orchestrator)"
+                }
+              },
+              {
+                "key": "selection.listener",
+                "value": {
+                  "stringValue": "travel_booking_service"
+                }
+              },
+              {
+                "key": "selection.agent_count",
+                "value": {
+                  "intValue": "1"
+                }
+              },
+              {
+                "key": "selection.agents",
+                "value": {
+                  "stringValue": "weather_agent"
+                }
+              },
+              {
+                "key": "selection.determination_ms",
+                "value": {
+                  "stringValue": "264.48"
+                }
+              }
+            ]
+          },
+          {
+            "traceId": "86f21585168a31a23578d77096cc143b",
+            "spanId": "8b6345129425cf4a",
+            "parentSpanId": "8311d2245d859e71",
+            "name": "POST /v1/chat/completions openai/gpt-5.2",
+            "startTimeUnixNano": "1770937702591499256",
+            "endTimeUnixNano": "1770937704393043174",
+            "service": "plano(llm)",
+            "attributes": [
+              {
+                "key": "component",
+                "value": {
+                  "stringValue": "llm"
+                }
+              },
+              {
+                "key": "request_id",
+                "value": {
+                  "stringValue": "0e1acd44-41ea-9681-9944-f2f1bec65faf"
+                }
+              },
+              {
+                "key": "http.method",
+                "value": {
+                  "stringValue": "POST"
+                }
+              },
+              {
+                "key": "http.path",
+                "value": {
+                  "stringValue": "/v1/chat/completions"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(llm)"
+                }
+              },
+              {
+                "key": "llm.temperature",
+                "value": {
+                  "stringValue": "0.7"
+                }
+              },
+              {
+                "key": "llm.user_message_preview",
+                "value": {
+                  "stringValue": "What’s the weather in Seattle?\n\nWeather data for S..."
+                }
+              },
+              {
+                "key": "llm.model",
+                "value": {
+                  "stringValue": "openai/gpt-5.2"
+                }
+              },
+              {
+                "key": "service.name.override",
+                "value": {
+                  "stringValue": "plano(llm)"
+                }
+              },
+              {
+                "key": "llm.time_to_first_token",
+                "value": {
+                  "intValue": "506"
+                }
+              },
+              {
+                "key": "signals.quality",
+                "value": {
+                  "stringValue": "Good"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
