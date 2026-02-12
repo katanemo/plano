@@ -60,6 +60,8 @@ pub struct StreamContext {
     sse_buffer: Option<SseStreamBuffer>,
     sse_chunk_processor: Option<SseChunkProcessor>,
     needs_bedrock_sigv4: bool,
+    bedrock_sigv4_signed: bool,
+    bedrock_signed_headers: Option<(String, String, Option<String>)>,
 }
 
 impl StreamContext {
@@ -94,6 +96,8 @@ impl StreamContext {
             sse_buffer: None,
             sse_chunk_processor: None,
             needs_bedrock_sigv4: false,
+            bedrock_sigv4_signed: false,
+            bedrock_signed_headers: None,
         }
     }
 
@@ -280,7 +284,7 @@ impl StreamContext {
             })
     }
 
-    fn sign_bedrock_request_with_sigv4(&mut self, payload: &[u8]) -> Result<(), ServerError> {
+    fn sign_bedrock_request_with_sigv4(&mut self, payload: &[u8]) -> Result<(String, String, Option<String>), ServerError> {
         let creds_config =
             self.aws_credentials
                 .as_ref()
@@ -339,17 +343,7 @@ impl StreamContext {
             why: format!("Failed to sign AWS request: {}", e),
         })?;
 
-        self.remove_http_request_header("Authorization");
-        self.remove_http_request_header("x-amz-date");
-        self.remove_http_request_header("x-amz-security-token");
-        
-        self.add_http_request_header("Authorization", &authorization);
-        self.add_http_request_header("x-amz-date", &amz_date);
-        if let Some(token) = session_token {
-            self.add_http_request_header("x-amz-security-token", &token);
-        }
-
-        Ok(())
+        Ok((authorization, amz_date, session_token))
     }
 
     fn delete_content_length_header(&mut self) {
@@ -1209,11 +1203,35 @@ impl HttpContext for StreamContext {
                 }
             };
 
-        if self.needs_bedrock_sigv4 {
-            if let Err(e) = self.sign_bedrock_request_with_sigv4(&serialized_body_bytes_upstream) {
-                self.send_server_error(e, Some(StatusCode::BAD_REQUEST));
-                return Action::Pause;
+        if self.needs_bedrock_sigv4 && !self.bedrock_sigv4_signed {
+            match self.sign_bedrock_request_with_sigv4(&serialized_body_bytes_upstream) {
+                Ok((auth, date, token)) => {
+                    self.bedrock_signed_headers = Some((auth, date, token));
+                    self.bedrock_sigv4_signed = true;
+                    debug!(
+                        "[PLANO_REQ_ID:{}] BEDROCK_SIGV4_SIGNED: Headers computed, will set before resume",
+                        self.request_identifier()
+                    );
+                }
+                Err(e) => {
+                    self.send_server_error(e, Some(StatusCode::BAD_REQUEST));
+                    return Action::Pause;
+                }
             }
+            return Action::Pause;
+        }
+
+        if self.needs_bedrock_sigv4 && self.bedrock_sigv4_signed {
+            if let Some((ref auth, ref date, ref token)) = self.bedrock_signed_headers {
+                self.set_http_request_header("Authorization", Some(auth));
+                self.set_http_request_header("x-amz-date", Some(date));
+                if let Some(ref t) = token {
+                    self.set_http_request_header("x-amz-security-token", Some(t));
+                }
+            }
+            self.set_http_request_body(0, body_size, &serialized_body_bytes_upstream);
+            self.resume_http_request();
+            return Action::Continue;
         }
 
         self.set_http_request_body(0, body_size, &serialized_body_bytes_upstream);
