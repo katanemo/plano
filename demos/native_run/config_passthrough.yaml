@@ -1,0 +1,10 @@
+version: v0.3.0
+
+listeners:
+  egress_traffic:
+    port: 12000
+
+model_providers:
+  - name: openai-passthrough
+    model: openai/gpt-4o
+    passthrough_auth: true

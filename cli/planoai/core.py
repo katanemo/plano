@@ -33,8 +33,11 @@ def _get_gateway_ports(arch_config_file: str) -> list[int]:
     with open(arch_config_file) as f:
         arch_config_dict = yaml.safe_load(f)
 
+    model_providers = arch_config_dict.get("llm_providers") or arch_config_dict.get(
+        "model_providers"
+    )
     listeners, _, _ = convert_legacy_listeners(
-        arch_config_dict.get("listeners"), arch_config_dict.get("llm_providers")
+        arch_config_dict.get("listeners"), model_providers
     )
 
     all_ports = [listener.get("port") for listener in listeners]
