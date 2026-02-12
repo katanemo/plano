@@ -32,6 +32,15 @@ model_providers:
   - model: mistral/ministral-3b-latest
     access_key: $MISTRAL_API_KEY
 
+  # Example: retry configuration for 429 (Too Many Requests) errors
+  # When retry_on_ratelimit is true, Arch will automatically retry the request
+  # if the provider returns a 429 status code.
+  - model: openai/gpt-4
+    access_key: $OPENAI_API_KEY
+    retry_on_ratelimit: true
+    max_retries: 2
+    retry_to_same_provider: false # If false, Arch will pick another random model from the list
+
   # Example: Passthrough authentication for LiteLLM or similar proxies
   # When passthrough_auth is true, client's Authorization header is forwarded
   # instead of using the configured access_key

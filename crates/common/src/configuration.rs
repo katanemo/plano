@@ -329,6 +329,8 @@ pub struct LlmProvider {
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
     pub retry_on_ratelimit: Option<bool>,
+    pub max_retries: Option<u32>,
+    pub retry_to_same_provider: Option<bool>,
 }
 
 pub trait IntoModels {
@@ -374,6 +376,8 @@ impl Default for LlmProvider {
             internal: None,
             passthrough_auth: None,
             retry_on_ratelimit: None,
+            max_retries: None,
+            retry_to_same_provider: None,
         }
     }
 }

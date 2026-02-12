@@ -82,7 +82,7 @@ impl LlmProviders {
     }
 
     /// Get an alternative provider that is not the one specified by current_name.
-    /// Prefers the default provider if it's different, otherwise picks the first non-internal provider.
+    /// Prefers the default provider if it's different, otherwise picks a random non-internal provider.
     pub fn get_alternative(&self, current_name: &str) -> Option<Arc<LlmProvider>> {
         // Try to find a default provider that is not the current one
         if let Some(default_provider) = &self.default {
@@ -91,17 +91,26 @@ impl LlmProviders {
             }
         }
 
-        // Otherwise just pick the first canonical non-internal provider that is not the current one
-        self.providers.iter().find_map(|(key, provider)| {
-            if provider.internal != Some(true)
-                && provider.name != current_name
-                && key == &provider.name
-            {
-                Some(Arc::clone(provider))
-            } else {
-                None
-            }
-        })
+        // Filter canonical non-internal providers that are not the current one
+        let alternatives: Vec<Arc<LlmProvider>> = self
+            .providers
+            .iter()
+            .filter(|(key, provider)| {
+                provider.internal != Some(true)
+                    && provider.name != current_name
+                    && *key == &provider.name
+            })
+            .map(|(_, provider)| Arc::clone(provider))
+            .collect();
+
+        if alternatives.is_empty() {
+            return None;
+        }
+
+        // Pick a random alternative
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        alternatives.choose(&mut rng).cloned()
     }
 }
 
@@ -302,6 +311,8 @@ mod tests {
             stream: None,
             passthrough_auth: None,
             retry_on_ratelimit: None,
+            max_retries: None,
+            retry_to_same_provider: None,
         }
     }
 

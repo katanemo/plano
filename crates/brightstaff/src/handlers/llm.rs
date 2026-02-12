@@ -353,12 +353,10 @@ async fn llm_chat_inner(
 
     // Capture start time right before sending request to upstream
     let request_start_time = std::time::Instant::now();
-    let _request_start_system_time = std::time::SystemTime::now();
 
     let mut current_resolved_model = resolved_model.clone();
     let mut current_client_request = client_request;
     let mut attempts = 0;
-    let max_attempts = 2; // Original + 1 retry
 
     let llm_response = loop {
         attempts += 1;
@@ -420,16 +418,37 @@ async fn llm_chat_inner(
             }
         };
 
-        if res.status() == StatusCode::TOO_MANY_REQUESTS && attempts < max_attempts {
+        if res.status() == StatusCode::TOO_MANY_REQUESTS {
             let providers = llm_providers.read().await;
             if let Some(provider) = providers.get(&current_resolved_model) {
-                if provider.retry_on_ratelimit == Some(true) {
+                let max_retries = provider.max_retries.unwrap_or(1);
+                if provider.retry_on_ratelimit == Some(true) && (attempts - 1) < max_retries as usize
+                {
+                    // Exponential backoff: base interval 25ms
+                    let backoff_ms = 25 * 2u64.pow(attempts as u32 - 1);
+                    debug!(
+                        request_id = %request_id,
+                        "429 received, retrying after {}ms (attempt {})",
+                        backoff_ms,
+                        attempts + 1
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+
+                    if provider.retry_to_same_provider == Some(true) {
+                        info!(
+                            request_id = %request_id,
+                            current_model = %current_resolved_model,
+                            "retrying with same model"
+                        );
+                        continue;
+                    }
+
                     if let Some(alt_provider) = providers.get_alternative(&current_resolved_model) {
                         info!(
                             request_id = %request_id,
                             current_model = %current_resolved_model,
                             alt_model = %alt_provider.name,
-                            "429 received, retrying with alternative model"
+                            "retrying with alternative model"
                         );
                         current_resolved_model = alt_provider.name.clone();
                         continue;
@@ -539,6 +558,41 @@ mod tests {
         let alt_none = llm_providers.get_alternative("secondary");
         assert!(alt_none.is_some());
         assert_eq!(alt_none.unwrap().name, "primary");
+    }
+
+    #[tokio::test]
+    async fn test_llm_providers_get_alternative_random() {
+        let primary = LlmProvider {
+            name: "primary".to_string(),
+            provider_interface: LlmProviderType::OpenAI,
+            model: Some("gpt-4".to_string()),
+            default: Some(false),
+            ..Default::default()
+        };
+
+        let alt1 = LlmProvider {
+            name: "alt1".to_string(),
+            provider_interface: LlmProviderType::OpenAI,
+            model: Some("gpt-4-alt1".to_string()),
+            default: Some(false),
+            ..Default::default()
+        };
+
+        let alt2 = LlmProvider {
+            name: "alt2".to_string(),
+            provider_interface: LlmProviderType::OpenAI,
+            model: Some("gpt-4-alt2".to_string()),
+            default: Some(true),
+            ..Default::default()
+        };
+
+        let providers_vec = vec![primary, alt1, alt2];
+        let llm_providers = LlmProviders::try_from(providers_vec).unwrap();
+
+        let alt = llm_providers.get_alternative("primary");
+        assert!(alt.is_some());
+        let name = alt.unwrap().name.clone();
+        assert!(name == "alt1" || name == "alt2");
     }
 
     #[tokio::test]
