@@ -1,10 +1,6 @@
-import glob
 import os
-import subprocess
-import sys
 import yaml
 import logging
-from planoai.consts import PLANO_DOCKER_NAME
 
 
 # Standard env var for log level across all Plano components
@@ -162,20 +158,15 @@ def convert_legacy_listeners(
 
 
 def get_llm_provider_access_keys(arch_config_file):
+    from planoai.config_validator import migrate_legacy_providers
+
     with open(arch_config_file, "r") as file:
         arch_config = file.read()
         arch_config_yaml = yaml.safe_load(arch_config)
 
     access_key_list = []
 
-    # Convert legacy llm_providers to model_providers
-    if "llm_providers" in arch_config_yaml:
-        if "model_providers" in arch_config_yaml:
-            raise Exception(
-                "Please provide either llm_providers or model_providers, not both. llm_providers is deprecated, please use model_providers instead"
-            )
-        arch_config_yaml["model_providers"] = arch_config_yaml["llm_providers"]
-        del arch_config_yaml["llm_providers"]
+    arch_config_yaml = migrate_legacy_providers(arch_config_yaml)
 
     listeners, _, _ = convert_legacy_listeners(
         arch_config_yaml.get("listeners"), arch_config_yaml.get("model_providers")
@@ -258,25 +249,3 @@ def find_config_file(path=".", file=None):
         return arch_config_file
 
 
-def stream_access_logs(follow):
-    """
-    Get the archgw access logs
-    """
-
-    follow_arg = "-f" if follow else ""
-
-    stream_command = [
-        "docker",
-        "exec",
-        PLANO_DOCKER_NAME,
-        "sh",
-        "-c",
-        f"tail {follow_arg} /var/log/access_*.log",
-    ]
-
-    subprocess.run(
-        stream_command,
-        check=True,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )

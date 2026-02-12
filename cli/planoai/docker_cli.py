@@ -115,6 +115,28 @@ def stream_gateway_logs(follow, service="plano"):
         log.info(f"Failed to stream logs: {str(e)}")
 
 
+def stream_access_logs(follow):
+    """Stream access logs from the running Plano container."""
+
+    follow_arg = "-f" if follow else ""
+
+    stream_command = [
+        "docker",
+        "exec",
+        PLANO_DOCKER_NAME,
+        "sh",
+        "-c",
+        f"tail {follow_arg} /var/log/access_*.log",
+    ]
+
+    subprocess.run(
+        stream_command,
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+
 def docker_validate_plano_schema(arch_config_file):
     import os
 
