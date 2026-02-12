@@ -1,7 +1,3 @@
 [workspace]
 resolver = "2"
 members = ["llm_gateway", "prompt_gateway", "common", "brightstaff", "hermesllm"]
-
-[workspace.metadata.rust-analyzer]
-# Enable features for better IDE support
-cargo.features = ["trace-collection"]

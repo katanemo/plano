@@ -2,13 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use common::{
     configuration::{AgentUsagePreference, OrchestrationPreference},
-    consts::{
-        ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME, REQUEST_ID_HEADER,
-        TRACE_PARENT_HEADER,
-    },
+    consts::{ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME, REQUEST_ID_HEADER},
 };
 use hermesllm::apis::openai::{ChatCompletionsResponse, Message};
 use hyper::header;
+use opentelemetry::global;
+use opentelemetry_http::HeaderInjector;
 use thiserror::Error;
 use tracing::{debug, info, warn};
 
@@ -57,7 +56,6 @@ impl OrchestratorService {
     pub async fn determine_orchestration(
         &self,
         messages: &[Message],
-        trace_parent: Option<String>,
         usage_preferences: Option<Vec<AgentUsagePreference>>,
         request_id: Option<String>,
     ) -> Result<Option<Vec<(String, String)>>> {
@@ -75,14 +73,14 @@ impl OrchestratorService {
             .generate_request(messages, &usage_preferences);
 
         debug!(
-            "sending request to arch-orchestrator model: {}, endpoint: {}",
-            self.orchestrator_model.get_model_name(),
-            self.orchestrator_url
+            model = %self.orchestrator_model.get_model_name(),
+            endpoint = %self.orchestrator_url,
+            "sending request to arch-orchestrator"
         );
 
         debug!(
-            "arch orchestrator request body: {}",
-            &serde_json::to_string(&orchestrator_request).unwrap(),
+            body = %serde_json::to_string(&orchestrator_request).unwrap(),
+            "arch orchestrator request"
         );
 
         let mut orchestration_request_headers = header::HeaderMap::new();
@@ -96,12 +94,12 @@ impl OrchestratorService {
             header::HeaderValue::from_str(PLANO_ORCHESTRATOR_MODEL_NAME).unwrap(),
         );
 
-        if let Some(trace_parent) = trace_parent {
-            orchestration_request_headers.insert(
-                header::HeaderName::from_static(TRACE_PARENT_HEADER),
-                header::HeaderValue::from_str(&trace_parent).unwrap(),
-            );
-        }
+        // Inject OpenTelemetry trace context from current span
+        global::get_text_map_propagator(|propagator| {
+            let cx =
+                tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
+            propagator.inject_context(&cx, &mut HeaderInjector(&mut orchestration_request_headers));
+        });
 
         if let Some(request_id) = request_id {
             orchestration_request_headers.insert(
@@ -131,9 +129,9 @@ impl OrchestratorService {
             Ok(response) => response,
             Err(err) => {
                 warn!(
-                    "Failed to parse JSON: {}. Body: {}",
-                    err,
-                    &serde_json::to_string(&body).unwrap()
+                    error = %err,
+                    body = %serde_json::to_string(&body).unwrap(),
+                    "failed to parse json response"
                 );
                 return Err(OrchestrationError::JsonError(
                     err,
@@ -143,7 +141,7 @@ impl OrchestratorService {
         };
 
         if chat_completion_response.choices.is_empty() {
-            warn!("No choices in orchestrator response: {}", body);
+            warn!(body = %body, "no choices in orchestrator response");
             return Ok(None);
         }
 
@@ -152,10 +150,10 @@ impl OrchestratorService {
                 .orchestrator_model
                 .parse_response(content, &usage_preferences)?;
             info!(
-                "arch-orchestrator determined routes: {}, selected_routes: {:?}, response time: {}ms",
-                content.replace("\n", "\\n"),
-                parsed_response,
-                orchestrator_response_time.as_millis()
+                content = %content.replace("\n", "\\n"),
+                selected_routes = ?parsed_response,
+                response_time_ms = orchestrator_response_time.as_millis(),
+                "arch-orchestrator determined routes"
             );
 
             if let Some(ref parsed_response) = parsed_response {

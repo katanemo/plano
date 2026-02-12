@@ -4,7 +4,6 @@ use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
 use common::llm_providers::LlmProviders;
-use common::traces::TraceCollector;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
@@ -12,10 +11,13 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::header::{self};
 use hyper::{Request, Response, StatusCode};
+use opentelemetry::global;
+use opentelemetry::trace::get_active_span;
+use opentelemetry_http::HeaderInjector;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, info_span, warn, Instrument};
 
 use crate::handlers::router_chat::router_chat_get_upstream_model;
 use crate::handlers::utils::{
@@ -26,7 +28,7 @@ use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
-use crate::tracing::operation_component;
+use crate::tracing::{llm as tracing_llm, operation_component, set_service_name};
 
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
@@ -40,7 +42,6 @@ pub async fn llm_chat(
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
-    trace_collector: Arc<TraceCollector>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
@@ -51,15 +52,52 @@ pub async fn llm_chat(
         .map(|s| s.to_string())
     {
         Some(id) => id,
-        None => {
-            let generated_id = uuid::Uuid::new_v4().to_string();
-            warn!(
-                "[PLANO_REQ_ID:{}] | REQUEST_ID header missing, generated new ID",
-                generated_id
-            );
-            generated_id
-        }
+        None => uuid::Uuid::new_v4().to_string(),
     };
+
+    // Create a span with request_id that will be included in all log lines
+    let request_span = info_span!(
+        "llm",
+        component = "llm",
+        request_id = %request_id,
+        http.method = %request.method(),
+        http.path = %request_path,
+        llm.model = tracing::field::Empty,
+        llm.tools = tracing::field::Empty,
+        llm.user_message_preview = tracing::field::Empty,
+        llm.temperature = tracing::field::Empty,
+    );
+
+    // Execute the rest of the handler inside the span
+    llm_chat_inner(
+        request,
+        router_service,
+        full_qualified_llm_provider_url,
+        model_aliases,
+        llm_providers,
+        state_storage,
+        request_id,
+        request_path,
+        request_headers,
+    )
+    .instrument(request_span)
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn llm_chat_inner(
+    request: Request<hyper::body::Incoming>,
+    router_service: Arc<RouterService>,
+    full_qualified_llm_provider_url: String,
+    model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
+    llm_providers: Arc<RwLock<LlmProviders>>,
+    state_storage: Option<Arc<dyn StateStorage>>,
+    request_id: String,
+    request_path: String,
+    mut request_headers: hyper::HeaderMap,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    // Set service name for LLM operations
+    set_service_name(operation_component::LLM);
 
     // Extract or generate traceparent - this establishes the trace context for all spans
     let traceparent: String = match request_headers
@@ -73,20 +111,18 @@ pub async fn llm_chat(
             let trace_id = Uuid::new_v4().to_string().replace("-", "");
             let generated_tp = format!("00-{}-0000000000000000-01", trace_id);
             warn!(
-                "[PLANO_REQ_ID:{}] | TRACE_PARENT header missing, generated new traceparent: {}",
-                request_id, generated_tp
+                generated_traceparent = %generated_tp,
+                "TRACE_PARENT header missing, generated new traceparent"
             );
             generated_tp
         }
     };
 
-    let mut request_headers = request_headers;
     let chat_request_bytes = request.collect().await?.to_bytes();
 
     debug!(
-        "[PLANO_REQ_ID:{}] | REQUEST_BODY (UTF8): {}",
-        request_id,
-        String::from_utf8_lossy(&chat_request_bytes)
+        body = %String::from_utf8_lossy(&chat_request_bytes),
+        "request body received"
     );
 
     let mut client_request = match ProviderRequestType::try_from((
@@ -96,13 +132,10 @@ pub async fn llm_chat(
         Ok(request) => request,
         Err(err) => {
             warn!(
-                "[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request as ProviderRequestType: {}",
-                request_id, err
+                error = %err,
+                "failed to parse request as ProviderRequestType"
             );
-            let err_msg = format!(
-                "[PLANO_REQ_ID:{}] | FAILURE | Failed to parse request: {}",
-                request_id, err
-            );
+            let err_msg = format!("Failed to parse request: {}", err);
             let mut bad_request = Response::new(full(err_msg));
             *bad_request.status_mut() = StatusCode::BAD_REQUEST;
             return Ok(bad_request);
@@ -122,16 +155,21 @@ pub async fn llm_chat(
     let model_from_request = client_request.model().to_string();
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
-    let resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
+    let alias_resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
 
     // Validate that the requested model exists in configuration
     // This matches the validation in llm_gateway routing.rs
-    if llm_providers.read().await.get(&resolved_model).is_none() {
+    if llm_providers
+        .read()
+        .await
+        .get(&alias_resolved_model)
+        .is_none()
+    {
         let err_msg = format!(
             "Model '{}' not found in configured providers",
-            resolved_model
+            alias_resolved_model
         );
-        warn!("[PLANO_REQ_ID:{}] | FAILURE | {}", request_id, err_msg);
+        warn!(model = %alias_resolved_model, "model not found in configured providers");
         let mut bad_request = Response::new(full(err_msg));
         *bad_request.status_mut() = StatusCode::BAD_REQUEST;
         return Ok(bad_request);
@@ -139,10 +177,10 @@ pub async fn llm_chat(
 
     // Handle provider/model slug format (e.g., "openai/gpt-4")
     // Extract just the model name for upstream (providers don't understand the slug)
-    let model_name_only = if let Some((_, model)) = resolved_model.split_once('/') {
+    let model_name_only = if let Some((_, model)) = alias_resolved_model.split_once('/') {
         model.to_string()
     } else {
-        resolved_model.clone()
+        alias_resolved_model.clone()
     };
 
     // Extract tool names and user message preview for span attributes
@@ -150,18 +188,30 @@ pub async fn llm_chat(
     let user_message_preview = client_request
         .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
+    let span = tracing::Span::current();
+    if let Some(temp) = temperature {
+        span.record(tracing_llm::TEMPERATURE, tracing::field::display(temp));
+    }
+    if let Some(tools) = &tool_names {
+        let formatted_tools = tools
+            .iter()
+            .map(|name| format!("{}(...)", name))
+            .collect::<Vec<_>>()
+            .join("\n");
+        span.record(tracing_llm::TOOLS, formatted_tools.as_str());
+    }
+    if let Some(preview) = &user_message_preview {
+        span.record(tracing_llm::USER_MESSAGE_PREVIEW, preview.as_str());
+    }
 
     // Extract messages for signal analysis (clone before moving client_request)
-    let messages_for_signals = client_request.get_messages();
+    let messages_for_signals = Some(client_request.get_messages());
 
     // Set the model to just the model name (without provider prefix)
     // This ensures upstream receives "gpt-4" not "openai/gpt-4"
     client_request.set_model(model_name_only.clone());
     if client_request.remove_metadata_key("archgw_preference_config") {
-        debug!(
-            "[PLANO_REQ_ID:{}] Removed archgw_preference_config from metadata",
-            request_id
-        );
+        debug!("removed archgw_preference_config from metadata");
     }
 
     // === v1/responses state management: Determine upstream API and combine input if needed ===
@@ -180,9 +230,9 @@ pub async fn llm_chat(
             // Get the upstream path and check if it's ResponsesAPI
             let upstream_path = get_upstream_path(
                 &llm_providers,
-                &resolved_model,
+                &alias_resolved_model,
                 &request_path,
-                &resolved_model,
+                &alias_resolved_model,
                 is_streaming_request,
             )
             .await;
@@ -209,14 +259,17 @@ pub async fn llm_chat(
                             // Update both the request and original_input_items
                             responses_req.input = InputParam::Items(combined_input.clone());
                             original_input_items = combined_input;
-                            info!("[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Updated request with conversation history ({} items)", request_id, original_input_items.len());
+                            info!(
+                                items = original_input_items.len(),
+                                "updated request with conversation history"
+                            );
                         }
                         Err(StateStorageError::NotFound(_)) => {
                             // Return 409 Conflict when previous_response_id not found
-                            warn!("[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Previous response_id not found: {}", request_id, prev_resp_id);
+                            warn!(previous_response_id = %prev_resp_id, "previous response_id not found");
                             let err_msg = format!(
-                                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Conversation state not found for previous_response_id: {}",
-                                request_id, prev_resp_id
+                                "Conversation state not found for previous_response_id: {}",
+                                prev_resp_id
                             );
                             let mut conflict_response = Response::new(full(err_msg));
                             *conflict_response.status_mut() = StatusCode::CONFLICT;
@@ -225,8 +278,9 @@ pub async fn llm_chat(
                         Err(e) => {
                             // Log warning but continue on other storage errors
                             warn!(
-                                "[PLANO_REQ_ID:{}] | STATE_PROCESSOR | Failed to retrieve conversation state for {}: {}",
-                                request_id, prev_resp_id, e
+                                previous_response_id = %prev_resp_id,
+                                error = %e,
+                                "failed to retrieve conversation state"
                             );
                             // Restore original_input_items since we passed ownership
                             original_input_items = extract_input_items(&responses_req.input);
@@ -234,10 +288,7 @@ pub async fn llm_chat(
                     }
                 }
             } else {
-                debug!(
-                    "[PLANO_REQ_ID:{}] | BRIGHT_STAFF | Upstream supports ResponsesAPI natively.",
-                    request_id
-                );
+                debug!("upstream supports ResponsesAPI natively");
             }
         }
     }
@@ -246,14 +297,29 @@ pub async fn llm_chat(
     let client_request_bytes_for_upstream = ProviderRequestType::to_bytes(&client_request).unwrap();
 
     // Determine routing using the dedicated router_chat module
-    let routing_result = match router_chat_get_upstream_model(
-        router_service,
-        client_request, // Pass the original request - router_chat will convert it
-        trace_collector.clone(),
-        &traceparent,
-        &request_path,
-        &request_id,
-    )
+    // This gets its own span for latency and error tracking
+    let routing_span = info_span!(
+        "routing",
+        component = "routing",
+        http.method = "POST",
+        http.target = %request_path,
+        model.requested = %model_from_request,
+        model.alias_resolved = %alias_resolved_model,
+        route.selected_model = tracing::field::Empty,
+        routing.determination_ms = tracing::field::Empty,
+    );
+    let routing_result = match async {
+        set_service_name(operation_component::ROUTING);
+        router_chat_get_upstream_model(
+            router_service,
+            client_request, // Pass the original request - router_chat will convert it
+            &traceparent,
+            &request_path,
+            &request_id,
+        )
+        .await
+    }
+    .instrument(routing_span)
     .await
     {
         Ok(result) => result,
@@ -267,22 +333,37 @@ pub async fn llm_chat(
     // Determine final model to use
     // Router returns "none" as a sentinel value when it doesn't select a specific model
     let router_selected_model = routing_result.model_name;
-    let model_name = if router_selected_model != "none" {
+    let resolved_model = if router_selected_model != "none" {
         // Router selected a specific model via routing preferences
         router_selected_model
     } else {
         // Router returned "none" sentinel, use validated resolved_model from request
-        resolved_model.clone()
+        alias_resolved_model.clone()
     };
+    tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
+
+    let span_name = if model_from_request == resolved_model {
+        format!("POST {} {}", request_path, resolved_model)
+    } else {
+        format!(
+            "POST {} {} -> {}",
+            request_path, model_from_request, resolved_model
+        )
+    };
+    get_active_span(|span| {
+        span.update_name(span_name.clone());
+    });
 
     debug!(
-        "[PLANO_REQ_ID:{}] | ARCH_ROUTER URL | {}, Provider Hint: {}, Model for upstream: {}",
-        request_id, full_qualified_llm_provider_url, model_name, model_name_only
+        url = %full_qualified_llm_provider_url,
+        provider_hint = %resolved_model,
+        upstream_model = %model_name_only,
+        "Routing to upstream"
     );
 
     request_headers.insert(
         ARCH_PROVIDER_HINT_HEADER,
-        header::HeaderValue::from_str(&model_name).unwrap(),
+        header::HeaderValue::from_str(&resolved_model).unwrap(),
     );
 
     request_headers.insert(
@@ -292,12 +373,18 @@ pub async fn llm_chat(
     // remove content-length header if it exists
     request_headers.remove(header::CONTENT_LENGTH);
 
+    // Inject current LLM span's trace context so upstream spans are children of plano(llm)
+    global::get_text_map_propagator(|propagator| {
+        let cx = tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
+        propagator.inject_context(&cx, &mut HeaderInjector(&mut request_headers));
+    });
+
     // Capture start time right before sending request to upstream
     let request_start_time = std::time::Instant::now();
-    let request_start_system_time = std::time::SystemTime::now();
+    let _request_start_system_time = std::time::SystemTime::now();
 
     let llm_response = match reqwest::Client::new()
-        .post(full_qualified_llm_provider_url)
+        .post(&full_qualified_llm_provider_url)
         .headers(request_headers)
         .body(client_request_bytes_for_upstream)
         .send()
@@ -324,29 +411,12 @@ pub async fn llm_chat(
     // Build LLM span with actual status code using constants
     let byte_stream = llm_response.bytes_stream();
 
-    // Build the LLM span (will be finalized after streaming completes)
-    let llm_span = build_llm_span(
-        &traceparent,
-        &request_path,
-        &resolved_model,
-        &model_name,
-        upstream_status.as_u16(),
-        is_streaming_request,
-        request_start_system_time,
-        tool_names,
-        user_message_preview,
-        temperature,
-        &llm_providers,
-    )
-    .await;
-
     // Create base processor for metrics and tracing
     let base_processor = ObservableStreamProcessor::new(
-        trace_collector,
         operation_component::LLM,
-        llm_span,
+        span_name,
         request_start_time,
-        Some(messages_for_signals),
+        messages_for_signals,
     );
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===
@@ -367,8 +437,8 @@ pub async fn llm_chat(
             base_processor,
             state_store,
             original_input_items,
+            alias_resolved_model.clone(),
             resolved_model.clone(),
-            model_name.clone(),
             is_streaming_request,
             false, // Not OpenAI upstream since should_manage_state is true
             content_encoding,
@@ -407,88 +477,6 @@ fn resolve_model_alias(
         }
     }
     model_from_request.to_string()
-}
-
-/// Builds the LLM span with all required and optional attributes.
-#[allow(clippy::too_many_arguments)]
-async fn build_llm_span(
-    traceparent: &str,
-    request_path: &str,
-    resolved_model: &str,
-    model_name: &str,
-    status_code: u16,
-    is_streaming: bool,
-    start_time: std::time::SystemTime,
-    tool_names: Option<Vec<String>>,
-    user_message_preview: Option<String>,
-    temperature: Option<f32>,
-    llm_providers: &Arc<RwLock<LlmProviders>>,
-) -> common::traces::Span {
-    use crate::tracing::{http, llm, OperationNameBuilder};
-    use common::traces::{parse_traceparent, SpanBuilder, SpanKind};
-
-    // Calculate the upstream path based on provider configuration
-    let upstream_path = get_upstream_path(
-        llm_providers,
-        model_name,
-        request_path,
-        resolved_model,
-        is_streaming,
-    )
-    .await;
-
-    // Build operation name showing path transformation if different
-    let operation_name = if request_path != upstream_path {
-        OperationNameBuilder::new()
-            .with_method("POST")
-            .with_path(format!("{} >> {}", request_path, upstream_path))
-            .with_target(resolved_model)
-            .build()
-    } else {
-        OperationNameBuilder::new()
-            .with_method("POST")
-            .with_path(request_path)
-            .with_target(resolved_model)
-            .build()
-    };
-
-    let (trace_id, parent_span_id) = parse_traceparent(traceparent);
-
-    let mut span_builder = SpanBuilder::new(&operation_name)
-        .with_trace_id(&trace_id)
-        .with_kind(SpanKind::Client)
-        .with_start_time(start_time)
-        .with_attribute(http::METHOD, "POST")
-        .with_attribute(http::STATUS_CODE, status_code.to_string())
-        .with_attribute(http::TARGET, request_path.to_string())
-        .with_attribute(http::UPSTREAM_TARGET, upstream_path)
-        .with_attribute(llm::MODEL_NAME, resolved_model.to_string())
-        .with_attribute(llm::IS_STREAMING, is_streaming.to_string());
-
-    // Only set parent span ID if it exists (not a root span)
-    if let Some(parent) = parent_span_id {
-        span_builder = span_builder.with_parent_span_id(&parent);
-    }
-
-    // Add optional attributes
-    if let Some(temp) = temperature {
-        span_builder = span_builder.with_attribute(llm::TEMPERATURE, temp.to_string());
-    }
-
-    if let Some(tools) = tool_names {
-        let formatted_tools = tools
-            .iter()
-            .map(|name| format!("{}(...)", name))
-            .collect::<Vec<_>>()
-            .join("\n");
-        span_builder = span_builder.with_attribute(llm::TOOLS, formatted_tools);
-    }
-
-    if let Some(preview) = user_message_preview {
-        span_builder = span_builder.with_attribute(llm::USER_MESSAGE_PREVIEW, preview);
-    }
-
-    span_builder.build()
 }
 
 /// Calculates the upstream path for the provider based on the model name.

@@ -1,7 +1,7 @@
 FROM sphinxdoc/sphinx
 
 WORKDIR /docs
-ADD docs/requirements.txt /docs
+COPY docs/requirements.txt /docs
 RUN python3 -m pip install -r requirements.txt
 RUN pip freeze
 

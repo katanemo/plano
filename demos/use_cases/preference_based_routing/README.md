@@ -6,7 +6,7 @@ This demo shows how you can use user preferences to route user prompts to approp
 Make sure your machine is up to date with [latest version of plano]([url](https://github.com/katanemo/plano/tree/main?tab=readme-ov-file#prerequisites)). And you have activated the virtual environment.
 
 
-1. start the openwebui
+1. start anythingllm
 ```bash
 (venv) $ cd demos/use_cases/preference_based_routing
 (venv) $ docker compose up -d
@@ -15,16 +15,16 @@ Make sure your machine is up to date with [latest version of plano]([url](https:
 ```bash
 (venv) $ planoai up --service plano --foreground
 # Or if installed with uv: uvx planoai up --service plano --foreground
-2025-05-30 18:00:09,953 - planoai.main - INFO - Starting plano cli version: 0.4.4
+2025-05-30 18:00:09,953 - planoai.main - INFO - Starting plano cli version: 0.4.6
 2025-05-30 18:00:09,953 - planoai.main - INFO - Validating /Users/adilhafeez/src/intelligent-prompt-gateway/demos/use_cases/preference_based_routing/config.yaml
-2025-05-30 18:00:10,422 - cli.core - INFO - Starting arch gateway, image name: plano, tag: katanemo/plano:0.4.4
+2025-05-30 18:00:10,422 - cli.core - INFO - Starting arch gateway, image name: plano, tag: katanemo/plano:0.4.6
 2025-05-30 18:00:10,662 - cli.core - INFO - plano status: running, health status: starting
 2025-05-30 18:00:11,712 - cli.core - INFO - plano status: running, health status: starting
 2025-05-30 18:00:12,761 - cli.core - INFO - plano is running and is healthy!
 ...
 ```
 
-3. open openwebui http://localhost:8080/
+3. open AnythingLLM http://localhost:3001/
 
 # Testing out preference based routing
 

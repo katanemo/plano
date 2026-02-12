@@ -9,7 +9,7 @@ use hyper::{Response, StatusCode};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::{info, warn};
+use tracing::{info, warn, Instrument};
 
 /// Errors that can occur during response handling
 #[derive(Debug, thiserror::Error)]
@@ -69,10 +69,14 @@ impl ResponseHandler {
         response
     }
 
-    /// Create a streaming response from a reqwest response
+    /// Create a streaming response from a reqwest response.
+    /// The spawned streaming task is instrumented with both `agent_span` and `orchestrator_span`
+    /// so their durations reflect the actual time spent streaming to the client.
     pub async fn create_streaming_response(
         &self,
         llm_response: reqwest::Response,
+        agent_span: tracing::Span,
+        orchestrator_span: tracing::Span,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, ResponseError> {
         // Copy headers from the original response
         let response_headers = llm_response.headers();
@@ -89,25 +93,30 @@ impl ResponseHandler {
         // Create channel for async streaming
         let (tx, rx) = mpsc::channel::<Bytes>(16);
 
-        // Spawn task to stream data
-        tokio::spawn(async move {
-            let mut byte_stream = llm_response.bytes_stream();
+        // Spawn streaming task instrumented with both spans (nested) so both
+        // remain entered for the full streaming duration.
+        tokio::spawn(
+            async move {
+                let mut byte_stream = llm_response.bytes_stream();
 
-            while let Some(item) = byte_stream.next().await {
-                let chunk = match item {
-                    Ok(chunk) => chunk,
-                    Err(err) => {
-                        warn!("Error receiving chunk: {:?}", err);
+                while let Some(item) = byte_stream.next().await {
+                    let chunk = match item {
+                        Ok(chunk) => chunk,
+                        Err(err) => {
+                            warn!(error = ?err, "error receiving chunk");
+                            break;
+                        }
+                    };
+
+                    if tx.send(chunk).await.is_err() {
+                        warn!("receiver dropped");
                         break;
                     }
-                };
-
-                if tx.send(chunk).await.is_err() {
-                    warn!("Receiver dropped");
-                    break;
                 }
             }
-        });
+            .instrument(agent_span)
+            .instrument(orchestrator_span),
+        );
 
         let stream = ReceiverStream::new(rx).map(|chunk| Ok::<_, hyper::Error>(Frame::data(chunk)));
         let stream_body = BoxBody::new(StreamBody::new(stream));
@@ -164,11 +173,11 @@ impl ResponseHandler {
                         if let Some(content) = provider_response.content_delta() {
                             accumulated_text.push_str(content);
                         } else {
-                            info!("No content delta in provider response");
+                            info!("no content delta in provider response");
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to parse provider response: {:?}", e);
+                        warn!(error = ?e, "failed to parse provider response");
                     }
                 }
             }
@@ -248,7 +257,13 @@ mod tests {
         let llm_response = client.get(&(server.url() + "/test")).send().await.unwrap();
 
         let handler = ResponseHandler::new();
-        let result = handler.create_streaming_response(llm_response).await;
+        let result = handler
+            .create_streaming_response(
+                llm_response,
+                tracing::Span::current(),
+                tracing::Span::current(),
+            )
+            .await;
 
         mock.assert_async().await;
         assert!(result.is_ok());

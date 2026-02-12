@@ -14,7 +14,6 @@ use common::consts::{
     CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
 };
 use common::llm_providers::LlmProviders;
-use common::traces::TraceCollector;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -51,19 +50,22 @@ fn empty() -> BoxBody<Bytes, hyper::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let _tracer_provider = init_tracer();
     let bind_address = env::var("BIND_ADDRESS").unwrap_or_else(|_| BIND_ADDRESS.to_string());
 
-    // loading arch_config.yaml file
+    // loading arch_config.yaml file (before tracing init so we can read tracing config)
     let arch_config_path = env::var("ARCH_CONFIG_PATH_RENDERED")
         .unwrap_or_else(|_| "./arch_config_rendered.yaml".to_string());
-    info!("Loading arch_config.yaml from {}", arch_config_path);
+    eprintln!("loading arch_config.yaml from {}", arch_config_path);
 
     let config_contents =
         fs::read_to_string(&arch_config_path).expect("Failed to read arch_config.yaml");
 
     let config: Configuration =
         serde_yaml::from_str(&config_contents).expect("Failed to parse arch_config.yaml");
+
+    // Initialize tracing using config.yaml tracing section
+    let _tracer_provider = init_tracer(config.tracing.as_ref());
+    info!(path = %arch_config_path, "loaded arch_config.yaml");
 
     let arch_config = Arc::new(config);
 
@@ -116,17 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in arch_config.yaml
     // Pass Some(true/false) to override, or None to use env var OTEL_TRACING_ENABLED
-    let tracing_enabled = if arch_config.tracing.is_some() {
-        info!("Tracing configuration found in arch_config.yaml");
-        Some(true)
-    } else {
-        info!(
-            "No tracing configuration in arch_config.yaml, will check OTEL_TRACING_ENABLED env var"
-        );
-        None
-    };
-    let trace_collector = Arc::new(TraceCollector::new(tracing_enabled));
-    let _flusher_handle = trace_collector.clone().start_background_flusher();
+    // OpenTelemetry automatic instrumentation is configured in utils/tracing.rs
 
     // Initialize conversation state storage for v1/responses
     // Configurable via arch_config.yaml state_storage section
@@ -136,7 +128,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(storage_config) = &arch_config.state_storage {
             let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
                 common::configuration::StateStorageType::Memory => {
-                    info!("Initialized conversation state storage: Memory");
+                    info!(
+                        storage_type = "memory",
+                        "initialized conversation state storage"
+                    );
                     Arc::new(MemoryConversationalStorage::new())
                 }
                 common::configuration::StateStorageType::Postgres => {
@@ -145,8 +140,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .as_ref()
                         .expect("connection_string is required for postgres state_storage");
 
-                    debug!("Postgres connection string (full): {}", connection_string);
-                    info!("Initializing conversation state storage: Postgres");
+                    debug!(connection_string = %connection_string, "postgres connection");
+                    info!(
+                        storage_type = "postgres",
+                        "initializing conversation state storage"
+                    );
                     Arc::new(
                         PostgreSQLConversationStorage::new(connection_string.clone())
                             .await
@@ -156,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             };
             Some(storage)
         } else {
-            info!("No state_storage configured - conversation state management disabled");
+            info!("no state_storage configured, conversation state management disabled");
             None
         };
 
@@ -175,7 +173,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
-        let trace_collector = trace_collector.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
@@ -186,7 +183,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
-            let trace_collector = trace_collector.clone();
             let state_storage = state_storage.clone();
 
             async move {
@@ -206,7 +202,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             agents_list,
                             listeners,
-                            trace_collector,
                         )
                         .with_context(parent_cx)
                         .await;
@@ -224,7 +219,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             model_aliases,
                             llm_providers,
-                            trace_collector,
                             state_storage,
                         )
                         .with_context(parent_cx)
@@ -265,7 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         Ok(response)
                     }
                     _ => {
-                        debug!("No route for {} {}", req.method(), req.uri().path());
+                        debug!(method = %req.method(), path = %req.uri().path(), "no route found");
                         let mut not_found = Response::new(empty());
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
                         Ok(not_found)
@@ -275,13 +269,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         tokio::task::spawn(async move {
-            debug!("Accepted connection from {:?}", peer_addr);
+            debug!(peer = ?peer_addr, "accepted connection");
             if let Err(err) = http1::Builder::new()
                 // .serve_connection(io, service_fn(chat_completion))
                 .serve_connection(io, service)
                 .await
             {
-                warn!("Error serving connection: {:?}", err);
+                warn!(error = ?err, "error serving connection");
             }
         });
     }

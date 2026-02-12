@@ -13,7 +13,10 @@
       "env": {
         "RUST_LOG": "debug",
         "RUST_BACKTRACE": "1",
-        "ARCH_CONFIG_PATH_RENDERED": "../demos/use_cases/preference_based_routing/arch_config_rendered.yaml"
+        "ARCH_CONFIG_PATH_RENDERED": "../demos/use_cases/multi_agent_with_crewai_langchain/config.yaml_rendered",
+        // "ARCH_CONFIG_PATH_RENDERED": "../demos/use_cases/preference_based_routing/config.yaml_rendered",
+        "OTEL_TRACING_GRPC_ENDPOINT": "http://localhost:4317",
+        "OTEL_TRACING_ENABLED": "true"
       },
       "preLaunchTask": "rust: cargo build"
     }

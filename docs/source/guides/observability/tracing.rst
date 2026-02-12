@@ -168,6 +168,94 @@ How to Initiate A Trace
    You can adjust this value from 0-100.
 
 
+Tracing with the CLI
+--------------------
+
+The Plano CLI ships with a local OTLP/gRPC listener and a trace viewer so you can inspect spans without wiring a full observability backend. This is ideal for development, debugging, and quick QA.
+
+Quick Start
+~~~~~~~~~~~
+
+You can enable tracing in either of these ways:
+
+1. Start the local listener explicitly:
+
+.. code-block:: console
+
+  $ planoai trace listen
+
+2. Or start Plano with tracing enabled (auto-starts the local OTLP listener):
+
+.. code-block:: console
+
+  $ planoai up --with-tracing
+
+  # Optional: choose a different listener port
+  $ planoai up --with-tracing --tracing-port 4318
+
+3. Send requests through Plano as usual. The listener accepts OTLP/gRPC on:
+
+   - ``0.0.0.0:4317`` (default)
+
+4. View the most recent trace:
+
+.. code-block:: console
+
+  $ planoai trace
+
+Inspect and Filter Traces
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+List available trace IDs:
+
+.. code-block:: console
+
+  $ planoai trace --list
+
+Open a specific trace (full or short trace ID):
+
+.. code-block:: console
+
+  $ planoai trace 7f4e9a1c
+  $ planoai trace 7f4e9a1c0d9d4a0bb9bf5a8a7d13f62a
+
+Filter by attributes and time window:
+
+.. code-block:: console
+
+  $ planoai trace --where llm.model=gpt-4o-mini --since 30m
+  $ planoai trace --filter "http.*" --limit 5
+
+Return JSON for automation:
+
+.. code-block:: console
+
+  $ planoai trace --json
+  $ planoai trace --list --json
+
+Show full span attributes (disable default compact view):
+
+.. code-block:: console
+
+  $ planoai trace --verbose
+  $ planoai trace -v
+
+Point the CLI at a different local listener port:
+
+.. code-block:: console
+
+  $ export PLANO_TRACE_PORT=50051
+  $ planoai trace --list
+
+Notes
+~~~~~
+
+- ``--where`` accepts repeatable ``key=value`` filters and uses AND semantics.
+- ``--filter`` supports wildcards (``*``) to limit displayed attributes.
+- ``--no-interactive`` disables prompts when listing traces.
+- By default, inbound/outbound spans use a compact attribute view.
+
+
 Trace Propagation
 -----------------
 
@@ -408,6 +496,59 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 
 Additional Resources
 --------------------
+
+CLI Reference
+~~~~~~~~~~~~~
+
+``planoai trace``
+  Trace requests captured by the local OTLP listener.
+
+  **Synopsis**
+
+  .. code-block:: console
+
+     $ planoai trace [TARGET] [OPTIONS]
+
+  **Targets**
+
+  - ``last`` (default): show the most recent trace.
+  - ``any``: allow interactive selection when available.
+  - ``<trace-id>``: full 32-hex trace ID.
+  - ``<short-id>``: first 8 hex characters.
+
+  **Options**
+
+  - ``--filter <pattern>``: limit displayed attributes to matching keys (supports ``*``).
+  - ``--where <key=value>``: match traces containing a specific attribute (repeatable, AND).
+  - ``--list``: list trace IDs only.
+  - ``--no-interactive``: disable interactive prompts/selections.
+  - ``--limit <n>``: limit the number of traces returned.
+  - ``--since <window>``: look back window (``5m``, ``2h``, ``1d``).
+  - ``--json``: output raw JSON instead of formatted output.
+  - ``--verbose, -v``: show all span attributes. By default, inbound/outbound
+    spans are displayed in a compact view.
+
+  **Environment**
+
+  - ``PLANO_TRACE_PORT``: gRPC port used by ``planoai trace`` to query traces
+    (defaults to ``4317``).
+
+``planoai trace listen``
+  Start a local OTLP/gRPC listener.
+
+  **Synopsis**
+
+  .. code-block:: console
+
+     $ planoai trace listen [OPTIONS]
+
+  **Options**
+
+  - ``--host <host>``: bind address (default: ``0.0.0.0``).
+  - ``--port <port>``: gRPC listener port (default: ``4317``).
+
+External References
+~~~~~~~~~~~~~~~~~~~
 
 - `OpenTelemetry Documentation <https://opentelemetry.io/docs/>`_
 - `W3C Trace Context Specification <https://www.w3.org/TR/trace-context/>`_

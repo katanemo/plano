@@ -6,6 +6,7 @@ import yaml
 from jsonschema import validate
 from urllib.parse import urlparse
 from copy import deepcopy
+from planoai.consts import DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
 
 
 SUPPORTED_PROVIDERS_WITH_BASE_URL = [
@@ -157,6 +158,32 @@ def validate_and_render_schema():
                 )
 
     arch_tracing = config_yaml.get("tracing", {})
+
+    # Resolution order: config yaml > OTEL_TRACING_GRPC_ENDPOINT env var > hardcoded default
+    opentracing_grpc_endpoint = arch_tracing.get(
+        "opentracing_grpc_endpoint",
+        os.environ.get(
+            "OTEL_TRACING_GRPC_ENDPOINT", DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
+        ),
+    )
+    # resolve env vars in opentracing_grpc_endpoint if present
+    if opentracing_grpc_endpoint and "$" in opentracing_grpc_endpoint:
+        opentracing_grpc_endpoint = os.path.expandvars(opentracing_grpc_endpoint)
+        print(
+            f"Resolved opentracing_grpc_endpoint to {opentracing_grpc_endpoint} after expanding environment variables"
+        )
+    arch_tracing["opentracing_grpc_endpoint"] = opentracing_grpc_endpoint
+    # ensure that opentracing_grpc_endpoint is a valid URL if present and start with http and must not have any path
+    if opentracing_grpc_endpoint:
+        urlparse_result = urlparse(opentracing_grpc_endpoint)
+        if urlparse_result.scheme != "http":
+            raise Exception(
+                f"Invalid opentracing_grpc_endpoint {opentracing_grpc_endpoint}, scheme must be http"
+            )
+        if urlparse_result.path and urlparse_result.path != "/":
+            raise Exception(
+                f"Invalid opentracing_grpc_endpoint {opentracing_grpc_endpoint}, path must be empty"
+            )
 
     llms_with_endpoint = []
     llms_with_endpoint_cluster_names = set()

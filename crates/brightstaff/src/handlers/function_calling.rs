@@ -944,7 +944,7 @@ impl ArchFunctionHandler {
     ) -> Result<ChatCompletionsResponse> {
         use tracing::{error, info};
 
-        info!("[Arch-Function] - ChatCompletion");
+        info!("processing chat completion request");
 
         let messages = self.process_messages(
             &request.messages,
@@ -955,9 +955,9 @@ impl ArchFunctionHandler {
         )?;
 
         info!(
-            "[request to arch-fc]: model: {}, messages count: {}",
-            self.model_name,
-            messages.len()
+            model = %self.model_name,
+            message_count = messages.len(),
+            "sending request to arch-fc"
         );
 
         let use_agent_orchestrator = request
@@ -991,7 +991,7 @@ impl ArchFunctionHandler {
                     }
                 }
             }
-            info!("[Agent Orchestrator]: response received");
+            info!("agent orchestrator response received");
         } else if let Some(tools) = request.tools.as_ref() {
             let mut hallucination_state = HallucinationState::new(tools);
             let mut has_tool_calls = None;
@@ -1040,7 +1040,10 @@ impl ArchFunctionHandler {
             }
 
             if has_tool_calls == Some(true) && has_hallucination {
-                info!("[Hallucination]: {}", hallucination_state.error_message);
+                info!(
+                    "detected hallucination: {}",
+                    hallucination_state.error_message
+                );
 
                 let clarify_messages = self.prefill_message(messages.clone(), &self.clarify_prefix);
                 let clarify_request = self.create_request_with_extra_body(clarify_messages, false);
@@ -1075,8 +1078,8 @@ impl ArchFunctionHandler {
         let response_dict = self.parse_model_response(&model_response);
 
         info!(
-            "[arch-fc]: raw model response: {}",
-            response_dict.raw_response
+            raw_response = %response_dict.raw_response,
+            "arch-fc model response"
         );
 
         // General model response (no intent matched - should route to default target)
@@ -1126,7 +1129,7 @@ impl ArchFunctionHandler {
 
                         if verification.is_valid {
                             info!(
-                                "[Tool calls]: {:?}",
+                                "tool calls extracted: {:?}",
                                 response_dict
                                     .tool_calls
                                     .iter()
@@ -1143,7 +1146,7 @@ impl ArchFunctionHandler {
                                 tool_calls: Some(response_dict.tool_calls.clone()),
                             }
                         } else {
-                            error!("Invalid tool call - {}", verification.error_message);
+                            error!(error = %verification.error_message, "invalid tool call");
                             ResponseMessage {
                                 role: Role::Assistant,
                                 content: Some(String::new()),
@@ -1155,7 +1158,7 @@ impl ArchFunctionHandler {
                             }
                         }
                     } else {
-                        error!("Tool calls present but no tools provided in request");
+                        error!("tool calls present but no tools provided in request");
                         ResponseMessage {
                             role: Role::Assistant,
                             content: Some(String::new()),
@@ -1168,7 +1171,7 @@ impl ArchFunctionHandler {
                     }
                 } else {
                     info!(
-                        "[Tool calls]: {:?}",
+                        "tool calls extracted: {:?}",
                         response_dict
                             .tool_calls
                             .iter()
@@ -1187,8 +1190,8 @@ impl ArchFunctionHandler {
                 }
             } else {
                 error!(
-                    "Invalid tool calls in response: {}",
-                    response_dict.error_message
+                    error = %response_dict.error_message,
+                    "invalid tool calls in response"
                 );
                 ResponseMessage {
                     role: Role::Assistant,
@@ -1201,7 +1204,7 @@ impl ArchFunctionHandler {
                 }
             }
         } else {
-            error!("Invalid model response - {}", model_response);
+            error!(response = %model_response, "invalid model response");
             ResponseMessage {
                 role: Role::Assistant,
                 content: Some(String::new()),
@@ -1244,7 +1247,7 @@ impl ArchFunctionHandler {
             metadata: Some(metadata),
         };
 
-        info!("[response arch-fc]: {:?}", chat_completion_response);
+        info!(response = ?chat_completion_response, "arch-fc response");
 
         Ok(chat_completion_response)
     }
@@ -1331,7 +1334,7 @@ pub async fn function_calling_chat_handler(
     let mut body_json: Value = match serde_json::from_slice(&whole_body) {
         Ok(json) => json,
         Err(e) => {
-            error!("Failed to parse request body as JSON: {}", e);
+            error!(error = %e, "failed to parse request body as json");
             let mut response = Response::new(full(
                 serde_json::json!({
                     "error": format!("Invalid request body: {}", e)
@@ -1355,13 +1358,13 @@ pub async fn function_calling_chat_handler(
     let chat_request: ChatCompletionsRequest = match serde_json::from_value(body_json) {
         Ok(req) => {
             info!(
-                "[request body]: {}",
-                serde_json::to_string(&req).unwrap_or_default()
+                request_body = %serde_json::to_string(&req).unwrap_or_default(),
+                "received request"
             );
             req
         }
         Err(e) => {
-            error!("Failed to parse request body: {}", e);
+            error!(error = %e, "failed to parse request body");
             let mut response = Response::new(full(
                 serde_json::json!({
                     "error": format!("Invalid request body: {}", e)
@@ -1384,7 +1387,10 @@ pub async fn function_calling_chat_handler(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    info!("Use agent orchestrator: {}", use_agent_orchestrator);
+    info!(
+        use_agent_orchestrator = use_agent_orchestrator,
+        "handler mode"
+    );
 
     // Create the appropriate handler
     let handler_name = if use_agent_orchestrator {
@@ -1415,7 +1421,7 @@ pub async fn function_calling_chat_handler(
     match final_response {
         Ok(response_data) => {
             let response_json = serde_json::to_string(&response_data).unwrap_or_else(|e| {
-                error!("Failed to serialize response: {}", e);
+                error!(error = %e, "failed to serialize response");
                 serde_json::json!({"error": "Failed to serialize response"}).to_string()
             });
 
@@ -1428,7 +1434,7 @@ pub async fn function_calling_chat_handler(
             Ok(response)
         }
         Err(e) => {
-            error!("[{}] - Error in function calling: {}", handler_name, e);
+            error!(handler = handler_name, error = %e, "error in function calling");
 
             let error_response = serde_json::json!({
                 "error": format!("[{}] - Error in function calling: {}", handler_name, e)

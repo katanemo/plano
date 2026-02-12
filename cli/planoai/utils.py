@@ -7,15 +7,34 @@ import logging
 from planoai.consts import PLANO_DOCKER_NAME
 
 
+# Standard env var for log level across all Plano components
+LOG_LEVEL_ENV = "LOG_LEVEL"
+
+_env_log_level = os.environ.get(LOG_LEVEL_ENV, "info").upper()
+_log_level = getattr(logging, _env_log_level, logging.INFO)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=_log_level,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
 
+def set_log_level(level: str):
+    """Set the log level for all loggers. Accepts: debug, info, warn, error."""
+    global _log_level
+    numeric_level = getattr(logging, level.upper(), None)
+    if numeric_level is None:
+        raise ValueError(f"Invalid log level: {level}")
+    _log_level = numeric_level
+    logging.getLogger().setLevel(_log_level)
+    # Update all existing planoai loggers
+    for name in logging.Logger.manager.loggerDict:
+        logging.getLogger(name).setLevel(_log_level)
+
+
 def getLogger(name="cli"):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(_log_level)
     return logger
 
 
