@@ -435,9 +435,7 @@ def resolve_agent_orchestrator(config, endpoints):
 
     Returns the orchestrator endpoint name, or None if not configured.
     """
-    use_orchestrator = config.get("overrides", {}).get(
-        "use_agent_orchestrator", False
-    )
+    use_orchestrator = config.get("overrides", {}).get("use_agent_orchestrator", False)
     if not use_orchestrator:
         return None
 

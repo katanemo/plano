@@ -189,26 +189,26 @@ def get_function_parameters(node: ast.FunctionDef, tree: ast.AST) -> list:
                 if isinstance(
                     arg.annotation.value, ast.Name
                 ) and arg.annotation.value.id in ["list", "tuple", "set", "dict"]:
-                    param_info[
-                        "type"
-                    ] = f"{arg.annotation.value.id}"  # e.g., "List", "Tuple", etc.
+                    param_info["type"] = (
+                        f"{arg.annotation.value.id}"  # e.g., "List", "Tuple", etc.
+                    )
                 else:
                     param_info["type"] = "[UNKNOWN - PLEASE FIX]"
 
             # Default for unknown types
             else:
-                param_info[
-                    "type"
-                ] = "[UNKNOWN - PLEASE FIX]"  # If unable to detect type
+                param_info["type"] = (
+                    "[UNKNOWN - PLEASE FIX]"  # If unable to detect type
+                )
 
             # Handle default values
             if default is not None:
                 if isinstance(default, ast.Constant) or isinstance(
                     default, ast.NameConstant
                 ):
-                    param_info[
-                        "default"
-                    ] = default.value  # Use the default value directly
+                    param_info["default"] = (
+                        default.value
+                    )  # Use the default value directly
                 else:
                     param_info["default"] = "[UNKNOWN DEFAULT]"  # Unknown default type
                 param_info["required"] = False  # Optional since it has a default value

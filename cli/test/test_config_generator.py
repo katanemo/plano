@@ -154,16 +154,18 @@ class TestBuildClusters:
             "agent1": {"endpoint": "localhost", "port": 8000, "protocol": "http"}
         }
         endpoints = {
-            "explicit1": {"endpoint": "api.example.com", "port": 443, "protocol": "https"}
+            "explicit1": {
+                "endpoint": "api.example.com",
+                "port": 443,
+                "protocol": "https",
+            }
         }
         result = build_clusters(endpoints, agent_inferred)
         assert "agent1" in result
         assert "explicit1" in result
 
     def test_infer_port_from_host_colon_port(self):
-        clusters = build_clusters(
-            {"svc": {"endpoint": "localhost:9090"}}, {}
-        )
+        clusters = build_clusters({"svc": {"endpoint": "localhost:9090"}}, {})
         assert clusters["svc"]["endpoint"] == "localhost"
         assert clusters["svc"]["port"] == 9090
 
@@ -231,9 +233,11 @@ class TestProcessModelProviders:
         return [{"model_providers": model_providers}]
 
     def test_happy_path(self):
-        listeners = self._make_listeners([
-            {"model": "openai/gpt-4o", "access_key": "$KEY", "default": True},
-        ])
+        listeners = self._make_listeners(
+            [
+                {"model": "openai/gpt-4o", "access_key": "$KEY", "default": True},
+            ]
+        )
         providers, llms, keys = process_model_providers(listeners, {})
         # Should have the user provider + internal providers
         names = [p["name"] for p in providers]
@@ -242,21 +246,27 @@ class TestProcessModelProviders:
         assert "plano-orchestrator" in names
 
     def test_duplicate_provider_name(self):
-        listeners = self._make_listeners([
-            {"name": "test1", "model": "openai/gpt-4o", "access_key": "$KEY"},
-            {"name": "test1", "model": "openai/gpt-4o-mini", "access_key": "$KEY"},
-        ])
-        with pytest.raises(ConfigValidationError, match="Duplicate model_provider name"):
+        listeners = self._make_listeners(
+            [
+                {"name": "test1", "model": "openai/gpt-4o", "access_key": "$KEY"},
+                {"name": "test1", "model": "openai/gpt-4o-mini", "access_key": "$KEY"},
+            ]
+        )
+        with pytest.raises(
+            ConfigValidationError, match="Duplicate model_provider name"
+        ):
             process_model_providers(listeners, {})
 
     def test_provider_interface_with_supported_provider(self):
-        listeners = self._make_listeners([
-            {
-                "model": "openai/gpt-4o",
-                "access_key": "$KEY",
-                "provider_interface": "openai",
-            },
-        ])
+        listeners = self._make_listeners(
+            [
+                {
+                    "model": "openai/gpt-4o",
+                    "access_key": "$KEY",
+                    "provider_interface": "openai",
+                },
+            ]
+        )
         with pytest.raises(
             ConfigValidationError,
             match="provide provider interface as part of model name",
@@ -264,30 +274,36 @@ class TestProcessModelProviders:
             process_model_providers(listeners, {})
 
     def test_duplicate_model_id(self):
-        listeners = self._make_listeners([
-            {"model": "openai/gpt-4o", "access_key": "$KEY"},
-            {"model": "mistral/gpt-4o"},
-        ])
+        listeners = self._make_listeners(
+            [
+                {"model": "openai/gpt-4o", "access_key": "$KEY"},
+                {"model": "mistral/gpt-4o"},
+            ]
+        )
         with pytest.raises(ConfigValidationError, match="Duplicate model_id"):
             process_model_providers(listeners, {})
 
     def test_custom_provider_requires_base_url(self):
-        listeners = self._make_listeners([
-            {"model": "custom/gpt-4o"},
-        ])
+        listeners = self._make_listeners(
+            [
+                {"model": "custom/gpt-4o"},
+            ]
+        )
         with pytest.raises(
             ConfigValidationError, match="Must provide base_url and provider_interface"
         ):
             process_model_providers(listeners, {})
 
     def test_base_url_with_path_prefix(self):
-        listeners = self._make_listeners([
-            {
-                "model": "custom/gpt-4o",
-                "base_url": "http://custom.com/api/v2",
-                "provider_interface": "openai",
-            },
-        ])
+        listeners = self._make_listeners(
+            [
+                {
+                    "model": "custom/gpt-4o",
+                    "base_url": "http://custom.com/api/v2",
+                    "provider_interface": "openai",
+                },
+            ]
+        )
         providers, llms, keys = process_model_providers(listeners, {})
         # Find the custom provider
         custom = next(p for p in providers if p.get("cluster_name"))
@@ -296,61 +312,73 @@ class TestProcessModelProviders:
         assert custom["port"] == 80
 
     def test_duplicate_routing_preference_name(self):
-        listeners = self._make_listeners([
-            {"model": "openai/gpt-4o-mini", "access_key": "$KEY", "default": True},
-            {
-                "model": "openai/gpt-4o",
-                "access_key": "$KEY",
-                "routing_preferences": [
-                    {"name": "code understanding", "description": "explains code"},
-                ],
-            },
-            {
-                "model": "openai/gpt-4.1",
-                "access_key": "$KEY",
-                "routing_preferences": [
-                    {"name": "code understanding", "description": "generates code"},
-                ],
-            },
-        ])
+        listeners = self._make_listeners(
+            [
+                {"model": "openai/gpt-4o-mini", "access_key": "$KEY", "default": True},
+                {
+                    "model": "openai/gpt-4o",
+                    "access_key": "$KEY",
+                    "routing_preferences": [
+                        {"name": "code understanding", "description": "explains code"},
+                    ],
+                },
+                {
+                    "model": "openai/gpt-4.1",
+                    "access_key": "$KEY",
+                    "routing_preferences": [
+                        {"name": "code understanding", "description": "generates code"},
+                    ],
+                },
+            ]
+        )
         with pytest.raises(
             ConfigValidationError, match="Duplicate routing preference name"
         ):
             process_model_providers(listeners, {})
 
     def test_wildcard_cannot_be_default(self):
-        listeners = self._make_listeners([
-            {"model": "openai/*", "access_key": "$KEY", "default": True},
-        ])
-        with pytest.raises(ConfigValidationError, match="Default models cannot be wildcards"):
+        listeners = self._make_listeners(
+            [
+                {"model": "openai/*", "access_key": "$KEY", "default": True},
+            ]
+        )
+        with pytest.raises(
+            ConfigValidationError, match="Default models cannot be wildcards"
+        ):
             process_model_providers(listeners, {})
 
     def test_invalid_model_name_format(self):
-        listeners = self._make_listeners([
-            {"model": "gpt-4o", "access_key": "$KEY"},
-        ])
+        listeners = self._make_listeners(
+            [
+                {"model": "gpt-4o", "access_key": "$KEY"},
+            ]
+        )
         with pytest.raises(ConfigValidationError, match="Invalid model name"):
             process_model_providers(listeners, {})
 
     def test_internal_providers_always_added(self):
-        listeners = self._make_listeners([
-            {"model": "openai/gpt-4o", "access_key": "$KEY"},
-        ])
+        listeners = self._make_listeners(
+            [
+                {"model": "openai/gpt-4o", "access_key": "$KEY"},
+            ]
+        )
         providers, _, _ = process_model_providers(listeners, {})
         names = [p["name"] for p in providers]
         assert "arch-function" in names
         assert "plano-orchestrator" in names
 
     def test_arch_router_added_when_routing_preferences_exist(self):
-        listeners = self._make_listeners([
-            {
-                "model": "openai/gpt-4o",
-                "access_key": "$KEY",
-                "routing_preferences": [
-                    {"name": "coding", "description": "code tasks"},
-                ],
-            },
-        ])
+        listeners = self._make_listeners(
+            [
+                {
+                    "model": "openai/gpt-4o",
+                    "access_key": "$KEY",
+                    "routing_preferences": [
+                        {"name": "coding", "description": "code tasks"},
+                    ],
+                },
+            ]
+        )
         providers, _, _ = process_model_providers(listeners, {})
         names = [p["name"] for p in providers]
         assert "arch-router" in names

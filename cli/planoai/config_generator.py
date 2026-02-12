@@ -102,9 +102,7 @@ def validate_and_render_schema():
     if "model_aliases" in config:
         validate_model_aliases(config["model_aliases"], model_name_keys)
 
-    agent_orchestrator = resolve_agent_orchestrator(
-        config, config.get("endpoints", {})
-    )
+    agent_orchestrator = resolve_agent_orchestrator(config, config.get("endpoints", {}))
 
     data = build_template_data(
         prompt_gateway,

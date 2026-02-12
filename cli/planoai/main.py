@@ -296,9 +296,9 @@ def up(file, path, foreground, with_tracing, tracing_port):
                 sys.exit(1)
 
         # Update the OTEL endpoint so the gateway sends traces to the right port
-        env_stage[
-            "OTEL_TRACING_GRPC_ENDPOINT"
-        ] = f"http://host.docker.internal:{tracing_port}"
+        env_stage["OTEL_TRACING_GRPC_ENDPOINT"] = (
+            f"http://host.docker.internal:{tracing_port}"
+        )
 
     env.update(env_stage)
     try:
