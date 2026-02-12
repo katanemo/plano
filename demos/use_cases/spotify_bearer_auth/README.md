@@ -1,6 +1,6 @@
 # Use Case Demo: Bearer Authorization with Spotify APIs
 
-In this demo, we show how you can use Arch's bearer authorization capability to connect your agentic apps to third-party APIs.
+In this demo, we show how you can use Plano's bearer authorization capability to connect your agentic apps to third-party APIs.
 More specifically, we demonstrate how you can connect to two Spotify APIs:
 
 - [`/v1/browse/new-releases`](https://developer.spotify.com/documentation/web-api/reference/get-new-releases)
@@ -23,7 +23,7 @@ Where users can engage by asking questions like _"Show me the latest releases in
    SPOTIFY_CLIENT_KEY=your_spotify_api_token
    ```
 
-3. Start Arch
+3. Start Plano
    ```sh
    sh run_demo.sh
    ```

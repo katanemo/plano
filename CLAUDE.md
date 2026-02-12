@@ -96,7 +96,7 @@ Entry point: `cli/planoai/main.py`. Container lifecycle in `core.py`. Docker ope
 
 ### Configuration System (config/)
 
-- `arch_config_schema.yaml` — JSON Schema (draft-07) for validating user config files
+- `plano_config_schema.yaml` — JSON Schema (draft-07) for validating user config files
 - `envoy.template.yaml` — Jinja2 template rendered into Envoy proxy config
 - `supervisord.conf` — Process supervisor for Envoy + brightstaff in the container
 

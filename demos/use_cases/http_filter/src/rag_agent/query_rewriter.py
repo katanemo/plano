@@ -20,20 +20,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration for archgw LLM gateway
+# Configuration for Plano LLM gateway
 LLM_GATEWAY_ENDPOINT = os.getenv("LLM_GATEWAY_ENDPOINT", "http://localhost:12000/v1")
 QUERY_REWRITE_MODEL = "gpt-4o-mini"
 
-# Initialize OpenAI client for archgw
-archgw_client = AsyncOpenAI(
+# Initialize OpenAI client for Plano
+plano_client = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
-    api_key="EMPTY",  # archgw doesn't require a real API key
+    api_key="EMPTY",  # Plano doesn't require a real API key
 )
 
 app = FastAPI(title="RAG Agent Query Rewriter", version="1.0.0")
 
 
-async def rewrite_query_with_archgw(
+async def rewrite_query_with_plano(
     messages: List[ChatMessage],
     traceparent_header: Optional[str] = None,
     request_id: Optional[str] = None,
@@ -59,8 +59,8 @@ Return only the rewritten query, nothing else."""
         extra_headers["traceparent"] = traceparent_header
 
     try:
-        logger.info(f"Calling archgw at {LLM_GATEWAY_ENDPOINT} to rewrite query")
-        resp = await archgw_client.chat.completions.create(
+        logger.info(f"Calling Plano at {LLM_GATEWAY_ENDPOINT} to rewrite query")
+        resp = await plano_client.chat.completions.create(
             model=QUERY_REWRITE_MODEL,
             messages=rewrite_messages,
             temperature=0.3,
@@ -96,7 +96,7 @@ async def query_rewriter_http(
     else:
         logger.info("No traceparent header found")
 
-    rewritten_query = await rewrite_query_with_archgw(
+    rewritten_query = await rewrite_query_with_plano(
         messages, traceparent_header, request_id
     )
     # Create updated messages with the rewritten query

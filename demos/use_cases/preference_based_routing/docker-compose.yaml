@@ -8,14 +8,14 @@ services:
       - "12000:12000"
       - "12001:12001"
     environment:
-      - ARCH_CONFIG_PATH=/app/arch_config.yaml
+      - PLANO_CONFIG_PATH=/app/plano_config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY environment variable is required but not set}
       - OTEL_TRACING_GRPC_ENDPOINT=http://host.docker.internal:4317
       - OTEL_TRACING_ENABLED=true
       - RUST_LOG=debug
     volumes:
-      - ./config.yaml:/app/arch_config.yaml:ro
+      - ./config.yaml:/app/plano_config.yaml:ro
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
 
   anythingllm:

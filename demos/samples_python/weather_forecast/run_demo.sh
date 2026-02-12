@@ -72,8 +72,8 @@ start_demo() {
     exit 1
   fi
 
-  # Step 4: Start Arch
-  echo "Starting Arch with config.yaml..."
+  # Step 4: Start Plano
+  echo "Starting Plano with config.yaml..."
   planoai up config.yaml
 
   # Step 5: Start Network Agent with the chosen Docker Compose file
@@ -91,8 +91,8 @@ stop_demo() {
     docker compose -f "$compose_file" down
   done
 
-  # Stop Arch
-  echo "Stopping Arch..."
+  # Stop Plano
+  echo "Stopping Plano..."
   planoai down
 }
 

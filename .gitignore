@@ -107,30 +107,30 @@ venv.bak/
 
 # =========================================
 
-# Arch
+# Plano
 cli/config
 cli/build
 
-# Archgw - Docs
+# Plano - Docs
 docs/build/
 
-# Archgw - Demos
+# Plano - Demos
 demos/function_calling/ollama/models/
 demos/function_calling/ollama/id_ed*
 demos/function_calling/open-webui/
 demos/function_calling/open-webui/
 demos/shared/signoz/data
 
-# Arch - Miscellaneous
+# Plano - Miscellaneous
 grafana-data
 prom_data
-arch_log/
-arch_logs/
+plano_log/
+plano_logs/
 crates/*/target/
 crates/target/
 build.log
 
-archgw.log
+plano.log
 
 # Next.js / Turborepo
 .next/

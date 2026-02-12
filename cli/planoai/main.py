@@ -22,7 +22,7 @@ from planoai.utils import (
     find_repo_root,
 )
 from planoai.core import (
-    start_arch,
+    start_plano,
     stop_docker_container,
     start_cli_agent,
 )
@@ -200,12 +200,12 @@ def up(file, path, foreground, with_tracing, tracing_port):
     _print_cli_header(console)
 
     # Use the utility function to find config file
-    arch_config_file = find_config_file(path, file)
+    plano_config_file = find_config_file(path, file)
 
     # Check if the file exists
-    if not os.path.exists(arch_config_file):
+    if not os.path.exists(plano_config_file):
         console.print(
-            f"[red]✗[/red] Config file not found: [dim]{arch_config_file}[/dim]"
+            f"[red]✗[/red] Config file not found: [dim]{plano_config_file}[/dim]"
         )
         sys.exit(1)
 
@@ -216,7 +216,7 @@ def up(file, path, foreground, with_tracing, tracing_port):
             validation_return_code,
             _,
             validation_stderr,
-        ) = docker_validate_plano_schema(arch_config_file)
+        ) = docker_validate_plano_schema(plano_config_file)
 
     if validation_return_code != 0:
         console.print(f"[red]✗[/red] Validation failed")
@@ -234,7 +234,7 @@ def up(file, path, foreground, with_tracing, tracing_port):
     env.pop("PATH", None)
 
     # Check access keys
-    access_keys = get_llm_provider_access_keys(arch_config_file=arch_config_file)
+    access_keys = get_llm_provider_access_keys(plano_config_file=plano_config_file)
     access_keys = set(access_keys)
     access_keys = [item[1:] if item.startswith("$") else item for item in access_keys]
 
@@ -302,7 +302,7 @@ def up(file, path, foreground, with_tracing, tracing_port):
 
     env.update(env_stage)
     try:
-        start_arch(arch_config_file, env, foreground=foreground)
+        start_plano(plano_config_file, env, foreground=foreground)
 
         # When tracing is enabled but --foreground is not, keep the process
         # alive so the OTLP collector continues to receive spans.
@@ -363,35 +363,35 @@ def generate_prompt_targets(file):
 def logs(debug, follow):
     """Stream logs from access logs services."""
 
-    archgw_process = None
+    plano_process = None
     try:
         if debug:
-            archgw_process = multiprocessing.Process(
+            plano_process = multiprocessing.Process(
                 target=stream_gateway_logs, args=(follow,)
             )
-            archgw_process.start()
+            plano_process.start()
 
-        archgw_access_logs_process = multiprocessing.Process(
+        plano_access_logs_process = multiprocessing.Process(
             target=stream_access_logs, args=(follow,)
         )
-        archgw_access_logs_process.start()
-        archgw_access_logs_process.join()
+        plano_access_logs_process.start()
+        plano_access_logs_process.join()
 
-        if archgw_process:
-            archgw_process.join()
+        if plano_process:
+            plano_process.join()
     except KeyboardInterrupt:
         log.info("KeyboardInterrupt detected. Exiting.")
-        if archgw_access_logs_process.is_alive():
-            archgw_access_logs_process.terminate()
-        if archgw_process and archgw_process.is_alive():
-            archgw_process.terminate()
+        if plano_access_logs_process.is_alive():
+            plano_access_logs_process.terminate()
+        if plano_process and plano_process.is_alive():
+            plano_process.terminate()
 
 
 @click.command()
 @click.argument("type", type=click.Choice(["claude"]), required=True)
 @click.argument("file", required=False)  # Optional file argument
 @click.option(
-    "--path", default=".", help="Path to the directory containing arch_config.yaml"
+    "--path", default=".", help="Path to the directory containing plano_config.yaml"
 )
 @click.option(
     "--settings",
@@ -405,20 +405,20 @@ def cli_agent(type, file, path, settings):
     """
 
     # Check if plano docker container is running
-    archgw_status = docker_container_status(PLANO_DOCKER_NAME)
-    if archgw_status != "running":
-        log.error(f"plano docker container is not running (status: {archgw_status})")
+    plano_status = docker_container_status(PLANO_DOCKER_NAME)
+    if plano_status != "running":
+        log.error(f"plano docker container is not running (status: {plano_status})")
         log.error("Please start plano using the 'planoai up' command.")
         sys.exit(1)
 
-    # Determine arch_config.yaml path
-    arch_config_file = find_config_file(path, file)
-    if not os.path.exists(arch_config_file):
-        log.error(f"Config file not found: {arch_config_file}")
+    # Determine plano_config.yaml path
+    plano_config_file = find_config_file(path, file)
+    if not os.path.exists(plano_config_file):
+        log.error(f"Config file not found: {plano_config_file}")
         sys.exit(1)
 
     try:
-        start_cli_agent(arch_config_file, settings)
+        start_cli_agent(plano_config_file, settings)
     except SystemExit:
         # Re-raise SystemExit to preserve exit codes
         raise

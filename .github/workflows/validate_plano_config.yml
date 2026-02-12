@@ -1,4 +1,4 @@
-name: arch config tests
+name: plano config tests
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  validate_arch_config:
+  validate_plano_config:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,10 +22,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: build arch docker image
+      - name: build plano docker image
         run: |
           docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.6
 
-      - name: validate arch config
+      - name: validate plano config
         run: |
           bash config/validate_plano_config.sh

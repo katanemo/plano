@@ -24,11 +24,11 @@ start_demo() {
     echo ".env file created with API keys."
   fi
 
-  # Step 3: Start Arch
-  echo "Starting Arch with arch_config_with_aliases.yaml..."
+  # Step 3: Start Plano
+  echo "Starting Plano with arch_config_with_aliases.yaml..."
   planoai up arch_config_with_aliases.yaml
 
-  echo "\n\nArch started successfully."
+  echo "\n\nPlano started successfully."
   echo "Please run the following CURL command to test model alias routing. Additional instructions are in the README.md file. \n"
   echo "curl -sS -X POST \"http://localhost:12000/v1/chat/completions\" \
     -H \"Authorization: Bearer test-key\" \
@@ -46,8 +46,8 @@ start_demo() {
 
 # Function to stop the demo
 stop_demo() {
-  # Step 2: Stop Arch
-  echo "Stopping Arch..."
+  # Step 2: Stop Plano
+  echo "Stopping Plano..."
   planoai down
 }
 

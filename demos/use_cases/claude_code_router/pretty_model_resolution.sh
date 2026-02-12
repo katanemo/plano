@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pretty-print ArchGW MODEL_RESOLUTION lines from docker logs
+# Pretty-print Plano MODEL_RESOLUTION lines from docker logs
 # - hides Arch-Router
 # - prints timestamp
 # - colors MODEL_RESOLUTION red

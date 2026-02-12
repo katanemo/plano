@@ -38,7 +38,7 @@ jobs:
           curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/4.0.0/hurl_4.0.0_amd64.deb
           sudo dpkg -i hurl_4.0.0_amd64.deb
 
-      - name: install arch gateway and test dependencies
+      - name: install plano gateway and test dependencies
         run: |
           source venv/bin/activate
           cd cli && echo "installing plano cli" && uv sync && uv tool install .

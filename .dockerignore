@@ -44,4 +44,4 @@ turbo.json
 package.json
 *.sh
 !cli/build_cli.sh
-arch_config.yaml_rendered
+plano_config.yaml_rendered

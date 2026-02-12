@@ -69,7 +69,7 @@ RUN uv run pip install --no-cache-dir .
 
 COPY cli/planoai planoai/
 COPY config/envoy.template.yaml .
-COPY config/arch_config_schema.yaml .
+COPY config/plano_config_schema.yaml .
 COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 COPY --from=wasm-builder /arch/target/wasm32-wasip1/release/prompt_gateway.wasm /etc/envoy/proxy-wasm-plugins/prompt_gateway.wasm

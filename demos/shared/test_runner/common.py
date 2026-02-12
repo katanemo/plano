@@ -30,6 +30,6 @@ def get_arch_messages(response_json):
         arch_messages_str = arch_state.get("messages", "[]")
         # parse messages into json object
         arch_messages = json.loads(arch_messages_str)
-        # append messages from arch gateway to history
+        # append messages from Plano gateway to history
         return arch_messages
     return []

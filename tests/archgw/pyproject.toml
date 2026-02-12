@@ -1,7 +1,7 @@
 [project]
-name = "archgw_mock_tests"
+name = "plano_mock_tests"
 version = "0.0.1"
-description = "archgw mock tests"
+description = "plano mock tests"
 authors = [{name = "Katanemo Labs, Inc", email = "info@katanemo.com"}]
 license = {text = "Apache 2.0"}
 requires-python = ">=3.12"

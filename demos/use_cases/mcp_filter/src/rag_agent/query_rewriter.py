@@ -19,20 +19,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration for archgw LLM gateway
+# Configuration for Plano LLM gateway
 LLM_GATEWAY_ENDPOINT = os.getenv("LLM_GATEWAY_ENDPOINT", "http://localhost:12000/v1")
 QUERY_REWRITE_MODEL = "gpt-4o-mini"
 
-# Initialize OpenAI client for archgw
-archgw_client = AsyncOpenAI(
+# Initialize OpenAI client for Plano
+plano_client = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
-    api_key="EMPTY",  # archgw doesn't require a real API key
+    api_key="EMPTY",  # Plano doesn't require a real API key
 )
 
 app = FastAPI()
 
 
-async def rewrite_query_with_archgw(
+async def rewrite_query_with_plano(
     messages: List[ChatMessage],
     traceparent_header: str,
     request_id: Optional[str] = None,
@@ -57,14 +57,14 @@ async def rewrite_query_with_archgw(
         rewrite_messages.append({"role": msg.role, "content": msg.content})
 
     try:
-        # Call archgw using OpenAI client
+        # Call Plano using OpenAI client
         extra_headers = {"x-envoy-max-retries": "3"}
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
         if request_id:
             extra_headers["x-request-id"] = request_id
-        logger.info(f"Calling archgw at {LLM_GATEWAY_ENDPOINT} to rewrite query")
-        response = await archgw_client.chat.completions.create(
+        logger.info(f"Calling Plano at {LLM_GATEWAY_ENDPOINT} to rewrite query")
+        response = await plano_client.chat.completions.create(
             model=QUERY_REWRITE_MODEL,
             messages=rewrite_messages,
             temperature=0.3,
@@ -88,7 +88,7 @@ async def rewrite_query_with_archgw(
 
 
 async def query_rewriter(messages: List[ChatMessage]) -> List[ChatMessage]:
-    """Chat completions endpoint that rewrites the last user query using archgw.
+    """Chat completions endpoint that rewrites the last user query using Plano.
 
     Returns a dict with a 'messages' key containing the updated message list.
     """
@@ -104,8 +104,8 @@ async def query_rewriter(messages: List[ChatMessage]) -> List[ChatMessage]:
     else:
         logger.info("No traceparent header found")
 
-    # Call archgw to rewrite the last user query
-    rewritten_query = await rewrite_query_with_archgw(
+    # Call Plano to rewrite the last user query
+    rewritten_query = await rewrite_query_with_plano(
         messages, traceparent_header, request_id
     )
 

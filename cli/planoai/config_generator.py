@@ -53,34 +53,34 @@ def validate_and_render_schema():
     ENVOY_CONFIG_TEMPLATE_FILE = os.getenv(
         "ENVOY_CONFIG_TEMPLATE_FILE", "envoy.template.yaml"
     )
-    ARCH_CONFIG_FILE = os.getenv("ARCH_CONFIG_FILE", "/app/arch_config.yaml")
-    ARCH_CONFIG_FILE_RENDERED = os.getenv(
-        "ARCH_CONFIG_FILE_RENDERED", "/app/arch_config_rendered.yaml"
+    PLANO_CONFIG_FILE = os.getenv("PLANO_CONFIG_FILE", "/app/plano_config.yaml")
+    PLANO_CONFIG_FILE_RENDERED = os.getenv(
+        "PLANO_CONFIG_FILE_RENDERED", "/app/plano_config_rendered.yaml"
     )
     ENVOY_CONFIG_FILE_RENDERED = os.getenv(
         "ENVOY_CONFIG_FILE_RENDERED", "/etc/envoy/envoy.yaml"
     )
-    ARCH_CONFIG_SCHEMA_FILE = os.getenv(
-        "ARCH_CONFIG_SCHEMA_FILE", "arch_config_schema.yaml"
+    PLANO_CONFIG_SCHEMA_FILE = os.getenv(
+        "PLANO_CONFIG_SCHEMA_FILE", "plano_config_schema.yaml"
     )
 
     env = Environment(loader=FileSystemLoader(os.getenv("TEMPLATE_ROOT", "./")))
     template = env.get_template(ENVOY_CONFIG_TEMPLATE_FILE)
 
     try:
-        validate_prompt_config(ARCH_CONFIG_FILE, ARCH_CONFIG_SCHEMA_FILE)
+        validate_prompt_config(PLANO_CONFIG_FILE, PLANO_CONFIG_SCHEMA_FILE)
     except Exception as e:
         print(str(e))
         exit(1)  # validate_prompt_config failed. Exit
 
-    with open(ARCH_CONFIG_FILE, "r") as file:
-        arch_config = file.read()
+    with open(PLANO_CONFIG_FILE, "r") as file:
+        plano_config = file.read()
 
-    with open(ARCH_CONFIG_SCHEMA_FILE, "r") as file:
-        arch_config_schema = file.read()
+    with open(PLANO_CONFIG_SCHEMA_FILE, "r") as file:
+        plano_config_schema = file.read()
 
-    config_yaml = yaml.safe_load(arch_config)
-    _ = yaml.safe_load(arch_config_schema)
+    config_yaml = yaml.safe_load(plano_config)
+    _ = yaml.safe_load(plano_config_schema)
     inferred_clusters = {}
 
     # Convert legacy llm_providers to model_providers
@@ -145,7 +145,7 @@ def validate_and_render_schema():
                 inferred_clusters[name]["port"],
             ) = get_endpoint_and_port(endpoint, protocol)
 
-    print("defined clusters from arch_config.yaml: ", json.dumps(inferred_clusters))
+    print("defined clusters from plano_config.yaml: ", json.dumps(inferred_clusters))
 
     if "prompt_targets" in config_yaml:
         for prompt_target in config_yaml["prompt_targets"]:
@@ -154,13 +154,13 @@ def validate_and_render_schema():
                 continue
             if name not in inferred_clusters:
                 raise Exception(
-                    f"Unknown endpoint {name}, please add it in endpoints section in your arch_config.yaml file"
+                    f"Unknown endpoint {name}, please add it in endpoints section in your plano_config.yaml file"
                 )
 
-    arch_tracing = config_yaml.get("tracing", {})
+    plano_tracing = config_yaml.get("tracing", {})
 
     # Resolution order: config yaml > OTEL_TRACING_GRPC_ENDPOINT env var > hardcoded default
-    opentracing_grpc_endpoint = arch_tracing.get(
+    opentracing_grpc_endpoint = plano_tracing.get(
         "opentracing_grpc_endpoint",
         os.environ.get(
             "OTEL_TRACING_GRPC_ENDPOINT", DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
@@ -172,7 +172,7 @@ def validate_and_render_schema():
         print(
             f"Resolved opentracing_grpc_endpoint to {opentracing_grpc_endpoint} after expanding environment variables"
         )
-    arch_tracing["opentracing_grpc_endpoint"] = opentracing_grpc_endpoint
+    plano_tracing["opentracing_grpc_endpoint"] = opentracing_grpc_endpoint
     # ensure that opentracing_grpc_endpoint is a valid URL if present and start with http and must not have any path
     if opentracing_grpc_endpoint:
         urlparse_result = urlparse(opentracing_grpc_endpoint)
@@ -436,8 +436,8 @@ def validate_and_render_schema():
                     f"Model alias 2 - '{alias_name}' targets '{target}' which is not defined as a model. Available models: {', '.join(sorted(model_name_keys))}"
                 )
 
-    arch_config_string = yaml.dump(config_yaml)
-    arch_llm_config_string = yaml.dump(config_yaml)
+    plano_config_string = yaml.dump(config_yaml)
+    plano_llm_config_string = yaml.dump(config_yaml)
 
     use_agent_orchestrator = config_yaml.get("overrides", {}).get(
         "use_agent_orchestrator", False
@@ -449,11 +449,11 @@ def validate_and_render_schema():
 
         if len(endpoints) == 0:
             raise Exception(
-                "Please provide agent orchestrator in the endpoints section in your arch_config.yaml file"
+                "Please provide agent orchestrator in the endpoints section in your plano_config.yaml file"
             )
         elif len(endpoints) > 1:
             raise Exception(
-                "Please provide single agent orchestrator in the endpoints section in your arch_config.yaml file"
+                "Please provide single agent orchestrator in the endpoints section in your plano_config.yaml file"
             )
         else:
             agent_orchestrator = list(endpoints.keys())[0]
@@ -463,11 +463,11 @@ def validate_and_render_schema():
     data = {
         "prompt_gateway_listener": prompt_gateway,
         "llm_gateway_listener": llm_gateway,
-        "arch_config": arch_config_string,
-        "arch_llm_config": arch_llm_config_string,
-        "arch_clusters": inferred_clusters,
-        "arch_model_providers": updated_model_providers,
-        "arch_tracing": arch_tracing,
+        "plano_config": plano_config_string,
+        "plano_llm_config": plano_llm_config_string,
+        "plano_clusters": inferred_clusters,
+        "plano_model_providers": updated_model_providers,
+        "plano_tracing": plano_tracing,
         "local_llms": llms_with_endpoint,
         "agent_orchestrator": agent_orchestrator,
         "listeners": listeners,
@@ -479,25 +479,25 @@ def validate_and_render_schema():
     with open(ENVOY_CONFIG_FILE_RENDERED, "w") as file:
         file.write(rendered)
 
-    with open(ARCH_CONFIG_FILE_RENDERED, "w") as file:
-        file.write(arch_config_string)
+    with open(PLANO_CONFIG_FILE_RENDERED, "w") as file:
+        file.write(plano_config_string)
 
 
-def validate_prompt_config(arch_config_file, arch_config_schema_file):
-    with open(arch_config_file, "r") as file:
-        arch_config = file.read()
+def validate_prompt_config(plano_config_file, plano_config_schema_file):
+    with open(plano_config_file, "r") as file:
+        plano_config = file.read()
 
-    with open(arch_config_schema_file, "r") as file:
-        arch_config_schema = file.read()
+    with open(plano_config_schema_file, "r") as file:
+        plano_config_schema = file.read()
 
-    config_yaml = yaml.safe_load(arch_config)
-    config_schema_yaml = yaml.safe_load(arch_config_schema)
+    config_yaml = yaml.safe_load(plano_config)
+    config_schema_yaml = yaml.safe_load(plano_config_schema)
 
     try:
         validate(config_yaml, config_schema_yaml)
     except Exception as e:
         print(
-            f"Error validating arch_config file: {arch_config_file}, schema file: {arch_config_schema_file}, error: {e}"
+            f"Error validating plano_config file: {plano_config_file}, schema file: {plano_config_schema_file}, error: {e}"
         )
         raise e
 

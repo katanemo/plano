@@ -1,6 +1,6 @@
 # Model Alias Demo Suite
 
-This directory contains demos for the model alias feature in archgw.
+This directory contains demos for the model alias feature in Plano.
 
 ## Overview
 
@@ -48,7 +48,7 @@ model_aliases:
 ```
 
 ## Prerequisites
-- Install all dependencies as described in the main Arch README ([link](https://github.com/katanemo/arch/?tab=readme-ov-file#prerequisites))
+- Install all dependencies as described in the main Plano README ([link](https://github.com/katanemo/plano/?tab=readme-ov-file#prerequisites))
 - Set your API keys in your environment:
   - `export OPENAI_API_KEY=your-openai-key`
   - `export ANTHROPIC_API_KEY=your-anthropic-key` (optional, but recommended for Anthropic tests)
@@ -60,13 +60,13 @@ model_aliases:
    sh run_demo.sh
    ```
    - This will create a `.env` file with your API keys (if not present).
-   - Starts Arch Gateway with model alias config (`arch_config_with_aliases.yaml`).
+   - Starts Plano gateway with model alias config (`arch_config_with_aliases.yaml`).
 
 2. To stop the demo:
    ```sh
    sh run_demo.sh down
    ```
-   - This will stop Arch Gateway and any related services.
+   - This will stop Plano gateway and any related services.
 
 ## Example Requests
 
@@ -145,4 +145,4 @@ curl -sS -X POST "http://localhost:12000/v1/messages" \
 ## Troubleshooting
 - Ensure your API keys are set in your environment before running the demo.
 - If you see errors about missing keys, set them and re-run the script.
-- For more details, see the main Arch documentation.
+- For more details, see the main Plano documentation.

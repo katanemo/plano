@@ -210,8 +210,8 @@ async fn llm_chat_inner(
     // Set the model to just the model name (without provider prefix)
     // This ensures upstream receives "gpt-4" not "openai/gpt-4"
     client_request.set_model(model_name_only.clone());
-    if client_request.remove_metadata_key("archgw_preference_config") {
-        debug!("removed archgw_preference_config from metadata");
+    if client_request.remove_metadata_key("plano_preference_config") {
+        debug!("removed plano_preference_config from metadata");
     }
 
     // === v1/responses state management: Determine upstream API and combine input if needed ===

@@ -34,7 +34,7 @@ cd -
 uv sync
 
 # Start gateway with model alias routing config
-log "startup arch gateway with model alias routing demo"
+log "startup plano gateway with model alias routing demo"
 cd ../../
 planoai down || true
 planoai up demos/use_cases/model_alias_routing/config_with_aliases.yaml

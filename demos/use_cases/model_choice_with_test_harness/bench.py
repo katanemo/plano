@@ -3,7 +3,7 @@ import json, time, yaml, statistics as stats
 from pydantic import BaseModel, ValidationError
 from openai import OpenAI
 
-# archgw endpoint (keys are handled by archgw)
+# Plano endpoint (keys are handled by Plano)
 client = OpenAI(base_url="http://localhost:12000/v1", api_key="n/a")
 MODELS = ["arch.summarize.v1", "arch.reason.v1"]
 FIXTURES = "evals_summarize.yaml"

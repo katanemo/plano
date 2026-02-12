@@ -1,6 +1,6 @@
 # Claude Code Router - Multi-Model Access with Intelligent Routing
 
-Arch Gateway extends Claude Code to access multiple LLM providers through a single interface. Offering two key benefits:
+Plano extends Claude Code to access multiple LLM providers through a single interface. Offering two key benefits:
 
 1. **Access to Models**: Connect to Grok, Mistral, Gemini, DeepSeek, GPT models, Claude, and local models via Ollama
 2. **Intelligent Routing via Preferences for Coding Tasks**: Configure which models handle specific development tasks:
@@ -21,15 +21,15 @@ Uses a [1.5B preference-aligned router LLM](https://arxiv.org/abs/2506.16655) to
 
 ## How It Works
 
-Arch Gateway sits between Claude Code and multiple LLM providers, analyzing each request to route it to the most suitable model:
+Plano sits between Claude Code and multiple LLM providers, analyzing each request to route it to the most suitable model:
 
 ```
-Your Request → Arch Gateway → Suitable Model → Response
+Your Request → Plano → Suitable Model → Response
              ↓
     [Task Analysis & Model Selection]
 ```
 
-**Supported Providers**: OpenAI-compatible, Anthropic, DeepSeek, Grok, Gemini, Llama, Mistral, local models via Ollama. See [full list of supported providers](https://docs.archgw.com/concepts/llm_providers/supported_providers.html).
+**Supported Providers**: OpenAI-compatible, Anthropic, DeepSeek, Grok, Gemini, Llama, Mistral, local models via Ollama. See [full list of supported providers](https://docs.planoai.dev/concepts/llm_providers/supported_providers.html).
 
 
 ## Quick Start (5 minutes)
@@ -61,7 +61,7 @@ export ANTHROPIC_API_KEY="your-anthropic-key-here"
 # Add other providers as needed
 ```
 
-### Step 3: Start Arch Gateway
+### Step 3: Start Plano
 ```bash
 # Install using uv (recommended)
 uv tool install planoai
@@ -122,7 +122,7 @@ planoai cli-agent claude --settings='{"ANTHROPIC_SMALL_FAST_MODEL": "deepseek-co
 ### Environment Variables
 The system automatically configures these variables for Claude Code:
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:12000  # Routes through Arch Gateway
+ANTHROPIC_BASE_URL=http://127.0.0.1:12000  # Routes through Plano
 ANTHROPIC_SMALL_FAST_MODEL=arch.claude.code.small.fast    # Uses intelligent alias
 ```
 
@@ -147,6 +147,6 @@ llm_providers:
 
 ## Technical Details
 
-**How routing works:** Arch intercepts Claude Code requests, analyzes the content using preference-aligned routing, and forwards to the configured model.
+**How routing works:** Plano intercepts Claude Code requests, analyzes the content using preference-aligned routing, and forwards to the configured model.
 **Research foundation:** Built on our research in [Preference-Aligned LLM Routing](https://arxiv.org/abs/2506.16655)
-**Documentation:** [docs.archgw.com](https://docs.archgw.com) for advanced configuration and API details.
+**Documentation:** [docs.planoai.dev](https://docs.planoai.dev) for advanced configuration and API details.

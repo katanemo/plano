@@ -28,7 +28,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"  # auto-caches based on requirements files
 
-      - name: build arch docker image
+      - name: build plano docker image
         run: |
           cd ../../ && docker build -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.6 -t katanemo/plano:latest
 

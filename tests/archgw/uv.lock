@@ -2,7 +2,7 @@ version = 1
 requires-python = ">=3.12"
 
 [[package]]
-name = "archgw-mock-tests"
+name = "plano-mock-tests"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [

@@ -114,7 +114,7 @@ Example 1: Adjusting Retrieval
 
     User: What are the benefits of renewable energy?
     **[Plano]**: Check if there is an available <prompt_target> that can handle this user query.
-    **[Plano]**: Found "get_info_for_energy_source" prompt_target in arch_config.yaml. Forward prompt to the endpoint configured in "get_info_for_energy_source"
+    **[Plano]**: Found "get_info_for_energy_source" prompt_target in plano_config.yaml. Forward prompt to the endpoint configured in "get_info_for_energy_source"
     ...
     Assistant: Renewable energy reduces greenhouse gas emissions, lowers air pollution, and provides sustainable power sources like solar and wind.
 
@@ -130,13 +130,13 @@ Example 2: Switching Intent
 
     User: What are the symptoms of diabetes?
     **[Plano]**: Check if there is an available <prompt_target> that can handle this user query.
-    **[Plano]**: Found "diseases_symptoms" prompt_target in arch_config.yaml. Forward disease=diabeteres to "diseases_symptoms" prompt target
+    **[Plano]**: Found "diseases_symptoms" prompt_target in plano_config.yaml. Forward disease=diabeteres to "diseases_symptoms" prompt target
     ...
     Assistant: Common symptoms include frequent urination, excessive thirst, fatigue, and blurry vision.
 
     User: How is it diagnosed?
     **[Plano]**: New intent detected.
-    **[Plano]**: Found "disease_diagnoses" prompt_target in arch_config.yaml. Forward disease=diabeteres to "disease_diagnoses" prompt target
+    **[Plano]**: Found "disease_diagnoses" prompt_target in plano_config.yaml. Forward disease=diabeteres to "disease_diagnoses" prompt target
     ...
     Assistant: Diabetes is diagnosed through blood tests like fasting blood sugar, A1C, or an oral glucose tolerance test.
 
@@ -172,7 +172,7 @@ Once the prompt targets are configured as above, handle parameters across multi-
 Demo App
 --------
 
-For your convenience, we've built a `demo app <https://github.com/katanemo/archgw/tree/main/demos/samples_python/multi_turn_rag_agent>`_
+For your convenience, we've built a `demo app <https://github.com/katanemo/plano/tree/main/demos/samples_python/multi_turn_rag_agent>`_
 that you can test and modify locally for multi-turn RAG scenarios.
 
 .. figure:: ../build_with_plano/includes/multi_turn/mutli-turn-example.png

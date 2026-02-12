@@ -1,6 +1,6 @@
 # Model Choice Newsletter Demo
 
-This folder demonstrates a practical workflow for rapid model adoption and safe model switching using Arch Gateway (`plano`). It includes both a minimal test harness and a sample proxy configuration.
+This folder demonstrates a practical workflow for rapid model adoption and safe model switching using Plano (`plano`). It includes both a minimal test harness and a sample proxy configuration.
 
 ---
 
@@ -85,13 +85,13 @@ See `config.yaml` for a sample configuration mapping aliases to provider models.
    ```
 
 2. **Install dependencies:**
-  - Install all dependencies as described in the main Arch README ([link](https://github.com/katanemo/arch/?tab=readme-ov-file#prerequisites))
+  - Install all dependencies as described in the main Plano README ([link](https://github.com/katanemo/plano/?tab=readme-ov-file#prerequisites))
   - Then run
     ```sh
     uv sync
     ```
 
-3. **Start Arch Gateway**
+3. **Start Plano**
    ```sh
     run_demo.sh
    ```

@@ -115,7 +115,6 @@ export const siteConfig = {
     // Brand (minimal, necessary)
     "Plano AI",
     "Plano gateway",
-    "Arch gateway",
   ],
   authors: [{ name: "Katanemo", url: "https://github.com/katanemo/plano" }],
   creator: "Katanemo",
@@ -240,7 +239,7 @@ export const pageMetadata = {
       "agentic AI",
       "Plano blog",
       "Plano blog posts",
-      "Arch gateway blog",
+      "Plano gateway blog",
     ],
   }),
 
