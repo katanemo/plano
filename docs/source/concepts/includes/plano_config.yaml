@@ -18,7 +18,7 @@ prompt_targets:
     endpoint:
       name: app_server
       path: /agent/summary
-    # Arch uses the default LLM and treats the response from the endpoint as the prompt to send to the LLM
+    # Plano uses the default LLM and treats the response from the endpoint as the prompt to send to the LLM
     auto_llm_dispatch_on_response: true
     # override system prompt for this prompt target
     system_prompt: You are a helpful information extraction assistant. Use the information that is provided to you.
@@ -39,7 +39,7 @@ prompt_targets:
         default: false
         enum: [true, false]
 
-# Arch creates a round-robin load balancing between different endpoints, managed via the cluster subsystem.
+# Plano creates a round-robin load balancing between different endpoints, managed via the cluster subsystem.
 endpoints:
   app_server:
     # value could be ip address or a hostname with port
