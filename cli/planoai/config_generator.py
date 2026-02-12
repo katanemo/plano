@@ -192,6 +192,7 @@ def validate_and_render_schema():
     llms_with_usage = []
     model_name_keys = set()
     model_usage_name_keys = set()
+    bedrock_providers_present = False
 
     print("listeners: ", listeners)
 
@@ -240,6 +241,8 @@ def validate_and_render_schema():
                     f"Invalid model name {model_name}. Please provide model name in the format <provider>/<model_id> or <provider>/* for wildcards."
                 )
             provider = model_name_tokens[0].strip()
+            if provider == "amazon_bedrock":
+                bedrock_providers_present = True
 
             # Check if this is a wildcard (provider/*)
             is_wildcard = model_name_tokens[-1].strip() == "*"
@@ -435,6 +438,20 @@ def validate_and_render_schema():
                 raise Exception(
                     f"Model alias 2 - '{alias_name}' targets '{target}' which is not defined as a model. Available models: {', '.join(sorted(model_name_keys))}"
                 )
+
+    aws_credentials_config = {}
+    for key in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]:
+        value = os.getenv(key)
+        if value:
+            aws_credentials_config[key] = value
+
+    if aws_credentials_config:
+        config_yaml["aws_credentials"] = aws_credentials_config
+        if not bedrock_providers_present:
+            print(
+                "WARNING: AWS credentials were detected but no amazon_bedrock model_providers were found. "
+                "These credentials will be unused unless Bedrock providers are configured."
+            )
 
     arch_config_string = yaml.dump(config_yaml)
     arch_llm_config_string = yaml.dump(config_yaml)
