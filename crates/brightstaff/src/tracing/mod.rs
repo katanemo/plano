@@ -1,9 +1,11 @@
 mod constants;
+mod init;
 mod service_name_exporter;
 
 pub use constants::{
     error, http, llm, operation_component, routing, signals, OperationNameBuilder,
 };
+pub use init::init_tracer;
 pub use service_name_exporter::{ServiceNameOverrideExporter, SERVICE_NAME_OVERRIDE_KEY};
 
 use opentelemetry::trace::get_active_span;

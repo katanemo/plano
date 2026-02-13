@@ -4,16 +4,17 @@ use common::{
     configuration::{AgentUsagePreference, OrchestrationPreference},
     consts::{ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME, REQUEST_ID_HEADER},
 };
-use hermesllm::apis::openai::{ChatCompletionsResponse, Message};
+use hermesllm::apis::openai::Message;
 use hyper::header;
 use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use thiserror::Error;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use crate::router::orchestrator_model_v1::{self};
-
+use super::http::{self, post_and_extract_content};
 use super::orchestrator_model::OrchestratorModel;
+
+use crate::router::orchestrator_model_v1;
 
 pub struct OrchestratorService {
     orchestrator_url: String,
@@ -23,11 +24,8 @@ pub struct OrchestratorService {
 
 #[derive(Debug, Error)]
 pub enum OrchestrationError {
-    #[error("Failed to send request: {0}")]
-    RequestError(#[from] reqwest::Error),
-
-    #[error("Failed to parse JSON: {0}, JSON: {1}")]
-    JsonError(serde_json::Error, String),
+    #[error(transparent)]
+    Http(#[from] http::HttpError),
 
     #[error("Orchestrator model error: {0}")]
     OrchestratorModelError(#[from] super::orchestrator_model::OrchestratorModelError),
@@ -37,7 +35,6 @@ pub type Result<T> = std::result::Result<T, OrchestrationError>;
 
 impl OrchestratorService {
     pub fn new(orchestrator_url: String, orchestration_model_name: String) -> Self {
-        // Empty agent orchestrations - will be provided via usage_preferences in requests
         let agent_orchestrations: HashMap<String, Vec<OrchestrationPreference>> = HashMap::new();
 
         let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::new(
@@ -63,7 +60,6 @@ impl OrchestratorService {
             return Ok(None);
         }
 
-        // Require usage_preferences to be provided
         if usage_preferences.is_none() || usage_preferences.as_ref().unwrap().is_empty() {
             return Ok(None);
         }
@@ -78,18 +74,16 @@ impl OrchestratorService {
             "sending request to arch-orchestrator"
         );
 
-        debug!(
-            body = %serde_json::to_string(&orchestrator_request).unwrap(),
-            "arch orchestrator request"
-        );
+        let body = serde_json::to_string(&orchestrator_request)
+            .map_err(super::orchestrator_model::OrchestratorModelError::from)?;
+        debug!(body = %body, "arch orchestrator request");
 
-        let mut orchestration_request_headers = header::HeaderMap::new();
-        orchestration_request_headers.insert(
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
         );
-
-        orchestration_request_headers.insert(
+        headers.insert(
             header::HeaderName::from_static(ARCH_PROVIDER_HINT_HEADER),
             header::HeaderValue::from_str(PLANO_ORCHESTRATOR_MODEL_NAME).unwrap(),
         );
@@ -98,71 +92,38 @@ impl OrchestratorService {
         global::get_text_map_propagator(|propagator| {
             let cx =
                 tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderInjector(&mut orchestration_request_headers));
+            propagator.inject_context(&cx, &mut HeaderInjector(&mut headers));
         });
 
-        if let Some(request_id) = request_id {
-            orchestration_request_headers.insert(
+        if let Some(ref request_id) = request_id {
+            headers.insert(
                 header::HeaderName::from_static(REQUEST_ID_HEADER),
-                header::HeaderValue::from_str(&request_id).unwrap(),
+                header::HeaderValue::from_str(request_id).unwrap(),
             );
         }
 
-        orchestration_request_headers.insert(
+        headers.insert(
             header::HeaderName::from_static("model"),
             header::HeaderValue::from_static(PLANO_ORCHESTRATOR_MODEL_NAME),
         );
 
-        let start_time = std::time::Instant::now();
-        let res = self
-            .client
-            .post(&self.orchestrator_url)
-            .headers(orchestration_request_headers)
-            .body(serde_json::to_string(&orchestrator_request).unwrap())
-            .send()
-            .await?;
-
-        let body = res.text().await?;
-        let orchestrator_response_time = start_time.elapsed();
-
-        let chat_completion_response: ChatCompletionsResponse = match serde_json::from_str(&body) {
-            Ok(response) => response,
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    body = %serde_json::to_string(&body).unwrap(),
-                    "failed to parse json response"
-                );
-                return Err(OrchestrationError::JsonError(
-                    err,
-                    format!("Failed to parse JSON: {}", body),
-                ));
-            }
+        let Some((content, elapsed)) =
+            post_and_extract_content(&self.client, &self.orchestrator_url, headers, body).await?
+        else {
+            return Ok(None);
         };
 
-        if chat_completion_response.choices.is_empty() {
-            warn!(body = %body, "no choices in orchestrator response");
-            return Ok(None);
-        }
+        let parsed = self
+            .orchestrator_model
+            .parse_response(&content, &usage_preferences)?;
 
-        if let Some(content) = &chat_completion_response.choices[0].message.content {
-            let parsed_response = self
-                .orchestrator_model
-                .parse_response(content, &usage_preferences)?;
-            info!(
-                content = %content.replace("\n", "\\n"),
-                selected_routes = ?parsed_response,
-                response_time_ms = orchestrator_response_time.as_millis(),
-                "arch-orchestrator determined routes"
-            );
+        info!(
+            content = %content.replace("\n", "\\n"),
+            selected_routes = ?parsed,
+            response_time_ms = elapsed.as_millis(),
+            "arch-orchestrator determined routes"
+        );
 
-            if let Some(ref parsed_response) = parsed_response {
-                return Ok(Some(parsed_response.clone()));
-            }
-
-            Ok(None)
-        } else {
-            Ok(None)
-        }
+        Ok(parsed)
     }
 }

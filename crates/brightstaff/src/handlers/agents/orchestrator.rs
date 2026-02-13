@@ -13,10 +13,12 @@ use opentelemetry::trace::get_active_span;
 use serde::ser::Error as SerError;
 use tracing::{debug, info, info_span, warn, Instrument};
 
-use super::agent_selector::{AgentSelectionError, AgentSelector};
-use super::pipeline_processor::{PipelineError, PipelineProcessor};
-use super::response_handler::ResponseHandler;
-use crate::router::plano_orchestrator::OrchestratorService;
+use super::pipeline::{PipelineError, PipelineProcessor};
+use super::selector::{AgentSelectionError, AgentSelector};
+use crate::app_state::AppState;
+use crate::handlers::errors::build_error_chain_response;
+use crate::handlers::request::extract_request_id;
+use crate::handlers::response::ResponseHandler;
 use crate::tracing::{operation_component, set_service_name};
 
 /// Main errors for agent chat completions
@@ -27,7 +29,7 @@ pub enum AgentFilterChainError {
     #[error("Pipeline processing error: {0}")]
     Pipeline(#[from] PipelineError),
     #[error("Response handling error: {0}")]
-    Response(#[from] super::response_handler::ResponseError),
+    Response(#[from] crate::handlers::response::ResponseError),
     #[error("Request parsing error: {0}")]
     RequestParsing(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
@@ -36,21 +38,9 @@ pub enum AgentFilterChainError {
 
 pub async fn agent_chat(
     request: Request<hyper::body::Incoming>,
-    orchestrator_service: Arc<OrchestratorService>,
-    _: String,
-    agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
-    listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    state: Arc<AppState>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    // Extract request_id from headers or generate a new one
-    let request_id: String = match request
-        .headers()
-        .get(common::consts::REQUEST_ID_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
-    {
-        Some(id) => id,
-        None => uuid::Uuid::new_v4().to_string(),
-    };
+    let request_id = extract_request_id(&request);
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -66,15 +56,7 @@ pub async fn agent_chat(
         // Set service name for orchestrator operations
         set_service_name(operation_component::ORCHESTRATOR);
 
-        match handle_agent_chat_inner(
-            request,
-            orchestrator_service,
-            agents_list,
-            listeners,
-            request_id,
-        )
-        .await
-        {
+        match handle_agent_chat_inner(request, state, request_id).await {
             Ok(response) => Ok(response),
             Err(err) => {
                 // Check if this is a client error from the pipeline that should be cascaded
@@ -91,7 +73,6 @@ pub async fn agent_chat(
                         "client error from agent"
                     );
 
-                    // Create error response with the original status code and body
                     let error_json = serde_json::json!({
                         "error": "ClientError",
                         "agent": agent,
@@ -111,38 +92,7 @@ pub async fn agent_chat(
                     return Ok(response);
                 }
 
-                // Print detailed error information with full error chain for other errors
-                let mut error_chain = Vec::new();
-                let mut current_error: &dyn std::error::Error = &err;
-
-                // Collect the full error chain
-                loop {
-                    error_chain.push(current_error.to_string());
-                    match current_error.source() {
-                        Some(source) => current_error = source,
-                        None => break,
-                    }
-                }
-
-                // Log the complete error chain
-                warn!(error_chain = ?error_chain, "agent chat error chain");
-                warn!(root_error = ?err, "root error");
-
-                // Create structured error response as JSON
-                let error_json = serde_json::json!({
-                    "error": {
-                        "type": "AgentFilterChainError",
-                        "message": err.to_string(),
-                        "error_chain": error_chain,
-                        "debug_info": format!("{:?}", err)
-                    }
-                });
-
-                // Log the error for debugging
-                info!(error = %error_json, "structured error info");
-
-                // Return JSON error response
-                Ok(ResponseHandler::create_json_error_response(&error_json))
+                build_error_chain_response(&err)
             }
         }
     }
@@ -152,13 +102,11 @@ pub async fn agent_chat(
 
 async fn handle_agent_chat_inner(
     request: Request<hyper::body::Incoming>,
-    orchestrator_service: Arc<OrchestratorService>,
-    agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
-    listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    state: Arc<AppState>,
     request_id: String,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
-    let agent_selector = AgentSelector::new(orchestrator_service);
+    let agent_selector = AgentSelector::new(Arc::clone(&state.orchestrator_service));
     let mut pipeline_processor = PipelineProcessor::default();
     let response_handler = ResponseHandler::new();
 
@@ -170,7 +118,7 @@ async fn handle_agent_chat_inner(
 
     // Find the appropriate listener
     let listener: common::configuration::Listener = {
-        let listeners = listeners.read().await;
+        let listeners = state.listeners.read().await;
         agent_selector
             .find_listener(listener_name, &listeners)
             .await?
@@ -183,12 +131,10 @@ async fn handle_agent_chat_inner(
     info!(listener = %listener.name, "handling request");
 
     // Parse request body
-    let request_path = request
-        .uri()
-        .path()
-        .to_string()
+    let full_path = request.uri().path().to_string();
+    let request_path = full_path
         .strip_prefix("/agents")
-        .unwrap()
+        .unwrap_or(&full_path)
         .to_string();
 
     let request_headers = {
@@ -241,8 +187,10 @@ async fn handle_agent_chat_inner(
 
     // Create agent map for pipeline processing and agent selection
     let agent_map = {
-        let agents = agents_list.read().await;
-        let agents = agents.as_ref().unwrap();
+        let agents = state.agents_list.read().await;
+        let agents = agents.as_ref().ok_or_else(|| {
+            AgentFilterChainError::RequestParsing(serde_json::Error::custom("No agents configured"))
+        })?;
         agent_selector.create_agent_map(agents)
     };
 
@@ -309,7 +257,12 @@ async fn handle_agent_chat_inner(
             .await?;
 
         // Get agent details and invoke
-        let agent = agent_map.get(&agent_name).unwrap();
+        let agent = agent_map.get(&agent_name).ok_or_else(|| {
+            AgentFilterChainError::RequestParsing(serde_json::Error::custom(format!(
+                "Selected agent '{}' not found in configuration",
+                agent_name
+            )))
+        })?;
 
         debug!(agent = %agent_name, "invoking agent");
 
@@ -373,7 +326,10 @@ async fn handle_agent_chat_inner(
         );
 
         // remove last message and add new one at the end
-        let last_message = current_messages.pop().unwrap();
+        let Some(last_message) = current_messages.pop() else {
+            warn!(agent = %agent_name, "no messages in conversation history");
+            break;
+        };
 
         // Create a new message with the agent's response as assistant message
         // and add it to the conversation history

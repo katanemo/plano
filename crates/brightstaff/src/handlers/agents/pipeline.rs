@@ -11,7 +11,7 @@ use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use tracing::{debug, info, instrument, warn};
 
-use crate::handlers::jsonrpc::{
+use super::jsonrpc::{
     JsonRpcId, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, JSON_RPC_VERSION,
     MCP_INITIALIZE, MCP_INITIALIZE_NOTIFICATION, TOOL_CALL_METHOD,
 };
@@ -310,7 +310,7 @@ impl PipelineProcessor {
         let mcp_session_id = if let Some(session_id) = self.agent_id_session_map.get(&agent.id) {
             session_id.clone()
         } else {
-            let session_id = self.get_new_session_id(&agent.id, request_headers).await;
+            let session_id = self.get_new_session_id(&agent.id, request_headers).await?;
             self.agent_id_session_map
                 .insert(agent.id.clone(), session_id.clone());
             session_id
@@ -464,18 +464,19 @@ impl PipelineProcessor {
         Ok(())
     }
 
-    async fn get_new_session_id(&self, agent_id: &str, request_headers: &HeaderMap) -> String {
+    async fn get_new_session_id(
+        &self,
+        agent_id: &str,
+        request_headers: &HeaderMap,
+    ) -> Result<String, PipelineError> {
         info!("initializing MCP session for agent {}", agent_id);
 
         let initialize_request = self.build_initialize_request();
-        let headers = self
-            .build_mcp_headers(request_headers, agent_id, None)
-            .expect("Failed to build headers for initialization");
+        let headers = self.build_mcp_headers(request_headers, agent_id, None)?;
 
         let response = self
             .send_mcp_request(&initialize_request, &headers, agent_id)
-            .await
-            .expect("Failed to initialize MCP session");
+            .await?;
 
         info!("initialize response status: {}", response.status());
 
@@ -483,8 +484,13 @@ impl PipelineProcessor {
             .headers()
             .get("mcp-session-id")
             .and_then(|v| v.to_str().ok())
-            .expect("No mcp-session-id in response")
-            .to_string();
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                PipelineError::NoContentInResponse(format!(
+                    "No mcp-session-id header in initialize response from agent {}",
+                    agent_id
+                ))
+            })?;
 
         info!(
             "created new MCP session for agent {}: {}",
@@ -493,10 +499,9 @@ impl PipelineProcessor {
 
         // Send initialized notification
         self.send_initialized_notification(agent_id, &session_id, &headers)
-            .await
-            .expect("Failed to send initialized notification");
+            .await?;
 
-        session_id
+        Ok(session_id)
     }
 
     /// Execute a HTTP-based filter agent
@@ -620,8 +625,8 @@ impl PipelineProcessor {
 
         let request_url = "/v1/chat/completions";
 
-        let request_body = ProviderRequestType::to_bytes(&original_request).unwrap();
-        // let request_body = serde_json::to_string(&request)?;
+        let request_body = ProviderRequestType::to_bytes(&original_request)
+            .map_err(|e| PipelineError::NoContentInResponse(e.to_string()))?;
         debug!("sending request to terminal agent {}", terminal_agent.id);
 
         let mut agent_headers = request_headers.clone();

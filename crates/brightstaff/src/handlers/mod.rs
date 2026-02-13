@@ -1,12 +1,10 @@
-pub mod agent_chat_completions;
-pub mod agent_selector;
+pub mod agents;
+pub mod errors;
 pub mod function_calling;
-pub mod jsonrpc;
 pub mod llm;
 pub mod models;
-pub mod pipeline_processor;
-pub mod response_handler;
-pub mod router_chat;
+pub mod request;
+pub mod response;
 pub mod utils;
 
 #[cfg(test)]
