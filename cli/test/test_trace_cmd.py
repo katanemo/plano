@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,11 @@ def _json_from_output(output: str) -> dict:
     if start == -1:
         raise AssertionError(f"No JSON object found in output:\n{output}")
     return json.loads(output[start:])
+
+
+def _plain_output(output: str) -> str:
+    # Strip ANSI color/style sequences emitted by rich-click in CI terminals.
+    return re.sub(r"\x1b\[[0-9;]*m", "", output)
 
 
 @pytest.fixture
@@ -119,14 +125,16 @@ def test_trace_debug_requires_listen_target(runner):
     result = runner.invoke(trace, ["--debug", "any"])
 
     assert result.exit_code != 0
-    assert "--debug is only valid with target 'listen'." in result.output
+    assert "--debug is only valid with target 'listen'." in _plain_output(result.output)
 
 
 def test_trace_host_port_requires_listen_target(runner):
     result = runner.invoke(trace, ["--host", "127.0.0.1", "any"])
 
     assert result.exit_code != 0
-    assert "--host/--port are only valid with target 'listen'." in result.output
+    assert "--host/--port are only valid with target 'listen'." in _plain_output(
+        result.output
+    )
 
 
 def test_trace_default_target_uses_last_and_builds_first_trace(
@@ -165,7 +173,7 @@ def test_trace_list_target_conflict_errors(runner, traces, monkeypatch):
     result = runner.invoke(trace, ["--list", traces[0]["trace_id"]])
 
     assert result.exit_code != 0
-    assert "Target and --list cannot be used together." in result.output
+    assert "Target and --list cannot be used together." in _plain_output(result.output)
 
 
 def test_trace_json_list_with_limit_outputs_trace_ids(runner, monkeypatch, traces):
@@ -201,14 +209,16 @@ def test_trace_json_for_short_target_returns_one_trace(runner, monkeypatch, trac
 def test_trace_target_validation_errors(runner, target, message):
     result = runner.invoke(trace, [target])
     assert result.exit_code != 0
-    assert message in result.output
+    assert message in _plain_output(result.output)
 
 
 def test_trace_where_invalid_format_errors(runner):
     result = runner.invoke(trace, ["any", "--where", "bad-format"])
 
     assert result.exit_code != 0
-    assert "Invalid --where filter(s): bad-format. Use key=value." in result.output
+    assert "Invalid --where filter(s): bad-format. Use key=value." in _plain_output(
+        result.output
+    )
 
 
 def test_trace_where_unknown_key_errors(runner, monkeypatch, traces):
@@ -217,7 +227,7 @@ def test_trace_where_unknown_key_errors(runner, monkeypatch, traces):
     result = runner.invoke(trace, ["any", "--where", "not.a.real.key=value"])
 
     assert result.exit_code != 0
-    assert "Unknown --where key(s): not.a.real.key" in result.output
+    assert "Unknown --where key(s): not.a.real.key" in _plain_output(result.output)
 
 
 def test_trace_where_filters_to_matching_trace(runner, monkeypatch, traces):
@@ -299,7 +309,7 @@ def test_trace_negative_limit_errors(runner):
     result = runner.invoke(trace, ["any", "--limit", "-1"])
 
     assert result.exit_code != 0
-    assert "Limit must be greater than or equal to 0." in result.output
+    assert "Limit must be greater than or equal to 0." in _plain_output(result.output)
 
 
 def test_trace_empty_data_prints_no_traces_found(runner, monkeypatch):
@@ -315,7 +325,7 @@ def test_trace_invalid_filter_token_errors(runner):
     result = runner.invoke(trace, ["any", "--filter", "http.method,"])
 
     assert result.exit_code != 0
-    assert "Filter contains empty tokens." in result.output
+    assert "Filter contains empty tokens." in _plain_output(result.output)
 
 
 def test_trace_failure_json_any_contains_all_fixture_trace_ids(
