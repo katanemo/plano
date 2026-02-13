@@ -1,6 +1,6 @@
 Plano Docs v0.4.6
 llms.txt (auto-generated)
-Generated (UTC): 2026-02-13T23:08:39.285024+00:00
+Generated (UTC): 2026-02-13T23:17:22.564025+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -199,7 +199,7 @@ listeners:
   - type: agent
     name: agent_1
     port: 8001
-    router: arch_agent_router
+    router: plano_agent_router
     agents:
       - id: rag_agent
         description: virtual assistant for retrieval augmented generation tasks
@@ -396,7 +396,7 @@ client = OpenAI(
     base_url="http://127.0.0.1:12000/v1"
 )
 
-# Use any model configured in your arch_config.yaml
+# Use any model configured in your plano_config.yaml
 completion = client.chat.completions.create(
     model="gpt-4o-mini",  # Or use :ref:`model aliases <model_aliases>` like "fast-model"
     max_tokens=50,
@@ -560,7 +560,7 @@ client = anthropic.Anthropic(
     base_url="http://127.0.0.1:12000"
 )
 
-# Use any model configured in your arch_config.yaml
+# Use any model configured in your plano_config.yaml
 message = client.messages.create(
     model="claude-3-5-sonnet-20241022",
     max_tokens=50,
@@ -2319,7 +2319,7 @@ Example 1: Adjusting Retrieval
 
 User: What are the benefits of renewable energy?
 **[Plano]**: Check if there is an available <prompt_target> that can handle this user query.
-**[Plano]**: Found "get_info_for_energy_source" prompt_target in arch_config.yaml. Forward prompt to the endpoint configured in "get_info_for_energy_source"
+**[Plano]**: Found "get_info_for_energy_source" prompt_target in plano_config.yaml. Forward prompt to the endpoint configured in "get_info_for_energy_source"
 ...
 Assistant: Renewable energy reduces greenhouse gas emissions, lowers air pollution, and provides sustainable power sources like solar and wind.
 
@@ -2332,13 +2332,13 @@ Example 2: Switching Intent
 
 User: What are the symptoms of diabetes?
 **[Plano]**: Check if there is an available <prompt_target> that can handle this user query.
-**[Plano]**: Found "diseases_symptoms" prompt_target in arch_config.yaml. Forward disease=diabeteres to "diseases_symptoms" prompt target
+**[Plano]**: Found "diseases_symptoms" prompt_target in plano_config.yaml. Forward disease=diabeteres to "diseases_symptoms" prompt target
 ...
 Assistant: Common symptoms include frequent urination, excessive thirst, fatigue, and blurry vision.
 
 User: How is it diagnosed?
 **[Plano]**: New intent detected.
-**[Plano]**: Found "disease_diagnoses" prompt_target in arch_config.yaml. Forward disease=diabeteres to "disease_diagnoses" prompt target
+**[Plano]**: Found "disease_diagnoses" prompt_target in plano_config.yaml. Forward disease=diabeteres to "disease_diagnoses" prompt target
 ...
 Assistant: Diabetes is diagnosed through blood tests like fasting blood sugar, A1C, or an oral glucose tolerance test.
 
@@ -5723,12 +5723,12 @@ Doc: resources/configuration_reference
 Configuration Reference
 
 The following is a complete reference of the plano_config.yml that controls the behavior of a single instance of
-the Arch gateway. This where you enable capabilities like routing to upstream LLm providers, defining prompt_targets
+the Plano gateway. This where you enable capabilities like routing to upstream LLm providers, defining prompt_targets
 where prompts get routed to, apply guardrails, and enable critical agent observability features.
 
 Plano Configuration - Full Reference
 
-# Arch Gateway configuration version
+# Plano Gateway configuration version
 version: v0.3.0
 
 # External HTTP agents - API type is controlled by request path (/v1/responses, /v1/messages, /v1/chat/completions)
@@ -6142,7 +6142,7 @@ prompt_targets:
     endpoint:
       name: app_server
       path: /agent/summary
-    # Arch uses the default LLM and treats the response from the endpoint as the prompt to send to the LLM
+    # Plano uses the default LLM and treats the response from the endpoint as the prompt to send to the LLM
     auto_llm_dispatch_on_response: true
     # override system prompt for this prompt target
     system_prompt: You are a helpful information extraction assistant. Use the information that is provided to you.
@@ -6163,7 +6163,7 @@ prompt_targets:
         default: false
         enum: [true, false]
 
-# Arch creates a round-robin load balancing between different endpoints, managed via the cluster subsystem.
+# Plano creates a round-robin load balancing between different endpoints, managed via the cluster subsystem.
 endpoints:
   app_server:
     # value could be ip address or a hostname with port

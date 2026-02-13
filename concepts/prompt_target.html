@@ -289,7 +289,7 @@ processess conversational messages on your behalf.</p>
 <p>Example 1: Adjusting Retrieval</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">User: What are the benefits of renewable energy?
 </span><span id="line-2">**[Plano]**: Check if there is an available &lt;prompt_target&gt; that can handle this user query.
-</span><span id="line-3">**[Plano]**: Found "get_info_for_energy_source" prompt_target in arch_config.yaml. Forward prompt to the endpoint configured in "get_info_for_energy_source"
+</span><span id="line-3">**[Plano]**: Found "get_info_for_energy_source" prompt_target in plano_config.yaml. Forward prompt to the endpoint configured in "get_info_for_energy_source"
 </span><span id="line-4">...
 </span><span id="line-5">Assistant: Renewable energy reduces greenhouse gas emissions, lowers air pollution, and provides sustainable power sources like solar and wind.
 </span><span id="line-6">
@@ -303,13 +303,13 @@ processess conversational messages on your behalf.</p>
 <h3>Example 2: Switching Intent<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#example-2-switching-intent" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#example-2-switching-intent'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">User: What are the symptoms of diabetes?
 </span><span id="line-2">**[Plano]**: Check if there is an available &lt;prompt_target&gt; that can handle this user query.
-</span><span id="line-3">**[Plano]**: Found "diseases_symptoms" prompt_target in arch_config.yaml. Forward disease=diabeteres to "diseases_symptoms" prompt target
+</span><span id="line-3">**[Plano]**: Found "diseases_symptoms" prompt_target in plano_config.yaml. Forward disease=diabeteres to "diseases_symptoms" prompt target
 </span><span id="line-4">...
 </span><span id="line-5">Assistant: Common symptoms include frequent urination, excessive thirst, fatigue, and blurry vision.
 </span><span id="line-6">
 </span><span id="line-7">User: How is it diagnosed?
 </span><span id="line-8">**[Plano]**: New intent detected.
-</span><span id="line-9">**[Plano]**: Found "disease_diagnoses" prompt_target in arch_config.yaml. Forward disease=diabeteres to "disease_diagnoses" prompt target
+</span><span id="line-9">**[Plano]**: Found "disease_diagnoses" prompt_target in plano_config.yaml. Forward disease=diabeteres to "disease_diagnoses" prompt target
 </span><span id="line-10">...
 </span><span id="line-11">Assistant: Diabetes is diagnosed through blood tests like fasting blood sugar, A1C, or an oral glucose tolerance test.
 </span></code></pre></div>
@@ -415,7 +415,7 @@ response from your APIs.</p>
 </section>
 <section id="demo-app">
 <h3>Demo App<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#demo-app" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#demo-app'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<p>For your convenience, we’ve built a <a class="reference external" href="https://github.com/katanemo/archgw/tree/main/demos/samples_python/multi_turn_rag_agent" rel="nofollow noopener">demo app<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>
+<p>For your convenience, we’ve built a <a class="reference external" href="https://github.com/katanemo/plano/tree/main/demos/samples_python/multi_turn_rag_agent" rel="nofollow noopener">demo app<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>
 that you can test and modify locally for multi-turn RAG scenarios.</p>
 <figure class="align-center" id="id6">
 <a class="reference internal image-reference" href="../_images/mutli-turn-example.png"><img alt="../_images/mutli-turn-example.png" src="../_images/mutli-turn-example.png" style="width: 100%;"/>

@@ -214,7 +214,7 @@
 </span><span id="line-6">    <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://127.0.0.1:12000/v1"</span>
 </span><span id="line-7"><span class="p">)</span>
 </span><span id="line-8">
-</span><span id="line-9"><span class="c1"># Use any model configured in your arch_config.yaml</span>
+</span><span id="line-9"><span class="c1"># Use any model configured in your plano_config.yaml</span>
 </span><span id="line-10"><span class="n">completion</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
 </span><span id="line-11">    <span class="n">model</span><span class="o">=</span><span class="s2">"gpt-4o-mini"</span><span class="p">,</span>  <span class="c1"># Or use :ref:`model aliases &lt;model_aliases&gt;` like "fast-model"</span>
 </span><span id="line-12">    <span class="n">max_tokens</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
@@ -372,7 +372,7 @@
 </span><span id="line-6">    <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://127.0.0.1:12000"</span>
 </span><span id="line-7"><span class="p">)</span>
 </span><span id="line-8">
-</span><span id="line-9"><span class="c1"># Use any model configured in your arch_config.yaml</span>
+</span><span id="line-9"><span class="c1"># Use any model configured in your plano_config.yaml</span>
 </span><span id="line-10"><span class="n">message</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">messages</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
 </span><span id="line-11">    <span class="n">model</span><span class="o">=</span><span class="s2">"claude-3-5-sonnet-20241022"</span><span class="p">,</span>
 </span><span id="line-12">    <span class="n">max_tokens</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
