@@ -106,6 +106,38 @@ User configs define: `agents` (id + url), `model_providers` (model + access_key)
 
 Turbo monorepo with Next.js 16 / React 19 applications and shared packages (UI components, Tailwind config, TypeScript config). Not part of the core proxy — these are web applications.
 
+## Release Process
+
+To prepare a release (e.g., bumping from `0.4.6` to `0.4.7`), update the version string in all of the following files:
+
+**CI Workflows:**
+- `.github/workflows/e2e_plano_tests.yml` — docker build tag
+- `.github/workflows/e2e_test_currency_convert.yml` — docker build tag
+- `.github/workflows/e2e_test_preference_based_routing.yml` — docker build tag
+- `.github/workflows/validate_arch_config.yml` — docker build tag
+
+**CLI:**
+- `cli/planoai/__init__.py` — `__version__`
+- `cli/planoai/consts.py` — `PLANO_DOCKER_IMAGE` default
+- `cli/pyproject.toml` — `version`
+
+**Build & Config:**
+- `build_filter_image.sh` — docker build tag
+- `config/validate_plano_config.sh` — docker image tag
+
+**Docs:**
+- `docs/source/conf.py` — `release`
+- `docs/source/get_started/quickstart.rst` — install commands and example output
+- `docs/source/resources/deployment.rst` — docker image tag
+
+**Website & Demos:**
+- `apps/www/src/components/Hero.tsx` — version badge
+- `demos/use_cases/preference_based_routing/README.md` — example output
+
+**Important:** Do NOT change `0.4.6` references in `*.lock` files or `Cargo.lock` — those refer to the `colorama` and `http-body` dependency versions, not Plano.
+
+Commit message format: `release X.Y.Z`
+
 ## Key Conventions
 
 - Rust edition 2021, formatted with `cargo fmt`, linted with `cargo clippy -D warnings`
