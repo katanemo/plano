@@ -328,6 +328,11 @@ pub struct LlmProvider {
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
+    pub retry_on_ratelimit: Option<bool>,
+    pub max_retries: Option<u32>,
+    pub retry_to_same_provider: Option<bool>,
+    pub retry_backoff_base_ms: Option<u64>,
+    pub retry_backoff_max_ms: Option<u64>,
 }
 
 pub trait IntoModels {
@@ -372,6 +377,11 @@ impl Default for LlmProvider {
             base_url_path_prefix: None,
             internal: None,
             passthrough_auth: None,
+            retry_on_ratelimit: None,
+            max_retries: None,
+            retry_to_same_provider: None,
+            retry_backoff_base_ms: None,
+            retry_backoff_max_ms: None,
         }
     }
 }
