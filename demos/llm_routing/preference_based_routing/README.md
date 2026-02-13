@@ -15,9 +15,9 @@ Make sure your machine is up to date with [latest version of plano]([url](https:
 ```bash
 (venv) $ planoai up --service plano --foreground
 # Or if installed with uv: uvx planoai up --service plano --foreground
-2025-05-30 18:00:09,953 - planoai.main - INFO - Starting plano cli version: 0.4.6
+2025-05-30 18:00:09,953 - planoai.main - INFO - Starting plano cli version: 0.4.7
 2025-05-30 18:00:09,953 - planoai.main - INFO - Validating /Users/adilhafeez/src/intelligent-prompt-gateway/demos/llm_routing/preference_based_routing/config.yaml
-2025-05-30 18:00:10,422 - cli.core - INFO - Starting plano gateway, image name: plano, tag: katanemo/plano:0.4.6
+2025-05-30 18:00:10,422 - cli.core - INFO - Starting plano gateway, image name: plano, tag: katanemo/plano:0.4.7
 2025-05-30 18:00:10,662 - cli.core - INFO - plano status: running, health status: starting
 2025-05-30 18:00:11,712 - cli.core - INFO - plano status: running, health status: starting
 2025-05-30 18:00:12,761 - cli.core - INFO - plano is running and is healthy!
