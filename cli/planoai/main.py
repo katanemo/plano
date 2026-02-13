@@ -10,6 +10,7 @@ PLANO_COLOR = "#969FF4"
 from planoai.docker_cli import (
     docker_validate_plano_schema,
     stream_gateway_logs,
+    stream_access_logs,
     docker_container_status,
 )
 from planoai.utils import (
@@ -17,7 +18,6 @@ from planoai.utils import (
     get_llm_provider_access_keys,
     load_env_file_to_dict,
     set_log_level,
-    stream_access_logs,
     find_config_file,
     find_repo_root,
 )
@@ -296,9 +296,9 @@ def up(file, path, foreground, with_tracing, tracing_port):
                 sys.exit(1)
 
         # Update the OTEL endpoint so the gateway sends traces to the right port
-        env_stage[
-            "OTEL_TRACING_GRPC_ENDPOINT"
-        ] = f"http://host.docker.internal:{tracing_port}"
+        env_stage["OTEL_TRACING_GRPC_ENDPOINT"] = (
+            f"http://host.docker.internal:{tracing_port}"
+        )
 
     env.update(env_stage)
     try:

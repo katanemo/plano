@@ -287,12 +287,16 @@ async def fetch_flights(
                     "flight_number": flight.get("ident_iata") or flight.get("ident"),
                     "departure_time": flight.get("scheduled_out"),
                     "arrival_time": flight.get("scheduled_in"),
-                    "origin": flight["origin"].get("code_iata")
-                    if isinstance(flight.get("origin"), dict)
-                    else None,
-                    "destination": flight["destination"].get("code_iata")
-                    if isinstance(flight.get("destination"), dict)
-                    else None,
+                    "origin": (
+                        flight["origin"].get("code_iata")
+                        if isinstance(flight.get("origin"), dict)
+                        else None
+                    ),
+                    "destination": (
+                        flight["destination"].get("code_iata")
+                        if isinstance(flight.get("destination"), dict)
+                        else None
+                    ),
                     "aircraft_type": flight.get("aircraft_type"),
                     "status": flight.get("status"),
                     "terminal_origin": flight.get("terminal_origin"),
