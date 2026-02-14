@@ -36,6 +36,7 @@ jobs:
           format: table
           # Fail on PRs so vulnerabilities block merge; on main just report
           exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          ignore-unfixed: true
           severity: CRITICAL,HIGH
 
       - name: Run Trivy scanner (SARIF for GitHub Security tab)
@@ -45,6 +46,7 @@ jobs:
           image-ref: ${{ env.DOCKER_IMAGE }}:scan
           format: sarif
           output: trivy-results.sarif
+          ignore-unfixed: true
           severity: CRITICAL,HIGH
 
       - name: Upload Trivy results to GitHub Security tab

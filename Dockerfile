@@ -46,8 +46,10 @@ FROM python:3.13.11-slim AS arch
 
 RUN set -eux; \
   apt-get update; \
-  apt-get install -y --no-install-recommends supervisor gettext-base curl; \
+  apt-get install -y --no-install-recommends gettext-base curl; \
   apt-get clean; rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir supervisor
 
 # Remove PAM packages (CVE-2025-6020)
 RUN set -eux; \
@@ -70,6 +72,7 @@ RUN uv run pip install --no-cache-dir .
 COPY cli/planoai planoai/
 COPY config/envoy.template.yaml .
 COPY config/plano_config_schema.yaml .
+RUN mkdir -p /etc/supervisor/conf.d
 COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 COPY --from=wasm-builder /arch/target/wasm32-wasip1/release/prompt_gateway.wasm /etc/envoy/proxy-wasm-plugins/prompt_gateway.wasm
@@ -81,4 +84,4 @@ RUN mkdir -p /var/log/supervisor && \
           /var/log/access_ingress.log /var/log/access_ingress_prompt.log \
           /var/log/access_internal.log /var/log/access_llm.log /var/log/access_agent.log
 
-ENTRYPOINT ["/usr/bin/supervisord"]
+ENTRYPOINT ["/usr/local/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
