@@ -45,7 +45,7 @@ def _is_port_in_use(port: int) -> bool:
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.bind(("0.0.0.0", port))
+            s.bind(("127.0.0.1", port))
             return False
         except OSError:
             return True

@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   e2e_plano_tests:
     runs-on: ubuntu-latest-m
