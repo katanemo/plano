@@ -44,6 +44,13 @@ Global CLI Usage
    $ planoai trace --help
    $ planoai init --help
 
+.. figure:: /_static/img/cli-default-command.png
+   :width: 100%
+   :alt: planoai default command screenshot
+
+   ``planoai`` command showing the top-level command menu.
+
+
 
 .. _cli_reference_up:
 
@@ -168,6 +175,12 @@ Generate a new ``config.yaml`` using an interactive wizard, built-in templates, 
    $ planoai init --template coding_agent_routing
    $ planoai init --clean --output ./config/config.yaml
 
+.. figure:: /_static/img/cli-init-command.png
+   :width: 100%
+   :alt: planoai init command screenshot
+
+   ``planoai init --list-templates`` showing built-in starter templates.
+
 
 .. _cli_reference_trace:
 
@@ -206,7 +219,6 @@ Inspect request traces from the local OTLP listener.
 
 - ``--host <host>``: bind host (default ``0.0.0.0``).
 - ``--port <port>``: bind port (default ``4317``).
-- ``--debug``: run foreground listener and stream incoming span events to the console.
 
 .. note::
 
@@ -224,7 +236,6 @@ Inspect request traces from the local OTLP listener.
    # Start/stop listener
    $ planoai trace listen
    $ planoai trace down
-   $ planoai trace listen --debug
 
    # Basic inspection
    $ planoai trace
@@ -237,9 +248,14 @@ Inspect request traces from the local OTLP listener.
    $ planoai trace --list --limit 5
    $ planoai trace --where http.status_code=500 --json
 
+.. figure:: /_static/img/cli-trace-command.png
+   :width: 100%
+   :alt: planoai trace command screenshot
+
+   ``planoai trace`` command showing trace inspection and filtering capabilities.
+
 **Operational notes**
 
-- ``--debug`` is valid only when ``TARGET`` is ``listen``.
 - ``--host`` and ``--port`` are valid only when ``TARGET`` is ``listen``.
 - ``--list`` cannot be combined with a specific trace-id target.
 
