@@ -497,55 +497,7 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 Additional Resources
 --------------------
 
-CLI Reference
-~~~~~~~~~~~~~
-
-``planoai trace``
-  Trace requests captured by the local OTLP listener.
-
-  **Synopsis**
-
-  .. code-block:: console
-
-     $ planoai trace [TARGET] [OPTIONS]
-
-  **Targets**
-
-  - ``last`` (default): show the most recent trace.
-  - ``any``: allow interactive selection when available.
-  - ``<trace-id>``: full 32-hex trace ID.
-  - ``<short-id>``: first 8 hex characters.
-
-  **Options**
-
-  - ``--filter <pattern>``: limit displayed attributes to matching keys (supports ``*``).
-  - ``--where <key=value>``: match traces containing a specific attribute (repeatable, AND).
-  - ``--list``: list trace IDs only.
-  - ``--no-interactive``: disable interactive prompts/selections.
-  - ``--limit <n>``: limit the number of traces returned.
-  - ``--since <window>``: look back window (``5m``, ``2h``, ``1d``).
-  - ``--json``: output raw JSON instead of formatted output.
-  - ``--verbose, -v``: show all span attributes. By default, inbound/outbound
-    spans are displayed in a compact view.
-
-  **Environment**
-
-  - ``PLANO_TRACE_PORT``: gRPC port used by ``planoai trace`` to query traces
-    (defaults to ``4317``).
-
-``planoai trace listen``
-  Start a local OTLP/gRPC listener.
-
-  **Synopsis**
-
-  .. code-block:: console
-
-     $ planoai trace listen [OPTIONS]
-
-  **Options**
-
-  - ``--host <host>``: bind address (default: ``0.0.0.0``).
-  - ``--port <port>``: gRPC listener port (default: ``4317``).
+For full command documentation (including ``planoai trace`` and all other CLI commands), see :ref:`cli_reference`.
 
 External References
 ~~~~~~~~~~~~~~~~~~~
