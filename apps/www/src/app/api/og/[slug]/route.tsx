@@ -6,7 +6,7 @@ export const runtime = "edge";
 
 const ALLOWED_HOSTS = new Set([
   "archgw-tau.vercel.app",
-  "plano.katanemo.com",
+  "planoai.dev",
   "localhost",
 ]);
 
