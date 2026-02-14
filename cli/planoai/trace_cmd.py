@@ -29,7 +29,7 @@ from planoai.consts import PLANO_COLOR
 DEFAULT_GRPC_PORT = 4317
 MAX_TRACES = 50
 MAX_SPANS_PER_TRACE = 500
-TRACE_LISTENER_PID_FILE = os.path.expanduser("~/.plano_trace_listener.pid")
+TRACE_LISTENER_PID_FILE = os.path.expanduser("~/.plano/run/trace_listener.pid")
 
 
 @dataclass
@@ -61,6 +61,7 @@ def _is_port_in_use(port: int) -> bool:
 
 def _save_listener_pid(pid: int) -> None:
     """Save the listener process PID to a file."""
+    os.makedirs(os.path.dirname(TRACE_LISTENER_PID_FILE), exist_ok=True)
     with open(TRACE_LISTENER_PID_FILE, "w") as f:
         f.write(str(pid))
 
