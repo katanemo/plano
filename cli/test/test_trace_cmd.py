@@ -67,40 +67,38 @@ def failure_traces() -> list[dict]:
     return copy.deepcopy(_load_failure_traces())
 
 
-def test_trace_listen_starts_listener_with_debug_and_custom_bind_after_target(
+def test_trace_listen_starts_listener_with_custom_bind_after_target(
     runner, monkeypatch
 ):
     seen = {}
 
-    def fake_start(host: str, port: int, debug: bool) -> None:
+    def fake_start(host: str, port: int) -> None:
         seen["host"] = host
         seen["port"] = port
-        seen["debug"] = debug
 
     monkeypatch.setattr(trace_cmd, "_start_trace_listener", fake_start)
 
-    result = runner.invoke(
-        trace, ["listen", "--host", "127.0.0.1", "--port", "9876", "--debug"]
-    )
+    result = runner.invoke(trace, ["listen", "--host", "127.0.0.1", "--port", "9876"])
 
     assert result.exit_code == 0, result.output
-    assert seen == {"host": "127.0.0.1", "port": 9876, "debug": True}
+    assert seen == {"host": "127.0.0.1", "port": 9876}
 
 
-def test_trace_listen_starts_listener_with_debug_before_target(runner, monkeypatch):
+def test_trace_listen_starts_listener_with_custom_bind_before_target(
+    runner, monkeypatch
+):
     seen = {}
 
-    def fake_start(host: str, port: int, debug: bool) -> None:
+    def fake_start(host: str, port: int) -> None:
         seen["host"] = host
         seen["port"] = port
-        seen["debug"] = debug
 
     monkeypatch.setattr(trace_cmd, "_start_trace_listener", fake_start)
 
-    result = runner.invoke(trace, ["--debug", "listen"])
+    result = runner.invoke(trace, ["--host", "127.0.0.1", "--port", "9876", "listen"])
 
     assert result.exit_code == 0, result.output
-    assert seen == {"host": "0.0.0.0", "port": 4317, "debug": True}
+    assert seen == {"host": "127.0.0.1", "port": 9876}
 
 
 def test_trace_down_prints_success_when_listener_stopped(runner, monkeypatch):
@@ -119,13 +117,6 @@ def test_trace_down_prints_no_listener_when_not_running(runner, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "No background trace listener running" in result.output
-
-
-def test_trace_debug_requires_listen_target(runner):
-    result = runner.invoke(trace, ["--debug", "any"])
-
-    assert result.exit_code != 0
-    assert "--debug is only valid with target 'listen'." in _plain_output(result.output)
 
 
 def test_trace_host_port_requires_listen_target(runner):
@@ -159,7 +150,7 @@ def test_trace_default_target_uses_last_and_builds_first_trace(
 def test_trace_list_any_prints_short_trace_ids(runner, monkeypatch, traces):
     monkeypatch.setattr(trace_cmd, "_fetch_traces_raw", lambda: copy.deepcopy(traces))
 
-    result = runner.invoke(trace, ["--list", "any"])
+    result = runner.invoke(trace, ["--list", "--no-interactive", "any"])
 
     assert result.exit_code == 0, result.output
     assert "Trace IDs:" in result.output
