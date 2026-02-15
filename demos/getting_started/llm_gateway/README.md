@@ -7,7 +7,7 @@ This demo shows how you can use Plano gateway to manage keys and route to upstre
    ```sh
    sh run_demo.sh
    ```
-1. Navigate to http://localhost:18080/
+1. Navigate to http://localhost:3001/
 
 Following screen shows an example of interaction with Plano gateway showing dynamic routing. You can select between different LLMs using "override model" option in the chat UI.
 
@@ -32,7 +32,7 @@ $ curl --header 'Content-Type: application/json' \
       "messages": {
         "role": "assistant",
         "tool_calls": null,
-        "content": "Hello! How can I assist you today? Let's chat about anything you'd like. 😊"
+        "content": "Hello! How can I assist you today? Let's chat about anything you'd like."
       },
       "finish_reason": "stop"
     }
@@ -47,11 +47,7 @@ $ curl --header 'Content-Type: application/json' \
 ```
 
 # Observability
-Plano gateway publishes stats endpoint at http://localhost:19901/stats. In this demo we are using prometheus to pull stats from Plano and we are using grafana to visualize the stats in dashboard. To see grafana dashboard follow instructions below,
-
-1. Navigate to http://localhost:3000/ to open grafana UI (use admin/grafana as credentials)
-1. From grafana left nav click on dashboards and select "Intelligent Gateway Overview" to view Plano gateway stats
-1. For tracing you can head over to http://localhost:16686/ to view recent traces.
+For tracing you can head over to http://localhost:16686/ to view recent traces.
 
 Following is a screenshot of tracing UI showing call received by Plano gateway and making upstream call to LLM,
 

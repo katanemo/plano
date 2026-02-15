@@ -23,8 +23,8 @@ do
   echo "starting plano"
   planoai up config.yaml
   echo "starting docker containers"
-  # only execute docker compose if demo is use_cases/preference_based_routing
-  if [ "$demo" == "use_cases/preference_based_routing" ]; then
+  # only execute docker compose if demo is llm_routing/preference_based_routing
+  if [ "$demo" == "llm_routing/preference_based_routing" ]; then
     echo "starting docker compose for $demo"
     docker compose -f docker-compose.yaml up -d 2>&1 > /dev/null
   else

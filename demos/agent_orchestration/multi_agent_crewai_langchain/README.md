@@ -37,7 +37,7 @@ Plano acts as a **framework-agnostic proxy and data plane** that:
 
 ```bash
 # From the demo directory
-cd demos/use_cases/multi_agent_with_crewai_langchain
+cd demos/agent_orchestration/multi_agent_crewai_langchain
 
 # Build and start all services
 docker-compose up -d

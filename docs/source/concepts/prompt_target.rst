@@ -172,7 +172,7 @@ Once the prompt targets are configured as above, handle parameters across multi-
 Demo App
 --------
 
-For your convenience, we've built a `demo app <https://github.com/katanemo/plano/tree/main/demos/samples_python/multi_turn_rag_agent>`_
+For your convenience, we've built a `demo app <https://github.com/katanemo/plano/tree/main/demos/advanced/multi_turn_rag>`_
 that you can test and modify locally for multi-turn RAG scenarios.
 
 .. figure:: ../build_with_plano/includes/multi_turn/mutli-turn-example.png

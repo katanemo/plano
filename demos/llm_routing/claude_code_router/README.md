@@ -47,7 +47,7 @@ docker --version
 ```bash
 # Clone and navigate to demo
 git clone https://github.com/katanemo/arch.git
-cd arch/demos/use_cases/claude_code
+cd arch/demos/llm_routing/claude_code_router
 ```
 
 ### Step 2: Set API Keys
