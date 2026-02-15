@@ -161,6 +161,17 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
+      - name: Update security scan badge
+        if: always() && github.ref == 'refs/heads/main'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ vars.SECURITY_BADGE_GIST_ID }}
+          filename: security-scan-badge.json
+          label: Security Scan
+          message: ${{ job.status == 'success' && 'passing' || 'failing' }}
+          color: ${{ job.status == 'success' && 'green' || 'red' }}
+
   # ──────────────────────────────────────────────
   # E2E: prompt_gateway tests
   # ──────────────────────────────────────────────

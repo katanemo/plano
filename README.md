@@ -12,9 +12,9 @@
 [Documentation](https://docs.planoai.dev) •
 [Contact](#Contact)
 
-[![pre-commit](https://github.com/katanemo/plano/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/pre-commit.yml)
-[![rust tests (prompt and llm gateway)](https://github.com/katanemo/plano/actions/workflows/rust_tests.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/rust_tests.yml)
-[![e2e tests](https://github.com/katanemo/plano/actions/workflows/e2e_tests.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/e2e_tests.yml)
+[![CI](https://github.com/katanemo/plano/actions/workflows/ci.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/ci.yml)
+[![Docker Image](https://github.com/katanemo/plano/actions/workflows/docker-push-main.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/docker-push-main.yml)
+[![Security Scan](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/katanemo/SECURITY_BADGE_GIST_ID/raw/security-scan-badge.json)](https://github.com/katanemo/plano/security/code-scanning)
 [![Build and Deploy Documentation](https://github.com/katanemo/plano/actions/workflows/static.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/static.yml)
 
 Star ⭐️ the repo if you found Plano useful — new releases and updates land here first.
