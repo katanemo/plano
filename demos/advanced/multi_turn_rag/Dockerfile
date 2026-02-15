@@ -1,4 +1,4 @@
-FROM python:3.12 AS base
+FROM python:3.14 AS base
 
 FROM base AS builder
 
@@ -9,7 +9,7 @@ RUN pip install --prefix=/runtime --force-reinstall -r requirements.txt
 
 COPY . /src
 
-FROM python:3.12-slim AS output
+FROM python:3.14-slim AS output
 
 COPY --from=builder /runtime /usr/local
 

@@ -1,7 +1,7 @@
 # Blazing fast Python Docker builds with uv
 
 # The builder image, used to build the virtual environment
-FROM python:3.12 as builder
+FROM python:3.14 as builder
 
 # Install uv
 RUN pip install --no-cache-dir uv
@@ -17,7 +17,7 @@ RUN touch README.md
 RUN uv sync --frozen --no-dev
 
 # The runtime image, used to just run the code provided its virtual environment
-FROM python:3.12-slim as runtime
+FROM python:3.14-slim as runtime
 
 RUN apt-get update && apt-get install -y curl
 

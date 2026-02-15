@@ -5,7 +5,7 @@ description = "Benchmarking model alias routing with Plano."
 authors = [{name = "Your Name", email = "your@email.com"}]
 license = {text = "Apache 2.0"}
 readme = "README.md"
-requires-python = ">=3.10,<3.13.3"
+requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0",
     "openai>=1.0",

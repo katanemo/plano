@@ -42,7 +42,7 @@ RUN cargo build --release -p brightstaff
 
 FROM docker.io/envoyproxy/envoy:v1.37.0 AS envoy
 
-FROM python:3.13.11-slim AS arch
+FROM python:3.14-slim AS arch
 
 RUN set -eux; \
   apt-get update; \
