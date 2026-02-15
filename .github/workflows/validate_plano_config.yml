@@ -27,7 +27,7 @@ jobs:
 
       - name: build plano docker image
         run: |
-          docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.6
+          docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.7
 
       - name: validate plano config
         run: |
