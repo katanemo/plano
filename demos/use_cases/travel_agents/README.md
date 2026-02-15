@@ -49,14 +49,12 @@ docker compose up --build
 This starts:
 - Weather Agent on port 10510
 - Flight Agent on port 10520
-- Open WebUI on port 8080
+- AnythingLLM on port 3001
 - Plano Proxy on port 8001
 
 ### 4. Test the System
 
-Use Open WebUI at http://localhost:8080
-
-> **Note:** The Open WebUI may take a few minutes to start up and be fully ready. Please wait for the container to finish initializing before accessing the interface. Once ready, make sure to select the **gpt-5.2** model from the model dropdown menu in the UI.
+Use AnythingLLM at http://localhost:3001
 
 ## Example Conversations
 
