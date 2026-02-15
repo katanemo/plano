@@ -1,16 +1,20 @@
 services:
-  chatbot_ui:
-    build:
-      context: ../../shared/chatbot_ui
+  anythingllm:
+    image: mintplexlabs/anythingllm
+    restart: always
     ports:
-      - "18080:8080"
+      - "3001:3001"
+    cap_add:
+      - SYS_ADMIN
     environment:
-      # this is only because we are running the sample app in the same docker container environemtn as archgw
-      - CHAT_COMPLETION_ENDPOINT=http://host.docker.internal:12000/v1
+      - STORAGE_DIR=/app/server/storage
+      - LLM_PROVIDER=generic-openai
+      - GENERIC_OPEN_AI_BASE_PATH=http://host.docker.internal:12000/v1
+      - GENERIC_OPEN_AI_MODEL_PREF=gpt-4o-mini
+      - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
+      - GENERIC_OPEN_AI_API_KEY=sk-placeholder
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - ./config.yaml:/app/plano_config.yaml
 
   jaeger:
     build:

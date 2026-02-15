@@ -1,13 +1,11 @@
-version: v0.1.0
+version: v0.3.0
 
 listeners:
-  ingress_traffic:
-    address: 0.0.0.0
+  - type: prompt
+    name: prompt_listener
     port: 10000
-    message_format: openai
-    timeout: 30s
 
-llm_providers:
+model_providers:
   - access_key: $OPENAI_API_KEY
     model: openai/gpt-4o
 

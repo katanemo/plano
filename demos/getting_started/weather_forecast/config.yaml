@@ -1,17 +1,13 @@
-version: v0.1.0
+version: v0.3.0
 
 listeners:
-  ingress_traffic:
-    address: 0.0.0.0
+  - type: prompt
+    name: prompt_listener
     port: 10000
-    message_format: openai
-    timeout: 30s
 
-  egress_traffic:
-    address: 0.0.0.0
+  - type: model
+    name: model_listener
     port: 12000
-    message_format: openai
-    timeout: 30s
 
 endpoints:
   weather_forecast_service:
@@ -22,7 +18,7 @@ overrides:
   # confidence threshold for prompt target intent matching
   prompt_target_intent_matching_threshold: 0.6
 
-llm_providers:
+model_providers:
   - access_key: $GROQ_API_KEY
     model: groq/llama-3.2-3b-preview
 

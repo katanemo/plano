@@ -1,11 +1,9 @@
-version: v0.1.0
+version: v0.3.0
 
 listeners:
-  ingress_traffic:
-    address: 0.0.0.0
+  - type: prompt
+    name: prompt_listener
     port: 10000
-    message_format: openai
-    timeout: 30s
 
 overrides:
   optimize_context_window: true
@@ -84,14 +82,14 @@ system_prompt: |
 
   Make sure your output is valid Markdown. And don't say "formatted in Markdown". Thanks!
 
-llm_providers:
+model_providers:
   - access_key: $OPENAI_API_KEY
     model: openai/gpt-4o
     default: true
 
 prompt_targets:
   - name: get_new_releases
-    description: Get a list of new album releases featured in Spotify (shown, for example, on a Spotify player’s “Browse” tab).
+    description: Get a list of new album releases featured in Spotify (shown, for example, on a Spotify player's "Browse" tab).
     parameters:
       - name: country
         description: the country where the album is released
@@ -121,3 +119,6 @@ prompt_targets:
       path: /v1/artists/{artist_id}/top-tracks
       http_headers:
         Authorization: "Bearer $SPOTIFY_CLIENT_KEY"
+
+tracing:
+  random_sampling: 100
