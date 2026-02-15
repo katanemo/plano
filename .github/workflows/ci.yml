@@ -426,7 +426,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           source venv/bin/activate
-          cd demos/shared/test_runner && sh run_demo_tests.sh use_cases/preference_based_routing
+          cd demos/shared/test_runner && sh run_demo_tests.sh llm_routing/preference_based_routing
 
   # ──────────────────────────────────────────────
   # E2E: demo — currency conversion
@@ -476,4 +476,4 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           source venv/bin/activate
-          cd demos/shared/test_runner && sh run_demo_tests.sh samples_python/currency_exchange
+          cd demos/shared/test_runner && sh run_demo_tests.sh advanced/currency_exchange
