@@ -20,14 +20,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration for archgw LLM gateway
+# Configuration for Plano LLM gateway
 LLM_GATEWAY_ENDPOINT = os.getenv("LLM_GATEWAY_ENDPOINT", "http://localhost:12000/v1")
 GUARD_MODEL = "gpt-4o-mini"
 
-# Initialize OpenAI client for archgw
-archgw_client = AsyncOpenAI(
+# Initialize OpenAI client for Plano
+plano_client = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
-    api_key="EMPTY",  # archgw doesn't require a real API key
+    api_key="EMPTY",  # Plano doesn't require a real API key
 )
 
 app = FastAPI()
@@ -91,7 +91,7 @@ Respond in JSON format:
     ]
 
     try:
-        # Call archgw using OpenAI client
+        # Call Plano using OpenAI client
         extra_headers = {"x-envoy-max-retries": "3"}
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
@@ -100,7 +100,7 @@ Respond in JSON format:
             extra_headers["x-request-id"] = request_id
 
         logger.info(f"Validating query scope: '{last_user_message}'")
-        response = await archgw_client.chat.completions.create(
+        response = await plano_client.chat.completions.create(
             model=GUARD_MODEL,
             messages=guard_messages,
             temperature=0.1,

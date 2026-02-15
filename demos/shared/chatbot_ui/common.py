@@ -37,7 +37,7 @@ def chat(
 
     try:
         response = client.chat.completions.create(
-            # we select model from arch_config file
+            # we select model from plano_config file
             model="None",
             messages=history,
             temperature=1.0,
@@ -86,7 +86,7 @@ def create_gradio_app(demo_description, client):
 
             with gr.Column(scale=2):
                 chatbot = gr.Chatbot(
-                    label="Arch Chatbot",
+                    label="Plano Chatbot",
                     elem_classes="chatbot",
                 )
                 textbox = gr.Textbox(
@@ -110,7 +110,7 @@ def process_stream_chunk(chunk, history):
     delta = chunk.choices[0].delta
     if delta.role and delta.role != history[-1]["role"]:
         # create new history item if role changes
-        # this is likely due to arch tool call and api response
+        # this is likely due to Plano tool call and api response
         history.append({"role": delta.role})
 
     history[-1]["model"] = chunk.model
@@ -159,7 +159,7 @@ def convert_prompt_target_to_openai_format(target):
 
 def get_prompt_targets():
     try:
-        with open(os.getenv("ARCH_CONFIG", "config.yaml"), "r") as file:
+        with open(os.getenv("PLANO_CONFIG", "config.yaml"), "r") as file:
             config = yaml.safe_load(file)
 
             available_tools = []
@@ -181,7 +181,7 @@ def get_prompt_targets():
 
 def get_llm_models():
     try:
-        with open(os.getenv("ARCH_CONFIG", "config.yaml"), "r") as file:
+        with open(os.getenv("PLANO_CONFIG", "config.yaml"), "r") as file:
             config = yaml.safe_load(file)
 
             available_models = [""]

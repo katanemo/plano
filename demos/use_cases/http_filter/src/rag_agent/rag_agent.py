@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration for archgw LLM gateway
+# Configuration for Plano LLM gateway
 LLM_GATEWAY_ENDPOINT = os.getenv("LLM_GATEWAY_ENDPOINT", "http://localhost:12000/v1")
 RESPONSE_MODEL = "gpt-4o"
 
@@ -38,10 +38,10 @@ Your response should:
 
 Generate a complete response to assist the user."""
 
-# Initialize OpenAI client for archgw
-archgw_client = AsyncOpenAI(
+# Initialize OpenAI client for Plano
+plano_client = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
-    api_key="EMPTY",  # archgw doesn't require a real API key
+    api_key="EMPTY",  # Plano doesn't require a real API key
 )
 
 # FastAPI app for REST server
@@ -95,9 +95,9 @@ async def stream_chat_completions(
     response_messages = prepare_response_messages(request_body)
 
     try:
-        # Call archgw using OpenAI client for streaming
+        # Call Plano using OpenAI client for streaming
         logger.info(
-            f"Calling archgw at {LLM_GATEWAY_ENDPOINT} to generate streaming response"
+            f"Calling Plano at {LLM_GATEWAY_ENDPOINT} to generate streaming response"
         )
 
         # Prepare extra headers if traceparent is provided
@@ -105,7 +105,7 @@ async def stream_chat_completions(
         if traceparent_header:
             extra_headers["traceparent"] = traceparent_header
 
-        response_stream = await archgw_client.chat.completions.create(
+        response_stream = await plano_client.chat.completions.create(
             model=RESPONSE_MODEL,
             messages=response_messages,
             temperature=request_body.temperature or 0.7,

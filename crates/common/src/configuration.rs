@@ -493,7 +493,7 @@ mod test {
     #[test]
     fn test_deserialize_configuration() {
         let ref_config = fs::read_to_string(
-            "../../docs/source/resources/includes/arch_config_full_reference_rendered.yaml",
+            "../../docs/source/resources/includes/plano_config_full_reference_rendered.yaml",
         )
         .expect("reference config file not found");
 
@@ -520,7 +520,7 @@ mod test {
     #[test]
     fn test_tool_conversion() {
         let ref_config = fs::read_to_string(
-            "../../docs/source/resources/includes/arch_config_full_reference_rendered.yaml",
+            "../../docs/source/resources/includes/plano_config_full_reference_rendered.yaml",
         )
         .expect("reference config file not found");
         let config: super::Configuration = serde_yaml::from_str(&ref_config).unwrap();

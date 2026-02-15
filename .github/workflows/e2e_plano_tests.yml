@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   e2e_plano_tests:
     runs-on: ubuntu-latest-m
@@ -28,7 +31,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"  # auto-caches based on requirements files
 
-      - name: build arch docker image
+      - name: build plano docker image
         run: |
           cd ../../ && docker build -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.7 -t katanemo/plano:latest
 

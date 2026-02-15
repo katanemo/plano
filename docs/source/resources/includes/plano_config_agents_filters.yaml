@@ -30,7 +30,7 @@ listeners:
   - type: agent
     name: agent_1
     port: 8001
-    router: arch_agent_router
+    router: plano_agent_router
     agents:
       - id: rag_agent
         description: virtual assistant for retrieval augmented generation tasks

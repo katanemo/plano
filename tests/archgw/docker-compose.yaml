@@ -5,7 +5,7 @@ services:
       - "10000:10000"
       - "12000:12000"
     volumes:
-      - ./config.yaml:/app/arch_config.yaml
+      - ./config.yaml:/app/plano_config.yaml
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
     extra_hosts:
       - "host.docker.internal:host-gateway"

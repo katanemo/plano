@@ -68,19 +68,19 @@ def find_repo_root(start_path=None):
     return None
 
 
-def has_ingress_listener(arch_config_file):
-    """Check if the arch config file has ingress_traffic listener configured."""
+def has_ingress_listener(plano_config_file):
+    """Check if the plano config file has ingress_traffic listener configured."""
     try:
-        with open(arch_config_file) as f:
-            arch_config_dict = yaml.safe_load(f)
+        with open(plano_config_file) as f:
+            plano_config_dict = yaml.safe_load(f)
 
-        ingress_traffic = arch_config_dict.get("listeners", {}).get(
+        ingress_traffic = plano_config_dict.get("listeners", {}).get(
             "ingress_traffic", {}
         )
 
         return bool(ingress_traffic)
     except Exception as e:
-        log.error(f"Error reading config file {arch_config_file}: {e}")
+        log.error(f"Error reading config file {plano_config_file}: {e}")
         return False
 
 
@@ -161,27 +161,27 @@ def convert_legacy_listeners(
     return listeners, llm_gateway_listener, prompt_gateway_listener
 
 
-def get_llm_provider_access_keys(arch_config_file):
-    with open(arch_config_file, "r") as file:
-        arch_config = file.read()
-        arch_config_yaml = yaml.safe_load(arch_config)
+def get_llm_provider_access_keys(plano_config_file):
+    with open(plano_config_file, "r") as file:
+        plano_config = file.read()
+        plano_config_yaml = yaml.safe_load(plano_config)
 
     access_key_list = []
 
     # Convert legacy llm_providers to model_providers
-    if "llm_providers" in arch_config_yaml:
-        if "model_providers" in arch_config_yaml:
+    if "llm_providers" in plano_config_yaml:
+        if "model_providers" in plano_config_yaml:
             raise Exception(
                 "Please provide either llm_providers or model_providers, not both. llm_providers is deprecated, please use model_providers instead"
             )
-        arch_config_yaml["model_providers"] = arch_config_yaml["llm_providers"]
-        del arch_config_yaml["llm_providers"]
+        plano_config_yaml["model_providers"] = plano_config_yaml["llm_providers"]
+        del plano_config_yaml["llm_providers"]
 
     listeners, _, _ = convert_legacy_listeners(
-        arch_config_yaml.get("listeners"), arch_config_yaml.get("model_providers")
+        plano_config_yaml.get("listeners"), plano_config_yaml.get("model_providers")
     )
 
-    for prompt_target in arch_config_yaml.get("prompt_targets", []):
+    for prompt_target in plano_config_yaml.get("prompt_targets", []):
         for k, v in prompt_target.get("endpoint", {}).get("http_headers", {}).items():
             if k.lower() == "authorization":
                 print(
@@ -200,7 +200,7 @@ def get_llm_provider_access_keys(arch_config_file):
                 access_key_list.append(access_key)
 
     # Extract environment variables from state_storage.connection_string
-    state_storage = arch_config_yaml.get("state_storage_v1_responses")
+    state_storage = plano_config_yaml.get("state_storage_v1_responses")
     if state_storage:
         connection_string = state_storage.get("connection_string")
         if connection_string and isinstance(connection_string, str):
@@ -251,16 +251,16 @@ def find_config_file(path=".", file=None):
         # If a file is provided, process that file
         return os.path.abspath(file)
     else:
-        # If no file is provided, use the path and look for arch_config.yaml first, then config.yaml for convenience
-        arch_config_file = os.path.abspath(os.path.join(path, "config.yaml"))
-        if not os.path.exists(arch_config_file):
-            arch_config_file = os.path.abspath(os.path.join(path, "arch_config.yaml"))
-        return arch_config_file
+        # If no file is provided, use the path and look for plano_config.yaml first, then config.yaml for convenience
+        plano_config_file = os.path.abspath(os.path.join(path, "config.yaml"))
+        if not os.path.exists(plano_config_file):
+            plano_config_file = os.path.abspath(os.path.join(path, "plano_config.yaml"))
+        return plano_config_file
 
 
 def stream_access_logs(follow):
     """
-    Get the archgw access logs
+    Get the plano access logs
     """
 
     follow_arg = "-f" if follow else ""

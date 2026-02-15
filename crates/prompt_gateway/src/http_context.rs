@@ -419,7 +419,7 @@ impl HttpContext for StreamContext {
                         );
                     }
                     let data_serialized = serde_json::to_string(&data).unwrap();
-                    info!("archgw <= developer: {}", data_serialized);
+                    info!("plano <= developer: {}", data_serialized);
                     self.set_http_response_body(0, body_size, data_serialized.as_bytes());
                 };
             }

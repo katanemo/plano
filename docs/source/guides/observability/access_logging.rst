@@ -1,4 +1,4 @@
-.. _arch_access_logging:
+.. _plano_access_logging:
 
 Access Logging
 ==============

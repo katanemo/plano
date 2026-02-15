@@ -33,7 +33,7 @@ cd -
 uv sync
 
 # Start gateway with state storage config
-log "startup arch gateway with state storage config"
+log "startup plano gateway with state storage config"
 cd ../../
 planoai down || true
 planoai up tests/e2e/config_memory_state_v1_responses.yaml

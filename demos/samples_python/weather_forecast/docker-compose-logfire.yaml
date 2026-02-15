@@ -20,7 +20,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./config.yaml:/app/arch_config.yaml
+      - ./config.yaml:/app/plano_config.yaml
 
   otel-collector:
     build:

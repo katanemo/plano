@@ -1,7 +1,7 @@
 [project]
 name = "model-choice-newsletter-code-snippets"
 version = "0.1.0"
-description = "Benchmarking model alias routing with Arch Gateway."
+description = "Benchmarking model alias routing with Plano."
 authors = [{name = "Your Name", email = "your@email.com"}]
 license = {text = "Apache 2.0"}
 readme = "README.md"

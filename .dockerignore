@@ -33,8 +33,8 @@ cli/__pycache__/
 cli/planoai/__pycache__/
 
 # Python model server
-archgw_modelserver/
-arch_tools/
+plano_modelserver/
+plano_tools/
 
 # Misc
 *.md
@@ -44,4 +44,4 @@ turbo.json
 package.json
 *.sh
 !cli/build_cli.sh
-arch_config.yaml_rendered
+plano_config.yaml_rendered

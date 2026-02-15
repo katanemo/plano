@@ -1,4 +1,4 @@
-.. _arch_overview_threading:
+.. _plano_overview_threading:
 
 Threading Model
 ===============

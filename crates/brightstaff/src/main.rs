@@ -52,57 +52,57 @@ fn empty() -> BoxBody<Bytes, hyper::Error> {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let bind_address = env::var("BIND_ADDRESS").unwrap_or_else(|_| BIND_ADDRESS.to_string());
 
-    // loading arch_config.yaml file (before tracing init so we can read tracing config)
-    let arch_config_path = env::var("ARCH_CONFIG_PATH_RENDERED")
-        .unwrap_or_else(|_| "./arch_config_rendered.yaml".to_string());
-    eprintln!("loading arch_config.yaml from {}", arch_config_path);
+    // loading plano_config.yaml file (before tracing init so we can read tracing config)
+    let plano_config_path = env::var("PLANO_CONFIG_PATH_RENDERED")
+        .unwrap_or_else(|_| "./plano_config_rendered.yaml".to_string());
+    eprintln!("loading plano_config.yaml from {}", plano_config_path);
 
     let config_contents =
-        fs::read_to_string(&arch_config_path).expect("Failed to read arch_config.yaml");
+        fs::read_to_string(&plano_config_path).expect("Failed to read plano_config.yaml");
 
     let config: Configuration =
-        serde_yaml::from_str(&config_contents).expect("Failed to parse arch_config.yaml");
+        serde_yaml::from_str(&config_contents).expect("Failed to parse plano_config.yaml");
 
     // Initialize tracing using config.yaml tracing section
     let _tracer_provider = init_tracer(config.tracing.as_ref());
-    info!(path = %arch_config_path, "loaded arch_config.yaml");
+    info!(path = %plano_config_path, "loaded plano_config.yaml");
 
-    let arch_config = Arc::new(config);
+    let plano_config = Arc::new(config);
 
     // combine agents and filters into a single list of agents
-    let all_agents: Vec<Agent> = arch_config
+    let all_agents: Vec<Agent> = plano_config
         .agents
         .as_deref()
         .unwrap_or_default()
         .iter()
-        .chain(arch_config.filters.as_deref().unwrap_or_default())
+        .chain(plano_config.filters.as_deref().unwrap_or_default())
         .cloned()
         .collect();
 
     // Create expanded provider list for /v1/models endpoint
-    let llm_providers = LlmProviders::try_from(arch_config.model_providers.clone())
+    let llm_providers = LlmProviders::try_from(plano_config.model_providers.clone())
         .expect("Failed to create LlmProviders");
     let llm_providers = Arc::new(RwLock::new(llm_providers));
     let combined_agents_filters_list = Arc::new(RwLock::new(Some(all_agents)));
-    let listeners = Arc::new(RwLock::new(arch_config.listeners.clone()));
+    let listeners = Arc::new(RwLock::new(plano_config.listeners.clone()));
     let llm_provider_url =
         env::var("LLM_PROVIDER_ENDPOINT").unwrap_or_else(|_| "http://localhost:12001".to_string());
 
     let listener = TcpListener::bind(bind_address).await?;
-    let routing_model_name: String = arch_config
+    let routing_model_name: String = plano_config
         .routing
         .as_ref()
         .and_then(|r| r.model.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_MODEL_NAME.to_string());
 
-    let routing_llm_provider = arch_config
+    let routing_llm_provider = plano_config
         .routing
         .as_ref()
         .and_then(|r| r.model_provider.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
     let router_service: Arc<RouterService> = Arc::new(RouterService::new(
-        arch_config.model_providers.clone(),
+        plano_config.model_providers.clone(),
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         routing_model_name,
         routing_llm_provider,
@@ -113,19 +113,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         PLANO_ORCHESTRATOR_MODEL_NAME.to_string(),
     ));
 
-    let model_aliases = Arc::new(arch_config.model_aliases.clone());
+    let model_aliases = Arc::new(plano_config.model_aliases.clone());
 
     // Initialize trace collector and start background flusher
-    // Tracing is enabled if the tracing config is present in arch_config.yaml
+    // Tracing is enabled if the tracing config is present in plano_config.yaml
     // Pass Some(true/false) to override, or None to use env var OTEL_TRACING_ENABLED
     // OpenTelemetry automatic instrumentation is configured in utils/tracing.rs
 
     // Initialize conversation state storage for v1/responses
-    // Configurable via arch_config.yaml state_storage section
+    // Configurable via plano_config.yaml state_storage section
     // If not configured, state management is disabled
     // Environment variables are substituted by envsubst before config is read
     let state_storage: Option<Arc<dyn StateStorage>> =
-        if let Some(storage_config) = &arch_config.state_storage {
+        if let Some(storage_config) = &plano_config.state_storage {
             let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
                 common::configuration::StateStorageType::Memory => {
                     info!(

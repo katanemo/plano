@@ -47,24 +47,29 @@ export async function generateMetadata({
     }
 
     // Get baseUrl - use NEXT_PUBLIC_APP_URL if set, otherwise construct from VERCEL_URL
-    // Restrict to allowed hosts: localhost:3000, archgw-tau.vercel.app, or plano.katanemo.com
+    // Restrict to allowed hosts: localhost:3000, archgw-tau.vercel.app, or planoai.dev
     let baseUrl = "http://localhost:3000";
 
     if (process.env.NEXT_PUBLIC_APP_URL) {
-      const url = process.env.NEXT_PUBLIC_APP_URL;
-      if (
-        url.includes("archgw-tau.vercel.app") ||
-        url.includes("plano.katanemo.com") ||
-        url.includes("localhost:3000")
-      ) {
-        baseUrl = url;
+      try {
+        const parsed = new URL(process.env.NEXT_PUBLIC_APP_URL);
+        const allowedHosts = new Set([
+          "archgw-tau.vercel.app",
+          "planoai.dev",
+          "localhost",
+        ]);
+        if (allowedHosts.has(parsed.hostname)) {
+          baseUrl = parsed.origin;
+        }
+      } catch {
+        // Invalid URL, keep default
       }
     } else if (process.env.VERCEL_URL) {
       const hostname = process.env.VERCEL_URL;
-      // VERCEL_URL is just the hostname, not the full URL
-      if (hostname === "archgw-tau.vercel.app") {
-        baseUrl = `https://${hostname}`;
-      } else if (hostname === "plano.katanemo.com") {
+      if (
+        hostname === "archgw-tau.vercel.app" ||
+        hostname === "planoai.dev"
+      ) {
         baseUrl = `https://${hostname}`;
       }
     }

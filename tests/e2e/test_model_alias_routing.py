@@ -260,7 +260,7 @@ def test_anthropic_client_with_alias_streaming():
 
 
 def test_400_error_handling_with_alias():
-    """Test that 400 errors from upstream are properly returned by archgw"""
+    """Test that 400 errors from upstream are properly returned by plano"""
     logger.info(
         "Testing 400 error handling with arch.summarize.v1 and invalid parameter"
     )

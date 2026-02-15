@@ -18,8 +18,8 @@ start_demo() {
     echo ".env file created with OPENAI_API_KEY."
   fi
 
-  # Step 3: Start Arch
-  echo "Starting Arch with config.yaml..."
+  # Step 3: Start Plano
+  echo "Starting Plano with config.yaml..."
   planoai up config.yaml
 
   # Step 4: Start developer services
@@ -33,8 +33,8 @@ stop_demo() {
   echo "Stopping Network Agent using Docker Compose..."
   docker compose down
 
-  # Step 2: Stop Arch
-  echo "Stopping Arch..."
+  # Step 2: Stop Plano
+  echo "Stopping Plano..."
   planoai down
 }
 

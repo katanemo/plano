@@ -1,6 +1,6 @@
 # Multi-Turn Agentic Demo (RAG)
 
-This demo showcases how the **Arch** can be used to build accurate multi-turn RAG agent by just writing simple APIs.
+This demo showcases how **Plano** can be used to build accurate multi-turn RAG agent by just writing simple APIs.
 
 ![Example of Multi-turn Interaction](mutli-turn-example.png)
 
@@ -14,7 +14,7 @@ Provides information about various energy sources and considerations.
 
 # Starting the demo
 1. Please make sure the [pre-requisites](https://github.com/katanemo/arch/?tab=readme-ov-file#prerequisites) are installed correctly
-2. Start Arch
+2. Start Plano
    ```sh
    sh run_demo.sh
    ```

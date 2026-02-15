@@ -39,7 +39,7 @@ docker compose up weather_forecast_service --build -d
 cd -
 
 # Start gateway with prompt_gateway config
-log "startup arch gateway with function calling demo"
+log "startup plano gateway with function calling demo"
 cd ../../
 planoai down || true
 planoai up demos/samples_python/weather_forecast/config.yaml

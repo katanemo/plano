@@ -48,7 +48,7 @@ prompt_targets:
           description: Time range in days for which to gather device statistics. Defaults to 7.
           default: 7
 
-# Arch creates a round-robin load balancing between different endpoints, managed via the cluster subsystem.
+# Plano creates a round-robin load balancing between different endpoints, managed via the cluster subsystem.
 endpoints:
   app_server:
     # value could be ip address or a hostname with port

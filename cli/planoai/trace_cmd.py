@@ -28,6 +28,17 @@ MAX_TRACES = 50
 MAX_SPANS_PER_TRACE = 500
 
 
+class TraceListenerBindError(RuntimeError):
+    """Raised when the OTLP/gRPC listener cannot bind to the requested address."""
+
+
+def _trace_listener_bind_error_message(address: str) -> str:
+    return (
+        f"Failed to start OTLP listener on {address}: address is already in use.\n"
+        "Stop the process using that port or run `planoai trace listen --port <PORT>`."
+    )
+
+
 @dataclass
 class TraceSummary:
     trace_id: str
@@ -501,7 +512,15 @@ def _create_trace_server(host: str, grpc_port: int) -> grpc.Server:
     trace_service_pb2_grpc.add_TraceServiceServicer_to_server(
         _OTLPTraceServicer(), grpc_server
     )
-    grpc_server.add_insecure_port(f"{host}:{grpc_port}")
+    address = f"{host}:{grpc_port}"
+    try:
+        bound_port = grpc_server.add_insecure_port(address)
+    except RuntimeError as exc:
+        raise TraceListenerBindError(
+            _trace_listener_bind_error_message(address)
+        ) from exc
+    if bound_port == 0:
+        raise TraceListenerBindError(_trace_listener_bind_error_message(address))
     grpc_server.start()
     return grpc_server
 
@@ -509,7 +528,10 @@ def _create_trace_server(host: str, grpc_port: int) -> grpc.Server:
 def _start_trace_listener(host: str, grpc_port: int) -> None:
     """Start the OTLP/gRPC listener and block until interrupted."""
     console = Console()
-    grpc_server = _create_trace_server(host, grpc_port)
+    try:
+        grpc_server = _create_trace_server(host, grpc_port)
+    except TraceListenerBindError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     console.print()
     console.print(f"[bold {PLANO_COLOR}]Listening for traces...[/bold {PLANO_COLOR}]")

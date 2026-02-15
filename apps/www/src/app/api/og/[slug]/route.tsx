@@ -4,6 +4,28 @@ import { client, urlFor } from "@/lib/sanity";
 
 export const runtime = "edge";
 
+const ALLOWED_HOSTS = new Set([
+  "archgw-tau.vercel.app",
+  "planoai.dev",
+  "localhost",
+]);
+
+function getSafeBaseUrl(requestOrigin: string): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  try {
+    const parsed = new URL(requestOrigin);
+    if (ALLOWED_HOSTS.has(parsed.hostname)) {
+      return parsed.origin;
+    }
+  } catch {}
+  return "http://localhost:3000";
+}
+
 // Font loading function that uses the request origin
 function loadFont(fileName: string, baseUrl: string) {
   return fetch(new URL(`/fonts/${fileName}`, baseUrl)).then((res) => {
@@ -55,12 +77,8 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    // Get base URL for font loading - use request origin in production
-    const fontBaseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : request.nextUrl.origin);
+    // Get base URL for font loading - use validated origin
+    const fontBaseUrl = getSafeBaseUrl(request.nextUrl.origin);
 
     // Load fonts with error handling
     let fontData;
@@ -116,11 +134,7 @@ export async function GET(
     }
 
     // Use logo PNG
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : request.nextUrl.origin);
+    const baseUrl = getSafeBaseUrl(request.nextUrl.origin);
     const logoUrl = `${baseUrl}/Logomark.png`;
 
     return new ImageResponse(

@@ -98,17 +98,17 @@ def get_data_chunks(stream, n=1):
     return chunks
 
 
-def get_arch_messages(response_json):
-    arch_messages = []
+def get_plano_messages(response_json):
+    plano_messages = []
     if response_json and "metadata" in response_json:
-        # load arch_state from metadata
-        arch_state_str = response_json.get("metadata", {}).get(ARCH_STATE_HEADER, "{}")
-        # parse arch_state into json object
-        arch_state = json.loads(arch_state_str)
-        # load messages from arch_state
-        arch_messages_str = arch_state.get("messages", "[]")
+        # load plano_state from metadata
+        plano_state_str = response_json.get("metadata", {}).get(ARCH_STATE_HEADER, "{}")
+        # parse plano_state into json object
+        plano_state = json.loads(plano_state_str)
+        # load messages from plano_state
+        plano_messages_str = plano_state.get("messages", "[]")
         # parse messages into json object
-        arch_messages = json.loads(arch_messages_str)
-        # append messages from arch gateway to history
-        return arch_messages
+        plano_messages = json.loads(plano_messages_str)
+        # append messages from plano gateway to history
+        return plano_messages
     return []

@@ -1,4 +1,4 @@
-# Arch Gateway configuration version
+# Plano Gateway configuration version
 version: v0.3.0
 
 # External HTTP agents - API type is controlled by request path (/v1/responses, /v1/messages, /v1/chat/completions)

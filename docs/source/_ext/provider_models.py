@@ -19,7 +19,7 @@ def _on_build_finished(app: Sphinx, exception: Exception | None) -> None:
         return
 
     # Source path: provider_models.yaml is copied into the Docker image at /docs/provider_models.yaml
-    # This follows the pattern used for config templates like envoy.template.yaml and arch_config_schema.yaml
+    # This follows the pattern used for config templates like envoy.template.yaml and plano_config_schema.yaml
     docs_root = Path(app.srcdir).parent  # Goes from source/ to docs/
     source_path = docs_root / "provider_models.yaml"
 

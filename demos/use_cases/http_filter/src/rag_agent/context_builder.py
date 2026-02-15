@@ -22,14 +22,14 @@ logger = logging.getLogger(__name__)
 ### add new setup
 app = FastAPI(title="RAG Agent Context Builder", version="1.0.0")
 
-# Configuration for archgw LLM gateway
+# Configuration for Plano LLM gateway
 LLM_GATEWAY_ENDPOINT = os.getenv("LLM_GATEWAY_ENDPOINT", "http://localhost:12000/v1")
 RAG_MODEL = "gpt-4o-mini"
 
-# Initialize OpenAI client for archgw
-archgw_client = AsyncOpenAI(
+# Initialize OpenAI client for Plano
+plano_client = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
-    api_key="EMPTY",  # archgw doesn't require a real API key
+    api_key="EMPTY",  # Plano doesn't require a real API key
 )
 
 # Global variable to store the knowledge base
@@ -95,15 +95,15 @@ async def find_relevant_passages(
         If no passages are relevant, return "NONE"."""
 
     try:
-        # Call archgw to select relevant passages
-        logger.info(f"Calling archgw to find relevant passages for query: '{query}'")
+        # Call Plano to select relevant passages
+        logger.info(f"Calling Plano to find relevant passages for query: '{query}'")
 
         # Prepare extra headers if traceparent is provided
         extra_headers = {"x-envoy-max-retries": "3", "x-request-id": request_id}
         if traceparent:
             extra_headers["traceparent"] = traceparent
 
-        response = await archgw_client.chat.completions.create(
+        response = await plano_client.chat.completions.create(
             model=RAG_MODEL,
             messages=[{"role": "system", "content": system_prompt}],
             temperature=0.1,

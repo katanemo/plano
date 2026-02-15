@@ -182,7 +182,7 @@ pub mod signals {
 // Operation Names
 // =============================================================================
 
-/// Canonical operation name components for Arch Gateway
+/// Canonical operation name components for Plano Gateway
 pub mod operation_component {
     /// Inbound request handling
     pub const INBOUND: &str = "plano(inbound)";
@@ -210,7 +210,7 @@ pub mod operation_component {
 ///
 /// Format: `{method} {path} {target}`
 ///
-/// The operation component (e.g., "archgw(llm)") is now part of the service name,
+/// The operation component (e.g., "plano(llm)") is now part of the service name,
 /// so the operation name focuses on the HTTP request details and target.
 ///
 /// # Examples
@@ -218,7 +218,7 @@ pub mod operation_component {
 /// use brightstaff::tracing::OperationNameBuilder;
 ///
 /// // LLM call operation: "POST /v1/chat/completions gpt-4"
-/// // (service name will be "archgw(llm)")
+/// // (service name will be "plano(llm)")
 /// let op = OperationNameBuilder::new()
 ///     .with_method("POST")
 ///     .with_path("/v1/chat/completions")
@@ -226,7 +226,7 @@ pub mod operation_component {
 ///     .build();
 ///
 /// // Agent filter operation: "POST /agents/v1/chat/completions hallucination-detector"
-/// // (service name will be "archgw(agent filter)")
+/// // (service name will be "plano(agent filter)")
 /// let op = OperationNameBuilder::new()
 ///     .with_method("POST")
 ///     .with_path("/agents/v1/chat/completions")
@@ -234,7 +234,7 @@ pub mod operation_component {
 ///     .build();
 ///
 /// // Routing operation: "POST /v1/chat/completions"
-/// // (service name will be "archgw(routing)")
+/// // (service name will be "plano(routing)")
 /// let op = OperationNameBuilder::new()
 ///     .with_method("POST")
 ///     .with_path("/v1/chat/completions")

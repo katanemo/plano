@@ -15,7 +15,7 @@
         "LLM": "1",
         "CHAT_COMPLETION_ENDPOINT": "http://localhost:10000/v1",
         "STREAMING": "True",
-        "ARCH_CONFIG": "../../samples_python/weather_forecast/arch_config.yaml"
+        "PLANO_CONFIG": "../../samples_python/weather_forecast/plano_config.yaml"
       }
     },
     {
@@ -29,7 +29,7 @@
         "LLM": "1",
         "CHAT_COMPLETION_ENDPOINT": "http://localhost:12000/v1",
         "STREAMING": "True",
-        "ARCH_CONFIG": "../../samples_python/weather_forecast/arch_config.yaml"
+        "PLANO_CONFIG": "../../samples_python/weather_forecast/plano_config.yaml"
       }
     },
   ]

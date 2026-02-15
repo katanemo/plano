@@ -1,15 +1,15 @@
 # LLM Routing
-This demo shows how you can arch gateway to manage keys and route to upstream LLM.
+This demo shows how you can use Plano gateway to manage keys and route to upstream LLM.
 
 # Starting the demo
 1. Please make sure the [pre-requisites](https://github.com/katanemo/arch/?tab=readme-ov-file#prerequisites) are installed correctly
-1. Start Arch
+1. Start Plano
    ```sh
    sh run_demo.sh
    ```
 1. Navigate to http://localhost:18080/
 
-Following screen shows an example of interaction with arch gateway showing dynamic routing. You can select between different LLMs using "override model" option in the chat UI.
+Following screen shows an example of interaction with Plano gateway showing dynamic routing. You can select between different LLMs using "override model" option in the chat UI.
 
 ![LLM Routing Demo](llm_routing_demo.png)
 
@@ -47,12 +47,12 @@ $ curl --header 'Content-Type: application/json' \
 ```
 
 # Observability
-Arch gateway publishes stats endpoint at http://localhost:19901/stats. In this demo we are using prometheus to pull stats from arch and we are using grafana to visualize the stats in dashboard. To see grafana dashboard follow instructions below,
+Plano gateway publishes stats endpoint at http://localhost:19901/stats. In this demo we are using prometheus to pull stats from Plano and we are using grafana to visualize the stats in dashboard. To see grafana dashboard follow instructions below,
 
 1. Navigate to http://localhost:3000/ to open grafana UI (use admin/grafana as credentials)
-1. From grafana left nav click on dashboards and select "Intelligent Gateway Overview" to view arch gateway stats
+1. From grafana left nav click on dashboards and select "Intelligent Gateway Overview" to view Plano gateway stats
 1. For tracing you can head over to http://localhost:16686/ to view recent traces.
 
-Following is a screenshot of tracing UI showing call received by arch gateway and making upstream call to LLM,
+Following is a screenshot of tracing UI showing call received by Plano gateway and making upstream call to LLM,
 
 ![Jaeger Tracing](jaeger_tracing_llm_routing.png)

@@ -54,7 +54,7 @@ The OpenAI SDK works with any provider through Plano's OpenAI-compatible endpoin
         base_url="http://127.0.0.1:12000/v1"
     )
 
-    # Use any model configured in your arch_config.yaml
+    # Use any model configured in your plano_config.yaml
     completion = client.chat.completions.create(
         model="gpt-4o-mini",  # Or use :ref:`model aliases <model_aliases>` like "fast-model"
         max_tokens=50,
@@ -231,7 +231,7 @@ The Anthropic SDK works with any provider through Plano's Anthropic-compatible e
         base_url="http://127.0.0.1:12000"
     )
 
-    # Use any model configured in your arch_config.yaml
+    # Use any model configured in your plano_config.yaml
     message = client.messages.create(
         model="claude-3-5-sonnet-20241022",
         max_tokens=50,

@@ -8,14 +8,14 @@ services:
       - "12000:12000"
       - "19901:9901"
     volumes:
-      - ${ARCH_CONFIG_FILE:-../demos/samples_python/weather_forecast/arch_config.yaml}:/app/arch_config.yaml
+      - ${PLANO_CONFIG_FILE:-../demos/samples_python/weather_forecast/plano_config.yaml}:/app/plano_config.yaml
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
       - ./envoy.template.yaml:/app/envoy.template.yaml
-      - ./arch_config_schema.yaml:/app/arch_config_schema.yaml
+      - ./plano_config_schema.yaml:/app/plano_config_schema.yaml
       - ../cli/planoai/config_generator.py:/app/planoai/config_generator.py
       - ../crates/target/wasm32-wasip1/release/llm_gateway.wasm:/etc/envoy/proxy-wasm-plugins/llm_gateway.wasm
       - ../crates/target/wasm32-wasip1/release/prompt_gateway.wasm:/etc/envoy/proxy-wasm-plugins/prompt_gateway.wasm
-      - ~/archgw_logs:/var/log/
+      - ~/plano_logs:/var/log/
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
