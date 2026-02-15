@@ -12,9 +12,7 @@ services:
       - LLM_GATEWAY_ENDPOINT=${LLM_GATEWAY_ENDPOINT:-http://host.docker.internal:12000/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
   plano:
-    build:
-      context: ../../../
-      dockerfile: Dockerfile
+    image: katanemo/plano:latest
     ports:
       - "12000:12000"
       - "8001:8001"

@@ -1,9 +1,7 @@
 
 services:
   plano:
-    build:
-      context: ../../../
-      dockerfile: Dockerfile
+    image: katanemo/plano:latest
     ports:
       - "8001:8001"
       - "12000:12000"
