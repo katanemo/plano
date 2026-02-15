@@ -165,7 +165,7 @@ jobs:
         if: always() && github.ref == 'refs/heads/main'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
-          auth: ${{ secrets.GIST_SECRET }}
+          auth: ${{ secrets.ADIL_GITHUB_TOKEN }}
           gistID: ${{ vars.SECURITY_BADGE_GIST_ID }}
           filename: security-scan-badge.json
           label: Security Scan
