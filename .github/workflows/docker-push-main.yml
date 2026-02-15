@@ -2,6 +2,7 @@ name: Publish docker image (latest)
 
 env:
   DOCKER_IMAGE: katanemo/plano
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/plano
 
 on:
   push:
@@ -10,9 +11,10 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
-  # Build ARM64 image on native ARM64 runner.
+  # Build ARM64 image on native ARM64 runner — push to both registries
   build-arm64:
     runs-on: [linux-arm64]
     steps:
@@ -25,13 +27,12 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=raw,value=latest  # Force the tag to be "latest"
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Push ARM64 Image
         uses: docker/build-push-action@v5
@@ -40,9 +41,11 @@ jobs:
           file: ./Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}-arm64
+          tags: |
+            ${{ env.DOCKER_IMAGE }}:latest-arm64
+            ${{ env.GHCR_IMAGE }}:latest-arm64
 
-  # Build AMD64 image on GitHub's AMD64 runner
+  # Build AMD64 image on GitHub's AMD64 runner — push to both registries
   build-amd64:
     runs-on: ubuntu-latest
     steps:
@@ -55,13 +58,12 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=raw,value=latest  # Force the tag to be "latest"
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Push AMD64 Image
         uses: docker/build-push-action@v5
@@ -70,13 +72,14 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}-amd64
+          tags: |
+            ${{ env.DOCKER_IMAGE }}:latest-amd64
+            ${{ env.GHCR_IMAGE }}:latest-amd64
 
-
-  # Combine ARM64 and AMD64 images into a multi-arch manifest
+  # Combine ARM64 and AMD64 images into multi-arch manifests for both registries
   create-manifest:
     runs-on: ubuntu-latest
-    needs: [build-arm64, build-amd64]  # Wait for both builds
+    needs: [build-arm64, build-amd64]
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -84,17 +87,23 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          images: ${{ env.DOCKER_IMAGE }}
-          tags: |
-            type=raw,value=latest  # Force the tag to be "latest"
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Multi-Arch Manifest
+      - name: Create Docker Hub Multi-Arch Manifest
         run: |
-          # Combine the architecture-specific images into a "latest" manifest
-          docker buildx imagetools create -t ${{ steps.meta.outputs.tags }} \
+          docker buildx imagetools create \
+            -t ${{ env.DOCKER_IMAGE }}:latest \
             ${{ env.DOCKER_IMAGE }}:latest-arm64 \
             ${{ env.DOCKER_IMAGE }}:latest-amd64
+
+      - name: Create GHCR Multi-Arch Manifest
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.GHCR_IMAGE }}:latest \
+            ${{ env.GHCR_IMAGE }}:latest-arm64 \
+            ${{ env.GHCR_IMAGE }}:latest-amd64

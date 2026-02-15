@@ -1,0 +1,480 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  PLANO_DOCKER_IMAGE: katanemo/plano:e2e
+  DOCKER_IMAGE: katanemo/plano
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Pre-commit (fmt, clippy, cargo test, black, yaml)
+  # ──────────────────────────────────────────────
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - uses: pre-commit/action@v3.0.1
+
+  # ──────────────────────────────────────────────
+  # Plano tools (CLI) tests — no Docker needed
+  # ──────────────────────────────────────────────
+  plano-tools-tests:
+    runs-on: ubuntu-latest-m
+    defaults:
+      run:
+        working-directory: ./cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install plano tools
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: uv run pytest
+
+  # ──────────────────────────────────────────────
+  # Single Docker build — shared by all downstream jobs
+  # ──────────────────────────────────────────────
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build plano image (with GHA cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: |
+            ${{ env.PLANO_DOCKER_IMAGE }}
+            ${{ env.DOCKER_IMAGE }}:0.4.6
+            ${{ env.DOCKER_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save image as artifact
+        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.6 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp/plano-image.tar
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Validate plano config
+  # ──────────────────────────────────────────────
+  validate-config:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Validate plano config
+        run: bash config/validate_plano_config.sh
+
+  # ──────────────────────────────────────────────
+  # Docker security scan (Trivy)
+  # ──────────────────────────────────────────────
+  security-scan:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_IMAGE }}:latest
+          format: table
+          exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Run Trivy scanner (SARIF for GitHub Security tab)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_IMAGE }}:latest
+          format: sarif
+          output: trivy-results.sarif
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ──────────────────────────────────────────────
+  # E2E: prompt_gateway tests
+  # ──────────────────────────────────────────────
+  test-prompt-gateway:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/uv.lock
+
+      - name: Run prompt_gateway tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+        run: |
+          cd tests/e2e && bash run_prompt_gateway_tests.sh
+
+  # ──────────────────────────────────────────────
+  # E2E: model_alias_routing tests
+  # ──────────────────────────────────────────────
+  test-model-alias-routing:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/uv.lock
+
+      - name: Run model alias routing tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+        run: |
+          cd tests/e2e && bash run_model_alias_tests.sh
+
+  # ──────────────────────────────────────────────
+  # E2E: responses API with state tests
+  # ──────────────────────────────────────────────
+  test-responses-api-with-state:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/e2e/uv.lock
+            cli/uv.lock
+
+      - name: Run responses API with state tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+        run: |
+          cd tests/e2e && bash run_responses_state_tests.sh
+
+  # ──────────────────────────────────────────────
+  # E2E: plano tests (multi-Python matrix)
+  # ──────────────────────────────────────────────
+  e2e-plano-tests:
+    needs: docker-build
+    runs-on: ubuntu-latest-m
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    defaults:
+      run:
+        working-directory: ./tests/archgw
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Start plano
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+        run: |
+          docker compose up | tee &> plano.logs &
+
+      - name: Wait for plano to be healthy
+        run: |
+          source common.sh && wait_for_healthz http://localhost:10000/healthz
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install test dependencies
+        run: uv sync
+
+      - name: Run plano tests
+        run: |
+          uv run pytest || tail -100 plano.logs
+
+      - name: Stop plano docker container
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          docker compose down
+
+  # ──────────────────────────────────────────────
+  # E2E: demo — preference based routing
+  # ──────────────────────────────────────────────
+  e2e-demo-preference:
+    needs: docker-build
+    runs-on: ubuntu-latest-m
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Setup python venv
+        run: python -m venv venv
+
+      - name: Install hurl
+        run: |
+          curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/4.0.0/hurl_4.0.0_amd64.deb
+          sudo dpkg -i hurl_4.0.0_amd64.deb
+
+      - name: Install plano gateway and test dependencies
+        run: |
+          source venv/bin/activate
+          cd cli && echo "installing plano cli" && uv sync && uv tool install .
+          cd ../demos/shared/test_runner && echo "installing test dependencies" && uv sync
+
+      - name: Run demo tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ARCH_API_KEY: ${{ secrets.ARCH_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          source venv/bin/activate
+          cd demos/shared/test_runner && sh run_demo_tests.sh use_cases/preference_based_routing
+
+  # ──────────────────────────────────────────────
+  # E2E: demo — currency conversion
+  # ──────────────────────────────────────────────
+  e2e-demo-currency:
+    needs: docker-build
+    runs-on: ubuntu-latest-m
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Setup python venv
+        run: python -m venv venv
+
+      - name: Install hurl
+        run: |
+          curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/4.0.0/hurl_4.0.0_amd64.deb
+          sudo dpkg -i hurl_4.0.0_amd64.deb
+
+      - name: Install plano gateway and test dependencies
+        run: |
+          source venv/bin/activate
+          cd cli && echo "installing plano cli" && uv sync && uv tool install .
+          cd ../demos/shared/test_runner && echo "installing test dependencies" && uv sync
+
+      - name: Run demo tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          source venv/bin/activate
+          cd demos/shared/test_runner && sh run_demo_tests.sh samples_python/currency_exchange
