@@ -23,7 +23,7 @@ To run locally make sure that following requirements are met.
 
 ### Requirements
 
-- Python 3.10
+- Python 3.10+
 - uv
 - Docker
 
