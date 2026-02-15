@@ -23,7 +23,7 @@ log starting > ../build.log
 
 log building and running function_calling demo
 log ===========================================
-cd ../../demos/samples_python/weather_forecast/
+cd ../../demos/getting_started/weather_forecast/
 docker compose up weather_forecast_service --build -d
 cd -
 
@@ -46,7 +46,7 @@ uv sync
 log startup plano gateway with function calling demo
 cd ../../
 planoai down
-planoai up demos/samples_python/weather_forecast/config.yaml
+planoai up demos/getting_started/weather_forecast/config.yaml
 cd -
 
 log running e2e tests for prompt gateway
@@ -59,7 +59,7 @@ planoai down
 
 log startup plano gateway with model alias routing demo
 cd ../../
-planoai up demos/use_cases/model_alias_routing/config_with_aliases.yaml
+planoai up demos/llm_routing/model_alias_routing/config_with_aliases.yaml
 cd -
 
 log running e2e tests for model alias routing
@@ -80,6 +80,6 @@ uv run pytest test_openai_responses_api_client_with_state.py
 
 log shutting down the weather_forecast demo
 log =======================================
-cd ../../demos/samples_python/weather_forecast
+cd ../../demos/getting_started/weather_forecast
 docker compose down
 cd -

@@ -1,25 +1,36 @@
-version: v0.1
+version: v0.3.0
 
-listeners:
-  egress_traffic:
-    address: 0.0.0.0
-    port: 12000
-    message_format: openai
-    timeout: 30s
+agents:
+  - id: assistant
+    url: http://localhost:10510
 
-llm_providers:
-
+model_providers:
   # OpenAI Models
   - model: openai/gpt-5-mini-2025-08-07
     access_key: $OPENAI_API_KEY
     default: true
 
-    # Anthropic Models
+  # Anthropic Models
   - model: anthropic/claude-sonnet-4-20250514
     access_key: $ANTHROPIC_API_KEY
+
+listeners:
+  - type: agent
+    name: conversation_service
+    port: 8001
+    router: plano_orchestrator_v1
+    agents:
+      - id: assistant
+        description: |
+          A conversational assistant that maintains context across multi-turn
+          conversations. It can answer follow-up questions, remember previous
+          context, and provide coherent responses in ongoing dialogues.
 
 # State storage configuration for v1/responses API
 # Manages conversation state for multi-turn conversations
 state_storage:
   # Type: memory | postgres
   type: memory
+
+tracing:
+  random_sampling: 100

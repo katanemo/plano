@@ -26,7 +26,7 @@ def test_init_template_builtin_writes_config(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     assert config_path.exists()
     config_text = config_path.read_text(encoding="utf-8")
-    assert "llm_providers:" in config_text
+    assert "model_providers:" in config_text
 
 
 def test_init_refuses_overwrite_without_force(tmp_path, monkeypatch):

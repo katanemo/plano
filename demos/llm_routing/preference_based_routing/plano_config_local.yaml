@@ -1,6 +1,19 @@
 version: v0.3.0
 
+routing:
+  model: Arch-Router
+  llm_provider: arch-router
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
 model_providers:
+
+  - name: arch-router
+    model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+    base_url: http://host.docker.internal:11434
 
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
@@ -12,16 +25,11 @@ model_providers:
       - name: code understanding
         description: understand and explain existing code snippets, functions, or libraries
 
-  - model: anthropic/claude-sonnet-4-20250514
-    access_key: $ANTHROPIC_API_KEY
+  - model: openai/gpt-4.1
+    access_key: $OPENAI_API_KEY
     routing_preferences:
       - name: code generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
-
-listeners:
-  - type: model
-    name: model_listener
-    port: 12000
 
 tracing:
   random_sampling: 100

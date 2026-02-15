@@ -1,0 +1,56 @@
+version: v0.3.0
+
+listeners:
+  - type: prompt
+    name: prompt_listener
+    port: 10000
+
+endpoints:
+  rag_energy_source_agent:
+    endpoint: host.docker.internal:18083
+    connect_timeout: 0.005s
+
+model_providers:
+  - access_key: $OPENAI_API_KEY
+    model: openai/gpt-4o-mini
+    default: true
+
+system_prompt: |
+  You are a helpful assistant and can offer information about energy sources.
+  You will get a JSON object with energy_source and consideration fields. Focus on answering the querstion using those fields.
+  Keep your responses to just three main points to make it easy for the reader to digest the information
+
+prompt_targets:
+  - name: get_info_for_energy_source
+    description: get information about an energy source
+    parameters:
+      - name: energy_source
+        type: str
+        description: a source of energy
+        required: true
+        enum: [renewable, fossil]
+      - name: consideration
+        type: str
+        description: a specific type of consideration for an energy source
+        enum: [cost, economic, technology]
+    endpoint:
+      name: rag_energy_source_agent
+      path: /agent/energy_source_info
+      http_method: POST
+
+  - name: default_target
+    default: true
+    description: This is the default target for all unmatched prompts.
+    endpoint:
+      name: rag_energy_source_agent
+      path: /default_target
+      http_method: POST
+    system_prompt: |
+      You are a helpful assistant! Summarize the user's request and provide a helpful response.
+    # if it is set to false arch will send response that it received from this prompt target to the user
+    # if true arch will forward the response to the default LLM
+    auto_llm_dispatch_on_response: false
+
+tracing:
+  random_sampling: 100
+  trace_arch_internal: true

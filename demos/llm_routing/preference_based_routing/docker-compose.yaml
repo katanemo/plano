@@ -1,0 +1,42 @@
+services:
+
+  plano:
+    build:
+      context: ../../../
+      dockerfile: Dockerfile
+    ports:
+      - "12000:12000"
+      - "12001:12001"
+    environment:
+      - PLANO_CONFIG_PATH=/app/plano_config.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY environment variable is required but not set}
+      - OTEL_TRACING_GRPC_ENDPOINT=http://host.docker.internal:4317
+      - OTEL_TRACING_ENABLED=true
+      - RUST_LOG=debug
+    volumes:
+      - ./config.yaml:/app/plano_config.yaml:ro
+      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+
+  anythingllm:
+    image: mintplexlabs/anythingllm
+    restart: always
+    ports:
+      - "3001:3001"
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      - STORAGE_DIR=/app/server/storage
+      - LLM_PROVIDER=generic-openai
+      - GENERIC_OPEN_AI_BASE_PATH=http://plano:12000/v1
+      - GENERIC_OPEN_AI_MODEL_PREF=gpt-4o-mini
+      - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
+      - GENERIC_OPEN_AI_API_KEY=sk-placeholder
+
+  jaeger:
+    build:
+      context: ../../shared/jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"

@@ -34,7 +34,7 @@ uv sync
 
 # Start weather_forecast service (needed for prompt_gateway tests)
 log "building and running weather_forecast service"
-cd ../../demos/samples_python/weather_forecast/
+cd ../../demos/getting_started/weather_forecast/
 docker compose up weather_forecast_service --build -d
 cd -
 
@@ -42,7 +42,7 @@ cd -
 log "startup plano gateway with function calling demo"
 cd ../../
 planoai down || true
-planoai up demos/samples_python/weather_forecast/config.yaml
+planoai up demos/getting_started/weather_forecast/config.yaml
 cd -
 
 # Run tests
@@ -52,6 +52,6 @@ uv run pytest test_prompt_gateway.py
 # Cleanup
 log "shutting down"
 planoai down || true
-cd ../../demos/samples_python/weather_forecast
+cd ../../demos/getting_started/weather_forecast
 docker compose down
 cd -

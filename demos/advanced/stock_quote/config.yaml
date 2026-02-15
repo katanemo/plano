@@ -1,0 +1,60 @@
+version: v0.3.0
+
+listeners:
+  - type: prompt
+    name: prompt_listener
+    port: 10000
+
+model_providers:
+  - access_key: $OPENAI_API_KEY
+    model: openai/gpt-4o
+
+endpoints:
+  twelvedata_api:
+    endpoint: api.twelvedata.com
+    protocol: https
+
+system_prompt: |
+  You are a helpful assistant.
+
+prompt_targets:
+  - name: stock_quote
+    description: get current stock exchange rate for a given symbol
+    parameters:
+      - name: symbol
+        description: Stock symbol
+        required: true
+        type: str
+    endpoint:
+      name: twelvedata_api
+      path: /quote
+      http_headers:
+        Authorization: "apikey $TWELVEDATA_API_KEY"
+    system_prompt: |
+      You are a helpful stock exchange assistant. You are given stock symbol along with its exchange rate in json format. Your task is to parse the data and present it in a human-readable format. Keep the details to highlevel and be concise.
+
+  - name: stock_quote_time_series
+    description: get historical stock exchange rate for a given symbol
+    parameters:
+      - name: symbol
+        description: Stock symbol
+        required: true
+        type: str
+      - name: interval
+        description: Time interval
+        default: 1day
+        enum:
+          - 1h
+          - 1day
+        type: str
+    endpoint:
+      name: twelvedata_api
+      path: /time_series
+      http_headers:
+        Authorization: "apikey $TWELVEDATA_API_KEY"
+    system_prompt: |
+      You are a helpful stock exchange assistant. You are given stock symbol along with its historical data in json format. Your task is to parse the data and present it in a human-readable format. Keep the details to highlevel only and be concise.
+
+tracing:
+  random_sampling: 100
+  trace_arch_internal: true

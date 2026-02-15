@@ -1,5 +1,10 @@
 version: v0.3.0
 
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
 model_providers:
 
   - model: openai/gpt-4o-mini
@@ -17,11 +22,6 @@ model_providers:
     routing_preferences:
       - name: code generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
-
-listeners:
-  - type: model
-    name: model_listener
-    port: 12000
 
 tracing:
   random_sampling: 100

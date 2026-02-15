@@ -1,0 +1,98 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+
+  # OpenAI Models
+  - model: openai/gpt-5-mini-2025-08-07
+    access_key: $OPENAI_API_KEY
+    default: true
+
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+
+  - model: openai/o3
+    access_key: $OPENAI_API_KEY
+
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+
+  - model: openai/*
+    access_key: $OPENAI_API_KEY
+
+  # Anthropic - support all Claude models
+  - model: anthropic/*
+    access_key: $ANTHROPIC_API_KEY
+
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
+
+  - model: anthropic/claude-3-haiku-20240307
+    access_key: $ANTHROPIC_API_KEY
+
+  # Azure OpenAI Models
+  - model: azure_openai/gpt-5-mini
+    access_key: $AZURE_API_KEY
+    base_url: https://katanemo.openai.azure.com
+
+  - model: amazon_bedrock/us.amazon.nova-premier-v1:0
+    access_key: $AWS_BEARER_TOKEN_BEDROCK
+    base_url: https://bedrock-runtime.us-west-2.amazonaws.com
+
+  - model: amazon_bedrock/us.amazon.nova-pro-v1:0
+    access_key: $AWS_BEARER_TOKEN_BEDROCK
+    base_url: https://bedrock-runtime.us-west-2.amazonaws.com
+
+  # Ollama Models
+  - model: ollama/llama3.1
+    base_url: http://host.docker.internal:11434
+
+  # Grok (xAI) Models
+  - model: xai/grok-4-0709
+    access_key: $GROK_API_KEY
+
+# Model aliases - friendly names that map to actual provider names
+model_aliases:
+  # Alias for summarization tasks -> fast/cheap model
+  arch.summarize.v1:
+    target: gpt-5-mini-2025-08-07
+
+  # Alias for general purpose tasks -> latest model
+  arch.v1:
+    target: o3
+
+  # Alias for reasoning tasks -> capable model
+  arch.reasoning.v1:
+    target: gpt-4o
+
+  # Alias for creative tasks -> Claude model
+  arch.creative.v1:
+    target: claude-sonnet-4-20250514
+
+  # Alias for quick responses -> fast model
+  arch.fast.v1:
+    target: claude-3-haiku-20240307
+
+  # Semantic aliases
+  summary-model:
+    target: gpt-5-mini-2025-08-07
+
+  chat-model:
+    target: gpt-5-mini-2025-08-07
+
+  creative-model:
+    target: claude-sonnet-4-20250514
+
+  coding-model:
+    target: us.amazon.nova-premier-v1:0
+
+  # Alias for grok testing
+  arch.grok.v1:
+    target: grok-4-0709
+
+tracing:
+  random_sampling: 100

@@ -8,7 +8,7 @@ services:
       - "12000:12000"
       - "19901:9901"
     volumes:
-      - ../../demos/samples_python/weather_forecast/plano_config.yaml:/app/plano_config.yaml
+      - ../../demos/getting_started/weather_forecast/plano_config.yaml:/app/plano_config.yaml
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
     extra_hosts:
       - "host.docker.internal:host-gateway"

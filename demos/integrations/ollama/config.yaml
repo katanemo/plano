@@ -1,0 +1,46 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+
+  - model: my_llm_provider/llama3.2
+    provider_interface: openai
+    base_url: http://host.docker.internal:11434
+    default: true
+
+system_prompt: |
+  You are a helpful assistant.
+
+prompt_targets:
+  - name: currency_exchange
+    description: Get currency exchange rate from USD to other currencies
+    parameters:
+      - name: currency_symbol
+        description: the currency that needs conversion
+        required: true
+        type: str
+        in_path: true
+    endpoint:
+      name: frankfurther_api
+      path: /v1/latest?base=USD&symbols={currency_symbol}
+    system_prompt: |
+      You are a helpful assistant. Show me the currency symbol you want to convert from USD.
+
+  - name: get_supported_currencies
+    description: Get list of supported currencies for conversion
+    endpoint:
+      name: frankfurther_api
+      path: /v1/currencies
+
+endpoints:
+  frankfurther_api:
+    endpoint: api.frankfurter.dev:443
+    protocol: https
+
+tracing:
+  random_sampling: 100
+  trace_arch_internal: true
