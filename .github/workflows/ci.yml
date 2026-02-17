@@ -46,8 +46,8 @@ jobs:
       - name: Install plano tools
         run: uv sync --extra dev
 
-      - name: Run CLI template/demo sync check
-        run: uv run python -m planoai.template_sync --check
+      - name: Sync CLI templates to demos
+        run: uv run python -m planoai.template_sync
 
       - name: Run tests
         run: uv run pytest

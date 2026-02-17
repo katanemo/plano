@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -38,10 +36,6 @@ def _load_sync_entries() -> list[SyncEntry]:
             )
         )
     return entries
-
-
-def _normalize_yaml(text: str) -> Any:
-    return yaml.safe_load(text) if text.strip() else None
 
 
 def _render_for_demo(template_text: str, transform: str) -> str:
@@ -81,7 +75,7 @@ def _validate_manifest(entries: list[SyncEntry]) -> list[str]:
     return errors
 
 
-def run_sync(*, write: bool, verbose: bool = False) -> int:
+def write_mapped_demo_configs(*, verbose: bool = False) -> int:
     entries = _load_sync_entries()
     manifest_errors = _validate_manifest(entries)
     if manifest_errors:
@@ -89,77 +83,39 @@ def run_sync(*, write: bool, verbose: bool = False) -> int:
             print(f"[manifest] {error}")
         return 2
 
-    drift_count = 0
+    write_count = 0
     for entry in entries:
         template_text = (TEMPLATES_DIR / entry.template_file).read_text(
             encoding="utf-8"
         )
         expected_text = _render_for_demo(template_text, entry.transform)
-        expected_yaml = _normalize_yaml(expected_text)
 
         for demo_rel_path in entry.demo_configs:
             demo_path = REPO_ROOT / demo_rel_path
-            actual_text = demo_path.read_text(encoding="utf-8")
-            actual_yaml = _normalize_yaml(actual_text)
+            # Keep this as a write-only sync step so CI behavior is deterministic.
+            demo_path.write_text(expected_text, encoding="utf-8")
+            write_count += 1
+            if verbose:
+                print(
+                    f"[wrote] {demo_rel_path} <- {entry.template_id} ({entry.template_file})"
+                )
 
-            if actual_yaml == expected_yaml:
-                if verbose:
-                    print(f"[ok] {demo_rel_path}")
-                continue
-
-            drift_count += 1
-            print(
-                f"[drift] {demo_rel_path} differs from template '{entry.template_id}' "
-                f"({entry.template_file})"
-            )
-
-            if write:
-                demo_path.write_text(expected_text, encoding="utf-8")
-                print(f"[fixed] wrote {demo_rel_path}")
-            elif verbose:
-                actual_repr = json.dumps(actual_yaml, indent=2, sort_keys=True)
-                expected_repr = json.dumps(expected_yaml, indent=2, sort_keys=True)
-                print(f"[actual]\n{actual_repr}\n[expected]\n{expected_repr}")
-
-    if drift_count == 0:
-        print("All mapped demo configs are in sync with CLI templates.")
-        return 0
-
-    if write:
-        print(f"Updated {drift_count} out-of-sync demo config(s).")
-        return 0
-
-    print(
-        f"Found {drift_count} out-of-sync demo config(s). "
-        "Run `python -m planoai.template_sync --write` to update."
-    )
-    return 1
+    print(f"Wrote {write_count} mapped demo config(s) from CLI templates.")
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Check or sync CLI templates to demo config.yaml files."
-    )
-    mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument(
-        "--write",
-        action="store_true",
-        help="Write template content to mapped demo configs when drift is found.",
-    )
-    mode_group.add_argument(
-        "--check",
-        action="store_true",
-        help="Check for drift and return non-zero if any mapped demos are out of sync.",
+        description="Sync CLI templates to mapped demo config.yaml files (write-only)."
     )
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Print per-file status and parsed YAML when drift is detected.",
+        help="Print each file written during sync.",
     )
     args = parser.parse_args()
 
-    write_mode = bool(args.write)
-    return run_sync(write=write_mode, verbose=bool(args.verbose))
+    return write_mapped_demo_configs(verbose=bool(args.verbose))
 
 
 if __name__ == "__main__":

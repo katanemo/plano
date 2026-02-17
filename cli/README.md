@@ -76,16 +76,10 @@ uv run planoai <command> [options]
 The CLI templates in `cli/planoai/templates/` are the source of truth for mapped
 demo `config.yaml` files.
 
-Use the sync utility to check drift:
+Use the sync utility to write mapped demo configs from templates:
 
 ```bash
-uv run python -m planoai.template_sync --check
-```
-
-Auto-fix mapped demo configs:
-
-```bash
-uv run python -m planoai.template_sync --write
+uv run python -m planoai.template_sync
 ```
 
 ### Optional: Manual Virtual Environment Activation
