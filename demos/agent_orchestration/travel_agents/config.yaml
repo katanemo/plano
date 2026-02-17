@@ -57,4 +57,4 @@ tracing:
   random_sampling: 100
   span_attributes:
     header_prefixes:
-      - x-katanemo-
+      - x-acme-

@@ -3,12 +3,13 @@
 ### Travel Agent Chat Completion Request
 POST {{llm_endpoint}}/v1/chat/completions HTTP/1.1
 Content-Type: application/json
-X-Katanemo-Workspace-Id: ws_7e2c5d91b4224f59b0e6a4e0125c21b3
-X-Katanemo-Tenant-Id: ten_4102a8c7fa6542b084b395d2df184a9a
-X-Katanemo-User-Id: usr_19df7e6751b846f9ba026776e3c12abe
-X-Katanemo-Admin-Level: 3
-X-Katanemo-Is-Internal: true
-X-Katanemo-Budget: 42.5
+X-Acme-Workspace-Id: ws_7e2c5d91b4224f59b0e6a4e0125c21b3
+X-Acme-Tenant-Id: ten_4102a8c7fa6542b084b395d2df184a9a
+X-Acme-User-Id: usr_19df7e6751b846f9ba026776e3c12abe
+X-Acme-Admin-Level: 3
+X-Acme-Environment: production
+X-Acme-Is-Internal: false
+X-Acme-Cost-Center: HD100
 
 {
   "model": "gpt-5.2",

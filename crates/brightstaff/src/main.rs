@@ -14,7 +14,6 @@ use common::consts::{
     CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
 };
 use common::llm_providers::LlmProviders;
-use common::traces::TraceCollector;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
@@ -125,17 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in plano_config.yaml
     // Pass Some(true/false) to override, or None to use env var OTEL_TRACING_ENABLED
-    let tracing_enabled = if plano_config.tracing.is_some() {
-        info!("Tracing configuration found in plano_config.yaml");
-        Some(true)
-    } else {
-        info!(
-            "No tracing configuration in plano_config.yaml, will check OTEL_TRACING_ENABLED env var"
-        );
-        None
-    };
-    let trace_collector = Arc::new(TraceCollector::new(tracing_enabled));
-    let _flusher_handle = trace_collector.clone().start_background_flusher();
+    // OpenTelemetry automatic instrumentation is configured in utils/tracing.rs
 
     // Initialize conversation state storage for v1/responses
     // Configurable via plano_config.yaml state_storage section
@@ -145,7 +134,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(storage_config) = &plano_config.state_storage {
             let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
                 common::configuration::StateStorageType::Memory => {
-                    info!("Initialized conversation state storage: Memory");
+                    info!(
+                        storage_type = "memory",
+                        "initialized conversation state storage"
+                    );
                     Arc::new(MemoryConversationalStorage::new())
                 }
                 common::configuration::StateStorageType::Postgres => {
@@ -154,8 +146,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .as_ref()
                         .expect("connection_string is required for postgres state_storage");
 
-                    debug!("Postgres connection string (full): {}", connection_string);
-                    info!("Initializing conversation state storage: Postgres");
+                    debug!(connection_string = %connection_string, "postgres connection");
+                    info!(
+                        storage_type = "postgres",
+                        "initializing conversation state storage"
+                    );
                     Arc::new(
                         PostgreSQLConversationStorage::new(connection_string.clone())
                             .await
@@ -165,7 +160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             };
             Some(storage)
         } else {
-            info!("No state_storage configured - conversation state management disabled");
+            info!("no state_storage configured, conversation state management disabled");
             None
         };
 
@@ -184,7 +179,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
-        let trace_collector = trace_collector.clone();
         let span_attributes = span_attributes.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
@@ -196,7 +190,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
-            let trace_collector = trace_collector.clone();
             let span_attributes = span_attributes.clone();
             let state_storage = state_storage.clone();
 
@@ -217,7 +210,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             agents_list,
                             listeners,
-                            trace_collector,
                             span_attributes,
                         )
                         .with_context(parent_cx)
@@ -236,7 +228,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             model_aliases,
                             llm_providers,
-                            trace_collector,
                             span_attributes,
                             state_storage,
                         )
@@ -278,7 +269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         Ok(response)
                     }
                     _ => {
-                        debug!("No route for {} {}", req.method(), req.uri().path());
+                        debug!(method = %req.method(), path = %req.uri().path(), "no route found");
                         let mut not_found = Response::new(empty());
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
                         Ok(not_found)
@@ -288,13 +279,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
 
         tokio::task::spawn(async move {
-            debug!("Accepted connection from {:?}", peer_addr);
+            debug!(peer = ?peer_addr, "accepted connection");
             if let Err(err) = http1::Builder::new()
                 // .serve_connection(io, service_fn(chat_completion))
                 .serve_connection(io, service)
                 .await
             {
-                warn!("Error serving connection: {:?}", err);
+                warn!(error = ?err, "error serving connection");
             }
         });
     }
