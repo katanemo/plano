@@ -12,9 +12,8 @@
 [Documentation](https://docs.planoai.dev) •
 [Contact](#Contact)
 
-[![pre-commit](https://github.com/katanemo/plano/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/pre-commit.yml)
-[![rust tests (prompt and llm gateway)](https://github.com/katanemo/plano/actions/workflows/rust_tests.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/rust_tests.yml)
-[![e2e tests](https://github.com/katanemo/plano/actions/workflows/e2e_tests.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/e2e_tests.yml)
+[![CI](https://github.com/katanemo/plano/actions/workflows/ci.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/ci.yml)
+[![Docker Image](https://github.com/katanemo/plano/actions/workflows/docker-push-main.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/docker-push-main.yml)
 [![Build and Deploy Documentation](https://github.com/katanemo/plano/actions/workflows/static.yml/badge.svg)](https://github.com/katanemo/plano/actions/workflows/static.yml)
 
 Star ⭐️ the repo if you found Plano useful — new releases and updates land here first.
@@ -46,7 +45,7 @@ Plano pulls rote plumbing out of your framework so you can stay focused on what 
 
 Plano handles **orchestration, model management, and observability** as modular building blocks - letting you configure only what you need (edge proxying for agentic orchestration and guardrails, or LLM routing from your services, or both together) to fit cleanly into existing architectures. Below is a simple multi-agent travel agent built with Plano that showcases all three core capabilities
 
-> 📁 **Full working code:** See [`demos/use_cases/travel_agents/`](demos/use_cases/travel_agents/) for complete weather and flight agents you can run locally.
+> 📁 **Full working code:** See [`demos/agent_orchestration/travel_agents/`](demos/agent_orchestration/travel_agents/) for complete weather and flight agents you can run locally.
 
 
 
@@ -114,7 +113,7 @@ async def chat(request: Request):
     days = 7
 
     # Your agent logic: fetch data, call APIs, run tools
-    # See demos/use_cases/travel_agents/ for the full implementation
+    # See demos/agent_orchestration/travel_agents/ for the full implementation
     weather_data = await get_weather_data(request, messages, days)
 
     # Stream the response back through Plano

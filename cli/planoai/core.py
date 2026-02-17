@@ -24,17 +24,17 @@ from planoai.docker_cli import (
 log = getLogger(__name__)
 
 
-def _get_gateway_ports(arch_config_file: str) -> list[int]:
+def _get_gateway_ports(plano_config_file: str) -> list[int]:
     PROMPT_GATEWAY_DEFAULT_PORT = 10000
     LLM_GATEWAY_DEFAULT_PORT = 12000
 
-    # parse arch_config_file yaml file and get prompt_gateway_port
-    arch_config_dict = {}
-    with open(arch_config_file) as f:
-        arch_config_dict = yaml.safe_load(f)
+    # parse plano_config_file yaml file and get prompt_gateway_port
+    plano_config_dict = {}
+    with open(plano_config_file) as f:
+        plano_config_dict = yaml.safe_load(f)
 
     listeners, _, _ = convert_legacy_listeners(
-        arch_config_dict.get("listeners"), arch_config_dict.get("llm_providers")
+        plano_config_dict.get("listeners"), plano_config_dict.get("llm_providers")
     )
 
     all_ports = [listener.get("port") for listener in listeners]
@@ -45,7 +45,7 @@ def _get_gateway_ports(arch_config_file: str) -> list[int]:
     return all_ports
 
 
-def start_arch(arch_config_file, env, log_timeout=120, foreground=False):
+def start_plano(plano_config_file, env, log_timeout=120, foreground=False):
     """
     Start Docker Compose in detached mode and stream logs until services are healthy.
 
@@ -54,7 +54,7 @@ def start_arch(arch_config_file, env, log_timeout=120, foreground=False):
         log_timeout (int): Time in seconds to show logs before checking for healthy state.
     """
     log.info(
-        f"Starting arch gateway, image name: {PLANO_DOCKER_NAME}, tag: {PLANO_DOCKER_IMAGE}"
+        f"Starting plano gateway, image name: {PLANO_DOCKER_NAME}, tag: {PLANO_DOCKER_IMAGE}"
     )
 
     try:
@@ -64,10 +64,10 @@ def start_arch(arch_config_file, env, log_timeout=120, foreground=False):
             docker_stop_container(PLANO_DOCKER_NAME)
             docker_remove_container(PLANO_DOCKER_NAME)
 
-        gateway_ports = _get_gateway_ports(arch_config_file)
+        gateway_ports = _get_gateway_ports(plano_config_file)
 
         return_code, _, plano_stderr = docker_start_plano_detached(
-            arch_config_file,
+            plano_config_file,
             env,
             gateway_ports,
         )
@@ -117,7 +117,7 @@ def start_arch(arch_config_file, env, log_timeout=120, foreground=False):
             stream_gateway_logs(follow=True)
 
     except KeyboardInterrupt:
-        log.info("Keyboard interrupt received, stopping arch gateway service.")
+        log.info("Keyboard interrupt received, stopping plano gateway service.")
         stop_docker_container()
 
 
@@ -144,15 +144,15 @@ def stop_docker_container(service=PLANO_DOCKER_NAME):
         log.info(f"Failed to shut down services: {str(e)}")
 
 
-def start_cli_agent(arch_config_file=None, settings_json="{}"):
+def start_cli_agent(plano_config_file=None, settings_json="{}"):
     """Start a CLI client connected to Plano."""
 
-    with open(arch_config_file, "r") as file:
-        arch_config = file.read()
-        arch_config_yaml = yaml.safe_load(arch_config)
+    with open(plano_config_file, "r") as file:
+        plano_config = file.read()
+        plano_config_yaml = yaml.safe_load(plano_config)
 
     # Get egress listener configuration
-    egress_config = arch_config_yaml.get("listeners", {}).get("egress_traffic", {})
+    egress_config = plano_config_yaml.get("listeners", {}).get("egress_traffic", {})
     host = egress_config.get("host", "127.0.0.1")
     port = egress_config.get("port", 12000)
 
@@ -167,7 +167,7 @@ def start_cli_agent(arch_config_file=None, settings_json="{}"):
     env = os.environ.copy()
     env.update(
         {
-            "ANTHROPIC_AUTH_TOKEN": "test",  # Use test token for arch
+            "ANTHROPIC_AUTH_TOKEN": "test",  # Use test token for plano
             "ANTHROPIC_API_KEY": "",
             "ANTHROPIC_BASE_URL": f"http://{host}:{port}",
             "NO_PROXY": host,
@@ -184,7 +184,7 @@ def start_cli_agent(arch_config_file=None, settings_json="{}"):
         ]
     else:
         # Check if arch.claude.code.small.fast alias exists in model_aliases
-        model_aliases = arch_config_yaml.get("model_aliases", {})
+        model_aliases = plano_config_yaml.get("model_aliases", {})
         if "arch.claude.code.small.fast" in model_aliases:
             env["ANTHROPIC_SMALL_FAST_MODEL"] = "arch.claude.code.small.fast"
         else:
@@ -220,7 +220,7 @@ def start_cli_agent(arch_config_file=None, settings_json="{}"):
 
     # Use claude from PATH
     claude_path = "claude"
-    log.info(f"Connecting Claude Code Agent to Arch at {host}:{port}")
+    log.info(f"Connecting Claude Code Agent to Plano at {host}:{port}")
 
     try:
         subprocess.run([claude_path] + claude_args, env=env, check=True)

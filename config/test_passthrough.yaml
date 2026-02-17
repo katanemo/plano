@@ -7,7 +7,7 @@
 #
 # To test:
 #   docker build -t plano-passthrough-test .
-#   docker run -d -p 10000:10000 -v $(pwd)/config/test_passthrough.yaml:/app/arch_config.yaml plano-passthrough-test
+#   docker run -d -p 10000:10000 -v $(pwd)/config/test_passthrough.yaml:/app/plano_config.yaml plano-passthrough-test
 #
 #   curl http://localhost:10000/v1/chat/completions \
 #     -H "Authorization: Bearer sk-your-virtual-key" \

@@ -1,0 +1,108 @@
+# Plano Gateway configuration version
+version: v0.3.0
+
+# External HTTP agents - API type is controlled by request path (/v1/responses, /v1/messages, /v1/chat/completions)
+agents:
+  - id: weather_agent # Example agent for weather
+    url: http://host.docker.internal:10510
+
+  - id: flight_agent # Example agent for flights
+    url: http://host.docker.internal:10520
+
+# MCP filters applied to requests/responses (e.g., input validation, query rewriting)
+filters:
+  - id: input_guards # Example filter for input validation
+    url: http://host.docker.internal:10500
+    # type: mcp (default)
+    # transport: streamable-http (default)
+    # tool: input_guards (default - same as filter id)
+
+# LLM provider configurations with API keys and model routing
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+
+  - model: anthropic/claude-sonnet-4-0
+    access_key: $ANTHROPIC_API_KEY
+
+  - model: mistral/ministral-3b-latest
+    access_key: $MISTRAL_API_KEY
+
+  # Example: Passthrough authentication for LiteLLM or similar proxies
+  # When passthrough_auth is true, client's Authorization header is forwarded
+  # instead of using the configured access_key
+  - model: openai/gpt-4o-litellm
+    base_url: https://litellm.example.com
+    passthrough_auth: true
+
+# Model aliases - use friendly names instead of full provider model names
+model_aliases:
+  fast-llm:
+    target: gpt-4o-mini
+
+  smart-llm:
+    target: gpt-4o
+
+# HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access
+listeners:
+  # Agent listener for routing requests to multiple agents
+  - type: agent
+    name: travel_booking_service
+    port: 8001
+    router: plano_orchestrator_v1
+    address: 0.0.0.0
+    agents:
+      - id: rag_agent
+        description: virtual assistant for retrieval augmented generation tasks
+        filter_chain:
+          - input_guards
+
+  # Model listener for direct LLM access
+  - type: model
+    name: model_1
+    address: 0.0.0.0
+    port: 12000
+
+  # Prompt listener for function calling (for prompt_targets)
+  - type: prompt
+    name: prompt_function_listener
+    address: 0.0.0.0
+    port: 10000
+    # This listener is used for prompt_targets and function calling
+
+# Reusable service endpoints
+endpoints:
+  app_server:
+    endpoint: 127.0.0.1:80
+    connect_timeout: 0.005s
+
+  mistral_local:
+    endpoint: 127.0.0.1:8001
+
+# Prompt targets for function calling and API orchestration
+prompt_targets:
+  - name: get_current_weather
+    description: Get current weather at a location.
+    parameters:
+      - name: location
+        description: The location to get the weather for
+        required: true
+        type: string
+        format: City, State
+      - name: days
+        description: the number of days for the request
+        required: true
+        type: int
+    endpoint:
+      name: app_server
+      path: /weather
+      http_method: POST
+
+# OpenTelemetry tracing configuration
+tracing:
+  # Random sampling percentage (1-100)
+  random_sampling: 100

@@ -10,7 +10,7 @@ from common import (
     PROMPT_GATEWAY_ENDPOINT,
     LLM_GATEWAY_ENDPOINT,
     PREFILL_LIST,
-    get_arch_messages,
+    get_plano_messages,
     get_data_chunks,
 )
 
@@ -117,11 +117,11 @@ def test_prompt_gateway(stream):
         assert len(choices) > 0
         assert "role" in choices[0]["message"]
         assert choices[0]["message"]["role"] == "assistant"
-        # now verify arch_messages (tool call and api response) that are sent as response metadata
-        arch_messages = get_arch_messages(response_json)
-        print("arch_messages: ", json.dumps(arch_messages))
-        assert len(arch_messages) == 2
-        tool_calls_message = arch_messages[0]
+        # now verify plano_messages (tool call and api response) that are sent as response metadata
+        plano_messages = get_plano_messages(response_json)
+        print("plano_messages: ", json.dumps(plano_messages))
+        assert len(plano_messages) == 2
+        tool_calls_message = plano_messages[0]
         print("tool_calls_message: ", tool_calls_message)
         tool_calls = tool_calls_message.get("content", [])
         cleaned_tool_call_str = cleanup_tool_call(tool_calls)
@@ -295,10 +295,10 @@ def test_prompt_gateway_param_tool_call(stream):
         assert len(choices) > 0
         assert "role" in choices[0]["message"]
         assert choices[0]["message"]["role"] == "assistant"
-        # now verify arch_messages (tool call and api response) that are sent as response metadata
-        arch_messages = get_arch_messages(response_json)
-        assert len(arch_messages) == 2
-        tool_calls_message = arch_messages[0]
+        # now verify plano_messages (tool call and api response) that are sent as response metadata
+        plano_messages = get_plano_messages(response_json)
+        assert len(plano_messages) == 2
+        tool_calls_message = plano_messages[0]
         tool_calls = tool_calls_message.get("tool_calls", [])
         assert len(tool_calls) > 0
         tool_call = normalize_tool_call_arguments(tool_calls[0]["function"])

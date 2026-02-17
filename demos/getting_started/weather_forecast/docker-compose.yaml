@@ -1,0 +1,27 @@
+services:
+  weather_forecast_service:
+    build:
+      context: ./
+    environment:
+      - OLTP_HOST=http://jaeger:4317
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "18083:80"
+
+  anythingllm:
+    image: mintplexlabs/anythingllm
+    restart: always
+    ports:
+      - "3001:3001"
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      - STORAGE_DIR=/app/server/storage
+      - LLM_PROVIDER=generic-openai
+      - GENERIC_OPEN_AI_BASE_PATH=http://host.docker.internal:10000/v1
+      - GENERIC_OPEN_AI_MODEL_PREF=gpt-4o-mini
+      - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
+      - GENERIC_OPEN_AI_API_KEY=sk-placeholder
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -40,7 +40,7 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                {% if "random_sampling" in arch_tracing and arch_tracing["random_sampling"] > 0 %}
+                {% if "random_sampling" in plano_tracing and plano_tracing["random_sampling"] > 0 %}
                 generate_request_id: true
                 tracing:
                   provider:
@@ -53,7 +53,7 @@ static_resources:
                         timeout: 0.250s
                       service_name: plano(inbound)
                   random_sampling:
-                    value: {{ arch_tracing.random_sampling }}
+                    value: {{ plano_tracing.random_sampling }}
                   operation: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
                 {% endif %}
                 stat_prefix: plano(inbound)
@@ -114,7 +114,7 @@ static_resources:
                       domains:
                         - "*"
                       routes:
-                      {% for provider in arch_model_providers %}
+                      {% for provider in plano_model_providers %}
                         # if endpoint is set then use custom cluster for upstream llm
                         {% if provider.endpoint %}
                         {% set llm_cluster_name = provider.cluster_name %}
@@ -166,7 +166,7 @@ static_resources:
                           configuration:
                             "@type": "type.googleapis.com/google.protobuf.StringValue"
                             value: |
-                                {{ arch_config | indent(32) }}
+                                {{ plano_config | indent(32) }}
                           vm_config:
                             runtime: "envoy.wasm.runtime.v8"
                             code:
@@ -183,7 +183,7 @@ static_resources:
                           configuration:
                             "@type": "type.googleapis.com/google.protobuf.StringValue"
                             value: |
-                                {{ arch_llm_config | indent(32) }}
+                                {{ plano_llm_config | indent(32) }}
                           vm_config:
                             runtime: "envoy.wasm.runtime.v8"
                             code:
@@ -215,7 +215,7 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                # {% if "random_sampling" in arch_tracing and arch_tracing["random_sampling"] > 0 %}
+                # {% if "random_sampling" in plano_tracing and plano_tracing["random_sampling"] > 0 %}
                 # generate_request_id: true
                 # tracing:
                 #   provider:
@@ -228,7 +228,7 @@ static_resources:
                 #         timeout: 0.250s
                 #       service_name: tools
                 #   random_sampling:
-                #     value: {{ arch_tracing.random_sampling }}
+                #     value: {{ plano_tracing.random_sampling }}
                 # {% endif %}
                 stat_prefix: outbound_api_traffic
                 codec_type: AUTO
@@ -258,7 +258,7 @@ static_resources:
                             auto_host_rewrite: true
                             cluster: bright_staff
                             timeout: 300s
-                        {% for cluster_name, cluster in arch_clusters.items() %}
+                        {% for cluster_name, cluster in plano_clusters.items() %}
                         - match:
                             prefix: "/"
                             headers:
@@ -290,7 +290,7 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                {% if "random_sampling" in arch_tracing and arch_tracing["random_sampling"] > 0 %}
+                {% if "random_sampling" in plano_tracing and plano_tracing["random_sampling"] > 0 %}
                 generate_request_id: true
                 tracing:
                   provider:
@@ -303,7 +303,7 @@ static_resources:
                         timeout: 0.250s
                       service_name: plano(inbound)
                   random_sampling:
-                    value: {{ arch_tracing.random_sampling }}
+                    value: {{ plano_tracing.random_sampling }}
                   operation: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
                 {% endif %}
                 stat_prefix: {{ listener.name | replace(" ", "_") }}_traffic
@@ -467,7 +467,7 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                {% if "random_sampling" in arch_tracing and arch_tracing["random_sampling"] > 0 %}
+                {% if "random_sampling" in plano_tracing and plano_tracing["random_sampling"] > 0 %}
                 generate_request_id: true
                 tracing:
                   provider:
@@ -480,7 +480,7 @@ static_resources:
                         timeout: 0.250s
                       service_name: plano(outbound)
                   random_sampling:
-                    value: {{ arch_tracing.random_sampling }}
+                    value: {{ plano_tracing.random_sampling }}
                   operation: "%REQ(:METHOD)% %REQ(:AUTHORITY)%%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
                 {% endif %}
                 stat_prefix: egress_traffic
@@ -501,7 +501,7 @@ static_resources:
                       domains:
                         - "*"
                       routes:
-                      {% for provider in arch_model_providers %}
+                      {% for provider in plano_model_providers %}
                         # if endpoint is set then use custom cluster for upstream llm
                         {% if provider.endpoint %}
                         {% set llm_cluster_name = provider.cluster_name %}
@@ -564,7 +564,7 @@ static_resources:
                           configuration:
                             "@type": "type.googleapis.com/google.protobuf.StringValue"
                             value: |
-                                {{ arch_llm_config | indent(32) }}
+                                {{ plano_llm_config | indent(32) }}
                           vm_config:
                             runtime: "envoy.wasm.runtime.v8"
                             code:
@@ -879,7 +879,7 @@ static_resources:
                       address: mistral_7b_instruct
                       port_value: 10001
                   hostname: "mistral_7b_instruct"
-{% for cluster_name, cluster in arch_clusters.items() %}
+{% for cluster_name, cluster in plano_clusters.items() %}
     - name: {{ cluster_name }}
       {% if cluster.connect_timeout -%}
       connect_timeout: {{ cluster.connect_timeout }}
@@ -1013,7 +1013,7 @@ static_resources:
                       port_value: 12001
                   hostname: arch_listener_llm
 
-{% if "random_sampling" in arch_tracing and arch_tracing["random_sampling"] > 0 %}
+{% if "random_sampling" in plano_tracing and plano_tracing["random_sampling"] > 0 %}
     - name: opentelemetry_collector
       type: STRICT_DNS
       dns_lookup_family: V4_ONLY
@@ -1030,7 +1030,7 @@ static_resources:
           - endpoint:
               address:
                 socket_address:
-                  {% set _otel_endpoint = arch_tracing.opentracing_grpc_endpoint | default('host.docker.internal:4317') | replace("http://", "") | replace("https://", "") %}
+                  {% set _otel_endpoint = plano_tracing.opentracing_grpc_endpoint | default('host.docker.internal:4317') | replace("http://", "") | replace("https://", "") %}
                   address: {{ _otel_endpoint.split(":") | first }}
                   port_value: {{ _otel_endpoint.split(":") | last }}
 {% endif %}

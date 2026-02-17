@@ -342,7 +342,7 @@ Next Steps
 * Explore :ref:`filter chains <filter_chain>` for adding guardrails and context enrichment
 * See :ref:`observability <observability>` for monitoring multi-agent workflows
 * Review the :ref:`LLM Providers <llm_providers>` guide for model routing within agents
-* Check out the complete `Travel Booking demo <https://github.com/katanemo/plano/tree/main/demos/use_cases/travel_booking>`_ on GitHub
+* Check out the complete `Travel Booking demo <https://github.com/katanemo/plano/tree/main/demos/agent_orchestration/travel_agents>`_ on GitHub
 
 .. note::
     To observe traffic to and from agents, please read more about :ref:`observability <observability>` in Plano.

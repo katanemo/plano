@@ -58,7 +58,7 @@ docker build -t katanemo/plano:latest .
 
 ### E2E Tests (tests/e2e/)
 
-E2E tests require a built Docker image and API keys. They run via `tests/e2e/run_e2e_tests.sh` which executes three test suites: `test_prompt_gateway.py`, `test_model_alias_routing.py`, and `test_openai_responses_api_client_with_state.py`.
+E2E tests require a built Docker image and API keys. They run via `tests/e2e/run_e2e_tests.sh` which executes four test suites: `test_prompt_gateway.py`, `test_model_alias_routing.py`, `test_openai_responses_api_client.py`, and `test_openai_responses_api_client_with_state.py`.
 
 ## Architecture
 
@@ -91,12 +91,14 @@ The `planoai` CLI manages the Plano lifecycle. Key commands:
 - `planoai logs` — Stream access/debug logs
 - `planoai trace` — OTEL trace collection and analysis
 - `planoai init` — Initialize new project
+- `planoai cli_agent` — Start a CLI agent connected to Plano
+- `planoai generate_prompt_targets` — Generate prompt_targets from python methods
 
 Entry point: `cli/planoai/main.py`. Container lifecycle in `core.py`. Docker operations in `docker_cli.py`.
 
 ### Configuration System (config/)
 
-- `arch_config_schema.yaml` — JSON Schema (draft-07) for validating user config files
+- `plano_config_schema.yaml` — JSON Schema (draft-07) for validating user config files
 - `envoy.template.yaml` — Jinja2 template rendered into Envoy proxy config
 - `supervisord.conf` — Process supervisor for Envoy + brightstaff in the container
 
@@ -105,6 +107,35 @@ User configs define: `agents` (id + url), `model_providers` (model + access_key)
 ### JavaScript Apps (apps/, packages/)
 
 Turbo monorepo with Next.js 16 / React 19 applications and shared packages (UI components, Tailwind config, TypeScript config). Not part of the core proxy — these are web applications.
+
+## Release Process
+
+To prepare a release (e.g., bumping from `0.4.6` to `0.4.7`), update the version string in all of the following files:
+
+**CI Workflow:**
+- `.github/workflows/ci.yml` — docker build/save tags
+
+**CLI:**
+- `cli/planoai/__init__.py` — `__version__`
+- `cli/planoai/consts.py` — `PLANO_DOCKER_IMAGE` default
+- `cli/pyproject.toml` — `version`
+
+**Build & Config:**
+- `build_filter_image.sh` — docker build tag
+- `config/validate_plano_config.sh` — docker image tag
+
+**Docs:**
+- `docs/source/conf.py` — `release`
+- `docs/source/get_started/quickstart.rst` — install commands and example output
+- `docs/source/resources/deployment.rst` — docker image tag
+
+**Website & Demos:**
+- `apps/www/src/components/Hero.tsx` — version badge
+- `demos/llm_routing/preference_based_routing/README.md` — example output
+
+**Important:** Do NOT change `0.4.6` references in `*.lock` files or `Cargo.lock` — those refer to the `colorama` and `http-body` dependency versions, not Plano.
+
+Commit message format: `release X.Y.Z`
 
 ## Key Conventions
 

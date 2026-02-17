@@ -41,7 +41,7 @@ The request processing path in Plano has three main parts:
 
 These two subsystems are bridged with either the HTTP router filter, and the cluster manager subsystems of Envoy.
 
-Also, Plano utilizes `Envoy event-based thread model <https://blog.envoyproxy.io/envoy-threading-model-a8d44b922310>`_. A main thread is responsible for the server lifecycle, configuration processing, stats, etc. and some number of :ref:`worker threads <arch_overview_threading>` process requests. All threads operate around an event loop (`libevent <https://libevent.org/>`_) and any given downstream TCP connection will be handled by exactly one worker thread for its lifetime. Each worker thread maintains its own pool of TCP connections to upstream endpoints.
+Also, Plano utilizes `Envoy event-based thread model <https://blog.envoyproxy.io/envoy-threading-model-a8d44b922310>`_. A main thread is responsible for the server lifecycle, configuration processing, stats, etc. and some number of :ref:`worker threads <plano_overview_threading>` process requests. All threads operate around an event loop (`libevent <https://libevent.org/>`_) and any given downstream TCP connection will be handled by exactly one worker thread for its lifetime. Each worker thread maintains its own pool of TCP connections to upstream endpoints.
 
 Worker threads rarely share state and operate in a trivially parallel fashion. This threading model
 enables scaling to very high core count CPUs.
@@ -130,8 +130,8 @@ Once a request completes, the stream is destroyed. The following also takes plac
 * The post-request :ref:`monitoring <monitoring>` are updated (e.g. timing, active requests, upgrades, health checks).
   Some statistics are updated earlier however, during request processing. Stats are batched and written by the main
   thread periodically.
-* :ref:`Access logs <arch_access_logging>` are written to the access log
-* :ref:`Trace <arch_overview_tracing>` spans are finalized. If our example request was traced, a
+* :ref:`Access logs <plano_access_logging>` are written to the access log
+* :ref:`Trace <plano_overview_tracing>` spans are finalized. If our example request was traced, a
   trace span, describing the duration and details of the request would be created by the HCM when
   processing request headers and then finalized by the HCM during post-request processing.
 

@@ -57,7 +57,7 @@ Configuration Overview
 
 State storage is configured in the ``state_storage`` section of your ``plano_config.yaml``:
 
-.. literalinclude:: ../resources/includes/arch_config_state_storage_example.yaml
+.. literalinclude:: ../resources/includes/plano_config_state_storage_example.yaml
     :language: yaml
     :lines: 21-30
     :linenos:

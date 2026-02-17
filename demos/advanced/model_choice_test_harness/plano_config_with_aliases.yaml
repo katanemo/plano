@@ -1,0 +1,23 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+  - model: openai/o3
+    access_key: $OPENAI_API_KEY
+
+model_aliases:
+  arch.summarize.v1:
+    target: gpt-4o-mini
+  arch.reason.v1:
+    target: o3
+
+tracing:
+  random_sampling: 100

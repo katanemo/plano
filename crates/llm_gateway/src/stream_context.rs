@@ -990,7 +990,7 @@ impl HttpContext for StreamContext {
                 self.send_server_error(
                     ServerError::BadRequest {
                         why: format!(
-                            "No model specified in request and couldn't determine model name from arch_config. Model name in req: {}, arch_config, provider: {}, model: {:?}",
+                            "No model specified in request and couldn't determine model name from plano_config. Model name in req: {}, plano_config, provider: {}, model: {:?}",
                             model_requested,
                             self.llm_provider().name,
                             self.llm_provider().model

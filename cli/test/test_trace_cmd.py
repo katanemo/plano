@@ -67,6 +67,31 @@ def failure_traces() -> list[dict]:
     return copy.deepcopy(_load_failure_traces())
 
 
+class _FakeGrpcServer:
+    def add_insecure_port(self, _address: str) -> int:
+        raise RuntimeError("bind failed")
+
+    def start(self) -> None:
+        return None
+
+
+def test_start_trace_server_raises_bind_error(monkeypatch):
+    monkeypatch.setattr(
+        trace_cmd.grpc, "server", lambda *_args, **_kwargs: _FakeGrpcServer()
+    )
+    monkeypatch.setattr(
+        trace_cmd.trace_service_pb2_grpc,
+        "add_TraceServiceServicer_to_server",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(trace_cmd.TraceListenerBindError) as excinfo:
+        trace_cmd._start_trace_server("0.0.0.0", 4317)
+
+    assert "already in use" in str(excinfo.value)
+    assert "planoai trace listen --port" in str(excinfo.value)
+
+
 def test_trace_listen_starts_listener_with_custom_bind_after_target(
     runner, monkeypatch
 ):

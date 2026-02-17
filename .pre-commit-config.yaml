@@ -30,6 +30,11 @@ repos:
         entry: bash -c "cd crates && cargo test --lib"
         pass_filenames: false
 
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/psf/black
     rev: 23.1.0
     hooks:

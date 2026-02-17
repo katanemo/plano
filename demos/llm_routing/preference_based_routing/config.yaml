@@ -1,0 +1,27 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    routing_preferences:
+      - name: code understanding
+        description: understand and explain existing code snippets, functions, or libraries
+
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
+    routing_preferences:
+      - name: code generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+
+tracing:
+  random_sampling: 100

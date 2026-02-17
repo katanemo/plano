@@ -78,7 +78,7 @@ pub async fn router_chat_get_upstream_model(
     // Extract usage preferences from metadata
     let usage_preferences_str: Option<String> = routing_metadata.as_ref().and_then(|metadata| {
         metadata
-            .get("archgw_preference_config")
+            .get("plano_preference_config")
             .map(|value| value.to_string())
     });
 

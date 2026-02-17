@@ -41,7 +41,7 @@ def docker_remove_container(container: str) -> str:
 
 
 def docker_start_plano_detached(
-    arch_config_file: str,
+    plano_config_file: str,
     env: dict,
     gateway_ports: list[int],
 ) -> str:
@@ -58,7 +58,7 @@ def docker_start_plano_detached(
     port_mappings_args = [item for port in port_mappings for item in ("-p", port)]
 
     volume_mappings = [
-        f"{arch_config_file}:/app/arch_config.yaml:ro",
+        f"{plano_config_file}:/app/plano_config.yaml:ro",
     ]
     volume_mappings_args = [
         item for volume in volume_mappings for item in ("-v", volume)
@@ -115,7 +115,7 @@ def stream_gateway_logs(follow, service="plano"):
         log.info(f"Failed to stream logs: {str(e)}")
 
 
-def docker_validate_plano_schema(arch_config_file):
+def docker_validate_plano_schema(plano_config_file):
     import os
 
     env = os.environ.copy()
@@ -129,7 +129,7 @@ def docker_validate_plano_schema(arch_config_file):
             "--rm",
             *env_args,
             "-v",
-            f"{arch_config_file}:/app/arch_config.yaml:ro",
+            f"{plano_config_file}:/app/plano_config.yaml:ro",
             "--entrypoint",
             "python",
             PLANO_DOCKER_IMAGE,
