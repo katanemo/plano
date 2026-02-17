@@ -1,5 +1,9 @@
 # OpenClaw + Plano: Smart Model Routing for Personal AI Assistants
 
+<p align="center">
+  <img src="openclaw_plano.png" alt="OpenClaw + Plano" width="50%">
+</p>
+
 OpenClaw is an open-source personal AI assistant that connects to WhatsApp, Telegram, Slack, and Discord. By pointing it at Plano instead of a single LLM provider, every message is automatically routed to the best model — conversational requests go to Kimi K2.5 (cost-effective), while code generation, testing, and complex reasoning go to Claude (most capable) — with zero application code changes.
 
 ## Architecture
@@ -97,34 +101,21 @@ Try these messages to see routing in action:
 
 OpenClaw's code doesn't change at all. It points at `http://127.0.0.1:12000/v1` instead of a direct provider URL. Plano's router analyzes each prompt and picks the right backend.
 
-### Verify Plano Routing Directly (Optional)
 
-To test Plano's routing without OpenClaw, run the test script which sends requests directly to the gateway:
+## Tracing
 
-```bash
-bash test_routing.sh
-```
-
-## Monitoring
-
-### Routing Decisions
-
-Watch Plano logs for model selection:
+For fast dev/test cycles, Plano provides built-in tracing to visualize routing decisions and LLM interactions. Start the trace listener in a separate terminal:
 
 ```bash
-docker logs plano 2>&1 | grep MODEL_RESOLUTION
+planoai trace
 ```
 
-### Jaeger Tracing (Optional)
+Then send requests through OpenClaw. You'll see detailed traces showing:
+- Which model was selected and why
+- Token usage and latency for each request
+- Complete request/response payloads
 
-To visualize full request traces and routing decisions, start Jaeger:
-
-```bash
-docker run -d --name jaeger -p 16686:16686 -p 4317:4317 -p 4318:4318 \
-  -e COLLECTOR_OTLP_ENABLED=true jaegertracing/all-in-one:latest
-```
-
-Then open [http://localhost:16686](http://localhost:16686) to see traces for each request, including which model was selected and the routing latency.
+Learn more about tracing features and configuration in the [Plano tracing guide](https://docs.planoai.dev/guides/observability/tracing.html#tracing-with-the-cli).
 
 ## Cost Impact
 
