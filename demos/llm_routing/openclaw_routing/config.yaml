@@ -1,22 +1,11 @@
-version: v0.1.0
-
-routing:
-  model: Arch-Router
-  llm_provider: arch-router
+version: v0.3.0
 
 listeners:
-  egress_traffic:
-    address: 0.0.0.0
+  - type: model
+    name: model_listener
     port: 12000
-    message_format: openai
-    timeout: 30s
 
-llm_providers:
-
-  # Arch Router - the 1.5B preference-aligned routing model (runs locally via Ollama)
-  - name: arch-router
-    model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
-    base_url: http://host.docker.internal:11434
+model_providers:
 
   # Kimi K2.5 — Moonshot AI's open model (1T MoE, 32B active params)
   # Great for general conversation, agentic tasks, and multimodal work
