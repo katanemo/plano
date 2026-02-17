@@ -96,7 +96,8 @@ docker logs plano 2>&1 | grep MODEL_RESOLUTION
 To visualize full request traces and routing decisions, start Jaeger:
 
 ```bash
-docker compose up -d
+docker run -d --name jaeger -p 16686:16686 -p 4317:4317 -p 4318:4318 \
+  -e COLLECTOR_OTLP_ENABLED=true jaegertracing/all-in-one:latest
 ```
 
 Then open [http://localhost:16686](http://localhost:16686) to see traces for each request, including which model was selected and the routing latency.
