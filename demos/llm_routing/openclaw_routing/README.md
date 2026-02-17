@@ -35,14 +35,12 @@ export MOONSHOT_API_KEY="your-moonshot-key"
 export ANTHROPIC_API_KEY="your-anthropic-key"
 ```
 
-### 2. Start the Demo
+### 2. Start Plano
 
 ```bash
 cd demos/llm_routing/openclaw_routing
-bash run_demo.sh
+planoai up --service plano --foreground
 ```
-
-This will start Plano on port 12000 with preference-based routing configured.
 
 ### 3. Configure OpenClaw
 
@@ -95,7 +93,7 @@ docker logs plano 2>&1 | grep MODEL_RESOLUTION
 
 ### Jaeger Tracing (Optional)
 
-To visualize full request traces and routing decisions, start Jaeger locally:
+To visualize full request traces and routing decisions, start Jaeger:
 
 ```bash
 docker compose up -d
@@ -117,5 +115,5 @@ Same quality where it matters (code, tests), lower cost where it doesn't (chat).
 ## Stopping the Demo
 
 ```bash
-bash run_demo.sh down
+planoai down
 ```
