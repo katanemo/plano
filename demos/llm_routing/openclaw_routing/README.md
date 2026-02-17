@@ -13,17 +13,13 @@ OpenClaw is an open-source personal AI assistant that connects to WhatsApp, Tele
         [Plano :12000]  ──────────────>  Kimi K2.5  (conversation, agentic tasks)
                 |                           $0.60/M input tokens
                 |──────────────────────>  Claude     (code, tests, reasoning)
-                |
-        [Arch-Router 1.5B]
-        (local via Ollama, ~200ms)
 ```
 
-Plano's 1.5B [Arch-Router](https://arxiv.org/abs/2506.16655) model analyzes each prompt locally and selects the best backend based on configured routing preferences.
+Plano uses a [preference-aligned router](https://arxiv.org/abs/2506.16655) to analyze each prompt and select the best backend based on configured routing preferences.
 
 ## Prerequisites
 
 - **Docker** running
-- **Ollama** installed ([ollama.com](https://ollama.com))
 - **Plano CLI**: `uv tool install planoai` or `pip install planoai`
 - **OpenClaw**: `npm install -g openclaw@latest`
 - **API keys**:
@@ -46,10 +42,7 @@ cd demos/llm_routing/openclaw_routing
 bash run_demo.sh
 ```
 
-This will:
-- Pull the Arch-Router model into Ollama
-- Start Jaeger for tracing
-- Start Plano on port 12000
+This will start Plano on port 12000 with preference-based routing configured.
 
 ### 3. Configure OpenClaw
 
@@ -88,7 +81,7 @@ bash test_routing.sh
 | 4 | "Write unit tests for the auth middleware, cover edge cases" | **Claude** | Testing & evaluation — needs thoroughness |
 | 5 | "Compare WebSockets vs SSE vs polling for 10K concurrent users" | **Claude** | Complex reasoning — needs deep analysis |
 
-OpenClaw's code doesn't change at all. It points at `http://127.0.0.1:12000/v1` instead of a direct provider URL. Plano's Arch-Router analyzes each prompt in ~200ms and picks the right backend.
+OpenClaw's code doesn't change at all. It points at `http://127.0.0.1:12000/v1` instead of a direct provider URL. Plano's router analyzes each prompt and picks the right backend.
 
 ## Monitoring
 
@@ -100,9 +93,15 @@ Watch Plano logs for model selection:
 docker logs plano 2>&1 | grep MODEL_RESOLUTION
 ```
 
-### Jaeger Tracing
+### Jaeger Tracing (Optional)
 
-Open [http://localhost:16686](http://localhost:16686) to see full traces of each request, including which model was selected and the routing latency.
+To visualize full request traces and routing decisions, start Jaeger locally:
+
+```bash
+docker compose up -d
+```
+
+Then open [http://localhost:16686](http://localhost:16686) to see traces for each request, including which model was selected and the routing latency.
 
 ## Cost Impact
 
