@@ -23,7 +23,7 @@ Plano uses a [preference-aligned router](https://arxiv.org/abs/2506.16655) to an
 - **Plano CLI**: `uv tool install planoai` or `pip install planoai`
 - **OpenClaw**: `npm install -g openclaw@latest`
 - **API keys**:
-  - `MOONSHOT_API_KEY` — from [Moonshot AI](https://platform.moonshot.cn/)
+  - `MOONSHOT_API_KEY` — from [Moonshot AI](https://www..moonshot.ai/)
   - `ANTHROPIC_API_KEY` — from [Anthropic](https://console.anthropic.com/)
 
 ## Quick Start
@@ -61,17 +61,17 @@ Then run:
 openclaw onboard --install-daemon
 ```
 
-### 4. Test Routing
+### 4. Test Routing Through OpenClaw
 
-Run the test script to verify routing decisions:
+Send messages through any connected channel (WhatsApp, Telegram, Slack, etc.) and watch routing decisions in a separate terminal:
 
 ```bash
-bash test_routing.sh
+planoai logs --service plano | grep MODEL_RESOLUTION
 ```
 
-## Demo Scenarios
+Try these messages to see routing in action:
 
-| # | Message | Expected Route | Why |
+| # | Message (via your messaging channel) | Expected Route | Why |
 |---|---------|---------------|-----|
 | 1 | "Hey, what's up? Tell me something interesting." | **Kimi K2.5** | General conversation — cheap and fast |
 | 2 | "Remind me tomorrow at 9am and ping Slack about the deploy" | **Kimi K2.5** | Agentic multi-step task orchestration |
@@ -80,6 +80,14 @@ bash test_routing.sh
 | 5 | "Compare WebSockets vs SSE vs polling for 10K concurrent users" | **Claude** | Complex reasoning — needs deep analysis |
 
 OpenClaw's code doesn't change at all. It points at `http://127.0.0.1:12000/v1` instead of a direct provider URL. Plano's router analyzes each prompt and picks the right backend.
+
+### Verify Plano Routing Directly (Optional)
+
+To test Plano's routing without OpenClaw, run the test script which sends requests directly to the gateway:
+
+```bash
+bash test_routing.sh
+```
 
 ## Monitoring
 
