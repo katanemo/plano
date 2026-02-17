@@ -394,7 +394,7 @@ properties:
             additionalProperties:
               type: string
         additionalProperties: false
-      additionalProperties: false
+    additionalProperties: false
   mode:
     type: string
     enum:
@@ -407,7 +407,7 @@ properties:
         type: string
       model:
         type: string
-      additionalProperties: false
+    additionalProperties: false
   state_storage:
     type: object
     properties:
