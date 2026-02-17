@@ -1,11 +1,17 @@
-version: v0.3.0
+version: v0.1.0
+
+routing:
+  model: Arch-Router
+  llm_provider: arch-router
 
 listeners:
-  - type: model
-    name: model_listener
+  egress_traffic:
+    address: 0.0.0.0
     port: 12000
+    message_format: openai
+    timeout: 30s
 
-model_providers:
+llm_providers:
 
   # Kimi K2.5 — Moonshot AI's open model (1T MoE, 32B active params)
   # Great for general conversation, agentic tasks, and multimodal work
@@ -15,22 +21,13 @@ model_providers:
     base_url: https://api.moonshot.ai/v1
     default: true
     routing_preferences:
-      - name: general conversation
-        description: general chat, greetings, casual conversation, Q&A, and everyday questions
-      - name: agentic tasks
-        description: coordinating multi-step workflows, device automation, scheduling, and task orchestration across channels
+      - name: code generation
+        description: generating code, writing scripts, implementing functions, and building tool integrations
 
   # Claude — Anthropic's most capable model
   # Best for complex reasoning, code, tool use, and evaluation
   - model: anthropic/claude-sonnet-4-5
     access_key: $ANTHROPIC_API_KEY
     routing_preferences:
-      - name: testing and evaluation
-        description: writing tests, running evaluations, QA checks, verifying correctness, and debugging failures
-      - name: code generation
-        description: generating code, writing scripts, implementing functions, and building tool integrations
-      - name: complex reasoning
-        description: multi-step analysis, planning, architectural decisions, and deep problem-solving
-
-tracing:
-  random_sampling: 100
+      - name: general conversation
+        description: general chat, greetings, casual conversation, Q&A, and everyday questions

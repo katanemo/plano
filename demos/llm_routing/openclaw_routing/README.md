@@ -44,37 +44,38 @@ planoai up --service plano --foreground
 
 ### 3. Set Up OpenClaw
 
-If you haven't installed OpenClaw yet:
+Install OpenClaw (requires Node >= 22):
 
 ```bash
-npm install -g openclaw@latest   # requires Node >= 22
+npm install -g openclaw@latest
+```
+
+Install the gateway daemon and connect your messaging channels:
+
+```bash
 openclaw onboard --install-daemon
 ```
 
-The onboarding wizard will walk you through connecting your messaging channels (WhatsApp, Telegram, Slack, Discord, etc.) and install the gateway as a background service.
+This installs the gateway as a background service (launchd on macOS, systemd on Linux). To connect messaging channels like WhatsApp or Telegram, see the [OpenClaw channel setup docs](https://docs.openclaw.ai/gateway/configuration).
 
 Run `openclaw doctor` to verify everything is working.
 
 ### 4. Point OpenClaw at Plano
 
-Edit `~/.openclaw/openclaw.json` to route all LLM requests through Plano:
+During the OpenClaw onboarding wizard, when prompted to choose an LLM provider:
 
-```json
-{
-  "agent": {
-    "model": "kimi-k2.5",
-    "baseURL": "http://127.0.0.1:12000/v1"
-  }
-}
-```
+1. Select **Custom OpenAI-compatible** as the provider
+2. Set the base URL to `http://127.0.0.1:12000/v1`
+3. Enter any value for the API key (e.g. `none`) — Plano handles auth to the actual providers
+4. Set the context window to at least `128000` tokens
 
-Then restart the gateway to pick up the change:
+This registers Plano as OpenClaw's LLM backend. All requests go through Plano on port 12000, which routes them to Kimi K2.5 or Claude based on the prompt content.
+
+If you've already onboarded, re-run the wizard to update the provider:
 
 ```bash
 openclaw onboard --install-daemon
 ```
-
-That's it — OpenClaw now sends all LLM requests to Plano on port 12000, and Plano routes them to the best model based on the prompt content.
 
 ### 5. Test Routing Through OpenClaw
 
