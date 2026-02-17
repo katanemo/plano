@@ -1,0 +1,29 @@
+templates:
+  - template_id: sub_agent_orchestration
+    template_file: sub_agent_orchestration.yaml
+    demo_configs:
+      - demos/agent_orchestration/multi_agent_crewai_langchain/config.yaml
+    transform: none
+
+  - template_id: coding_agent_routing
+    template_file: coding_agent_routing.yaml
+    demo_configs:
+      - demos/llm_routing/claude_code_router/config.yaml
+    transform: none
+
+  - template_id: preference_aware_routing
+    template_file: preference_aware_routing.yaml
+    demo_configs:
+      - demos/llm_routing/preference_based_routing/config.yaml
+    transform: none
+
+  - template_id: filter_chain_guardrails
+    template_file: filter_chain_guardrails.yaml
+    demo_configs:
+      - demos/filter_chains/http_filter/config.yaml
+    transform: none
+
+  - template_id: conversational_state_v1_responses
+    template_file: conversational_state_v1_responses.yaml
+    demo_configs: []
+    transform: none
