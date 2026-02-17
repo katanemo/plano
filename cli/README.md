@@ -91,4 +91,4 @@ source .venv/bin/activate
 planoai build  # No need for 'uv run' when activated
 ```
 
-**Note:** For end-user installation instructions, see the [plano documentation](https://docs.planoai.dev).
+**Note:** For end-user installation instructions, see the [Plano documentation](https://docs.planoai.dev).
