@@ -1,0 +1,48 @@
+version: v0.1.0
+
+routing:
+  model: Arch-Router
+  llm_provider: arch-router
+
+listeners:
+  egress_traffic:
+    address: 0.0.0.0
+    port: 12000
+    message_format: openai
+    timeout: 30s
+
+llm_providers:
+
+  # Arch Router - the 1.5B preference-aligned routing model (runs locally via Ollama)
+  - name: arch-router
+    model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+    base_url: http://host.docker.internal:11434
+
+  # Kimi K2.5 — Moonshot AI's open model (1T MoE, 32B active params)
+  # Great for general conversation, agentic tasks, and multimodal work
+  # OpenAI-compatible API at $0.60/M input, $2.50/M output tokens
+  - model: openai/kimi-k2.5
+    access_key: $MOONSHOT_API_KEY
+    base_url: https://api.moonshot.ai/v1
+    provider_interface: openai
+    default: true
+    routing_preferences:
+      - name: general conversation
+        description: general chat, greetings, casual conversation, Q&A, and everyday questions
+      - name: agentic tasks
+        description: coordinating multi-step workflows, device automation, scheduling, and task orchestration across channels
+
+  # Claude — Anthropic's most capable model
+  # Best for complex reasoning, code, tool use, and evaluation
+  - model: anthropic/claude-sonnet-4-5
+    access_key: $ANTHROPIC_API_KEY
+    routing_preferences:
+      - name: testing and evaluation
+        description: writing tests, running evaluations, QA checks, verifying correctness, and debugging failures
+      - name: code generation
+        description: generating code, writing scripts, implementing functions, and building tool integrations
+      - name: complex reasoning
+        description: multi-step analysis, planning, architectural decisions, and deep problem-solving
+
+tracing:
+  random_sampling: 100
