@@ -42,9 +42,22 @@ cd demos/llm_routing/openclaw_routing
 planoai up --service plano --foreground
 ```
 
-### 3. Configure OpenClaw
+### 3. Set Up OpenClaw
 
-In `~/.openclaw/openclaw.json`, set:
+If you haven't installed OpenClaw yet:
+
+```bash
+npm install -g openclaw@latest   # requires Node >= 22
+openclaw onboard --install-daemon
+```
+
+The onboarding wizard will walk you through connecting your messaging channels (WhatsApp, Telegram, Slack, Discord, etc.) and install the gateway as a background service.
+
+Run `openclaw doctor` to verify everything is working.
+
+### 4. Point OpenClaw at Plano
+
+Edit `~/.openclaw/openclaw.json` to route all LLM requests through Plano:
 
 ```json
 {
@@ -55,13 +68,15 @@ In `~/.openclaw/openclaw.json`, set:
 }
 ```
 
-Then run:
+Then restart the gateway to pick up the change:
 
 ```bash
 openclaw onboard --install-daemon
 ```
 
-### 4. Test Routing Through OpenClaw
+That's it — OpenClaw now sends all LLM requests to Plano on port 12000, and Plano routes them to the best model based on the prompt content.
+
+### 5. Test Routing Through OpenClaw
 
 Send messages through any connected channel (WhatsApp, Telegram, Slack, etc.) and watch routing decisions in a separate terminal:
 
