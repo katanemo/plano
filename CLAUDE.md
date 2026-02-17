@@ -58,7 +58,7 @@ docker build -t katanemo/plano:latest .
 
 ### E2E Tests (tests/e2e/)
 
-E2E tests require a built Docker image and API keys. They run via `tests/e2e/run_e2e_tests.sh` which executes three test suites: `test_prompt_gateway.py`, `test_model_alias_routing.py`, and `test_openai_responses_api_client_with_state.py`.
+E2E tests require a built Docker image and API keys. They run via `tests/e2e/run_e2e_tests.sh` which executes four test suites: `test_prompt_gateway.py`, `test_model_alias_routing.py`, `test_openai_responses_api_client.py`, and `test_openai_responses_api_client_with_state.py`.
 
 ## Architecture
 
@@ -91,6 +91,8 @@ The `planoai` CLI manages the Plano lifecycle. Key commands:
 - `planoai logs` — Stream access/debug logs
 - `planoai trace` — OTEL trace collection and analysis
 - `planoai init` — Initialize new project
+- `planoai cli_agent` — Start a CLI agent connected to Plano
+- `planoai generate_prompt_targets` — Generate prompt_targets from python methods
 
 Entry point: `cli/planoai/main.py`. Container lifecycle in `core.py`. Docker operations in `docker_cli.py`.
 
@@ -110,11 +112,8 @@ Turbo monorepo with Next.js 16 / React 19 applications and shared packages (UI c
 
 To prepare a release (e.g., bumping from `0.4.6` to `0.4.7`), update the version string in all of the following files:
 
-**CI Workflows:**
-- `.github/workflows/e2e_plano_tests.yml` — docker build tag
-- `.github/workflows/e2e_test_currency_convert.yml` — docker build tag
-- `.github/workflows/e2e_test_preference_based_routing.yml` — docker build tag
-- `.github/workflows/validate_arch_config.yml` — docker build tag
+**CI Workflow:**
+- `.github/workflows/ci.yml` — docker build/save tags
 
 **CLI:**
 - `cli/planoai/__init__.py` — `__version__`
@@ -132,7 +131,7 @@ To prepare a release (e.g., bumping from `0.4.6` to `0.4.7`), update the version
 
 **Website & Demos:**
 - `apps/www/src/components/Hero.tsx` — version badge
-- `demos/use_cases/preference_based_routing/README.md` — example output
+- `demos/llm_routing/preference_based_routing/README.md` — example output
 
 **Important:** Do NOT change `0.4.6` references in `*.lock` files or `Cargo.lock` — those refer to the `colorama` and `http-body` dependency versions, not Plano.
 
