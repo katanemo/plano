@@ -89,12 +89,10 @@ def test_start_trace_server_raises_bind_error(monkeypatch):
         trace_cmd._start_trace_server("0.0.0.0", 4317)
 
     assert "already in use" in str(excinfo.value)
-    assert "planoai trace listen --port" in str(excinfo.value)
+    assert "planoai trace listen" in str(excinfo.value)
 
 
-def test_trace_listen_starts_listener_with_custom_bind_after_target(
-    runner, monkeypatch
-):
+def test_trace_listen_starts_listener_with_defaults(runner, monkeypatch):
     seen = {}
 
     def fake_start(host: str, port: int) -> None:
@@ -103,27 +101,10 @@ def test_trace_listen_starts_listener_with_custom_bind_after_target(
 
     monkeypatch.setattr(trace_cmd, "_start_trace_listener", fake_start)
 
-    result = runner.invoke(trace, ["listen", "--host", "127.0.0.1", "--port", "9876"])
+    result = runner.invoke(trace, ["listen"])
 
     assert result.exit_code == 0, result.output
-    assert seen == {"host": "127.0.0.1", "port": 9876}
-
-
-def test_trace_listen_starts_listener_with_custom_bind_before_target(
-    runner, monkeypatch
-):
-    seen = {}
-
-    def fake_start(host: str, port: int) -> None:
-        seen["host"] = host
-        seen["port"] = port
-
-    monkeypatch.setattr(trace_cmd, "_start_trace_listener", fake_start)
-
-    result = runner.invoke(trace, ["--host", "127.0.0.1", "--port", "9876", "listen"])
-
-    assert result.exit_code == 0, result.output
-    assert seen == {"host": "127.0.0.1", "port": 9876}
+    assert seen == {"host": "0.0.0.0", "port": trace_cmd.DEFAULT_GRPC_PORT}
 
 
 def test_trace_down_prints_success_when_listener_stopped(runner, monkeypatch):
@@ -142,15 +123,6 @@ def test_trace_down_prints_no_listener_when_not_running(runner, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "No background trace listener running" in result.output
-
-
-def test_trace_host_port_requires_listen_target(runner):
-    result = runner.invoke(trace, ["--host", "127.0.0.1", "any"])
-
-    assert result.exit_code != 0
-    assert "--host/--port are only valid with target 'listen'." in _plain_output(
-        result.output
-    )
 
 
 def test_trace_default_target_uses_last_and_builds_first_trace(

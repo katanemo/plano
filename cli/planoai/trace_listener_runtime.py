@@ -5,10 +5,13 @@ Trace listener process runtime utilities.
 import os
 import signal
 import time
+import logging
 from collections.abc import Callable
 
 # Canonical PID file used by `planoai trace listen/down`.
 TRACE_LISTENER_PID_PATH = os.path.expanduser("~/.plano/run/trace_listener.pid")
+TRACE_LISTENER_LOG_PATH = os.path.expanduser("~/.plano/run/trace_listener.log")
+LOGGER = logging.getLogger(__name__)
 
 
 def write_listener_pid(pid: int) -> None:
@@ -40,6 +43,10 @@ def get_listener_pid() -> int | None:
         return pid
     except (ValueError, ProcessLookupError, OSError):
         # Stale or malformed PID file: clean it up to prevent repeated confusion.
+        LOGGER.warning(
+            "Removing stale or malformed trace listener PID file at %s",
+            TRACE_LISTENER_PID_PATH,
+        )
         remove_listener_pid()
         return None
 
@@ -92,14 +99,26 @@ def daemonize_and_run(run_forever: Callable[[], None]) -> int | None:
     # the daemon cannot reacquire a controlling terminal.
     os.setsid()
 
-    # Redirect stdin/stdout/stderr to /dev/null so daemon is terminal-independent.
-    # This prevents broken pipe errors and ensures no output leaks to the parent terminal.
-    devnull = os.open(os.devnull, os.O_RDWR)
-    os.dup2(devnull, 0)  # stdin
-    os.dup2(devnull, 1)  # stdout
-    os.dup2(devnull, 2)  # stderr
-    if devnull > 2:
-        os.close(devnull)
+    # Redirect stdin to /dev/null and stdout/stderr to a persistent log file.
+    # This keeps the daemon terminal-independent while preserving diagnostics.
+    os.makedirs(os.path.dirname(TRACE_LISTENER_LOG_PATH), exist_ok=True)
+    devnull_in = os.open(os.devnull, os.O_RDONLY)
+    try:
+        log_fd = os.open(
+            TRACE_LISTENER_LOG_PATH,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o644,
+        )
+    except OSError:
+        # If logging cannot be initialized, keep running with output discarded.
+        log_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull_in, 0)  # stdin
+    os.dup2(log_fd, 1)  # stdout
+    os.dup2(log_fd, 2)  # stderr
+    if devnull_in > 2:
+        os.close(devnull_in)
+    if log_fd > 2:
+        os.close(log_fd)
 
     # Run the daemon main loop (expected to block until process termination).
     run_forever()

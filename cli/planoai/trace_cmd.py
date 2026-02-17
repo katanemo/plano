@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+from http import HTTPStatus
 from collections import OrderedDict
 from concurrent import futures
 from dataclasses import dataclass
@@ -38,7 +39,7 @@ class TraceListenerBindError(RuntimeError):
 def _trace_listener_bind_error_message(address: str) -> str:
     return (
         f"Failed to start OTLP listener on {address}: address is already in use.\n"
-        "Stop the process using that port or run `planoai trace listen --port <PORT>`."
+        "Stop the process using that port or run `planoai trace listen`."
     )
 
 
@@ -60,13 +61,13 @@ class TraceSummary:
         return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _is_port_in_use(port: int) -> bool:
-    """Check whether a local TCP listener is accepting connections on a port."""
+def _is_port_in_use(host: str, port: int) -> bool:
+    """Check whether a TCP listener is accepting connections on host:port."""
     import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.2)
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        return s.connect_ex((host, port)) == 0
 
 
 def _get_listener_pid() -> int | None:
@@ -546,7 +547,7 @@ def _start_trace_listener(host: str, grpc_port: int) -> None:
     console = Console()
 
     # Check if the requested port is already in use.
-    if _is_port_in_use(grpc_port):
+    if _is_port_in_use(host, grpc_port):
         existing_pid = _get_listener_pid()
         if existing_pid:
             # If the process PID is known, inform user that our listener is already running.
@@ -578,7 +579,7 @@ def _start_trace_listener(host: str, grpc_port: int) -> None:
     # In the parent process: wait briefly for the background process to bind the port.
     time.sleep(0.5)  # Give child process time to start and bind to the port.
 
-    if _is_port_in_use(grpc_port):
+    if _is_port_in_use(host, grpc_port):
         # Success: the trace listener started and bound the port.
         console.print()
         console.print(
@@ -666,30 +667,14 @@ def _error_description(status_code: str) -> str:
     """Return a developer-friendly description of the error."""
     code = int(status_code) if status_code.isdigit() else 0
 
-    if code == 500:
-        return "Internal Server Error"
-    elif code == 502:
-        return "Bad Gateway"
-    elif code == 503:
-        return "Service Unavailable"
-    elif code == 504:
-        return "Gateway Timeout"
-    elif code >= 500:
-        return "Server Error"
-    elif code == 429:
-        return "Rate Limit Exceeded"
-    elif code == 404:
-        return "Not Found"
-    elif code == 403:
-        return "Forbidden - Access Denied"
-    elif code == 401:
-        return "Unauthorized - Auth Required"
-    elif code == 400:
-        return "Bad Request"
-    elif code >= 400:
-        return "Client Error"
-    else:
+    if code < 400:
         return "Error"
+    try:
+        return HTTPStatus(code).phrase
+    except ValueError:
+        if code >= 500:
+            return "Server Error"
+        return "Client Error"
 
 
 def _detect_error(span: dict[str, Any]) -> tuple[bool, str, str]:
@@ -1097,14 +1082,6 @@ def _run_trace_show(
 @click.option("--limit", type=int, default=None, help="Limit results.")
 @click.option("--since", default=None, help="Look back window (e.g. 5m, 2h, 1d).")
 @click.option("--json", "json_out", is_flag=True, help="Output raw JSON.")
-@click.option("--host", default="0.0.0.0", show_default=True)
-@click.option(
-    "--port",
-    type=int,
-    default=DEFAULT_GRPC_PORT,
-    show_default=True,
-    help="gRPC port for receiving OTLP traces when target is 'listen'.",
-)
 @click.option(
     "--verbose",
     "-v",
@@ -1122,8 +1099,6 @@ def trace(
     limit,
     since,
     json_out,
-    host,
-    port,
     verbose,
 ):
     """Trace requests from the local OTLP listener."""
@@ -1142,11 +1117,8 @@ def trace(
     )
 
     if target == "listen" and not has_show_options:
-        _start_trace_listener(host, port)
+        _start_trace_listener("0.0.0.0", DEFAULT_GRPC_PORT)
         return
-
-    if (host != "0.0.0.0" or port != DEFAULT_GRPC_PORT) and target != "listen":
-        raise click.ClickException("--host/--port are only valid with target 'listen'.")
 
     if target in ("stop", "down") and not has_show_options:
         console = Console()
