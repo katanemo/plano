@@ -460,6 +460,12 @@ def validate_and_render_schema():
 
     print("agent_orchestrator: ", agent_orchestrator)
 
+    overrides = config_yaml.get("overrides", {})
+    upstream_connect_timeout = overrides.get("upstream_connect_timeout", "5s")
+    upstream_tls_ca_path = overrides.get(
+        "upstream_tls_ca_path", "/etc/ssl/certs/ca-certificates.crt"
+    )
+
     data = {
         "prompt_gateway_listener": prompt_gateway,
         "llm_gateway_listener": llm_gateway,
@@ -471,6 +477,8 @@ def validate_and_render_schema():
         "local_llms": llms_with_endpoint,
         "agent_orchestrator": agent_orchestrator,
         "listeners": listeners,
+        "upstream_connect_timeout": upstream_connect_timeout,
+        "upstream_tls_ca_path": upstream_tls_ca_path,
     }
 
     rendered = template.render(data)
