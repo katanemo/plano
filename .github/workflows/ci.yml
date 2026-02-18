@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '0 6 * * *'  # daily at 6am UTC
 
 permissions:
   contents: read
@@ -166,10 +168,60 @@ jobs:
           sarif_file: trivy-results.sarif
 
   # ──────────────────────────────────────────────
-  # E2E: prompt_gateway tests
+  # Mock-based E2E tests (zero secrets required)
+  # ──────────────────────────────────────────────
+  mock-e2e-tests:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./tests/archgw
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Download plano image
+        uses: actions/download-artifact@v4
+        with:
+          name: plano-image
+          path: /tmp
+
+      - name: Load plano image
+        run: docker load -i /tmp/plano-image.tar
+
+      - name: Start plano with mock config
+        run: |
+          docker compose -f docker-compose.mock.yaml up -d
+
+      - name: Wait for plano to be healthy
+        run: |
+          source common.sh && wait_for_healthz http://localhost:12000/healthz
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install test dependencies
+        run: uv sync
+
+      - name: Run mock-based E2E tests
+        run: |
+          uv run pytest test_model_alias_routing.py test_responses_api.py test_streaming.py || (docker compose -f docker-compose.mock.yaml logs && false)
+
+      - name: Stop plano
+        if: always()
+        run: docker compose -f docker-compose.mock.yaml down
+
+  # ──────────────────────────────────────────────
+  # E2E: prompt_gateway tests (live — main + nightly only)
   # ──────────────────────────────────────────────
   test-prompt-gateway:
     needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -206,20 +258,17 @@ jobs:
       - name: Run prompt_gateway tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           cd tests/e2e && bash run_prompt_gateway_tests.sh
 
   # ──────────────────────────────────────────────
-  # E2E: model_alias_routing tests
+  # E2E: model_alias_routing tests (live — main + nightly only)
   # ──────────────────────────────────────────────
   test-model-alias-routing:
     needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -256,20 +305,17 @@ jobs:
       - name: Run model alias routing tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         run: |
           cd tests/e2e && bash run_model_alias_tests.sh
 
   # ──────────────────────────────────────────────
-  # E2E: responses API with state tests
+  # E2E: responses API with state tests (live — main + nightly only)
   # ──────────────────────────────────────────────
   test-responses-api-with-state:
     needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -306,20 +352,16 @@ jobs:
       - name: Run responses API with state tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         run: |
           cd tests/e2e && bash run_responses_state_tests.sh
 
   # ──────────────────────────────────────────────
-  # E2E: plano tests (multi-Python matrix)
+  # E2E: plano tests (multi-Python matrix, live — main + nightly only)
   # ──────────────────────────────────────────────
   e2e-plano-tests:
     needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest-m
     strategy:
       fail-fast: false
@@ -350,10 +392,6 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
         run: |
           docker compose up | tee &> plano.logs &
 
@@ -369,22 +407,21 @@ jobs:
 
       - name: Run plano tests
         run: |
-          uv run pytest || tail -100 plano.logs
+          uv run pytest test_prompt_gateway.py test_llm_gateway.py || tail -100 plano.logs
 
       - name: Stop plano docker container
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           docker compose down
 
   # ──────────────────────────────────────────────
-  # E2E: demo — preference based routing
+  # E2E: demo — preference based routing (live — main + nightly only)
   # ──────────────────────────────────────────────
   e2e-demo-preference:
     needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
@@ -426,17 +463,17 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          ARCH_API_KEY: ${{ secrets.ARCH_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           source venv/bin/activate
           cd demos/shared/test_runner && sh run_demo_tests.sh llm_routing/preference_based_routing
 
   # ──────────────────────────────────────────────
-  # E2E: demo — currency conversion
+  # E2E: demo — currency conversion (live — main + nightly only)
   # ──────────────────────────────────────────────
   e2e-demo-currency:
     needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
