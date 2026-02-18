@@ -130,8 +130,10 @@ def test_anthropic_client_with_alias_streaming(httpserver: HTTPServer):
 
 
 def test_openai_client_with_claude_model(httpserver: HTTPServer):
-    """OpenAI client → Claude model → gateway routes to Anthropic upstream → transforms response to OpenAI format"""
-    captured = setup_anthropic_mock(
+    """OpenAI client → Claude model → gateway proxies via /v1/chat/completions → transforms response"""
+    # Gateway routes OpenAI-format requests to /v1/chat/completions on upstream
+    # even for Anthropic models, so we need the OpenAI chat mock
+    captured = setup_openai_chat_mock(
         httpserver, content="Hello from Claude via OpenAI client!"
     )
 
@@ -150,8 +152,9 @@ def test_openai_client_with_claude_model(httpserver: HTTPServer):
 
 
 def test_openai_client_with_claude_model_streaming(httpserver: HTTPServer):
-    """OpenAI client streaming → Claude model → Anthropic SSE → transformed to OpenAI SSE"""
-    setup_anthropic_mock(httpserver, content="Streaming from Claude!")
+    """OpenAI client streaming → Claude model → proxied via /v1/chat/completions"""
+    # Gateway routes OpenAI-format requests to /v1/chat/completions on upstream
+    setup_openai_chat_mock(httpserver, content="Streaming from Claude!")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     stream = client.chat.completions.create(

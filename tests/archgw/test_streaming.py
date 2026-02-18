@@ -14,7 +14,6 @@ These tests require the gateway to be running with config_mock_llm.yaml
 import json
 import openai
 import anthropic
-import pytest
 import logging
 
 from pytest_httpserver import HTTPServer
@@ -24,7 +23,6 @@ from werkzeug.wrappers import Response
 from conftest import (
     setup_openai_chat_mock,
     setup_anthropic_mock,
-    setup_responses_api_mock,
     make_openai_tool_call_stream,
 )
 
@@ -199,8 +197,9 @@ def test_anthropic_messages_streaming_thinking(httpserver: HTTPServer):
 
 
 def test_openai_client_streaming_anthropic_upstream(httpserver: HTTPServer):
-    """OpenAI client streaming → Anthropic model → Anthropic SSE → transformed to OpenAI SSE"""
-    setup_anthropic_mock(httpserver, content="Cross-provider streaming works!")
+    """OpenAI client streaming → Anthropic model → proxied via /v1/chat/completions"""
+    # Gateway routes OpenAI-format requests to /v1/chat/completions on upstream
+    setup_openai_chat_mock(httpserver, content="Cross-provider streaming works!")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     stream = client.chat.completions.create(
@@ -241,7 +240,8 @@ def test_anthropic_client_streaming_openai_upstream(httpserver: HTTPServer):
 
 def test_responses_api_streaming_basic(httpserver: HTTPServer):
     """Responses API streaming: verify event types and content assembly"""
-    setup_responses_api_mock(httpserver, content="Responses API streaming works!")
+    # Gateway translates Responses API to /v1/chat/completions on upstream
+    setup_openai_chat_mock(httpserver, content="Responses API streaming works!")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     stream = client.responses.create(

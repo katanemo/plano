@@ -1,22 +1,23 @@
 """Mock-based tests for the OpenAI Responses API (/v1/responses).
 
-Tests passthrough to OpenAI, translation to chat completions for non-OpenAI
-providers, tool calling, streaming, and multi-turn state management.
+Tests translation to chat completions via the gateway, tool calling,
+streaming, mixed content types, and multi-turn state management.
+
+Note: The gateway translates all Responses API requests to /v1/chat/completions
+on the upstream when using base_url-configured providers. Direct /v1/responses
+passthrough is tested by the live e2e tests on main/nightly.
 
 These tests require the gateway to be running with config_mock_llm.yaml
 (started via docker-compose.mock.yaml).
 """
 
-import json
 import openai
-import pytest
 import logging
 
 from pytest_httpserver import HTTPServer
 
 from conftest import (
     setup_openai_chat_mock,
-    setup_responses_api_mock,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,148 +26,50 @@ LLM_GATEWAY_BASE = "http://localhost:12000"
 
 
 # =============================================================================
-# PASSTHROUGH TESTS (OpenAI upstream → /v1/responses)
+# NON-STREAMING TESTS
 # =============================================================================
 
 
-def test_responses_api_non_streaming_passthrough(httpserver: HTTPServer):
-    """Responses API with OpenAI model should pass through to /v1/responses"""
-    captured = setup_responses_api_mock(httpserver, content="Hello from Responses API!")
+def test_responses_api_non_streaming(httpserver: HTTPServer):
+    """Responses API non-streaming → translated to /v1/chat/completions"""
+    captured = setup_openai_chat_mock(httpserver, content="Hello from Responses API!")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     resp = client.responses.create(
-        model="gpt-4o",
-        input="Hello via responses passthrough",
+        model="claude-sonnet-4-20250514",
+        input="Hello via responses API",
     )
 
     assert resp is not None
     assert resp.id is not None
-    assert resp.output_text == "Hello from Responses API!"
+    assert len(resp.output_text) > 0
 
 
-def test_responses_api_streaming_passthrough(httpserver: HTTPServer):
-    """Responses API streaming with OpenAI model"""
-    setup_responses_api_mock(httpserver, content="Streaming responses API!")
-
-    client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
-    stream = client.responses.create(
-        model="gpt-4o",
-        input="Write a haiku",
-        stream=True,
-    )
-
-    text_chunks = []
-    final_message = None
-    for event in stream:
-        if getattr(event, "type", None) == "response.output_text.delta" and getattr(
-            event, "delta", None
-        ):
-            text_chunks.append(event.delta)
-        if getattr(event, "type", None) == "response.completed" and getattr(
-            event, "response", None
-        ):
-            final_message = event.response
-
-    full_content = "".join(text_chunks)
-    assert len(text_chunks) > 0, "Should have received streaming text deltas"
-    assert len(full_content) > 0, "Should have received content"
-
-
-def test_responses_api_with_tools_passthrough(httpserver: HTTPServer):
-    """Responses API with tools for OpenAI model"""
-    setup_responses_api_mock(httpserver, content="Tool response")
-
-    client = openai.OpenAI(
-        api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0
-    )
-    tools = [
-        {
-            "type": "function",
-            "name": "echo_tool",
-            "description": "Echo back the provided input",
-            "parameters": {
-                "type": "object",
-                "properties": {"text": {"type": "string"}},
-                "required": ["text"],
-            },
-        }
-    ]
-
-    resp = client.responses.create(
-        model="openai/gpt-5-mini-2025-08-07",
-        input="Call the echo tool",
-        tools=tools,
-    )
-
-    assert resp is not None
-    assert resp.id is not None
-
-
-def test_responses_api_streaming_with_tools_passthrough(httpserver: HTTPServer):
-    """Responses API streaming with tools for OpenAI model"""
-    setup_responses_api_mock(httpserver, content="Streamed tool response")
-
-    client = openai.OpenAI(
-        api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0
-    )
-    tools = [
-        {
-            "type": "function",
-            "name": "echo_tool",
-            "description": "Echo back the provided input",
-            "parameters": {
-                "type": "object",
-                "properties": {"text": {"type": "string"}},
-                "required": ["text"],
-            },
-        }
-    ]
-
-    stream = client.responses.create(
-        model="openai/gpt-5-mini-2025-08-07",
-        input="Call the echo tool",
-        tools=tools,
-        stream=True,
-    )
-
-    text_chunks = []
-    tool_calls = []
-    for event in stream:
-        etype = getattr(event, "type", None)
-        if etype == "response.output_text.delta" and getattr(event, "delta", None):
-            text_chunks.append(event.delta)
-        if etype == "response.function_call_arguments.delta" and getattr(
-            event, "delta", None
-        ):
-            tool_calls.append(event.delta)
-
-    assert text_chunks or tool_calls, "Expected streamed text or tool call deltas"
-
-
-# =============================================================================
-# UPSTREAM TRANSLATION TESTS (non-OpenAI → /v1/chat/completions)
-# =============================================================================
-
-
-def test_responses_api_non_streaming_upstream_anthropic(httpserver: HTTPServer):
-    """Responses API with Anthropic model → translated to /v1/chat/completions"""
+def test_responses_api_non_streaming_openai_model(httpserver: HTTPServer):
+    """Responses API non-streaming with OpenAI model → translated to /v1/chat/completions"""
     captured = setup_openai_chat_mock(
-        httpserver, content="Hello from Claude via Responses!"
+        httpserver, content="Hello from GPT via Responses!"
     )
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     resp = client.responses.create(
-        model="claude-sonnet-4-20250514",
-        input="Hello, translate this",
+        model="gpt-4o",
+        input="Hello via responses API",
     )
 
     assert resp is not None
     assert resp.id is not None
+    assert len(resp.output_text) > 0
 
 
-def test_responses_api_streaming_upstream_anthropic(httpserver: HTTPServer):
-    """Responses API streaming with Anthropic model → translated upstream"""
-    setup_openai_chat_mock(httpserver, content="Streaming from Claude via Responses!")
+# =============================================================================
+# STREAMING TESTS
+# =============================================================================
+
+
+def test_responses_api_streaming(httpserver: HTTPServer):
+    """Responses API streaming → translated to /v1/chat/completions"""
+    setup_openai_chat_mock(httpserver, content="Streaming from Responses API!")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     stream = client.responses.create(
@@ -185,8 +88,34 @@ def test_responses_api_streaming_upstream_anthropic(httpserver: HTTPServer):
     assert len(text_chunks) > 0, "Should have received streaming text deltas"
 
 
-def test_responses_api_with_tools_upstream_anthropic(httpserver: HTTPServer):
-    """Responses API with tools routed to Anthropic (translated to chat completions)"""
+def test_responses_api_streaming_openai_model(httpserver: HTTPServer):
+    """Responses API streaming with OpenAI model → translated to /v1/chat/completions"""
+    setup_openai_chat_mock(httpserver, content="Streaming from GPT via Responses!")
+
+    client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
+    stream = client.responses.create(
+        model="gpt-4o",
+        input="Write a haiku",
+        stream=True,
+    )
+
+    text_chunks = []
+    for event in stream:
+        if getattr(event, "type", None) == "response.output_text.delta" and getattr(
+            event, "delta", None
+        ):
+            text_chunks.append(event.delta)
+
+    assert len(text_chunks) > 0, "Should have received streaming text deltas"
+
+
+# =============================================================================
+# TOOL CALLING TESTS
+# =============================================================================
+
+
+def test_responses_api_with_tools(httpserver: HTTPServer):
+    """Responses API with tools → translated to /v1/chat/completions"""
     setup_openai_chat_mock(httpserver, content="Tool response via Claude")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
@@ -212,8 +141,8 @@ def test_responses_api_with_tools_upstream_anthropic(httpserver: HTTPServer):
     assert resp.id is not None
 
 
-def test_responses_api_streaming_with_tools_upstream_anthropic(httpserver: HTTPServer):
-    """Responses API streaming with tools routed to Anthropic"""
+def test_responses_api_streaming_with_tools(httpserver: HTTPServer):
+    """Responses API streaming with tools → translated to /v1/chat/completions"""
     setup_openai_chat_mock(httpserver, content="Streamed tool via Claude")
 
     client = openai.OpenAI(
@@ -260,11 +189,11 @@ def test_responses_api_streaming_with_tools_upstream_anthropic(httpserver: HTTPS
 
 def test_responses_api_mixed_content_types(httpserver: HTTPServer):
     """Responses API with mixed content types (string and array) in input"""
-    setup_responses_api_mock(httpserver, content="Weather Seattle")
+    setup_openai_chat_mock(httpserver, content="Weather Seattle")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     resp = client.responses.create(
-        model="openai/gpt-5-mini-2025-08-07",
+        model="claude-sonnet-4-20250514",
         input=[
             {
                 "role": "developer",
@@ -295,9 +224,6 @@ def test_conversation_state_management_two_turn(httpserver: HTTPServer):
     Turn 1: Send initial message → get response_id
     Turn 2: Send with previous_response_id → verify state was combined
     """
-    # For non-OpenAI models, Responses API translates to /v1/chat/completions
-    # But for OpenAI models, it uses /v1/responses directly
-    # The state management is handled by brightstaff regardless of upstream
     captured = setup_openai_chat_mock(
         httpserver, content="I remember your name is Alice!"
     )
