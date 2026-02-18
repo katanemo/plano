@@ -241,11 +241,13 @@ def test_anthropic_client_streaming_openai_upstream(httpserver: HTTPServer):
 def test_responses_api_streaming_basic(httpserver: HTTPServer):
     """Responses API streaming: verify event types and content assembly"""
     # Gateway translates Responses API to /v1/chat/completions on upstream
+    # for non-OpenAI models (OpenAI models pass through to /v1/responses which
+    # doesn't work with mocks)
     setup_openai_chat_mock(httpserver, content="Responses API streaming works!")
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     stream = client.responses.create(
-        model="gpt-4o",
+        model="claude-sonnet-4-20250514",
         input="Hello",
         stream=True,
     )
