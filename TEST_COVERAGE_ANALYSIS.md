@@ -4,9 +4,9 @@
 
 ## Executive Summary
 
-The Plano codebase has significant test coverage gaps across all components. The Rust crates have ~262 unit tests covering roughly 0.35% of ~75,800 lines of code. The Python CLI has 29 tests covering 4 of 12 modules. The JavaScript/TypeScript apps and packages have **zero tests**. The E2E suite covers the core happy-path flows well but lacks error, edge-case, and performance scenarios.
+The Plano codebase has **~370 automated tests**: ~297 Rust unit tests, ~65 Python tests (29 CLI + 50 E2E + 4 archgw integration), 10 Hurl/REST manual test files, and zero JS/TS tests. Coverage is strong in the LLM translation layer (hermesllm) and behavioral signals (brightstaff/signals), moderate in state management and configuration, and weak in the WASM gateway plugins and several Python CLI modules.
 
-Below is a prioritized breakdown of gaps and recommendations.
+Below is a detailed breakdown by component with prioritized improvement recommendations.
 
 ---
 
@@ -14,40 +14,86 @@ Below is a prioritized breakdown of gaps and recommendations.
 
 ### Current State
 
-| Crate | LOC | Tests | Status |
-|-------|-----|-------|--------|
-| common | 3,912 | 33 | Partial |
-| hermesllm | 17,540 | 134 | Partial |
-| prompt_gateway | 1,717 | 4 | Critical gap |
-| llm_gateway | 1,399 | 0 | Critical gap |
-| brightstaff | 13,342 | 91 | Partial |
-| **Total** | **~75,800** | **262** | |
+| Crate | Tests | Files With Tests | Status |
+|-------|-------|------------------|--------|
+| hermesllm | 148 | 21 | Good — broad coverage of provider translation |
+| brightstaff | 126 | 11 | Good — signals/state/routing well tested; handler endpoints less so |
+| common | 36 | 10 | Moderate — core utilities covered; some gaps |
+| prompt_gateway | 4 | 2 | Weak — WASM filter mostly untested |
+| llm_gateway | 0 | 0 | None — WASM filter completely untested |
+| **Total** | **~314** | **44** | |
 
-### Critical Gaps
+### Well-Tested Areas
 
-**llm_gateway — 0 tests, 1,399 LOC.** This WASM filter handles LLM request/response processing and streaming. It has no tests at all. `stream_context.rs` alone is ~1,000 lines of complex streaming logic with zero coverage.
+- **hermesllm provider translation (148 tests):** Request/response transforms for all providers (OpenAI, Anthropic, Bedrock, Gemini, Mistral) are thoroughly tested. Streaming response parsing (20 tests), endpoint resolution (11 tests), request generation (16 tests), and cross-provider format conversion (~45 tests) are solid.
+- **hermesllm streaming buffers (12 tests):** SSE chunk processor (6 tests), Anthropic streaming buffer (3 tests), Responses API streaming buffer (2 tests), and passthrough buffer (1 test) have coverage.
+- **brightstaff signals/analyzer (48 tests):** Character n-gram similarity, token cosine similarity, layered matching, frustration/escalation/positive-feedback detection are thoroughly tested.
+- **brightstaff state management (26 tests):** In-memory state (16 tests) and PostgreSQL persistence (10 tests) have good unit test coverage.
+- **brightstaff function calling (17 tests):** Tool extraction, JSON fixing, hallucination detection, and tool call verification are well covered.
+- **brightstaff routing models (17 tests):** Orchestrator model v1 (9 tests) and router model v1 (8 tests) are tested.
+- **brightstaff pipeline processor (5 tests):** Has basic test coverage (4 tokio::test + 1 sync test).
+- **brightstaff agent selector (5 tests):** Listener lookup and agent map creation are tested.
+- **brightstaff response handler (5 tests):** Response transformation has tests.
+- **common rate limiting (8 tests):** Rate limit logic with token quotas and header-based selectors is tested.
+- **common OpenAI API (9 tests):** Chat completion parsing and request conversions covered.
 
-**prompt_gateway — 4 tests, 1,717 LOC.** The WASM filter for prompt processing and guardrails has near-zero coverage. Untested modules include `filter_context.rs`, `http_context.rs`, `context.rs`, and `metrics.rs`. The intent-matching logic in `stream_context.rs` (~900 lines) has only 1 test.
+### Gaps and Recommendations
 
-**brightstaff pipeline and state management — ~2,200 LOC untested.** The core request pipeline (`handlers/pipeline_processor.rs`, 834 lines), state persistence layer (`state/memory.rs`, `state/postgresql.rs`, `state/response_state_processor.rs` — 1,370 lines combined), and key handler endpoints (`handlers/llm.rs`, `handlers/agent_chat_completions.rs`) have no tests.
+#### Gap 1: `llm_gateway` crate — 0 tests (1,399 LOC)
 
-### Partially Covered Areas Needing More Tests
+This WASM filter handles all LLM request/response processing and streaming. `stream_context.rs` (~1,000 lines) manages streaming chunk assembly and response forwarding with zero coverage.
 
-- **hermesllm streaming transforms** — The non-streaming request/response transforms are well-tested (134 tests), but the streaming buffer modules (`sse.rs`, `amazon_bedrock_binary_frame.rs`, `to_openai_streaming.rs`, `to_anthropic_streaming.rs` — ~5,000 LOC) are untested.
-- **common/routing.rs, common/errors.rs, common/http.rs, common/stats.rs, common/tracing.rs** — Utility modules totaling ~560 lines with no coverage.
-- **brightstaff router services** — `llm_router.rs` and `plano_orchestrator.rs` (~400 lines) lack tests despite handling routing decisions.
+**Recommendation:** Extract core logic from the WASM host context into pure, testable functions. Test streaming chunk reassembly, header manipulation, error response construction, and the filter lifecycle. Consider a thin WASM shim over well-tested logic modules.
 
-### Recommendations
+#### Gap 2: `prompt_gateway` crate — 4 tests (1,717 LOC)
 
-1. **Add unit tests for llm_gateway.** Start with `stream_context.rs` — test streaming chunk assembly, partial frame handling, error recovery, and the filter lifecycle. A WASM-mocking test harness or extracting the core logic into testable pure functions would help.
+The WASM prompt filter has tests only in `tools.rs` (3 tests) and `stream_context.rs` (1 test). The filter/HTTP context lifecycle (`filter_context.rs`, `http_context.rs`), prompt guard logic, and metrics collection are untested.
 
-2. **Add unit tests for prompt_gateway filter logic.** Test `http_context.rs` request/response handling, `filter_context.rs` lifecycle, and the guardrail filtering paths in `stream_context.rs`.
+**Recommendation:** Add tests for intent matching and prompt guard/jailbreak detection in `stream_context.rs`. Test `http_context.rs` request parsing and response construction. Same architectural approach as llm_gateway — separate testable logic from WASM host bindings.
 
-3. **Test the brightstaff pipeline processor.** This is the central message processing pipeline. Mock the downstream dependencies and test the orchestration logic, error paths, and streaming assembly.
+#### Gap 3: brightstaff handler endpoints — limited coverage
 
-4. **Test state persistence.** Both the in-memory and PostgreSQL backends need tests for basic CRUD, concurrent access, state expiration, and connection failure recovery.
+Several handler modules have no unit tests:
+- `handlers/llm.rs` (553 LOC) — LLM chat handler
+- `handlers/agent_chat_completions.rs` (418 LOC) — Multi-agent orchestration
+- `handlers/router_chat.rs` (159 LOC) — Router endpoint
+- `handlers/utils.rs` (288 LOC) — Handler utilities
 
-5. **Test hermesllm streaming transforms.** The SSE parser, Bedrock binary frame decoder, and streaming-to-OpenAI/Anthropic converters need unit tests, especially for edge cases like partial frames, malformed chunks, and connection resets.
+The pipeline_processor has only 5 tests for 834 LOC — basic flow is covered but error paths and edge cases are not.
+
+**Recommendation:** Add tests for error paths in `pipeline_processor.rs` (malformed requests, downstream failures, timeout handling). Add handler-level tests for `llm.rs` and `agent_chat_completions.rs` using `mockito` (already a dev dependency) to mock HTTP backends.
+
+#### Gap 4: hermesllm streaming *transforms* — 0 tests
+
+While the streaming *buffers* (SSE parser, Anthropic buffer, etc.) have tests, the streaming *transform* modules that convert between formats during streaming are untested:
+- `transforms/response_streaming/to_openai_streaming.rs`
+- `transforms/response_streaming/to_anthropic_streaming.rs`
+
+Also untested: `apis/streaming_shapes/amazon_bedrock_binary_frame.rs` (AWS Event Stream binary decoding) and `apis/streaming_shapes/chat_completions_streaming_buffer.rs`.
+
+**Recommendation:** Add tests for the streaming transform modules. The Bedrock binary frame decoder is particularly important — it parses a proprietary binary protocol and failures here are hard to diagnose in production.
+
+#### Gap 5: common utility modules — no tests
+
+Several `common` modules lack tests:
+- `routing.rs` — Provider routing logic
+- `errors.rs` — Error types (ClientError, ServerError)
+- `http.rs` — HTTP utilities and CallArgs
+- `stats.rs` — Metrics traits
+- `api/prompt_guard.rs` — Prompt guard types
+- `api/zero_shot.rs` — Zero-shot classification types
+
+**Recommendation:** Add tests for `routing.rs` (routing decisions), `http.rs` (CallArgs construction, URL handling), and `prompt_guard.rs` (guard rule evaluation). The error/stats/consts modules are mostly type definitions and don't need extensive testing.
+
+#### Gap 6: brightstaff state — edge cases
+
+The state backends have solid basic coverage (26 tests total), but lack tests for:
+- Concurrent access patterns
+- State expiration/eviction
+- Connection failure recovery (PostgreSQL)
+- Large conversation histories
+
+**Recommendation:** Add tokio::test cases for concurrent read/write scenarios in the memory backend and connection pool behavior in the PostgreSQL backend.
 
 ---
 
@@ -55,42 +101,45 @@ Below is a prioritized breakdown of gaps and recommendations.
 
 ### Current State
 
-| Module | LOC | Tested? |
-|--------|-----|---------|
-| config_generator.py | 514 | Yes |
-| versioning.py | 70 | Yes |
-| init_cmd.py | 303 | Yes |
-| trace_cmd.py | 993 | Minimal (2 tests) |
-| main.py | 441 | No |
-| targets.py | 365 | No |
-| core.py | 234 | No |
-| docker_cli.py | 143 | No |
-| template_sync.py | 122 | No |
-| utils.py | 285 | Partial |
+| Test File | Tests | Modules Covered |
+|-----------|-------|-----------------|
+| test_config_generator.py | 11 (5 functions + 6 parametrized) | config_generator, utils |
+| test_version_check.py | 18 (4 classes, 18 methods) | versioning |
+| test_init.py | 4 | init_cmd |
+| test_trace_cmd.py | 2 | trace_cmd (minimal) |
+| **Total** | **35 executions** | **5 of 13 modules** |
 
-**29 total tests across 4 files. 8 of 12 modules are untested or minimally tested.**
+### Well-Tested Areas
 
-### Critical Gaps
+- **versioning.py (18 tests):** Version parsing, comparison, PyPI fetching, network error handling, and environment variable overrides are thoroughly tested across 4 test classes.
+- **config_generator.py (11 tests):** Happy-path config validation, schema validation errors (6 parametrized cases), and legacy format conversion are covered.
+- **init_cmd.py (4 tests):** Clean init, template init, overwrite protection, and force overwrite are tested.
 
-**main.py — 0 tests, 441 LOC.** All CLI commands (`up`, `down`, `build`, `logs`, `cli_agent`, `generate_prompt_targets`) are untested. The `up` command alone contains complex logic for port conflict detection, API key validation, and container orchestration.
+### Gaps and Recommendations
 
-**targets.py — 0 tests, 365 LOC.** The AST-based Python code parser for extracting prompt targets from Flask/FastAPI routes and Pydantic models is entirely untested. This is complex parsing logic prone to edge cases.
+#### Gap 7: `main.py` — 0 tests (441 LOC)
 
-**core.py — 0 tests, 234 LOC.** Docker container lifecycle management (start, stop, health check retry loop, timeout handling) is untested.
+The CLI entry point defines all Click commands (`up`, `down`, `build`, `logs`, `cli_agent`, `generate_prompt_targets`). None have tests. The `up` command has complex logic for port conflict detection, API key validation, and container orchestration.
 
-**docker_cli.py — 0 tests, 143 LOC.** All 7 Docker subprocess wrapper functions lack tests.
+**Recommendation:** Add tests using Click's `CliRunner`. Test `planoai up` with mocked Docker calls (validate argument handling, port conflict error messages, API key resolution). Test `planoai down` and `planoai build` for basic argument handling and error paths.
 
-**trace_cmd.py — 2 tests for 993 LOC.** Only gRPC server bind error handling is tested. The trace collection, OTEL processing, and trace analysis logic are untested.
+#### Gap 8: `targets.py` — 0 tests (365 LOC)
 
-### Recommendations
+AST-based Python code parser that extracts prompt targets from Flask/FastAPI routes and Pydantic models. This is complex parsing logic prone to edge cases with decorators, type annotations, and docstrings.
 
-6. **Add CLI command tests using Click's CliRunner.** Test `planoai up`, `planoai down`, and `planoai build` with mocked Docker operations. Verify argument validation, error messages, and exit codes.
+**Recommendation:** Create test fixtures with sample Flask/FastAPI app files and verify extracted prompt targets. Test edge cases: nested decorators, complex type hints (Optional, Union, List[dict]), missing docstrings, and unsupported patterns.
 
-7. **Add tests for targets.py.** Test Flask route extraction, FastAPI route extraction, Pydantic model field parsing, type annotation handling, and edge cases (nested decorators, complex type hints, missing docstrings).
+#### Gap 9: `core.py` and `docker_cli.py` — 0 tests (377 LOC combined)
 
-8. **Add tests for core.py with mocked subprocess/Docker calls.** Test the health check retry loop, container state transitions (not found → start, running → restart), timeout behavior, and port forwarding.
+Container lifecycle management and Docker subprocess wrappers are untested.
 
-9. **Add a shared conftest.py** with common fixtures for environment setup, temporary config files, and Docker mocking.
+**Recommendation:** Mock `subprocess.run` / `subprocess.Popen` and test the health check retry loop, container state transitions, and error handling. A shared `conftest.py` with Docker mock fixtures would benefit multiple test files.
+
+#### Gap 10: `trace_cmd.py` — 2 tests for 993 LOC
+
+Only gRPC bind error handling is tested. Trace collection, OTEL span processing, and trace analysis logic (the bulk of the module) are untested.
+
+**Recommendation:** Add tests for trace data parsing and the analysis/summarization logic. Mock gRPC server interactions for collection tests.
 
 ---
 
@@ -98,85 +147,100 @@ Below is a prioritized breakdown of gaps and recommendations.
 
 ### Current State
 
-**Zero test files. No test framework configured. No test scripts in any package.json.**
-
-The codebase has 70+ TypeScript/React source files across two Next.js apps (`apps/www`, `apps/katanemo-www`) and shared packages (`packages/ui`, `packages/shared-styles`).
-
-Quality tooling is limited to type checking (`tsc --noEmit`) and linting (Biome).
-
-### Notable Untested Code
-
-- **`apps/www/src/utils/asciiBuilder.ts`** (425 lines) — Pure utility functions for ASCII diagram generation (`calculateCenterPadding`, `createArrow`, `buildBox`, `fixDiagramSpacing`, `createFlowDiagram`). This is the most testable code in the frontend.
-- **`packages/ui/src/`** — 5 shared UI components (Navbar, Footer, Logo, Button, Dialog) used across apps.
-- **`apps/www/src/app/api/contact/route.ts`** — API route handler.
+**Zero test files. No test framework configured.** The codebase has 70+ TypeScript/React source files across two Next.js apps and shared packages. Quality tooling is limited to type checking and Biome linting.
 
 ### Recommendations
 
-10. **Set up Vitest** (or Jest) in the Turbo workspace with a root-level `test` script. Add `@testing-library/react` for component testing.
+#### Gap 11: No test infrastructure
 
-11. **Add unit tests for `asciiBuilder.ts`.** These are pure functions with clear inputs and outputs — ideal first candidates.
+**Recommendation:** Set up Vitest in the Turbo workspace. Add `@testing-library/react` for component testing. Priority candidates:
+- `apps/www/src/utils/asciiBuilder.ts` (425 lines of pure utility functions — ideal for unit tests)
+- `packages/ui/src/` (shared UI components reused across apps)
 
-12. **Add component tests for shared `packages/ui` components.** These are reused across apps and should have rendering and interaction tests.
-
-Note: The JS/TS apps are marketing websites, not the core proxy. Prioritize this lower than Rust and Python testing.
+**Note:** These are marketing websites, not the core proxy. Prioritize this lower than Rust and Python testing.
 
 ---
 
-## 4. E2E Tests (`tests/e2e/`)
+## 4. E2E and Integration Tests (`tests/`)
 
 ### Current State
 
-~40 active tests across 4 test files, covering:
-- OpenAI and Anthropic SDK integration (streaming and non-streaming)
-- Model alias routing and format translation
-- Function calling end-to-end flows
-- OpenAI Responses API (v1/responses)
-- Conversation state management (memory backend)
-- Cross-provider format translation (OpenAI client → Claude model, etc.)
+| Suite | Tests | Coverage |
+|-------|-------|----------|
+| tests/e2e/test_prompt_gateway.py | 12 | Prompt routing, guardrails, cross-provider SDK compatibility |
+| tests/e2e/test_model_alias_routing.py | 19 | Model aliases, format translation, streaming, error handling |
+| tests/e2e/test_openai_responses_api_client.py | 17 | Responses API across all providers (passthrough, chat completions, Bedrock, Anthropic) |
+| tests/e2e/test_openai_responses_api_client_with_state.py | 2 | Multi-turn conversation state (memory backend) |
+| tests/archgw/test_prompt_gateway.py | 3 | Prompt gateway with mock HTTP server (including 404/500 errors) |
+| tests/archgw/test_llm_gateway.py | 1 | LLM gateway with provider hints |
+| **Total** | **54** | |
 
-### Gaps
+**Additional manual tests:** 3 Hurl files and 6 REST files for exploratory/manual testing.
 
-**Error and failure scenarios are underrepresented.** Only 2 tests cover error handling (400 errors with aliases). There are no tests for:
-- Upstream provider unavailability or timeouts
-- Malformed request payloads
-- Rate limiting behavior
-- Invalid API keys
-- Partial stream failures or disconnections
+### Well-Tested Areas
 
-**Bedrock tests are all skipped.** 6 AWS Bedrock tests are marked as unreliable and skipped, leaving this provider path untested in CI.
+- **Cross-provider format translation:** OpenAI client → Claude model, Anthropic client → OpenAI model, etc. covered via model alias routing tests.
+- **OpenAI Responses API:** Comprehensive coverage across all 4 providers in both streaming and non-streaming modes, with and without tools.
+- **Prompt gateway routing:** Intent matching, parameter gathering, default targets, and jailbreak detection tested end-to-end.
+- **Error handling basics:** 400 errors with invalid aliases, nonexistent aliases, and unsupported parameters.
+- **archgw mock-server tests:** 404 and 500 upstream error handling tested with `pytest_httpserver`.
 
-**PostgreSQL state storage is untested.** State management E2E tests only use the memory backend. The PostgreSQL backend (which is the production path) has no E2E coverage.
+### Gaps and Recommendations
 
-**No concurrent request testing.** There are no tests validating behavior under concurrent load or verifying resource cleanup.
+#### Gap 12: Error and failure scenarios underrepresented
 
-**No configuration validation E2E tests.** Invalid config files, missing required fields, and config hot-reload are not tested end-to-end.
+Only a few tests cover error paths. Missing scenarios:
+- Upstream provider timeouts
+- 5xx errors from LLM providers during streaming
+- Malformed/incomplete streaming responses
+- Rate limiting behavior end-to-end
+- Invalid or expired API keys
 
-### Recommendations
+**Recommendation:** Add E2E error scenario tests. Use a mock upstream that returns errors/timeouts to test resilience behavior without depending on real provider availability.
 
-13. **Add E2E error scenario tests.** Test upstream timeouts, 5xx errors from providers, malformed responses, and rate limit responses. These are the scenarios most likely to cause production incidents.
+#### Gap 13: Bedrock tests unreliable
 
-14. **Fix or replace the skipped Bedrock tests.** If Bedrock is flaky, consider using a mock provider or stub that mimics the Bedrock binary event stream format.
+Several AWS Bedrock tests are marked as skipped/unreliable, reducing coverage of this provider path.
 
-15. **Add PostgreSQL state storage E2E tests.** Use a PostgreSQL container in Docker Compose and test state persistence, multi-turn retrieval, and state cleanup.
+**Recommendation:** Add a mock Bedrock endpoint (or use the archgw mock server pattern from `tests/archgw/`) that returns Bedrock-formatted responses including the binary event stream format. This would make Bedrock tests deterministic.
 
-16. **Add concurrent request tests.** Use `pytest-xdist` (already in dependencies) to validate behavior under parallel requests.
+#### Gap 14: PostgreSQL state storage not E2E tested
+
+State management E2E tests only use the memory backend. PostgreSQL is the production persistence backend.
+
+**Recommendation:** Add a PostgreSQL container to the E2E Docker Compose setup and add tests for multi-turn state persistence, session retrieval, and cleanup.
+
+#### Gap 15: No concurrent request / load tests
+
+There are no tests for behavior under concurrent requests or verifying proper resource cleanup.
+
+**Recommendation:** Add parallel request tests using `pytest-xdist` (already in dependencies) or `asyncio.gather`. Test for race conditions in state writes and resource cleanup.
+
+#### Gap 16: No configuration validation E2E tests
+
+Invalid configs, missing required fields, and misconfigured providers are not tested end-to-end.
+
+**Recommendation:** Add tests that pass intentionally invalid configs to `planoai up` and verify the error messages and exit behavior.
 
 ---
 
 ## Priority Summary
 
-| Priority | Area | Recommendation |
-|----------|------|----------------|
-| **P0** | Rust: llm_gateway | Add unit tests for streaming response handling (#1) |
-| **P0** | Rust: prompt_gateway | Add unit tests for filter logic and guardrails (#2) |
-| **P0** | Rust: brightstaff pipeline | Test the core pipeline processor (#3) |
-| **P1** | Rust: state persistence | Test memory and PostgreSQL backends (#4) |
-| **P1** | Rust: streaming transforms | Test hermesllm streaming modules (#5) |
-| **P1** | Python: CLI commands | Test main.py commands with CliRunner (#6) |
-| **P1** | Python: targets.py | Test AST parsing logic (#7) |
-| **P1** | E2E: error scenarios | Test upstream failures, timeouts, rate limits (#13) |
-| **P2** | Python: core.py | Test Docker lifecycle management (#8) |
-| **P2** | E2E: PostgreSQL state | Test production state backend (#15) |
-| **P2** | E2E: Bedrock | Fix skipped Bedrock tests (#14) |
-| **P3** | JS/TS: test setup | Set up Vitest, test utilities (#10, #11) |
-| **P3** | E2E: concurrency | Add parallel request tests (#16) |
+| Priority | Area | Gap | Recommendation |
+|----------|------|-----|----------------|
+| **P0** | Rust: llm_gateway | 0 tests, 1,399 LOC | Extract logic from WASM, add unit tests (#1) |
+| **P0** | Rust: prompt_gateway | 4 tests, 1,717 LOC | Test intent matching, prompt guards, filter lifecycle (#2) |
+| **P1** | Rust: handler endpoints | llm.rs, agent_chat_completions.rs untested | Add handler-level tests with mockito (#3) |
+| **P1** | Rust: streaming transforms | to_openai_streaming, to_anthropic_streaming, bedrock binary | Add streaming transform unit tests (#4) |
+| **P1** | Rust: common utilities | routing.rs, http.rs, prompt_guard.rs | Add tests for routing decisions and HTTP utils (#5) |
+| **P1** | Python: main.py | 0 tests, 441 LOC | Test CLI commands with CliRunner (#7) |
+| **P1** | Python: targets.py | 0 tests, 365 LOC | Test AST parsing with sample app fixtures (#8) |
+| **P1** | E2E: error scenarios | Few error path tests | Add timeout/5xx/rate-limit E2E tests (#12) |
+| **P2** | Rust: state edge cases | No concurrent/expiration tests | Add async edge case tests (#6) |
+| **P2** | Python: core.py/docker_cli.py | 0 tests, 377 LOC | Mock subprocess, test lifecycle (#9) |
+| **P2** | Python: trace_cmd.py | 2 tests for 993 LOC | Test trace processing logic (#10) |
+| **P2** | E2E: Bedrock | Tests skipped as unreliable | Use mock Bedrock endpoint (#13) |
+| **P2** | E2E: PostgreSQL state | Only memory backend tested | Add PG to Docker Compose (#14) |
+| **P3** | JS/TS | 0 tests, no framework | Set up Vitest, test asciiBuilder.ts (#11) |
+| **P3** | E2E: concurrency | No parallel request tests | Add concurrent request tests (#15) |
+| **P3** | E2E: config validation | No invalid config tests | Test error handling for bad configs (#16) |
