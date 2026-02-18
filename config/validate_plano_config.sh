@@ -5,7 +5,7 @@ failed_files=()
 for file in $(find . -name config.yaml -o -name plano_config_full_reference.yaml); do
   echo "Validating ${file}..."
   touch $(pwd)/${file}_rendered
-  if ! docker run --rm -v "$(pwd)/${file}:/app/plano_config.yaml:ro" -v "$(pwd)/${file}_rendered:/app/plano_config_rendered.yaml:rw" --entrypoint /bin/sh ${PLANO_DOCKER_IMAGE:-katanemo/plano:0.4.7} -c "python -m planoai.config_generator" 2>&1 > /dev/null ; then
+  if ! docker run --rm -v "$(pwd)/${file}:/app/plano_config.yaml:ro" -v "$(pwd)/${file}_rendered:/app/plano_config_rendered.yaml:rw" --entrypoint /bin/sh ${PLANO_DOCKER_IMAGE:-katanemo/plano:0.4.8} -c "python -m planoai.config_generator" 2>&1 > /dev/null ; then
     echo "Validation failed for $file"
     failed_files+=("$file")
   fi
