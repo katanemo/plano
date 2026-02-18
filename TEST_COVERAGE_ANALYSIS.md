@@ -224,6 +224,234 @@ Invalid configs, missing required fields, and misconfigured providers are not te
 
 ---
 
+## 5. Test Organization: Current State and Restructuring Proposals
+
+### Current Layout
+
+```
+plano/
+├── crates/                          # Rust — all tests inline
+│   ├── brightstaff/src/*.rs         #   #[cfg(test)] mod tests at bottom of source files
+│   ├── common/src/*.rs              #   same pattern
+│   ├── hermesllm/src/*.rs           #   same pattern
+│   ├── llm_gateway/src/*.rs         #   (no tests)
+│   └── prompt_gateway/src/*.rs      #   (deprecated)
+├── cli/test/                        # Python CLI unit tests
+│   ├── test_config_generator.py
+│   ├── test_init.py
+│   ├── test_trace_cmd.py
+│   └── test_version_check.py
+├── tests/
+│   ├── archgw/                      # Integration tests (mock HTTP server, no API keys needed)
+│   │   ├── test_prompt_gateway.py
+│   │   ├── test_llm_gateway.py
+│   │   ├── common.py
+│   │   ├── common.sh
+│   │   ├── config.yaml
+│   │   ├── docker-compose.yaml
+│   │   └── pyproject.toml           # separate dependency management
+│   ├── e2e/                         # E2E tests (requires Docker + real API keys)
+│   │   ├── test_prompt_gateway.py
+│   │   ├── test_model_alias_routing.py
+│   │   ├── test_openai_responses_api_client.py
+│   │   ├── test_openai_responses_api_client_with_state.py
+│   │   ├── common.py
+│   │   ├── common_scripts.sh
+│   │   ├── run_e2e_tests.sh         # master orchestrator
+│   │   ├── run_prompt_gateway_tests.sh
+│   │   ├── run_model_alias_tests.sh
+│   │   ├── run_responses_state_tests.sh
+│   │   ├── docker-compose.yaml
+│   │   └── pyproject.toml           # separate dependency management
+│   ├── hurl/                        # Manual HTTP tests (Hurl format)
+│   └── rest/                        # Manual HTTP tests (VS Code REST Client)
+```
+
+### Problems With the Current Organization
+
+**1. Three separate Python dependency environments.** `cli/test/`, `tests/e2e/`, and `tests/archgw/` each have their own `pyproject.toml` and `uv.lock`. This means three `uv sync` calls, three separate dependency graphs, and duplicated dependencies (`pytest`, `requests`, `deepdiff`). Updating a shared dependency means touching three files.
+
+**2. Duplicated test infrastructure.** `tests/e2e/common.py` and `tests/archgw/common.py` define overlapping constants (`PROMPT_GATEWAY_ENDPOINT`, `LLM_GATEWAY_ENDPOINT`, test fixture data). Changes to endpoint ports or test data need to be mirrored across both files.
+
+**3. No conftest.py files.** Neither E2E nor integration tests use `conftest.py` for shared fixtures. Common setup (endpoint URLs, test data factories, health-check waits) is imported via `common.py` modules or inlined. This misses pytest's fixture scoping and teardown capabilities.
+
+**4. Shell-script-orchestrated E2E.** The E2E suite is driven by bash scripts (`run_e2e_tests.sh`, `run_prompt_gateway_tests.sh`, etc.) that start/stop Docker containers, install the CLI, and invoke pytest. This makes it hard to run individual E2E tests locally, and the lifecycle management (container start → test → container stop → reconfigure → restart → test) is fragile. A failure in one suite can leave containers running.
+
+**5. `tests/archgw/` naming is stale.** The directory name `archgw` references the project's old name (Arch Gateway). It should reflect its purpose (mock-based integration testing).
+
+**6. No Rust integration test directory.** All Rust tests are inline unit tests (`#[cfg(test)] mod tests`). There is no `crates/*/tests/` directory for integration tests that exercise multiple modules together. The only exception is `brightstaff/src/handlers/integration_tests.rs`, which is a source file masquerading as an integration test.
+
+**7. No shared Rust test utilities.** Test helper functions (creating mock configs, building test requests/responses, constructing state objects) are duplicated across inline test modules. There is no `testutils` crate or shared test module.
+
+### Restructuring Proposals
+
+#### Proposal A: Unify Python test dependencies
+
+Consolidate the three separate `pyproject.toml` files into a single test workspace, or at minimum extract shared dependencies into a common base.
+
+**Suggested approach:** Create a single `tests/pyproject.toml` that covers both `archgw/` and `e2e/` suites, with dependency groups:
+
+```toml
+[project]
+name = "plano-tests"
+dependencies = [
+    "pytest>=8.3",
+    "requests>=2.29",
+    "deepdiff>=8.0",
+    "pytest-retry>=1.6",
+    "pytest-xdist>=3.5",
+]
+
+[project.optional-dependencies]
+e2e = ["anthropic", "openai"]         # only needed for real-provider E2E
+integration = ["pytest-httpserver"]    # only needed for mock-server tests
+```
+
+CLI tests (`cli/test/`) can stay separate since they live within the CLI package. The E2E and integration tests should share a single dependency environment.
+
+#### Proposal B: Replace shell orchestration with pytest fixtures
+
+Replace `run_e2e_tests.sh` and per-suite shell scripts with pytest session-scoped fixtures that manage Docker container lifecycle:
+
+```python
+# tests/e2e/conftest.py
+import pytest, subprocess, time
+
+@pytest.fixture(scope="session")
+def plano_container(request):
+    config = request.param  # e.g., "config_model_alias.yaml"
+    subprocess.run(["planoai", "up", config, "--detach"], check=True)
+    _wait_for_healthy("http://localhost:12000/healthz")
+    yield
+    subprocess.run(["planoai", "down"], check=True)
+```
+
+Benefits:
+- Run individual tests with `pytest tests/e2e/test_model_alias_routing.py` without needing a shell wrapper.
+- pytest handles cleanup on failure (fixture teardown runs even on test errors).
+- Parametrize the container fixture to test multiple configs without separate scripts.
+- Compatible with `pytest-xdist` for parallel suite execution.
+
+#### Proposal C: Consolidate shared Python test fixtures
+
+Create a `tests/conftest.py` (or `tests/shared/`) with common fixtures shared by both `archgw/` and `e2e/`:
+
+```
+tests/
+├── conftest.py              # shared fixtures: endpoints, test data factories, health-check helpers
+├── integration/             # renamed from archgw/
+│   ├── conftest.py          # integration-specific fixtures (pytest-httpserver)
+│   ├── test_llm_gateway.py
+│   └── docker-compose.yaml
+├── e2e/
+│   ├── conftest.py          # e2e-specific fixtures (container lifecycle)
+│   ├── test_model_alias_routing.py
+│   ├── test_openai_responses_api_client.py
+│   ├── test_openai_responses_api_client_with_state.py
+│   └── docker-compose.yaml
+└── configs/                 # test config YAML files shared across suites
+    ├── model_alias_routing.yaml
+    ├── memory_state_v1_responses.yaml
+    └── ...
+```
+
+Key changes:
+- Rename `archgw/` → `integration/` to reflect its purpose.
+- Promote shared constants and test data from `common.py` into `conftest.py` fixtures.
+- Remove deprecated prompt_gateway test files from both suites.
+- Centralize test config YAML files in `tests/configs/`.
+
+#### Proposal D: Add a Rust `testutils` crate
+
+Create a workspace-internal crate for shared test utilities:
+
+```
+crates/
+├── testutils/               # new crate, #[cfg(test)] only
+│   ├── Cargo.toml
+│   └── src/
+│       ├── lib.rs
+│       ├── fixtures.rs      # factory functions for Configuration, OpenAiChatCompletionRequest, etc.
+│       ├── mock_server.rs   # wrappers around mockito for common provider mocking patterns
+│       └── assertions.rs    # custom assert helpers for comparing LLM responses
+```
+
+Then in other crates:
+```toml
+[dev-dependencies]
+testutils = { path = "../testutils" }
+```
+
+This eliminates duplication of test helper functions across `brightstaff`, `hermesllm`, and `common` inline test modules.
+
+#### Proposal E: Add Rust integration tests for brightstaff
+
+Move `integration_tests.rs` out of `src/handlers/` and into a proper `tests/` directory:
+
+```
+crates/brightstaff/
+├── src/
+│   └── handlers/
+│       └── (no more integration_tests.rs here)
+└── tests/                   # Cargo integration test directory
+    ├── pipeline_flow.rs     # AgentSelector → PipelineProcessor → ResponseHandler
+    ├── state_roundtrip.rs   # write state → read state across memory/PG backends
+    └── routing_decisions.rs # config → routing decision validation
+```
+
+Cargo automatically discovers `tests/*.rs` as integration tests. They compile as separate binaries and test the crate's public API, which is the right boundary for these multi-module tests.
+
+#### Proposal F: Add pytest markers for test categorization
+
+Currently there is no way to selectively run tests by category. Add markers:
+
+```python
+# tests/conftest.py
+def pytest_configure(config):
+    config.addinivalue_line("markers", "streaming: tests that exercise streaming responses")
+    config.addinivalue_line("markers", "bedrock: tests that require/mock AWS Bedrock")
+    config.addinivalue_line("markers", "state: tests that exercise state persistence")
+    config.addinivalue_line("markers", "error_handling: tests for error/failure paths")
+    config.addinivalue_line("markers", "slow: tests that take >10s")
+```
+
+Then annotate tests:
+```python
+@pytest.mark.streaming
+@pytest.mark.bedrock
+def test_openai_client_streaming_with_bedrock():
+    ...
+```
+
+This enables targeted test runs: `pytest -m "streaming and not bedrock"`, `pytest -m error_handling`, etc.
+
+#### Proposal G: Standardize CI test jobs
+
+The current CI has 6+ separate jobs for Python tests, each with its own setup, Docker build, and teardown. Consolidate into a clearer structure:
+
+| Job | What it runs | Docker needed | API keys needed |
+|-----|-------------|---------------|-----------------|
+| `rust-unit` | `cargo test --lib` | No | No |
+| `python-cli-unit` | `cd cli && uv run pytest` | No | No |
+| `integration` | `cd tests/integration && uv run pytest` | Yes (compose) | No |
+| `e2e` | `cd tests/e2e && uv run pytest` | Yes (plano container) | Yes |
+
+This reduces the current 6+ Python-related jobs to 3, with clearer separation of what requires external dependencies.
+
+### Proposal Priority
+
+| Proposal | Effort | Impact | Priority |
+|----------|--------|--------|----------|
+| **C: Consolidate fixtures + rename archgw/** | Low | High — reduces duplication, clearer naming | Do first |
+| **F: Add pytest markers** | Low | Medium — enables selective test runs | Do first |
+| **B: Replace shell orchestration with fixtures** | Medium | High — enables local E2E dev, better cleanup | Do second |
+| **A: Unify Python test dependencies** | Medium | Medium — simplifies maintenance | Do second |
+| **D: Rust testutils crate** | Medium | Medium — enables faster test writing | Do with new Rust tests |
+| **E: Rust integration test directory** | Low | Medium — proper Cargo conventions | Do with new Rust tests |
+| **G: Consolidate CI jobs** | Medium | Medium — faster CI, simpler config | Do after A-C |
+
+---
+
 ## Priority Summary
 
 | Priority | Area | Gap | Recommendation |
