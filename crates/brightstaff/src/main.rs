@@ -202,6 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             agents_list,
                             listeners,
+                            llm_providers,
                         )
                         .with_context(parent_cx)
                         .await;

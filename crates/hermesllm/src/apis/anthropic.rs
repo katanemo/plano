@@ -102,6 +102,7 @@ pub struct McpServer {
 #[skip_serializing_none]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MessagesRequest {
+    #[serde(default)]
     pub model: String,
     pub messages: Vec<MessagesMessage>,
     pub max_tokens: u32,

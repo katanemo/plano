@@ -150,9 +150,30 @@ async fn llm_chat_inner(
         Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
     );
 
+    // If model is not specified in the request, resolve from default provider
+    let model_from_request = client_request.model().to_string();
+    let model_from_request = if model_from_request.is_empty() {
+        match llm_providers.read().await.default() {
+            Some(default_provider) => {
+                let default_model = default_provider.name.clone();
+                info!(default_model = %default_model, "no model specified in request, using default provider");
+                client_request.set_model(default_model.clone());
+                default_model
+            }
+            None => {
+                let err_msg = "No model specified in request and no default provider configured";
+                warn!("{}", err_msg);
+                let mut bad_request = Response::new(full(err_msg.to_string()));
+                *bad_request.status_mut() = StatusCode::BAD_REQUEST;
+                return Ok(bad_request);
+            }
+        }
+    } else {
+        model_from_request
+    };
+
     // Model alias resolution: update model field in client_request immediately
     // This ensures all downstream objects use the resolved model
-    let model_from_request = client_request.model().to_string();
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
