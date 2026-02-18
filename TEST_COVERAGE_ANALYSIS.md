@@ -4,7 +4,9 @@
 
 ## Executive Summary
 
-The Plano codebase has **~370 automated tests**: ~297 Rust unit tests, ~65 Python tests (29 CLI + 50 E2E + 4 archgw integration), 10 Hurl/REST manual test files, and zero JS/TS tests. Coverage is strong in the LLM translation layer (hermesllm) and behavioral signals (brightstaff/signals), moderate in state management and configuration, and weak in the WASM gateway plugins and several Python CLI modules.
+The Plano codebase has **~370 automated tests**: ~297 Rust unit tests, ~65 Python tests (29 CLI + 50 E2E + 4 archgw integration), 10 Hurl/REST manual test files, and zero JS/TS tests. Coverage is strong in the LLM translation layer (hermesllm) and behavioral signals (brightstaff/signals), moderate in state management and configuration, and weak in the `llm_gateway` WASM plugin and several Python CLI modules.
+
+**Note:** The `prompt_gateway` crate is deprecated and excluded from recommendations.
 
 Below is a detailed breakdown by component with prioritized improvement recommendations.
 
@@ -19,7 +21,7 @@ Below is a detailed breakdown by component with prioritized improvement recommen
 | hermesllm | 148 | 21 | Good — broad coverage of provider translation |
 | brightstaff | 126 | 11 | Good — signals/state/routing well tested; handler endpoints less so |
 | common | 36 | 10 | Moderate — core utilities covered; some gaps |
-| prompt_gateway | 4 | 2 | Weak — WASM filter mostly untested |
+| prompt_gateway | 4 | 2 | Deprecated — not prioritized for new tests |
 | llm_gateway | 0 | 0 | None — WASM filter completely untested |
 | **Total** | **~314** | **44** | |
 
@@ -45,13 +47,11 @@ This WASM filter handles all LLM request/response processing and streaming. `str
 
 **Recommendation:** Extract core logic from the WASM host context into pure, testable functions. Test streaming chunk reassembly, header manipulation, error response construction, and the filter lifecycle. Consider a thin WASM shim over well-tested logic modules.
 
-#### Gap 2: `prompt_gateway` crate — 4 tests (1,717 LOC)
+#### ~~Gap 2: `prompt_gateway` crate~~ — DEPRECATED (skipped)
 
-The WASM prompt filter has tests only in `tools.rs` (3 tests) and `stream_context.rs` (1 test). The filter/HTTP context lifecycle (`filter_context.rs`, `http_context.rs`), prompt guard logic, and metrics collection are untested.
+The `prompt_gateway` crate is deprecated. Investing in new tests for this crate is not recommended.
 
-**Recommendation:** Add tests for intent matching and prompt guard/jailbreak detection in `stream_context.rs`. Test `http_context.rs` request parsing and response construction. Same architectural approach as llm_gateway — separate testable logic from WASM host bindings.
-
-#### Gap 3: brightstaff handler endpoints — limited coverage
+#### Gap 2: brightstaff handler endpoints — limited coverage
 
 Several handler modules have no unit tests:
 - `handlers/llm.rs` (553 LOC) — LLM chat handler
@@ -167,11 +167,11 @@ Only gRPC bind error handling is tested. Trace collection, OTEL span processing,
 
 | Suite | Tests | Coverage |
 |-------|-------|----------|
-| tests/e2e/test_prompt_gateway.py | 12 | Prompt routing, guardrails, cross-provider SDK compatibility |
+| tests/e2e/test_prompt_gateway.py | 12 | Prompt routing, guardrails, cross-provider SDK compatibility *(deprecated path)* |
 | tests/e2e/test_model_alias_routing.py | 19 | Model aliases, format translation, streaming, error handling |
 | tests/e2e/test_openai_responses_api_client.py | 17 | Responses API across all providers (passthrough, chat completions, Bedrock, Anthropic) |
 | tests/e2e/test_openai_responses_api_client_with_state.py | 2 | Multi-turn conversation state (memory backend) |
-| tests/archgw/test_prompt_gateway.py | 3 | Prompt gateway with mock HTTP server (including 404/500 errors) |
+| tests/archgw/test_prompt_gateway.py | 3 | Prompt gateway with mock HTTP server *(deprecated path)* |
 | tests/archgw/test_llm_gateway.py | 1 | LLM gateway with provider hints |
 | **Total** | **54** | |
 
@@ -229,18 +229,18 @@ Invalid configs, missing required fields, and misconfigured providers are not te
 | Priority | Area | Gap | Recommendation |
 |----------|------|-----|----------------|
 | **P0** | Rust: llm_gateway | 0 tests, 1,399 LOC | Extract logic from WASM, add unit tests (#1) |
-| **P0** | Rust: prompt_gateway | 4 tests, 1,717 LOC | Test intent matching, prompt guards, filter lifecycle (#2) |
-| **P1** | Rust: handler endpoints | llm.rs, agent_chat_completions.rs untested | Add handler-level tests with mockito (#3) |
-| **P1** | Rust: streaming transforms | to_openai_streaming, to_anthropic_streaming, bedrock binary | Add streaming transform unit tests (#4) |
-| **P1** | Rust: common utilities | routing.rs, http.rs, prompt_guard.rs | Add tests for routing decisions and HTTP utils (#5) |
-| **P1** | Python: main.py | 0 tests, 441 LOC | Test CLI commands with CliRunner (#7) |
-| **P1** | Python: targets.py | 0 tests, 365 LOC | Test AST parsing with sample app fixtures (#8) |
-| **P1** | E2E: error scenarios | Few error path tests | Add timeout/5xx/rate-limit E2E tests (#12) |
-| **P2** | Rust: state edge cases | No concurrent/expiration tests | Add async edge case tests (#6) |
-| **P2** | Python: core.py/docker_cli.py | 0 tests, 377 LOC | Mock subprocess, test lifecycle (#9) |
-| **P2** | Python: trace_cmd.py | 2 tests for 993 LOC | Test trace processing logic (#10) |
-| **P2** | E2E: Bedrock | Tests skipped as unreliable | Use mock Bedrock endpoint (#13) |
-| **P2** | E2E: PostgreSQL state | Only memory backend tested | Add PG to Docker Compose (#14) |
-| **P3** | JS/TS | 0 tests, no framework | Set up Vitest, test asciiBuilder.ts (#11) |
-| **P3** | E2E: concurrency | No parallel request tests | Add concurrent request tests (#15) |
-| **P3** | E2E: config validation | No invalid config tests | Test error handling for bad configs (#16) |
+| **P0** | Rust: handler endpoints | llm.rs, agent_chat_completions.rs untested | Add handler-level tests with mockito (#2) |
+| **P1** | Rust: streaming transforms | to_openai_streaming, to_anthropic_streaming, bedrock binary | Add streaming transform unit tests (#3) |
+| **P1** | Rust: common utilities | routing.rs, http.rs, prompt_guard.rs | Add tests for routing decisions and HTTP utils (#4) |
+| **P1** | Python: main.py | 0 tests, 441 LOC | Test CLI commands with CliRunner (#6) |
+| **P1** | Python: targets.py | 0 tests, 365 LOC | Test AST parsing with sample app fixtures (#7) |
+| **P1** | E2E: error scenarios | Few error path tests | Add timeout/5xx/rate-limit E2E tests (#11) |
+| **P2** | Rust: state edge cases | No concurrent/expiration tests | Add async edge case tests (#5) |
+| **P2** | Python: core.py/docker_cli.py | 0 tests, 377 LOC | Mock subprocess, test lifecycle (#8) |
+| **P2** | Python: trace_cmd.py | 2 tests for 993 LOC | Test trace processing logic (#9) |
+| **P2** | E2E: Bedrock | Tests skipped as unreliable | Use mock Bedrock endpoint (#12) |
+| **P2** | E2E: PostgreSQL state | Only memory backend tested | Add PG to Docker Compose (#13) |
+| **P3** | JS/TS | 0 tests, no framework | Set up Vitest, test asciiBuilder.ts (#10) |
+| **P3** | E2E: concurrency | No parallel request tests | Add concurrent request tests (#14) |
+| **P3** | E2E: config validation | No invalid config tests | Test error handling for bad configs (#15) |
+| ~~skip~~ | ~~Rust: prompt_gateway~~ | ~~4 tests, 1,717 LOC~~ | ~~Deprecated — do not invest in new tests~~ |
