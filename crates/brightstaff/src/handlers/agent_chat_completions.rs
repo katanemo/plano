@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use bytes::Bytes;
+use common::configuration::SpanAttributes;
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
@@ -17,7 +18,7 @@ use super::agent_selector::{AgentSelectionError, AgentSelector};
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
 use super::response_handler::ResponseHandler;
 use crate::router::plano_orchestrator::OrchestratorService;
-use crate::tracing::{operation_component, set_service_name};
+use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
@@ -40,7 +41,10 @@ pub async fn agent_chat(
     _: String,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    span_attributes: Arc<Option<SpanAttributes>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let custom_attrs =
+        collect_custom_trace_attributes(request.headers(), span_attributes.as_ref().as_ref());
     // Extract request_id from headers or generate a new one
     let request_id: String = match request
         .headers()
@@ -72,6 +76,7 @@ pub async fn agent_chat(
             agents_list,
             listeners,
             request_id,
+            custom_attrs,
         )
         .await
         {
@@ -156,6 +161,7 @@ async fn handle_agent_chat_inner(
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
     request_id: String,
+    custom_attrs: std::collections::HashMap<String, String>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(orchestrator_service);
@@ -178,6 +184,9 @@ async fn handle_agent_chat_inner(
 
     get_active_span(|span| {
         span.update_name(listener.name.to_string());
+        for (key, value) in &custom_attrs {
+            span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+        }
     });
 
     info!(listener = %listener.name, "handling request");
@@ -323,6 +332,9 @@ async fn handle_agent_chat_inner(
             set_service_name(operation_component::AGENT);
             get_active_span(|span| {
                 span.update_name(format!("{} /v1/chat/completions", agent_name));
+                for (key, value) in &custom_attrs {
+                    span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+                }
             });
 
             pipeline_processor

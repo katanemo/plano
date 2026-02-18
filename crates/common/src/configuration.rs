@@ -92,6 +92,14 @@ pub struct Tracing {
     pub trace_arch_internal: Option<bool>,
     pub random_sampling: Option<u32>,
     pub opentracing_grpc_endpoint: Option<String>,
+    pub span_attributes: Option<SpanAttributes>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SpanAttributes {
+    pub header_prefixes: Option<Vec<String>>,
+    #[serde(rename = "static")]
+    pub static_attributes: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]

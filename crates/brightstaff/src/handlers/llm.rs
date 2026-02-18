@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::ModelAlias;
+use common::configuration::{ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -28,7 +28,9 @@ use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
-use crate::tracing::{llm as tracing_llm, operation_component, set_service_name};
+use crate::tracing::{
+    collect_custom_trace_attributes, llm as tracing_llm, operation_component, set_service_name,
+};
 
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
@@ -42,6 +44,7 @@ pub async fn llm_chat(
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
+    span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
@@ -54,6 +57,8 @@ pub async fn llm_chat(
         Some(id) => id,
         None => uuid::Uuid::new_v4().to_string(),
     };
+    let custom_attrs =
+        collect_custom_trace_attributes(&request_headers, span_attributes.as_ref().as_ref());
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -75,6 +80,7 @@ pub async fn llm_chat(
         full_qualified_llm_provider_url,
         model_aliases,
         llm_providers,
+        custom_attrs,
         state_storage,
         request_id,
         request_path,
@@ -91,6 +97,7 @@ async fn llm_chat_inner(
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
+    custom_attrs: HashMap<String, String>,
     state_storage: Option<Arc<dyn StateStorage>>,
     request_id: String,
     request_path: String,
@@ -98,6 +105,11 @@ async fn llm_chat_inner(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
+    get_active_span(|span| {
+        for (key, value) in &custom_attrs {
+            span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+        }
+    });
 
     // Extract or generate traceparent - this establishes the trace context for all spans
     let traceparent: String = match request_headers

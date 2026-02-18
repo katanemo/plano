@@ -1,8 +1,12 @@
 mod constants;
+mod custom_attributes;
 mod service_name_exporter;
 
 pub use constants::{
     error, http, llm, operation_component, routing, signals, OperationNameBuilder,
+};
+pub use custom_attributes::{
+    append_span_attributes, collect_custom_trace_attributes, extract_custom_trace_attributes,
 };
 pub use service_name_exporter::{ServiceNameOverrideExporter, SERVICE_NAME_OVERRIDE_KEY};
 
