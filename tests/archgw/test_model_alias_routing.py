@@ -131,7 +131,9 @@ def test_anthropic_client_with_alias_streaming(httpserver: HTTPServer):
 
 def test_openai_client_with_claude_model(httpserver: HTTPServer):
     """OpenAI client → Claude model → gateway routes to Anthropic upstream → transforms response to OpenAI format"""
-    captured = setup_anthropic_mock(httpserver, content="Hello from Claude via OpenAI client!")
+    captured = setup_anthropic_mock(
+        httpserver, content="Hello from Claude via OpenAI client!"
+    )
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     completion = client.chat.completions.create(
@@ -140,7 +142,9 @@ def test_openai_client_with_claude_model(httpserver: HTTPServer):
         messages=[{"role": "user", "content": "Hello"}],
     )
 
-    assert completion.choices[0].message.content == "Hello from Claude via OpenAI client!"
+    assert (
+        completion.choices[0].message.content == "Hello from Claude via OpenAI client!"
+    )
     assert len(captured) == 1
     assert captured[0]["model"] == "claude-sonnet-4-20250514"
 
@@ -167,7 +171,9 @@ def test_openai_client_with_claude_model_streaming(httpserver: HTTPServer):
 
 def test_anthropic_client_with_openai_model(httpserver: HTTPServer):
     """Anthropic client → OpenAI model (gpt-4o-mini) → OpenAI upstream → transforms response to Anthropic format"""
-    captured = setup_openai_chat_mock(httpserver, content="Hello from GPT via Anthropic!")
+    captured = setup_openai_chat_mock(
+        httpserver, content="Hello from GPT via Anthropic!"
+    )
 
     client = anthropic.Anthropic(api_key="test-key", base_url=LLM_GATEWAY_BASE)
     message = client.messages.create(
@@ -257,7 +263,10 @@ def test_assistant_message_with_null_content_and_tool_calls(httpserver: HTTPServ
                     {
                         "id": "call_test123",
                         "type": "function",
-                        "function": {"name": "get_weather", "arguments": '{"city": "Seattle"}'},
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city": "Seattle"}',
+                        },
                     }
                 ],
             },
@@ -329,7 +338,9 @@ def test_anthropic_thinking_mode_streaming(httpserver: HTTPServer):
         messages=[{"role": "user", "content": "What is 2+2?"}],
     ) as stream:
         for event in stream:
-            if event.type == "content_block_start" and getattr(event, "content_block", None):
+            if event.type == "content_block_start" and getattr(
+                event, "content_block", None
+            ):
                 if getattr(event.content_block, "type", None) == "thinking":
                     thinking_block_started = True
             if event.type == "content_block_delta" and getattr(event, "delta", None):

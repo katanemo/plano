@@ -58,9 +58,13 @@ def test_responses_api_streaming_passthrough(httpserver: HTTPServer):
     text_chunks = []
     final_message = None
     for event in stream:
-        if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+        if getattr(event, "type", None) == "response.output_text.delta" and getattr(
+            event, "delta", None
+        ):
             text_chunks.append(event.delta)
-        if getattr(event, "type", None) == "response.completed" and getattr(event, "response", None):
+        if getattr(event, "type", None) == "response.completed" and getattr(
+            event, "response", None
+        ):
             final_message = event.response
 
     full_content = "".join(text_chunks)
@@ -72,7 +76,9 @@ def test_responses_api_with_tools_passthrough(httpserver: HTTPServer):
     """Responses API with tools for OpenAI model"""
     setup_responses_api_mock(httpserver, content="Tool response")
 
-    client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0)
+    client = openai.OpenAI(
+        api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0
+    )
     tools = [
         {
             "type": "function",
@@ -100,7 +106,9 @@ def test_responses_api_streaming_with_tools_passthrough(httpserver: HTTPServer):
     """Responses API streaming with tools for OpenAI model"""
     setup_responses_api_mock(httpserver, content="Streamed tool response")
 
-    client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0)
+    client = openai.OpenAI(
+        api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0
+    )
     tools = [
         {
             "type": "function",
@@ -127,7 +135,9 @@ def test_responses_api_streaming_with_tools_passthrough(httpserver: HTTPServer):
         etype = getattr(event, "type", None)
         if etype == "response.output_text.delta" and getattr(event, "delta", None):
             text_chunks.append(event.delta)
-        if etype == "response.function_call_arguments.delta" and getattr(event, "delta", None):
+        if etype == "response.function_call_arguments.delta" and getattr(
+            event, "delta", None
+        ):
             tool_calls.append(event.delta)
 
     assert text_chunks or tool_calls, "Expected streamed text or tool call deltas"
@@ -140,7 +150,9 @@ def test_responses_api_streaming_with_tools_passthrough(httpserver: HTTPServer):
 
 def test_responses_api_non_streaming_upstream_anthropic(httpserver: HTTPServer):
     """Responses API with Anthropic model → translated to /v1/chat/completions"""
-    captured = setup_openai_chat_mock(httpserver, content="Hello from Claude via Responses!")
+    captured = setup_openai_chat_mock(
+        httpserver, content="Hello from Claude via Responses!"
+    )
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     resp = client.responses.create(
@@ -165,7 +177,9 @@ def test_responses_api_streaming_upstream_anthropic(httpserver: HTTPServer):
 
     text_chunks = []
     for event in stream:
-        if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+        if getattr(event, "type", None) == "response.output_text.delta" and getattr(
+            event, "delta", None
+        ):
             text_chunks.append(event.delta)
 
     assert len(text_chunks) > 0, "Should have received streaming text deltas"
@@ -202,7 +216,9 @@ def test_responses_api_streaming_with_tools_upstream_anthropic(httpserver: HTTPS
     """Responses API streaming with tools routed to Anthropic"""
     setup_openai_chat_mock(httpserver, content="Streamed tool via Claude")
 
-    client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0)
+    client = openai.OpenAI(
+        api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1", max_retries=0
+    )
     tools = [
         {
             "type": "function",
@@ -229,7 +245,9 @@ def test_responses_api_streaming_with_tools_upstream_anthropic(httpserver: HTTPS
         etype = getattr(event, "type", None)
         if etype == "response.output_text.delta" and getattr(event, "delta", None):
             text_chunks.append(event.delta)
-        if etype == "response.function_call_arguments.delta" and getattr(event, "delta", None):
+        if etype == "response.function_call_arguments.delta" and getattr(
+            event, "delta", None
+        ):
             tool_calls.append(event.delta)
 
     assert text_chunks or tool_calls, "Expected streamed text or tool call deltas"
@@ -254,7 +272,9 @@ def test_responses_api_mixed_content_types(httpserver: HTTPServer):
             },
             {
                 "role": "user",
-                "content": [{"type": "input_text", "text": "What is the weather in Seattle"}],
+                "content": [
+                    {"type": "input_text", "text": "What is the weather in Seattle"}
+                ],
             },
         ],
     )
@@ -278,7 +298,9 @@ def test_conversation_state_management_two_turn(httpserver: HTTPServer):
     # For non-OpenAI models, Responses API translates to /v1/chat/completions
     # But for OpenAI models, it uses /v1/responses directly
     # The state management is handled by brightstaff regardless of upstream
-    captured = setup_openai_chat_mock(httpserver, content="I remember your name is Alice!")
+    captured = setup_openai_chat_mock(
+        httpserver, content="I remember your name is Alice!"
+    )
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
 
@@ -306,7 +328,9 @@ def test_conversation_state_management_two_turn(httpserver: HTTPServer):
     second_request = captured[1]
     messages = second_request.get("messages", [])
     # Should have messages from both turns (user + assistant from turn 1, plus user from turn 2)
-    assert len(messages) >= 3, f"Expected >= 3 messages in second turn, got {len(messages)}: {messages}"
+    assert (
+        len(messages) >= 3
+    ), f"Expected >= 3 messages in second turn, got {len(messages)}: {messages}"
 
 
 def test_conversation_state_management_two_turn_streaming(httpserver: HTTPServer):
@@ -325,9 +349,13 @@ def test_conversation_state_management_two_turn_streaming(httpserver: HTTPServer
     text_chunks_1 = []
     response_id_1 = None
     for event in stream1:
-        if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+        if getattr(event, "type", None) == "response.output_text.delta" and getattr(
+            event, "delta", None
+        ):
             text_chunks_1.append(event.delta)
-        if getattr(event, "type", None) == "response.completed" and getattr(event, "response", None):
+        if getattr(event, "type", None) == "response.completed" and getattr(
+            event, "response", None
+        ):
             response_id_1 = event.response.id
 
     assert response_id_1 is not None
@@ -344,9 +372,13 @@ def test_conversation_state_management_two_turn_streaming(httpserver: HTTPServer
     text_chunks_2 = []
     response_id_2 = None
     for event in stream2:
-        if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+        if getattr(event, "type", None) == "response.output_text.delta" and getattr(
+            event, "delta", None
+        ):
             text_chunks_2.append(event.delta)
-        if getattr(event, "type", None) == "response.completed" and getattr(event, "response", None):
+        if getattr(event, "type", None) == "response.completed" and getattr(
+            event, "response", None
+        ):
             response_id_2 = event.response.id
 
     assert response_id_2 is not None
@@ -357,4 +389,6 @@ def test_conversation_state_management_two_turn_streaming(httpserver: HTTPServer
     assert len(captured) == 2
     second_request = captured[1]
     messages = second_request.get("messages", [])
-    assert len(messages) >= 3, f"Expected >= 3 messages in second turn, got {len(messages)}"
+    assert (
+        len(messages) >= 3
+    ), f"Expected >= 3 messages in second turn, got {len(messages)}"

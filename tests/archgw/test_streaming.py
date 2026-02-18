@@ -17,7 +17,8 @@ import anthropic
 import pytest
 import logging
 
-from pytest_httpserver import HTTPServer, HandlerType
+from pytest_httpserver import HTTPServer
+from pytest_httpserver.httpserver import HandlerType
 from werkzeug.wrappers import Response
 
 from conftest import (
@@ -39,7 +40,9 @@ LLM_GATEWAY_BASE = "http://localhost:12000"
 
 def test_openai_chat_streaming_basic(httpserver: HTTPServer):
     """Basic OpenAI streaming: verify chunks arrive in order and reassemble correctly"""
-    setup_openai_chat_mock(httpserver, content="The quick brown fox jumps over the lazy dog")
+    setup_openai_chat_mock(
+        httpserver, content="The quick brown fox jumps over the lazy dog"
+    )
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
     stream = client.chat.completions.create(
@@ -66,12 +69,17 @@ def test_openai_chat_streaming_tool_calls(httpserver: HTTPServer):
         body = json.loads(request.data)
         model = body.get("model", "gpt-5-mini-2025-08-07")
         return Response(
-            make_openai_tool_call_stream(model=model, tool_name="echo_tool", tool_args='{"text":"hello"}'),
-            status=200, content_type="text/event-stream",
+            make_openai_tool_call_stream(
+                model=model, tool_name="echo_tool", tool_args='{"text":"hello"}'
+            ),
+            status=200,
+            content_type="text/event-stream",
         )
 
     httpserver.expect_request(
-        "/v1/chat/completions", method="POST", handler_type=HandlerType.PERMANENT,
+        "/v1/chat/completions",
+        method="POST",
+        handler_type=HandlerType.PERMANENT,
     ).respond_with_handler(handler)
 
     client = openai.OpenAI(api_key="test-key", base_url=f"{LLM_GATEWAY_BASE}/v1")
@@ -85,7 +93,11 @@ def test_openai_chat_streaming_tool_calls(httpserver: HTTPServer):
                 "function": {
                     "name": "echo_tool",
                     "description": "Echo input",
-                    "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"text": {"type": "string"}},
+                        "required": ["text"],
+                    },
                 },
             }
         ],
@@ -97,14 +109,18 @@ def test_openai_chat_streaming_tool_calls(httpserver: HTTPServer):
         if chunk.choices and chunk.choices[0].delta.tool_calls:
             for tc in chunk.choices[0].delta.tool_calls:
                 while len(tool_calls) <= tc.index:
-                    tool_calls.append({"id": "", "function": {"name": "", "arguments": ""}})
+                    tool_calls.append(
+                        {"id": "", "function": {"name": "", "arguments": ""}}
+                    )
                 if tc.id:
                     tool_calls[tc.index]["id"] = tc.id
                 if tc.function:
                     if tc.function.name:
                         tool_calls[tc.index]["function"]["name"] = tc.function.name
                     if tc.function.arguments:
-                        tool_calls[tc.index]["function"]["arguments"] += tc.function.arguments
+                        tool_calls[tc.index]["function"][
+                            "arguments"
+                        ] += tc.function.arguments
 
     assert len(tool_calls) > 0, "Should have received tool calls"
     assert tool_calls[0]["function"]["name"] == "echo_tool"
@@ -142,7 +158,11 @@ def test_anthropic_messages_streaming_thinking(httpserver: HTTPServer):
 
     client = anthropic.Anthropic(api_key="test-key", base_url=LLM_GATEWAY_BASE)
 
-    events_seen = {"thinking_start": False, "thinking_delta": False, "text_delta": False}
+    events_seen = {
+        "thinking_start": False,
+        "thinking_delta": False,
+        "text_delta": False,
+    }
 
     with client.messages.stream(
         model="claude-sonnet-4-20250514",
@@ -151,7 +171,9 @@ def test_anthropic_messages_streaming_thinking(httpserver: HTTPServer):
         messages=[{"role": "user", "content": "What is 2+2?"}],
     ) as stream:
         for event in stream:
-            if event.type == "content_block_start" and getattr(event, "content_block", None):
+            if event.type == "content_block_start" and getattr(
+                event, "content_block", None
+            ):
                 if getattr(event.content_block, "type", None) == "thinking":
                     events_seen["thinking_start"] = True
             if event.type == "content_block_delta" and getattr(event, "delta", None):
@@ -255,7 +277,11 @@ def test_responses_api_streaming_translated_upstream(httpserver: HTTPServer):
 
     text_chunks = []
     for event in stream:
-        if getattr(event, "type", None) == "response.output_text.delta" and getattr(event, "delta", None):
+        if getattr(event, "type", None) == "response.output_text.delta" and getattr(
+            event, "delta", None
+        ):
             text_chunks.append(event.delta)
 
-    assert len(text_chunks) > 0, "Should have received text delta events from translated stream"
+    assert (
+        len(text_chunks) > 0
+    ), "Should have received text delta events from translated stream"
