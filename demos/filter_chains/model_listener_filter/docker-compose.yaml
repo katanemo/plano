@@ -1,0 +1,26 @@
+services:
+  content-guard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "10500:10500"
+  plano:
+    build:
+      context: ../../../
+      dockerfile: Dockerfile
+    ports:
+      - "12000:12000"
+    environment:
+      - PLANO_CONFIG_PATH=/config/config.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+    volumes:
+      - ./config.yaml:/app/plano_config.yaml
+      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+  jaeger:
+    build:
+      context: ../../shared/jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
