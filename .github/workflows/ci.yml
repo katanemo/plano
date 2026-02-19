@@ -221,7 +221,7 @@ jobs:
   # ──────────────────────────────────────────────
   test-prompt-gateway:
     needs: docker-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -268,7 +268,7 @@ jobs:
   # ──────────────────────────────────────────────
   test-model-alias-routing:
     needs: docker-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -319,7 +319,7 @@ jobs:
   # ──────────────────────────────────────────────
   test-responses-api-with-state:
     needs: docker-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -365,7 +365,7 @@ jobs:
   # ──────────────────────────────────────────────
   e2e-plano-tests:
     needs: docker-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest-m
     strategy:
       fail-fast: false
@@ -425,7 +425,7 @@ jobs:
   # ──────────────────────────────────────────────
   e2e-demo-preference:
     needs: docker-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
@@ -477,7 +477,7 @@ jobs:
   # ──────────────────────────────────────────────
   e2e-demo-currency:
     needs: docker-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
