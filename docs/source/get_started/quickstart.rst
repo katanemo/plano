@@ -17,11 +17,17 @@ Follow this guide to learn how to quickly set up Plano and integrate it into you
 Prerequisites
 -------------
 
-Before you begin, ensure you have the following:
+Plano runs **natively** by default — no Docker or Rust toolchain required. Pre-compiled binaries are downloaded automatically on first run.
+
+1. `Python <https://www.python.org/downloads/>`_ (v3.10+)
+2. Supported platforms: Linux (x86_64, aarch64), macOS (Apple Silicon)
+
+**Docker mode** (optional):
+
+If you prefer to run inside Docker, add ``--docker`` to ``planoai up`` / ``planoai down``. This requires:
 
 1. `Docker System <https://docs.docker.com/get-started/get-docker/>`_ (v24)
 2. `Docker Compose <https://docs.docker.com/compose/install/>`_ (v2.29)
-3. `Python <https://www.python.org/downloads/>`_ (v3.10+)
 
 Plano's CLI allows you to manage and interact with the Plano efficiently. To install the CLI, simply run the following command:
 
@@ -84,17 +90,20 @@ Step 2. Start plano
 
 Once the config file is created, ensure that you have environment variables set up for ``ANTHROPIC_API_KEY`` and ``OPENAI_API_KEY`` (or these are defined in a ``.env`` file).
 
-Start Plano:
-
 .. code-block:: console
 
    $ planoai up plano_config.yaml
-   # Or if installed with uv tool: uvx planoai up plano_config.yaml
-   2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.9
-   2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
-   2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano
-   ...
-   2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!
+
+On the first run, Plano automatically downloads Envoy, WASM plugins, and brightstaff and caches them at ``~/.plano/``.
+
+To stop Plano, run ``planoai down``.
+
+**Docker mode** (optional):
+
+.. code-block:: console
+
+   $ planoai up plano_config.yaml --docker
+   $ planoai down --docker
 
 Step 3: Interact with LLM
 ~~~~~~~~~~~~~~~~~~~~~~~~~

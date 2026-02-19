@@ -3,7 +3,7 @@
 Deployment
 ==========
 
-This guide shows how to deploy Plano directly using Docker without the ``plano`` CLI, including basic runtime checks for routing and health monitoring.
+Plano can be deployed in two ways: as a **Docker container** (default) or **natively** on the host without Docker.
 
 Docker Deployment
 -----------------
@@ -52,6 +52,48 @@ Check container health and logs:
 
    docker compose ps
    docker compose logs -f plano
+
+Native Deployment
+-----------------
+
+Run Plano directly on the host without Docker. This is useful for development, platforms without Docker, or environments where you want to avoid container overhead.
+
+Prerequisites
+~~~~~~~~~~~~~
+
+- `Rust <https://rustup.rs>`_ with the ``wasm32-wasip1`` target
+- OpenSSL dev headers (``libssl-dev`` on Debian/Ubuntu, ``openssl`` on macOS)
+- Supported platforms: Linux (x86_64, aarch64), macOS (Apple Silicon)
+
+Build from Source
+~~~~~~~~~~~~~~~~~
+
+Compile the WASM plugins and brightstaff binary:
+
+.. code-block:: bash
+
+   planoai build --native
+
+Start Plano
+~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   planoai up plano_config.yaml --native
+
+Envoy is automatically downloaded on first run and cached at ``~/.plano/bin/``. Runtime files (rendered configs, logs, PID file) are stored in ``~/.plano/run/``.
+
+Options:
+
+- ``--foreground`` — stay attached and stream logs (Ctrl+C to stop)
+- ``--with-tracing`` — start a local OTLP trace collector
+
+Stop Plano
+~~~~~~~~~~
+
+.. code-block:: bash
+
+   planoai down --native
 
 Runtime Tests
 -------------
