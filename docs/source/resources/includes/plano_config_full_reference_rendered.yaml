@@ -65,6 +65,8 @@ listeners:
     port: 443
     protocol: https
     provider_interface: openai
+  filter_chain:
+  - input_guards
   name: model_1
   port: 12000
   type: model
