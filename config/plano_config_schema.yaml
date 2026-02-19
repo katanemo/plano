@@ -93,6 +93,10 @@ properties:
                 required:
                   - id
                   - description
+            filter_chain:
+              type: array
+              items:
+                type: string
           additionalProperties: false
           required:
             - type
