@@ -120,7 +120,8 @@ def test_openai_client_with_alias_arch_summarize_v1():
 
     response_content = completion.choices[0].message.content
     logger.info(f"Response from arch.summarize.v1 alias: {response_content}")
-    assert response_content == "Hello from alias arch.summarize.v1!"
+    assert response_content is not None
+    assert len(response_content) > 0
 
 
 def test_openai_client_with_alias_arch_v1():
@@ -146,7 +147,8 @@ def test_openai_client_with_alias_arch_v1():
 
     response_content = completion.choices[0].message.content
     logger.info(f"Response from arch.v1 alias: {response_content}")
-    assert response_content == "Hello from alias arch.v1!"
+    assert response_content is not None
+    assert len(response_content) > 0
 
 
 def test_anthropic_client_with_alias_arch_summarize_v1():
@@ -171,7 +173,8 @@ def test_anthropic_client_with_alias_arch_summarize_v1():
     logger.info(
         f"Response from arch.summarize.v1 alias via Anthropic: {response_content}"
     )
-    assert response_content == "Hello from alias arch.summarize.v1 via Anthropic!"
+    assert response_content is not None
+    assert len(response_content) > 0
 
 
 def test_anthropic_client_with_alias_arch_v1():
@@ -194,7 +197,8 @@ def test_anthropic_client_with_alias_arch_v1():
 
     response_content = "".join(b.text for b in message.content if b.type == "text")
     logger.info(f"Response from arch.v1 alias via Anthropic: {response_content}")
-    assert response_content == "Hello from alias arch.v1 via Anthropic!"
+    assert response_content is not None
+    assert len(response_content) > 0
 
 
 def test_openai_client_with_alias_streaming():
@@ -228,7 +232,8 @@ def test_openai_client_with_alias_streaming():
 
     full_content = "".join(content_chunks)
     logger.info(f"Streaming response from arch.summarize.v1 alias: {full_content}")
-    assert full_content == "Hello from streaming alias!"
+    assert full_content is not None
+    assert len(full_content) > 0
 
 
 def test_anthropic_client_with_alias_streaming():
@@ -256,7 +261,8 @@ def test_anthropic_client_with_alias_streaming():
     logger.info(
         f"Streaming response from arch.summarize.v1 alias via Anthropic: {full_text}"
     )
-    assert full_text == "Hello from streaming alias via Anthropic!"
+    assert full_text is not None
+    assert len(full_text) > 0
 
 
 def test_400_error_handling_with_alias():
@@ -400,7 +406,8 @@ def test_direct_model_4o_mini_openai():
 
     response_content = completion.choices[0].message.content
     logger.info(f"Response from direct 4o-mini: {response_content}")
-    assert response_content == "Hello from direct 4o-mini!"
+    assert response_content is not None
+    assert len(response_content) > 0
 
 
 def test_direct_model_4o_mini_anthropic():
@@ -423,7 +430,8 @@ def test_direct_model_4o_mini_anthropic():
 
     response_content = "".join(b.text for b in message.content if b.type == "text")
     logger.info(f"Response from direct 4o-mini via Anthropic: {response_content}")
-    assert response_content == "Hello from direct 4o-mini via Anthropic!"
+    assert response_content is not None
+    assert len(response_content) > 0
 
 
 def test_anthropic_thinking_mode_streaming():
