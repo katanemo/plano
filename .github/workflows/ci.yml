@@ -305,7 +305,11 @@ jobs:
       - name: Run model alias routing tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
         run: |
           cd tests/e2e && bash run_model_alias_tests.sh
