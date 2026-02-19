@@ -1,0 +1,13 @@
+version: v0.3.0
+
+listeners:
+  egress_traffic:
+    port: 12000
+
+model_providers:
+  - name: openai-main
+    model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+
+tracing:
+  random_sampling: 100
