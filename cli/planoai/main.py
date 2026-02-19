@@ -30,6 +30,7 @@ from planoai.init_cmd import init as init_cmd
 from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
+    DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
@@ -130,7 +131,13 @@ def main(ctx, version):
 
 
 @click.command()
-def build():
+@click.option(
+    "--native",
+    default=False,
+    help="Build WASM plugins and brightstaff natively (requires Rust toolchain).",
+    is_flag=True,
+)
+def build(native):
     """Build Plano from source. Works from any directory within the repo."""
 
     # Find the repo root
@@ -140,6 +147,68 @@ def build():
             "Error: Could not find repository root. Make sure you're inside the plano repository."
         )
         sys.exit(1)
+
+    if native:
+        import shutil
+
+        crates_dir = os.path.join(repo_root, "crates")
+        console = _console()
+        _print_cli_header(console)
+
+        if not shutil.which("cargo"):
+            console.print(
+                "[red]✗[/red] [bold]cargo[/bold] not found. "
+                "Install Rust: [cyan]https://rustup.rs[/cyan]"
+            )
+            sys.exit(1)
+
+        console.print("[dim]Building WASM plugins (wasm32-wasip1)...[/dim]")
+        try:
+            subprocess.run(
+                [
+                    "cargo",
+                    "build",
+                    "--release",
+                    "--target",
+                    "wasm32-wasip1",
+                    "-p",
+                    "llm_gateway",
+                    "-p",
+                    "prompt_gateway",
+                ],
+                cwd=crates_dir,
+                check=True,
+            )
+            console.print("[green]✓[/green] WASM plugins built")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]✗[/red] WASM build failed: {e}")
+            sys.exit(1)
+
+        console.print("[dim]Building brightstaff (native)...[/dim]")
+        try:
+            subprocess.run(
+                [
+                    "cargo",
+                    "build",
+                    "--release",
+                    "-p",
+                    "brightstaff",
+                ],
+                cwd=crates_dir,
+                check=True,
+            )
+            console.print("[green]✓[/green] brightstaff built")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]✗[/red] brightstaff build failed: {e}")
+            sys.exit(1)
+
+        wasm_dir = os.path.join(crates_dir, "target", "wasm32-wasip1", "release")
+        native_dir = os.path.join(crates_dir, "target", "release")
+        console.print(f"\n[bold]Build artifacts:[/bold]")
+        console.print(f"  {os.path.join(wasm_dir, 'prompt_gateway.wasm')}")
+        console.print(f"  {os.path.join(wasm_dir, 'llm_gateway.wasm')}")
+        console.print(f"  {os.path.join(native_dir, 'brightstaff')}")
+        return
 
     dockerfile_path = os.path.join(repo_root, "Dockerfile")
 
@@ -192,7 +261,13 @@ def build():
     help="Port for the OTLP trace collector (default: 4317).",
     show_default=True,
 )
-def up(file, path, foreground, with_tracing, tracing_port):
+@click.option(
+    "--native",
+    default=False,
+    help="Run Plano natively without Docker (requires prior 'planoai build --native').",
+    is_flag=True,
+)
+def up(file, path, foreground, with_tracing, tracing_port, native):
     """Starts Plano."""
     from rich.status import Status
 
@@ -209,26 +284,49 @@ def up(file, path, foreground, with_tracing, tracing_port):
         )
         sys.exit(1)
 
-    with Status(
-        "[dim]Validating configuration[/dim]", spinner="dots", spinner_style="dim"
-    ):
-        (
-            validation_return_code,
-            _,
-            validation_stderr,
-        ) = docker_validate_plano_schema(plano_config_file)
+    if native:
+        from planoai.native_runner import native_validate_config
 
-    if validation_return_code != 0:
-        console.print(f"[red]✗[/red] Validation failed")
-        if validation_stderr:
-            console.print(f"  [dim]{validation_stderr.strip()}[/dim]")
-        sys.exit(1)
+        with Status(
+            "[dim]Validating configuration (native)[/dim]",
+            spinner="dots",
+            spinner_style="dim",
+        ):
+            try:
+                native_validate_config(plano_config_file)
+            except SystemExit:
+                console.print(f"[red]✗[/red] Validation failed")
+                sys.exit(1)
+            except Exception as e:
+                console.print(f"[red]✗[/red] Validation failed")
+                console.print(f"  [dim]{str(e).strip()}[/dim]")
+                sys.exit(1)
+    else:
+        with Status(
+            "[dim]Validating configuration[/dim]", spinner="dots", spinner_style="dim"
+        ):
+            (
+                validation_return_code,
+                _,
+                validation_stderr,
+            ) = docker_validate_plano_schema(plano_config_file)
+
+        if validation_return_code != 0:
+            console.print(f"[red]✗[/red] Validation failed")
+            if validation_stderr:
+                console.print(f"  [dim]{validation_stderr.strip()}[/dim]")
+            sys.exit(1)
 
     console.print(f"[green]✓[/green] Configuration valid")
 
     # Set up environment
+    default_otel = (
+        DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT
+        if native
+        else DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
+    )
     env_stage = {
-        "OTEL_TRACING_GRPC_ENDPOINT": DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
+        "OTEL_TRACING_GRPC_ENDPOINT": default_otel,
     }
     env = os.environ.copy()
     env.pop("PATH", None)
@@ -296,13 +394,20 @@ def up(file, path, foreground, with_tracing, tracing_port):
                 sys.exit(1)
 
         # Update the OTEL endpoint so the gateway sends traces to the right port
-        env_stage[
-            "OTEL_TRACING_GRPC_ENDPOINT"
-        ] = f"http://host.docker.internal:{tracing_port}"
+        tracing_host = "localhost" if native else "host.docker.internal"
+        otel_endpoint = f"http://{tracing_host}:{tracing_port}"
+        env_stage["OTEL_TRACING_GRPC_ENDPOINT"] = otel_endpoint
 
     env.update(env_stage)
     try:
-        start_plano(plano_config_file, env, foreground=foreground)
+        if native:
+            from planoai.native_runner import start_native
+
+            start_native(
+                plano_config_file, env, foreground=foreground, with_tracing=with_tracing
+            )
+        else:
+            start_plano(plano_config_file, env, foreground=foreground)
 
         # When tracing is enabled but --foreground is not, keep the process
         # alive so the OTLP collector continues to receive spans.
@@ -320,15 +425,30 @@ def up(file, path, foreground, with_tracing, tracing_port):
 
 
 @click.command()
-def down():
+@click.option(
+    "--native",
+    default=False,
+    help="Stop a natively-running Plano instance.",
+    is_flag=True,
+)
+def down(native):
     """Stops Plano."""
     console = _console()
     _print_cli_header(console)
 
-    with console.status(
-        f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]", spinner="dots"
-    ):
-        stop_docker_container()
+    if native:
+        from planoai.native_runner import stop_native
+
+        with console.status(
+            f"[{PLANO_COLOR}]Shutting down Plano (native)...[/{PLANO_COLOR}]",
+            spinner="dots",
+        ):
+            stop_native()
+    else:
+        with console.status(
+            f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]", spinner="dots"
+        ):
+            stop_docker_container()
 
 
 @click.command()
