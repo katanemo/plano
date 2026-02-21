@@ -49,23 +49,26 @@ listeners:
     agents:
       - id: loan_intake_agent
         description: |
-          Loan Intake Agent - Extracts and normalizes loan application data for downstream analysis.
+          Loan Intake Agent - Step 1 of 4 in the credit risk pipeline. Run first.
 
           CAPABILITIES:
           * Normalize applicant data and calculate derived fields (e.g., DTI)
           * Identify missing or inconsistent fields
-          * Produce structured intake JSON for other agents
+          * Produce structured intake JSON for downstream agents
 
           USE CASES:
           * "Normalize this loan application"
           * "Extract and validate applicant data"
 
-          When requests focus on intake or data normalization for loan applications, route here.
+          OUTPUT REQUIREMENTS:
+          * Return JSON with step="intake" and normalized_data/missing_fields
+          * Do not provide the final decision memo
+          * This output is used by risk_scoring_agent next
         filter_chain:
           - pii_security_filter
       - id: risk_scoring_agent
         description: |
-          Risk Scoring Agent - Produces risk band, confidence score, and top drivers.
+          Risk Scoring Agent - Step 2 of 4. Run after intake.
 
           CAPABILITIES:
           * Evaluate credit score, DTI, delinquencies, utilization
@@ -76,12 +79,15 @@ listeners:
           * "Score the risk for this applicant"
           * "Provide risk band and drivers"
 
-          When requests focus on risk scoring or drivers, route here.
+          OUTPUT REQUIREMENTS:
+          * Use intake output from prior assistant message
+          * Return JSON with step="risk" and risk_band/confidence_score/top_3_risk_drivers
+          * This output is used by policy_compliance_agent next
         filter_chain:
           - pii_security_filter
       - id: policy_compliance_agent
         description: |
-          Policy Compliance Agent - Checks lending policy rules and required documents.
+          Policy Compliance Agent - Step 3 of 4. Run after risk scoring.
 
           CAPABILITIES:
           * Verify KYC, income, and address checks
@@ -92,12 +98,15 @@ listeners:
           * "Check policy compliance"
           * "List required documents"
 
-          When requests focus on policy checks or exceptions, route here.
+          OUTPUT REQUIREMENTS:
+          * Use intake + risk outputs from prior assistant messages
+          * Return JSON with step="policy" and policy_checks/exceptions/required_documents
+          * This output is used by decision_memo_agent next
         filter_chain:
           - pii_security_filter
       - id: decision_memo_agent
         description: |
-          Decision Memo Agent - Summarizes findings and recommends actions.
+          Decision Memo Agent - Step 4 of 4. Final response to the user.
 
           CAPABILITIES:
           * Create concise decision memos
@@ -107,7 +116,10 @@ listeners:
           * "Draft a decision memo"
           * "Recommend a credit decision"
 
-          When requests focus on final memo or recommendation, route here.
+          OUTPUT REQUIREMENTS:
+          * Use intake + risk + policy outputs from prior assistant messages
+          * Return JSON with step="memo", recommended_action, decision_memo
+          * Provide the user-facing memo as the final response
         filter_chain:
           - pii_security_filter
 
