@@ -29,6 +29,7 @@ stats_config:
       - 180000
 static_resources:
   listeners:
+    {% if prompt_gateway_enabled %}
     - name: ingress_traffic
       address:
         socket_address:
@@ -203,6 +204,8 @@ static_resources:
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    {% endif %}
 
     - name: outbound_api_traffic
       address:
@@ -553,6 +556,33 @@ static_resources:
                           "@type": type.googleapis.com/envoy.extensions.compression.gzip.compressor.v3.Gzip
                           memory_level: 3
                           window_bits: 10
+                  {% if xproxy_ext_authz_enabled %}
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      http_service:
+                        server_uri:
+                          uri: "127.0.0.1:9091"
+                          cluster: bright_staff
+                          timeout: 5s
+                        path_prefix: "/auth/check"
+                        authorization_request:
+                          headers_to_add:
+                            - key: "content-type"
+                              value: "application/json"
+                          allowed_headers:
+                            patterns:
+                              - exact: "authorization"
+                              - exact: "content-type"
+                        authorization_response:
+                          allowed_upstream_headers:
+                            patterns:
+                              - prefix: "x-xproxy-"
+                      with_request_body:
+                        max_request_bytes: 65536
+                        allow_partial_message: true
+                      failure_mode_allow: false
+                  {% endif %}
                   - name: envoy.filters.http.wasm
                     typed_config:
                       "@type": type.googleapis.com/udpa.type.v1.TypedStruct
@@ -591,6 +621,82 @@ static_resources:
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    {% if firewall_enabled | default(false) %}
+    # Firewall mode listener: transparent proxy with API key identity
+    - name: firewall_traffic
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: {{ firewall_port | default(13000) }}
+      traffic_direction: INBOUND
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: firewall_traffic
+                codec_type: AUTO
+                route_config:
+                  name: firewall_route
+                  virtual_hosts:
+                    - name: firewall_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster_header: "x-xproxy-provider-hint"
+                            timeout: {{ upstream_timeout | default('300s') }}
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      http_service:
+                        server_uri:
+                          uri: "127.0.0.1:9091"
+                          cluster: bright_staff
+                          timeout: 5s
+                        path_prefix: "/auth/check"
+                        authorization_request:
+                          headers_to_add:
+                            - key: "content-type"
+                              value: "application/json"
+                            - key: "x-xproxy-mode"
+                              value: "firewall"
+                          allowed_headers:
+                            patterns:
+                              - exact: "authorization"
+                              - exact: "content-type"
+                        authorization_response:
+                          allowed_upstream_headers:
+                            patterns:
+                              - prefix: "x-xproxy-"
+                      with_request_body:
+                        max_request_bytes: 65536
+                        allow_partial_message: true
+                      failure_mode_allow: true
+                  - name: envoy.filters.http.wasm
+                    typed_config:
+                      "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                      type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                      value:
+                        config:
+                          name: "firewall_http_config"
+                          root_id: llm_gateway
+                          configuration:
+                            "@type": "type.googleapis.com/google.protobuf.StringValue"
+                            value: |
+                                {{ plano_llm_config | indent(32) }}
+                          vm_config:
+                            runtime: "envoy.wasm.runtime.v8"
+                            code:
+                              local:
+                                filename: "/etc/envoy/proxy-wasm-plugins/llm_gateway.wasm"
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+    {% endif %}
 
   clusters:
 
@@ -901,6 +1007,58 @@ static_resources:
             validation_context:
               trusted_ca:
                 filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
+{% if egress_ips is defined %}
+{% set provider_upstreams = {
+    'openai': {'address': 'api.openai.com', 'sni': 'api.openai.com'},
+    'anthropic': {'address': 'api.anthropic.com', 'sni': 'api.anthropic.com'},
+    'deepseek': {'address': 'api.deepseek.com', 'sni': 'api.deepseek.com'},
+    'gemini': {'address': 'generativelanguage.googleapis.com', 'sni': 'generativelanguage.googleapis.com'},
+    'groq': {'address': 'api.groq.com', 'sni': 'api.groq.com'},
+    'mistral': {'address': 'api.mistral.ai', 'sni': 'api.mistral.ai'},
+    'xai': {'address': 'api.x.ai', 'sni': 'api.x.ai'},
+    'together_ai': {'address': 'api.together.xyz', 'sni': 'api.together.xyz'},
+    'moonshotai': {'address': 'api.moonshot.ai', 'sni': 'api.moonshot.ai'},
+    'zhipu': {'address': 'open.bigmodel.cn', 'sni': 'open.bigmodel.cn'},
+} %}
+{% for egress in egress_ips %}
+{% if egress.name != 'default' %}
+{% for provider_name, upstream in provider_upstreams.items() %}
+    - name: {{ provider_name }}-{{ egress.name }}
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
+      type: LOGICAL_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: ROUND_ROBIN
+      bind_config:
+        source_address:
+          address: "{{ egress.address }}"
+          port_value: 0
+      load_assignment:
+        cluster_name: {{ provider_name }}-{{ egress.name }}
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: {{ upstream.address }}
+                      port_value: 443
+                  hostname: "{{ upstream.address }}"
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: {{ upstream.sni }}
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: TLSv1_2
+              tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+
     - name: mistral_7b_instruct
       connect_timeout: 0.5s
       type: STRICT_DNS
@@ -1024,6 +1182,7 @@ static_resources:
                       port_value: 9091
                   hostname: localhost
 
+    {% if prompt_gateway_enabled %}
     - name: arch_prompt_gateway_listener
       connect_timeout: 0.5s
       type: LOGICAL_DNS
@@ -1039,6 +1198,7 @@ static_resources:
                       address: 0.0.0.0
                       port_value: 10001
                   hostname: arch_prompt_gateway_listener
+    {% endif %}
 
     - name: arch_listener_llm
       connect_timeout: 0.5s

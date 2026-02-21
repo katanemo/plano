@@ -142,6 +142,7 @@ Commit message format: `release X.Y.Z`
 - **Git commits:** Do NOT add `Co-Authored-By` lines. Keep commit messages short and concise (one line, no verbose descriptions). NEVER commit and push directly to `main`—always use a feature branch and PR.
 - **Git branches:** Use the format `<github_username>/<feature_name>` when creating branches for PRs. Determine the username from `gh api user --jq .login`.
 - **GitHub issues:** When a GitHub issue URL is pasted, fetch all requirements and context from the issue first. The end goal is always a PR with all tests passing.
+- **Documentation:** After major features or architectural changes, update relevant docs in `docs/dev/`. Keep architecture decisions and proxy mode documentation current.
 
 ## Key Conventions
 
@@ -150,3 +151,4 @@ Commit message format: `release X.Y.Z`
 - WASM plugins must target `wasm32-wasip1` — they run inside Envoy, not as native binaries
 - The Docker image bundles Envoy + WASM plugins + brightstaff + Python CLI into a single container managed by supervisord
 - API keys come from environment variables or `.env` files, never hardcoded
+- WASM filter uses byte scanning (not full JSON parsing) to extract token usage from LLM responses — see `docs/dev/byte-scan-parsing.md`. Provider field names are mapped via `UsageFields` consts in `stream_context.rs`; add new providers there.

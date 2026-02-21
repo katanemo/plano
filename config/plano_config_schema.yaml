@@ -452,6 +452,19 @@ properties:
         additionalProperties: false
         required:
           - jailbreak
+  egress_ips:
+    type: array
+    items:
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+      additionalProperties: false
+      required:
+        - name
+        - address
 additionalProperties: false
 required:
   - version

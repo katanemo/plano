@@ -1,7 +1,19 @@
+use brightstaff::auth::cache::AuthCache;
+use brightstaff::billing::budget_checker::BudgetChecker;
+use brightstaff::billing::counters::SpendingCounters;
+use brightstaff::billing::flusher::UsageFlusher;
+use brightstaff::billing::price_calculator::PriceCalculator;
+use brightstaff::db::DbPool;
 use brightstaff::handlers::agent_chat_completions::agent_chat;
+use brightstaff::handlers::auth_check::handle_auth_check;
+use brightstaff::handlers::budget_blocked::handle_budget_blocked;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
+use brightstaff::handlers::management::handle_management;
 use brightstaff::handlers::models::list_models;
+use brightstaff::handlers::usage_record::handle_usage_record;
+use brightstaff::pricing::PricingRegistry;
+use brightstaff::registry::ApiKeyRegistry;
 use brightstaff::router::llm_router::RouterService;
 use brightstaff::router::plano_orchestrator::OrchestratorService;
 use brightstaff::state::memory::MemoryConversationalStorage;
@@ -34,6 +46,18 @@ pub mod router;
 const BIND_ADDRESS: &str = "0.0.0.0:9091";
 const DEFAULT_ROUTING_LLM_PROVIDER: &str = "arch-router";
 const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
+
+/// Shared application state for xproxy
+struct AppState {
+    db_pool: Option<DbPool>,
+    auth_cache: AuthCache,
+    counters: SpendingCounters,
+    pricing: PricingRegistry,
+    usage_tx: tokio::sync::mpsc::Sender<brightstaff::billing::flusher::UsageEvent>,
+    jwt_secret: String,
+    api_key_registry: ApiKeyRegistry,
+    budget_checker: BudgetChecker,
+}
 
 // Utility function to extract the context from the incoming request headers
 fn extract_context_from_request(req: &Request<Incoming>) -> Context {
@@ -68,6 +92,114 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(path = %plano_config_path, "loaded plano_config.yaml");
 
     let plano_config = Arc::new(config);
+
+    // Initialize xproxy DB pool (optional - only if DATABASE_URL is set)
+    let db_pool = match env::var("DATABASE_URL") {
+        Ok(url) => match DbPool::new(&url) {
+            Ok(pool) => {
+                info!("xproxy database pool initialized");
+                Some(pool)
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to create xproxy database pool, running without xproxy features");
+                None
+            }
+        },
+        Err(_) => {
+            info!("DATABASE_URL not set, xproxy features disabled");
+            None
+        }
+    };
+
+    // Initialize xproxy components
+    let auth_cache = AuthCache::new();
+    let counters = SpendingCounters::new();
+    let pricing = PricingRegistry::new();
+    let api_key_registry = ApiKeyRegistry::new();
+    let budget_checker = BudgetChecker::new();
+
+    // Load pricing data from Portkey if available
+    let portkey_dir = env::var("PORTKEY_PRICING_DIR")
+        .unwrap_or_else(|_| "pricing/portkey-models/pricing".to_string());
+    if std::path::Path::new(&portkey_dir).exists() {
+        match pricing.load_from_portkey_dir(&portkey_dir).await {
+            Ok(count) => info!(models = count, "loaded portkey pricing data"),
+            Err(e) => warn!(error = %e, "failed to load portkey pricing data"),
+        }
+    }
+
+    // Hydrate spending counters from DB
+    if let Some(ref pool) = db_pool {
+        match pool.get_client().await {
+            Ok(client) => match brightstaff::db::queries::load_current_counters(&client).await {
+                Ok(records) => {
+                    let hydrate_data: Vec<_> = records
+                        .iter()
+                        .map(|r| {
+                            (
+                                r.entity_type.clone(),
+                                r.entity_id,
+                                r.period_type.clone(),
+                                r.period_start,
+                                r.spent_micro_cents,
+                            )
+                        })
+                        .collect();
+                    counters.hydrate(&hydrate_data);
+                    info!(
+                        records = hydrate_data.len(),
+                        "hydrated spending counters from DB"
+                    );
+                }
+                Err(e) => warn!(error = %e, "failed to load spending counters from DB"),
+            },
+            Err(e) => warn!(error = %e, "failed to get DB client for counter hydration"),
+        }
+
+        // Initial load of API key registry
+        match api_key_registry.reload(pool).await {
+            Ok(count) => info!(keys = count, "loaded API key registry"),
+            Err(e) => warn!(error = %e, "failed to load API key registry"),
+        }
+
+        // Start API key registry refresh (every 60s)
+        api_key_registry
+            .clone()
+            .start_refresh_task(pool.clone(), 60);
+
+        // Start background price calculator (every 10s)
+        PriceCalculator::start(pool.clone(), pricing.clone(), counters.clone(), 10);
+
+        // Start background budget checker (every 10s)
+        budget_checker.clone().start(pool.clone(), 10);
+    }
+
+    // Start usage flusher
+    let flusher = if let Some(ref pool) = db_pool {
+        let f = UsageFlusher::start(pool.clone(), counters.clone(), 10);
+        Some(f)
+    } else {
+        None
+    };
+
+    let usage_tx = flusher.as_ref().map(|f| f.sender()).unwrap_or_else(|| {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        tx
+    });
+
+    let jwt_secret =
+        env::var("JWT_SECRET").unwrap_or_else(|_| "xproxy-dev-secret-change-me".to_string());
+
+    let app_state = Arc::new(AppState {
+        db_pool,
+        auth_cache,
+        counters,
+        pricing,
+        usage_tx,
+        jwt_secret,
+        api_key_registry,
+        budget_checker,
+    });
 
     // combine agents and filters into a single list of agents
     let all_agents: Vec<Agent> = plano_config
@@ -115,15 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let model_aliases = Arc::new(plano_config.model_aliases.clone());
 
-    // Initialize trace collector and start background flusher
-    // Tracing is enabled if the tracing config is present in plano_config.yaml
-    // Pass Some(true/false) to override, or None to use env var OTEL_TRACING_ENABLED
-    // OpenTelemetry automatic instrumentation is configured in utils/tracing.rs
-
     // Initialize conversation state storage for v1/responses
-    // Configurable via plano_config.yaml state_storage section
-    // If not configured, state management is disabled
-    // Environment variables are substituted by envsubst before config is read
     let state_storage: Option<Arc<dyn StateStorage>> =
         if let Some(storage_config) = &plano_config.state_storage {
             let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
@@ -174,6 +298,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
         let state_storage = state_storage.clone();
+        let app_state = app_state.clone();
+
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
             let orchestrator_service = Arc::clone(&orchestrator_service);
@@ -184,9 +310,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
             let state_storage = state_storage.clone();
+            let app_state = app_state.clone();
 
             async move {
-                let path = req.uri().path();
+                let path = req.uri().path().to_string();
+
+                // xproxy auth check endpoint
+                if path == "/auth/check" && req.method() == Method::POST {
+                    if let Some(ref pool) = app_state.db_pool {
+                        return handle_auth_check(
+                            req,
+                            pool,
+                            &app_state.auth_cache,
+                            &app_state.counters,
+                            &app_state.api_key_registry,
+                        )
+                        .await;
+                    } else {
+                        let mut resp = Response::new(empty());
+                        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+                        return Ok(resp);
+                    }
+                }
+
+                // xproxy usage recording endpoint
+                if path == "/usage/record" && req.method() == Method::POST {
+                    return handle_usage_record(
+                        req,
+                        &app_state.pricing,
+                        &app_state.counters,
+                        &app_state.usage_tx,
+                    )
+                    .await;
+                }
+
+                // Budget blocked endpoint (for WASM filter polling)
+                if path == "/budget/blocked" && req.method() == Method::GET {
+                    return handle_budget_blocked(&app_state.budget_checker).await;
+                }
+
+                // xproxy management API
+                if path.starts_with("/api/v1/") {
+                    if let Some(ref pool) = app_state.db_pool {
+                        return handle_management(
+                            req,
+                            &path,
+                            pool,
+                            &app_state.jwt_secret,
+                            &app_state.auth_cache,
+                        )
+                        .await;
+                    } else {
+                        let mut resp = Response::new(empty());
+                        *resp.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+                        return Ok(resp);
+                    }
+                }
+
                 // Check if path starts with /agents
                 if path.starts_with("/agents") {
                     // Check if it matches one of the agent API paths
@@ -208,7 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .await;
                     }
                 }
-                match (req.method(), path) {
+                match (req.method(), path.as_str()) {
                     (
                         &Method::POST,
                         CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH,
@@ -260,7 +440,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         Ok(response)
                     }
                     _ => {
-                        debug!(method = %req.method(), path = %req.uri().path(), "no route found");
+                        debug!(method = %req.method(), path = %path, "no route found");
                         let mut not_found = Response::new(empty());
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
                         Ok(not_found)
@@ -271,11 +451,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         tokio::task::spawn(async move {
             debug!(peer = ?peer_addr, "accepted connection");
-            if let Err(err) = http1::Builder::new()
-                // .serve_connection(io, service_fn(chat_completion))
-                .serve_connection(io, service)
-                .await
-            {
+            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
                 warn!(error = ?err, "error serving connection");
             }
         });

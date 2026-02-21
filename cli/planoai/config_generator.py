@@ -466,7 +466,17 @@ def validate_and_render_schema():
         "upstream_tls_ca_path", "/etc/ssl/certs/ca-certificates.crt"
     )
 
+    prompt_gateway_enabled = config_yaml.get("prompt_gateway", {}).get("enabled", False)
+    xproxy_ext_authz_enabled = config_yaml.get("xproxy", {}).get("ext_authz_enabled", False)
+    firewall_enabled = config_yaml.get("xproxy", {}).get("firewall_enabled", False)
+    firewall_port = config_yaml.get("xproxy", {}).get("firewall_port", 13000)
+    egress_ips = config_yaml.get("egress_ips", [])
+
     data = {
+        "prompt_gateway_enabled": prompt_gateway_enabled,
+        "xproxy_ext_authz_enabled": xproxy_ext_authz_enabled,
+        "firewall_enabled": firewall_enabled,
+        "firewall_port": firewall_port,
         "prompt_gateway_listener": prompt_gateway,
         "llm_gateway_listener": llm_gateway,
         "plano_config": plano_config_string,
@@ -479,6 +489,7 @@ def validate_and_render_schema():
         "listeners": listeners,
         "upstream_connect_timeout": upstream_connect_timeout,
         "upstream_tls_ca_path": upstream_tls_ca_path,
+        "egress_ips": egress_ips,
     }
 
     rendered = template.render(data)

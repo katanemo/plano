@@ -4,6 +4,8 @@ use log::{debug, error, info, warn};
 use proxy_wasm::hostcalls::get_current_time;
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::num::NonZero;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -14,7 +16,11 @@ use common::configuration::{LlmProvider, LlmProviderType, Overrides};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, ARCH_ROUTING_HEADER, HEALTHZ_PATH,
     RATELIMIT_SELECTOR_HEADER_KEY, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
+    XPROXY_API_KEY_HASH_HEADER, XPROXY_API_KEY_HEADER, XPROXY_FIREWALL_MODE_HEADER,
+    XPROXY_MODEL_HEADER, XPROXY_PIPE_ID_HEADER, XPROXY_PROJECT_ID_HEADER,
+    XPROXY_PROVIDER_HINT_HEADER, XPROXY_UPSTREAM_URL_HEADER, XPROXY_USER_ID_HEADER,
 };
+use common::dlp::DlpScanner;
 use common::errors::ServerError;
 use common::llm_providers::LlmProviders;
 use common::ratelimit::Header;
@@ -30,6 +36,191 @@ use hermesllm::{
     DecodedFrame, ProviderId, ProviderRequest, ProviderRequestType, ProviderResponseType,
     ProviderStreamResponseType,
 };
+
+// === Byte-scan token extraction (no full JSON parse) ===
+//
+// Instead of deserializing entire LLM responses into serde_json::Value,
+// we scan raw bytes for specific field names. This is safe against content
+// injection because JSON strings escape quotes as \", so "field_name" in
+// raw bytes won't match \"field_name\" inside string values.
+
+/// Determines the parsing strategy for request/response bodies.
+/// - `UsageOnly`: byte scan for model, stream flag, and token counts (firewall mode)
+/// - `FullContent`: full serde parse for messages, tools, metadata, tokens (managed mode)
+#[derive(Clone, Copy, PartialEq)]
+enum ExtractionLevel {
+    UsageOnly,
+    FullContent,
+}
+
+impl ExtractionLevel {
+    fn from_pipeline(firewall_mode: bool) -> Self {
+        if firewall_mode {
+            ExtractionLevel::UsageOnly
+        } else {
+            ExtractionLevel::FullContent
+        }
+    }
+}
+
+/// Provider-specific field name mapping for token usage extraction.
+/// Adding a new provider = add one const + one match arm in `for_provider`.
+struct UsageFields {
+    input: &'static [u8],
+    output: &'static [u8],
+}
+
+const OPENAI_FIELDS: UsageFields = UsageFields {
+    input: b"\"prompt_tokens\"",
+    output: b"\"completion_tokens\"",
+};
+
+const ANTHROPIC_FIELDS: UsageFields = UsageFields {
+    input: b"\"input_tokens\"",
+    output: b"\"output_tokens\"",
+};
+
+const GEMINI_FIELDS: UsageFields = UsageFields {
+    input: b"\"promptTokenCount\"",
+    output: b"\"candidatesTokenCount\"",
+};
+
+impl UsageFields {
+    fn for_provider(provider: &str) -> &'static UsageFields {
+        match provider {
+            "anthropic" => &ANTHROPIC_FIELDS,
+            "gemini" | "google" => &GEMINI_FIELDS,
+            _ => &OPENAI_FIELDS,
+        }
+    }
+}
+
+/// Find a byte pattern in `haystack`, searching backwards from `start_pos`.
+/// Returns the position of the first byte of the match.
+fn rfind_bytes(haystack: &[u8], needle: &[u8], start_pos: usize) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    let end = start_pos.min(haystack.len() - needle.len());
+    for i in (0..=end).rev() {
+        if haystack[i..].starts_with(needle) {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Parse an integer after optional whitespace and colon: `: 123`
+fn parse_number_after_colon(bytes: &[u8]) -> Option<i64> {
+    let mut i = 0;
+    // skip whitespace
+    while i < bytes.len()
+        && (bytes[i] == b' ' || bytes[i] == b'\t' || bytes[i] == b'\n' || bytes[i] == b'\r')
+    {
+        i += 1;
+    }
+    // expect colon
+    if i >= bytes.len() || bytes[i] != b':' {
+        return None;
+    }
+    i += 1;
+    // skip whitespace
+    while i < bytes.len()
+        && (bytes[i] == b' ' || bytes[i] == b'\t' || bytes[i] == b'\n' || bytes[i] == b'\r')
+    {
+        i += 1;
+    }
+    // parse digits
+    let start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == start {
+        return None;
+    }
+    std::str::from_utf8(&bytes[start..i])
+        .ok()
+        .and_then(|s| s.parse::<i64>().ok())
+}
+
+/// Scan raw bytes for `"field_name": <integer>`, searching from end (usage is at end).
+fn scan_field_i64(bytes: &[u8], field: &[u8]) -> Option<i64> {
+    let idx = rfind_bytes(bytes, field, bytes.len())?;
+    parse_number_after_colon(&bytes[idx + field.len()..])
+}
+
+/// Scan raw bytes for `"field_name": "string_value"`, returns the string.
+fn scan_field_str(bytes: &[u8], field: &[u8]) -> Option<String> {
+    // For request body fields like "model", search from the beginning (model is near the top)
+    let idx = bytes.windows(field.len()).position(|w| w == field)?;
+    let after = &bytes[idx + field.len()..];
+
+    let mut i = 0;
+    // skip whitespace + colon
+    while i < after.len()
+        && (after[i] == b' ' || after[i] == b'\t' || after[i] == b'\n' || after[i] == b'\r')
+    {
+        i += 1;
+    }
+    if i >= after.len() || after[i] != b':' {
+        return None;
+    }
+    i += 1;
+    while i < after.len()
+        && (after[i] == b' ' || after[i] == b'\t' || after[i] == b'\n' || after[i] == b'\r')
+    {
+        i += 1;
+    }
+    // expect opening quote
+    if i >= after.len() || after[i] != b'"' {
+        return None;
+    }
+    i += 1;
+    let start = i;
+    // find closing quote (handle escaped quotes)
+    while i < after.len() {
+        if after[i] == b'\\' {
+            i += 2; // skip escaped char
+            continue;
+        }
+        if after[i] == b'"' {
+            return std::str::from_utf8(&after[start..i])
+                .ok()
+                .map(|s| s.to_string());
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Scan raw bytes for `"field_name": true/false`.
+fn scan_field_bool(bytes: &[u8], field: &[u8]) -> Option<bool> {
+    let idx = bytes.windows(field.len()).position(|w| w == field)?;
+    let after = &bytes[idx + field.len()..];
+
+    let mut i = 0;
+    while i < after.len()
+        && (after[i] == b' ' || after[i] == b'\t' || after[i] == b'\n' || after[i] == b'\r')
+    {
+        i += 1;
+    }
+    if i >= after.len() || after[i] != b':' {
+        return None;
+    }
+    i += 1;
+    while i < after.len()
+        && (after[i] == b' ' || after[i] == b'\t' || after[i] == b'\n' || after[i] == b'\r')
+    {
+        i += 1;
+    }
+    if after[i..].starts_with(b"true") {
+        Some(true)
+    } else if after[i..].starts_with(b"false") {
+        Some(false)
+    } else {
+        None
+    }
+}
 
 pub struct StreamContext {
     metrics: Rc<Metrics>,
@@ -56,6 +247,24 @@ pub struct StreamContext {
     http_protocol: Option<String>,
     sse_buffer: Option<SseStreamBuffer>,
     sse_chunk_processor: Option<SseChunkProcessor>,
+    dlp_scanner: Option<Rc<DlpScanner>>,
+    // xproxy fields - injected by ext_authz via headers
+    xproxy_api_key: Option<String>,
+    xproxy_provider_hint: Option<String>,
+    xproxy_model: Option<String>,
+    xproxy_user_id: Option<String>,
+    xproxy_project_id: Option<String>,
+    xproxy_pipe_id: Option<String>,
+    // Extraction strategy (set in on_http_request_headers)
+    extraction_level: ExtractionLevel,
+    // Firewall mode fields
+    firewall_mode: bool,
+    firewall_upstream_url: Option<String>,
+    firewall_api_key_hash: Option<String>,
+    firewall_input_tokens: i64,
+    firewall_output_tokens: i64,
+    // Shared blocked projects set (from FilterContext budget polling)
+    blocked_projects: Rc<RefCell<HashSet<String>>>,
 }
 
 impl StreamContext {
@@ -63,6 +272,8 @@ impl StreamContext {
         metrics: Rc<Metrics>,
         llm_providers: Rc<LlmProviders>,
         overrides: Rc<Option<Overrides>>,
+        dlp_scanner: Option<Rc<DlpScanner>>,
+        blocked_projects: Rc<RefCell<HashSet<String>>>,
     ) -> Self {
         StreamContext {
             metrics,
@@ -87,6 +298,20 @@ impl StreamContext {
             http_protocol: None,
             sse_buffer: None,
             sse_chunk_processor: None,
+            dlp_scanner,
+            xproxy_api_key: None,
+            xproxy_provider_hint: None,
+            xproxy_model: None,
+            xproxy_user_id: None,
+            xproxy_project_id: None,
+            xproxy_pipe_id: None,
+            extraction_level: ExtractionLevel::FullContent,
+            firewall_mode: false,
+            firewall_upstream_url: None,
+            firewall_api_key_hash: None,
+            firewall_input_tokens: 0,
+            firewall_output_tokens: 0,
+            blocked_projects,
         }
     }
 
@@ -130,8 +355,10 @@ impl StreamContext {
     }
 
     fn select_llm_provider(&mut self) -> Result<(), String> {
+        // xproxy hint takes priority over arch hint
         let provider_hint = self
-            .get_http_request_header(ARCH_PROVIDER_HINT_HEADER)
+            .get_http_request_header(XPROXY_PROVIDER_HINT_HEADER)
+            .or_else(|| self.get_http_request_header(ARCH_PROVIDER_HINT_HEADER))
             .map(|llm_name| llm_name.into());
 
         // Try to get provider with hint, fallback to default if error
@@ -193,7 +420,14 @@ impl StreamContext {
             return Ok(());
         }
 
-        let llm_provider_api_key_value =
+        // Use xproxy API key if provided (from ext_authz), otherwise fall back to config
+        let llm_provider_api_key_value = if let Some(ref xproxy_key) = self.xproxy_api_key {
+            debug!(
+                "request_id={}: using xproxy API key for auth",
+                self.request_identifier()
+            );
+            xproxy_key.clone()
+        } else {
             self.llm_provider()
                 .access_key
                 .as_ref()
@@ -202,7 +436,10 @@ impl StreamContext {
                         "No access key configured for selected LLM Provider \"{}\"",
                         self.llm_provider()
                     ),
-                })?;
+                })?
+                .clone()
+        };
+        let llm_provider_api_key_value = &llm_provider_api_key_value;
 
         // Set API-specific headers based on the resolved upstream API
         match self.resolved_api.as_ref() {
@@ -336,6 +573,180 @@ impl StreamContext {
             }
         }
     }
+    /// Fire-and-forget usage recording callout to brightstaff
+    fn send_xproxy_usage_callout(&self) {
+        if self.xproxy_user_id.is_none() {
+            return; // not an xproxy request
+        }
+
+        let user_id = self.xproxy_user_id.as_deref().unwrap_or("");
+        let project_id = self.xproxy_project_id.as_deref().unwrap_or("");
+        let pipe_id = self.xproxy_pipe_id.as_deref().unwrap_or("");
+        let provider = self.xproxy_provider_hint.as_deref().unwrap_or("");
+        let model = self.xproxy_model.as_deref().unwrap_or("");
+
+        // Estimate input tokens from metrics (approximate)
+        let output_tokens = self.response_tokens as i64;
+        // We don't have exact input token count here, but metrics recorded it
+        // Use 0 for input - the usage_record endpoint can estimate from model pricing
+        let body = format!(
+            r#"{{"user_id":"{}","project_id":"{}","pipe_id":"{}","provider":"{}","model":"{}","input_tokens":0,"output_tokens":{},"is_streaming":{},"status_code":{}}}"#,
+            user_id,
+            project_id,
+            pipe_id,
+            provider,
+            model,
+            output_tokens,
+            self.streaming_response,
+            self.upstream_status_code
+                .map(|s| s.as_u16().to_string())
+                .unwrap_or_else(|| "null".to_string())
+        );
+
+        let headers = vec![
+            (":method", "POST"),
+            (":path", "/usage/record"),
+            (":authority", "bright_staff"),
+            ("content-type", "application/json"),
+        ];
+
+        match self.dispatch_http_call(
+            "bright_staff",
+            headers,
+            Some(body.as_bytes()),
+            vec![],
+            Duration::from_secs(5),
+        ) {
+            Ok(_) => {
+                debug!(
+                    "request_id={}: xproxy usage callout dispatched",
+                    self.request_identifier()
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "request_id={}: xproxy usage callout failed: {:?}",
+                    self.request_identifier(),
+                    e
+                );
+            }
+        }
+    }
+
+    /// Handle response body in firewall mode.
+    /// Extracts token counts from the provider's actual response without modifying it.
+    /// Uses byte scanning instead of full JSON parsing for performance — only looks
+    /// for specific field names in the raw bytes, avoiding allocation of response content.
+    fn handle_firewall_response_body(&mut self, body_size: usize, end_of_stream: bool) -> Action {
+        if end_of_stream && body_size == 0 {
+            // Stream ended, send usage callout
+            self.send_firewall_usage_callout();
+            return Action::Continue;
+        }
+
+        if body_size == 0 {
+            return Action::Continue;
+        }
+
+        let body = match self.get_http_response_body(0, body_size) {
+            Some(b) => b,
+            None => return Action::Continue,
+        };
+
+        if self.streaming_response {
+            // For streaming: scan each SSE data line for token fields
+            let body_str = String::from_utf8_lossy(&body);
+            for line in body_str.lines() {
+                if let Some(data) = line.strip_prefix("data: ") {
+                    if data == "[DONE]" {
+                        continue;
+                    }
+                    self.extract_usage_by_scan(data.as_bytes());
+                }
+            }
+        } else {
+            // Non-streaming: scan raw bytes for token fields
+            self.extract_usage_by_scan(&body);
+        }
+
+        if end_of_stream {
+            self.send_firewall_usage_callout();
+        }
+
+        // Pass response through untouched
+        Action::Continue
+    }
+
+    /// Extract token usage from raw bytes using the provider's field mapping.
+    fn extract_usage_by_scan(&mut self, bytes: &[u8]) {
+        let provider = self.xproxy_provider_hint.as_deref().unwrap_or("");
+        let fields = UsageFields::for_provider(provider);
+
+        if let Some(v) = scan_field_i64(bytes, fields.input) {
+            self.firewall_input_tokens = v;
+        }
+        if let Some(v) = scan_field_i64(bytes, fields.output) {
+            self.firewall_output_tokens = v;
+        }
+    }
+
+    /// Fire-and-forget usage callout for firewall mode
+    fn send_firewall_usage_callout(&self) {
+        let project_id = self.xproxy_project_id.as_deref().unwrap_or("");
+        if project_id.is_empty() {
+            return;
+        }
+
+        let provider = self.xproxy_provider_hint.as_deref().unwrap_or("");
+        let model = self.xproxy_model.as_deref().unwrap_or("");
+        let api_key_hash = self.firewall_api_key_hash.as_deref().unwrap_or("");
+
+        let body = format!(
+            r#"{{"project_id":"{}","provider":"{}","model":"{}","input_tokens":{},"output_tokens":{},"is_streaming":{},"status_code":{},"firewall_mode":true,"api_key_hash":"{}"}}"#,
+            project_id,
+            provider,
+            model,
+            self.firewall_input_tokens,
+            self.firewall_output_tokens,
+            self.streaming_response,
+            self.upstream_status_code
+                .map(|s| s.as_u16().to_string())
+                .unwrap_or_else(|| "null".to_string()),
+            api_key_hash
+        );
+
+        let headers = vec![
+            (":method", "POST"),
+            (":path", "/usage/record"),
+            (":authority", "bright_staff"),
+            ("content-type", "application/json"),
+        ];
+
+        match self.dispatch_http_call(
+            "bright_staff",
+            headers,
+            Some(body.as_bytes()),
+            vec![],
+            Duration::from_secs(5),
+        ) {
+            Ok(_) => {
+                debug!(
+                    "request_id={}: firewall usage callout dispatched, input={} output={}",
+                    self.request_identifier(),
+                    self.firewall_input_tokens,
+                    self.firewall_output_tokens
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "request_id={}: firewall usage callout failed: {:?}",
+                    self.request_identifier(),
+                    e
+                );
+            }
+        }
+    }
+
     fn handle_end_of_request_metrics_and_traces(&mut self, current_time: SystemTime) {
         // All streaming responses end with bytes=0 and end_stream=true
         // Record the latency for the request
@@ -812,12 +1223,85 @@ impl HttpContext for StreamContext {
         self.http_method = self.get_http_request_header(":method");
         self.http_protocol = self.get_http_request_header(":scheme");
 
+        // Detect firewall mode from ext_authz headers
+        self.firewall_mode = self
+            .get_http_request_header(XPROXY_FIREWALL_MODE_HEADER)
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        self.extraction_level = ExtractionLevel::from_pipeline(self.firewall_mode);
+
+        if self.firewall_mode {
+            // Firewall mode: read identity headers, preserve auth untouched
+            self.firewall_upstream_url = self.get_http_request_header(XPROXY_UPSTREAM_URL_HEADER);
+            self.xproxy_project_id = self.get_http_request_header(XPROXY_PROJECT_ID_HEADER);
+            self.xproxy_provider_hint = self.get_http_request_header(XPROXY_PROVIDER_HINT_HEADER);
+            self.firewall_api_key_hash = self.get_http_request_header(XPROXY_API_KEY_HASH_HEADER);
+
+            // Remove all xproxy headers so they don't leak to upstream
+            self.set_http_request_header(XPROXY_FIREWALL_MODE_HEADER, None);
+            self.set_http_request_header(XPROXY_UPSTREAM_URL_HEADER, None);
+            self.set_http_request_header(XPROXY_PROJECT_ID_HEADER, None);
+            self.set_http_request_header(XPROXY_PROVIDER_HINT_HEADER, None);
+            self.set_http_request_header(XPROXY_API_KEY_HASH_HEADER, None);
+
+            self.request_id = self.get_http_request_header(REQUEST_ID_HEADER);
+            self.traceparent = self.get_http_request_header(TRACE_PARENT_HEADER);
+
+            info!(
+                "request_id={}: firewall mode, project_id={:?} provider={:?}",
+                self.request_identifier(),
+                self.xproxy_project_id,
+                self.xproxy_provider_hint
+            );
+
+            // Soft limit check: if project is blocked, return 429
+            if let Some(ref project_id) = self.xproxy_project_id {
+                if self.blocked_projects.borrow().contains(project_id) {
+                    warn!(
+                        "request_id={}: project {} is budget-blocked",
+                        self.request_identifier(),
+                        project_id
+                    );
+                    self.send_http_response(
+                        429,
+                        vec![("content-type", "application/json")],
+                        Some(
+                            r#"{"error":"spending_limit_exceeded","message":"project has exceeded its spending limit"}"#
+                                .as_bytes(),
+                        ),
+                    );
+                    return Action::Continue;
+                }
+            }
+
+            // In firewall mode, don't select provider, don't modify auth, don't modify path
+            // Just let the request pass through. Body processing will extract model + inject stream_options.
+            self.delete_content_length_header();
+            return Action::Continue;
+        }
+
+        // === Standard managed proxy mode ===
+
+        // Read xproxy headers from ext_authz and remove them from upstream request
+        self.xproxy_api_key = self.get_http_request_header(XPROXY_API_KEY_HEADER);
+        self.xproxy_provider_hint = self.get_http_request_header(XPROXY_PROVIDER_HINT_HEADER);
+        self.xproxy_model = self.get_http_request_header(XPROXY_MODEL_HEADER);
+        self.xproxy_user_id = self.get_http_request_header(XPROXY_USER_ID_HEADER);
+        self.xproxy_project_id = self.get_http_request_header(XPROXY_PROJECT_ID_HEADER);
+        self.xproxy_pipe_id = self.get_http_request_header(XPROXY_PIPE_ID_HEADER);
+
+        // Remove xproxy headers so they don't leak to upstream providers
+        self.set_http_request_header(XPROXY_API_KEY_HEADER, None);
+        self.set_http_request_header(XPROXY_PROVIDER_HINT_HEADER, None);
+        self.set_http_request_header(XPROXY_MODEL_HEADER, None);
+        self.set_http_request_header(XPROXY_USER_ID_HEADER, None);
+        self.set_http_request_header(XPROXY_PROJECT_ID_HEADER, None);
+        self.set_http_request_header(XPROXY_PIPE_ID_HEADER, None);
+
         self.streaming_response = self
             .get_http_request_header(ARCH_IS_STREAMING_HEADER)
             .map(|val| val == "true")
             .unwrap_or(false);
-
-        // let routing_header_value = self.get_http_request_header(ARCH_ROUTING_HEADER);
 
         if let Err(err) = self.select_llm_provider() {
             self.send_http_response(
@@ -891,18 +1375,115 @@ impl HttpContext for StreamContext {
 
     fn on_http_request_body(&mut self, body_size: usize, end_of_stream: bool) -> Action {
         debug!(
-            "request_id={}: request body chunk, bytes={} end_stream={}",
+            "request_id={}: request body chunk, bytes={} end_stream={} extraction={:?}",
             self.request_identifier(),
             body_size,
-            end_of_stream
+            end_of_stream,
+            match self.extraction_level {
+                ExtractionLevel::UsageOnly => "UsageOnly",
+                ExtractionLevel::FullContent => "FullContent",
+            }
         );
-
-        // Let the client send the gateway all the data before sending to the LLM_provider.
-        // TODO: consider a streaming API.
 
         if self.request_body_sent_time.is_none() {
             self.request_body_sent_time = Some(current_time_ns());
         }
+
+        // UsageOnly: lightweight body processing (byte scan only)
+        if self.extraction_level == ExtractionLevel::UsageOnly {
+            if !end_of_stream {
+                return Action::Pause;
+            }
+            if body_size == 0 {
+                return Action::Continue;
+            }
+
+            let body_bytes = match self.get_http_request_body(0, body_size) {
+                Some(b) => b,
+                None => return Action::Continue,
+            };
+
+            // Extract model name and streaming flag from request body (byte scan, no full parse)
+            if let Some(model) = scan_field_str(&body_bytes, b"\"model\"") {
+                self.xproxy_model = Some(model);
+            }
+            if let Some(stream) = scan_field_bool(&body_bytes, b"\"stream\"") {
+                self.streaming_response = stream;
+            }
+
+            // DLP scanning in firewall mode
+            let body_bytes = if let Some(ref scanner) = self.dlp_scanner {
+                if scanner.is_enabled() {
+                    let body_str = String::from_utf8_lossy(&body_bytes);
+                    let scan_result = scanner.scan_and_redact(&body_str);
+
+                    if !scan_result.blocked.is_empty() {
+                        warn!(
+                            "request_id={}: DLP blocked request in firewall mode, patterns={:?}",
+                            self.request_identifier(),
+                            scan_result.blocked
+                        );
+                        self.send_http_response(
+                            400,
+                            vec![("content-type", "application/json")],
+                            Some(
+                                format!(
+                                    r#"{{"error":"request blocked by DLP policy","patterns":{:?}}}"#,
+                                    scan_result.blocked
+                                )
+                                .as_bytes(),
+                            ),
+                        );
+                        return Action::Pause;
+                    }
+
+                    if scan_result.was_redacted {
+                        info!(
+                            "request_id={}: DLP redacted request in firewall mode",
+                            self.request_identifier()
+                        );
+                        let redacted = scan_result.redacted_body.into_bytes();
+                        self.set_http_request_body(0, body_size, &redacted);
+                        return Action::Continue;
+                    }
+                    body_bytes
+                } else {
+                    body_bytes
+                }
+            } else {
+                body_bytes
+            };
+
+            // For OpenAI-compatible providers in streaming mode, inject stream_options
+            let provider = self.xproxy_provider_hint.as_deref().unwrap_or("");
+            let is_openai_compatible =
+                provider == "openai" || provider == "deepseek" || provider == "mistral";
+
+            if self.streaming_response && is_openai_compatible {
+                if let Ok(mut parsed) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+                    // Inject stream_options to get usage in streaming response
+                    if parsed.get("stream_options").is_none() {
+                        parsed["stream_options"] = serde_json::json!({"include_usage": true});
+                        if let Ok(modified) = serde_json::to_vec(&parsed) {
+                            self.set_http_request_body(0, body_size, &modified);
+                        }
+                    }
+                }
+            }
+
+            info!(
+                "request_id={}: firewall body processed, model={:?} streaming={}",
+                self.request_identifier(),
+                self.xproxy_model,
+                self.streaming_response
+            );
+
+            return Action::Continue;
+        }
+
+        // === Standard managed proxy mode ===
+
+        // Let the client send the gateway all the data before sending to the LLM_provider.
 
         if !end_of_stream {
             return Action::Pause;
@@ -924,6 +1505,48 @@ impl HttpContext for StreamContext {
                 );
                 return Action::Pause;
             }
+        };
+
+        // DLP scanning on request body
+        let body_bytes = if let Some(ref scanner) = self.dlp_scanner {
+            if scanner.is_enabled() {
+                let body_str = String::from_utf8_lossy(&body_bytes);
+                let scan_result = scanner.scan_and_redact(&body_str);
+
+                if !scan_result.blocked.is_empty() {
+                    warn!(
+                        "request_id={}: DLP blocked request, patterns={:?}",
+                        self.request_identifier(),
+                        scan_result.blocked
+                    );
+                    self.send_http_response(
+                        400,
+                        vec![("content-type", "application/json")],
+                        Some(
+                            format!(
+                                r#"{{"error":"request blocked by DLP policy","patterns":{:?}}}"#,
+                                scan_result.blocked
+                            )
+                            .as_bytes(),
+                        ),
+                    );
+                    return Action::Pause;
+                }
+
+                if scan_result.was_redacted {
+                    info!(
+                        "request_id={}: DLP redacted request body",
+                        self.request_identifier()
+                    );
+                    scan_result.redacted_body.into_bytes()
+                } else {
+                    body_bytes
+                }
+            } else {
+                body_bytes
+            }
+        } else {
+            body_bytes
         };
 
         //We need to deserialize the request body based on the resolved API
@@ -1137,6 +1760,11 @@ impl HttpContext for StreamContext {
             return Action::Continue;
         }
 
+        // UsageOnly: extract token counts from response via byte scan, pass through untouched
+        if self.extraction_level == ExtractionLevel::UsageOnly {
+            return self.handle_firewall_response_body(body_size, end_of_stream);
+        }
+
         let current_time = get_current_time().unwrap();
         if end_of_stream && body_size == 0 {
             debug!(
@@ -1145,6 +1773,7 @@ impl HttpContext for StreamContext {
                 body_size
             );
             self.handle_end_of_request_metrics_and_traces(current_time);
+            self.send_xproxy_usage_callout();
             return Action::Continue;
         }
 

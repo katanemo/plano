@@ -35,3 +35,14 @@ pub const ENVOY_RETRY_HEADER: &str = "x-envoy-max-retries";
 pub const BRIGHT_STAFF_SERVICE_NAME: &str = "brightstaff";
 pub const PLANO_ORCHESTRATOR_MODEL_NAME: &str = "Plano-Orchestrator";
 pub const ARCH_FC_CLUSTER: &str = "arch";
+pub const XPROXY_PROVIDER_HINT_HEADER: &str = "x-xproxy-provider-hint";
+pub const XPROXY_API_KEY_HEADER: &str = "x-xproxy-api-key";
+pub const XPROXY_MODEL_HEADER: &str = "x-xproxy-model";
+pub const XPROXY_USER_ID_HEADER: &str = "x-xproxy-user-id";
+pub const XPROXY_PROJECT_ID_HEADER: &str = "x-xproxy-project-id";
+pub const XPROXY_PIPE_ID_HEADER: &str = "x-xproxy-pipe-id";
+
+// Firewall mode headers
+pub const XPROXY_FIREWALL_MODE_HEADER: &str = "x-xproxy-firewall-mode";
+pub const XPROXY_UPSTREAM_URL_HEADER: &str = "x-xproxy-upstream-url";
+pub const XPROXY_API_KEY_HASH_HEADER: &str = "x-xproxy-api-key-hash";

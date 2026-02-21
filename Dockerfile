@@ -79,6 +79,9 @@ COPY --from=wasm-builder /arch/target/wasm32-wasip1/release/prompt_gateway.wasm 
 COPY --from=wasm-builder /arch/target/wasm32-wasip1/release/llm_gateway.wasm /etc/envoy/proxy-wasm-plugins/llm_gateway.wasm
 COPY --from=brightstaff-builder /arch/target/release/brightstaff /app/brightstaff
 
+# xproxy: migration files
+COPY migrations/ /app/migrations/
+
 RUN mkdir -p /var/log/supervisor && \
     touch /var/log/envoy.log /var/log/supervisor/supervisord.log \
           /var/log/access_ingress.log /var/log/access_ingress_prompt.log \

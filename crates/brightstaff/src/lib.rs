@@ -1,4 +1,9 @@
+pub mod auth;
+pub mod billing;
+pub mod db;
 pub mod handlers;
+pub mod pricing;
+pub mod registry;
 pub mod router;
 pub mod signals;
 pub mod state;

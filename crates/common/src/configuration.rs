@@ -77,6 +77,8 @@ pub struct Configuration {
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,
     pub state_storage: Option<StateStorageConfig>,
+    pub prompt_gateway_enabled: Option<bool>,
+    pub dlp: Option<crate::dlp::DlpConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

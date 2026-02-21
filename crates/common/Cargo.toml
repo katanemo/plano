@@ -19,6 +19,7 @@ hex = "0.4.3"
 urlencoding = "2.1.3"
 url = "2.5.4"
 hermesllm = { version = "0.1.0", path = "../hermesllm" }
+regex = "1"
 serde_with = "3.13.0"
 
 [features]

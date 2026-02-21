@@ -27,3 +27,10 @@ bytes = "1.10"
 
 [dev-dependencies]
 serial_test = "3.1.1"
+criterion = { version = "0.5", features = ["html_reports"] }
+regex = "1"
+serde_json = "1.0"
+
+[[bench]]
+name = "extraction_bench"
+harness = false
