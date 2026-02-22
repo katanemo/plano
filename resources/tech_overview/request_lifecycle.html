@@ -194,6 +194,115 @@ processing. It is responsible for managing the inbound(edge) and outbound(egress
 <p>Also, Plano utilizes <a class="reference external" href="https://blog.envoyproxy.io/envoy-threading-model-a8d44b922310" rel="nofollow noopener">Envoy event-based thread model<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>. A main thread is responsible for the server lifecycle, configuration processing, stats, etc. and some number of <a class="reference internal" href="threading_model.html#plano-overview-threading"><span class="std std-ref">worker threads</span></a> process requests. All threads operate around an event loop (<a class="reference external" href="https://libevent.org/" rel="nofollow noopener">libevent<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>) and any given downstream TCP connection will be handled by exactly one worker thread for its lifetime. Each worker thread maintains its own pool of TCP connections to upstream endpoints.</p>
 <p>Worker threads rarely share state and operate in a trivially parallel fashion. This threading model
 enables scaling to very high core count CPUs.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">┌─────────────────────────────────────────────────────────────────────────────────────┐
+</span><span id="line-2">│                                    P L A N O                                        │
+</span><span id="line-3">│                  AI-native proxy and data plane for agentic applications            │
+</span><span id="line-4">│                                                                                     │
+</span><span id="line-5">│                              ┌─────────────────────┐                                │
+</span><span id="line-6">│                              │    YOUR CLIENTS     │                                │
+</span><span id="line-7">│                              │ (apps· agents · UI) │                                │
+</span><span id="line-8">│                              └──────────┬──────────┘                                │
+</span><span id="line-9">│                                         │                                           │
+</span><span id="line-10">│          ┌──────────────────────────────┼──────────────────────────┐                │
+</span><span id="line-11">│          │                              │                          │                │
+</span><span id="line-12">│   ┌──────▼──────────┐         ┌─────────▼────────┐       ┌────────▼─────────┐       │
+</span><span id="line-13">│   │  Agent Port(s)  │         │   Model Port     │       │  Function-Call   │       │
+</span><span id="line-14">│   │  :8001+         │         │   :12000         │       │  Port  :10000    │       │
+</span><span id="line-15">│   │                 │         │                  │       │                  │       │
+</span><span id="line-16">│   │  route your     │         │  direct LLM      │       │  prompt-target / │       │
+</span><span id="line-17">│   │  prompts to     │         │  calls with      │       │  tool dispatch   │       │
+</span><span id="line-18">│   │  the right      │         │  model-alias     │       │  with parameter  │       │
+</span><span id="line-19">│   │  agent          │         │  translation     │       │  extraction      │       │
+</span><span id="line-20">│   └──────┬──────────┘         └─────────┬────────┘       └────────┬─────────┘       │
+</span><span id="line-21">│          └──────────────────────────────┼─────────────────────────┘                 │
+</span><span id="line-22">│                                         │                                           │
+</span><span id="line-23">│  ╔══════════════════════════════════════▼══════════════════════════════════════╗    │
+</span><span id="line-24">│  ║            BRIGHTSTAFF (SUBSYSTEM) —  Agentic Control Plane                 ║    │
+</span><span id="line-25">│  ║            Async · non-blocking · parallel per-request Tokio tasks          ║    │
+</span><span id="line-26">│  ║                                                                             ║    │
+</span><span id="line-27">│  ║   ┌─────────────────────────────────────────────────────────────────────┐   ║    │
+</span><span id="line-28">│  ║   │  Agentic ROUTER                                                     │   ║    │
+</span><span id="line-29">│  ║   │  Reads listener config · maps incoming request to execution path    │   ║    │
+</span><span id="line-30">│  ║   │                                                                     │   ║    │
+</span><span id="line-31">│  ║   │   /agents/*  ──────────────────────►  AGENT PATH                    │   ║    │
+</span><span id="line-32">│  ║   │   /v1/chat|messages|responses ──────►  LLM PATH                     │   ║    │
+</span><span id="line-33">│  ║   └─────────────────────────────────────────────────────────────────────┘   ║    │
+</span><span id="line-34">│  ║                                                                             ║    │
+</span><span id="line-35">│  ║   ─────────────────────── AGENT PATH ────────────────────────────────────   ║    │
+</span><span id="line-36">│  ║                                                                             ║    │
+</span><span id="line-37">│  ║   ┌──────────────────────────────────────────────────────────────────────┐  ║    │
+</span><span id="line-38">│  ║   │  FILTER CHAIN                        (pipeline_processor.rs)         │  ║    │
+</span><span id="line-39">│  ║   │                                                                      │  ║    │
+</span><span id="line-40">│  ║   │  prompt ──► [input_guards] ──► [query_rewrite] ──► [context_builder] │  ║    │
+</span><span id="line-41">│  ║   │             guardrails       prompt mutation      RAG / enrichment   │  ║    │
+</span><span id="line-42">│  ║   │                                                                      │  ║    │
+</span><span id="line-43">│  ║   │  Each filter: HTTP or MCP · can mutate, enrich, or short-circuit     │  ║    │
+</span><span id="line-44">│  ║   └──────────────────────────────────┬───────────────────────────────────┘  ║    │
+</span><span id="line-45">│  ║                                      │                                      ║    │
+</span><span id="line-46">│  ║   ┌──────────────────────────────────▼───────────────────────────────────┐  ║    │
+</span><span id="line-47">│  ║   │  AGENT ORCHESTRATOR               (agent_chat_completions.rs)        │  ║    │
+</span><span id="line-48">│  ║   │  Select agent · forward enriched request · manage conversation state │  ║    │
+</span><span id="line-49">│  ║   │  Stream response back · multi-turn aware                             │  ║    │
+</span><span id="line-50">│  ║   └──────────────────────────────────────────────────────────────────────┘  ║    │
+</span><span id="line-51">│  ║                                                                             ║    │
+</span><span id="line-52">│  ║   ─────────────────────── LLM PATH ──────────────────────────────────────   ║    │
+</span><span id="line-53">│  ║                                                                             ║    │
+</span><span id="line-54">│  ║   ┌──────────────────────────────────────────────────────────────────────┐  ║    │
+</span><span id="line-55">│  ║   │  MODEL ROUTER                       (llm_router.rs + router_chat.rs) │  ║    │
+</span><span id="line-56">│  ║   │  Model alias resolution · preference-based provider selection        │  ║    │
+</span><span id="line-57">│  ║   │  "fast-llm" → gpt-4o-mini  ·  "smart-llm" → gpt-4o                   │  ║    │
+</span><span id="line-58">│  ║   └──────────────────────────────────────────────────────────────────────┘  ║    │
+</span><span id="line-59">│  ║                                                                             ║    │
+</span><span id="line-60">│  ║   ─────────────────── ALWAYS ON (every request) ─────────────────────────   ║    │
+</span><span id="line-61">│  ║                                                                             ║    │
+</span><span id="line-62">│  ║   ┌────────────────────┐  ┌─────────────────────┐  ┌──────────────────┐     ║    │
+</span><span id="line-63">│  ║   │  SIGNALS ANALYZER  │  │   STATE STORAGE     │  │  OTEL TRACING    │     ║    │
+</span><span id="line-64">│  ║   │  loop detection    │  │   memory / postgres │  │  traceparent     │     ║    │
+</span><span id="line-65">│  ║   │  repetition score  │  │   /v1/responses     │  │  span injection  │     ║    │
+</span><span id="line-66">│  ║   │  quality indicators│  │   stateful API      │  │  trace export    │     ║    │
+</span><span id="line-67">│  ║   └────────────────────┘  └─────────────────────┘  └──────────────────┘     ║    │
+</span><span id="line-68">│  ╚═════════════════════════════════════╤═══════════════════════════════════════╝    │
+</span><span id="line-69">│                                        │                                            │
+</span><span id="line-70">│  ┌─────────────────────────────────────▼──────────────────────────────────────┐     │
+</span><span id="line-71">│  │  LLM GATEWAY   (llm_gateway.wasm — embedded in Envoy egress filter chain)  │     │
+</span><span id="line-72">│  │                                                                            │     │
+</span><span id="line-73">│  │  Rate limiting  ·  Provider format translation  ·  TTFT metrics            │     │
+</span><span id="line-74">│  │  OpenAI → Anthropic · Gemini · Mistral · Groq · DeepSeek · xAI · Bedrock   │     │
+</span><span id="line-75">│  │                                                                            │     │
+</span><span id="line-76">│  │  Envoy handles beneath this: TLS origination · SNI · retry + backoff       │     │
+</span><span id="line-77">│  │  connection pooling · LOGICAL_DNS · structured access logs                 │     │
+</span><span id="line-78">│  └─────────────────────────────────────┬──────────────────────────────────────┘     │
+</span><span id="line-79">│                                         │                                           │
+</span><span id="line-80">└─────────────────────────────────────────┼───────────────────────────────────────────┘
+</span><span id="line-81">                                          │
+</span><span id="line-82">              ┌───────────────────────────┼────────────────────────────┐
+</span><span id="line-83">              │                           │                             │
+</span><span id="line-84">    ┌─────────▼──────────┐   ┌────────────▼──────────┐   ┌────────────▼──────────┐
+</span><span id="line-85">    │  LLM PROVIDERS     │   │  EXTERNAL AGENTS      │   │  TOOL / API BACKENDS  │
+</span><span id="line-86">    │  OpenAI · Anthropic│   │  (filter chain svc)   │   │  (endpoint clusters)  │
+</span><span id="line-87">    │  Gemini · Mistral  │   │  HTTP / MCP  :10500+  │   │  user-defined hosts   │
+</span><span id="line-88">    │  Groq · DeepSeek   │   │  input_guards         │   │                       │
+</span><span id="line-89">    │  xAI · Together.ai │   │  query_rewriter       │   │                       │
+</span><span id="line-90">    └────────────────────┘   │  context_builder      │   └───────────────────────┘
+</span><span id="line-91">                             └───────────────────────┘
+</span><span id="line-92">
+</span><span id="line-93">
+</span><span id="line-94">  HOW PLANO IS DIFFERENT
+</span><span id="line-95">  ─────────────────────────────────────────────────────────────────────────────────
+</span><span id="line-96">  Brightstaff is the entire agentic brain — one async Rust binary that handles
+</span><span id="line-97">  agent selection, filter chain orchestration, model routing, state, and signals
+</span><span id="line-98">  without blocking a thread per request.
+</span><span id="line-99">
+</span><span id="line-100">  Filter chains are programmable dataplane steps — reusable HTTP/MCP services
+</span><span id="line-101">  you wire into any agent, executing in-path before the agent ever sees the prompt.
+</span><span id="line-102">
+</span><span id="line-103">  The LLM gateway is a zero-overhead WASM plugin inside Envoy — format translation
+</span><span id="line-104">  and rate limiting happen in-process with the proxy, not as a separate service hop.
+</span><span id="line-105">
+</span><span id="line-106">  Envoy provides the transport substrate (TLS, HTTP codecs, retries, connection
+</span><span id="line-107">  pools, access logs) so Plano never reimplements solved infrastructure problems.
+</span></code></pre></div>
+</div>
 </section>
 <section id="request-flow-ingress">
 <h2>Request Flow (Ingress)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#request-flow-ingress" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#request-flow-ingress'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -375,7 +484,7 @@ processing request headers and then finalized by the HCM during post-request pro
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Feb 19, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Feb 22, 2026. </p>
 </div>
 </div>
 </footer>
