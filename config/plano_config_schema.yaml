@@ -265,6 +265,12 @@ properties:
         type: boolean
       use_agent_orchestrator:
         type: boolean
+      upstream_connect_timeout:
+        type: string
+        description: "Connect timeout for upstream provider clusters (e.g., '5s', '10s'). Default is '5s'."
+      upstream_tls_ca_path:
+        type: string
+        description: "Path to the trusted CA bundle for upstream TLS verification. Default is '/etc/ssl/certs/ca-certificates.crt'."
   system_prompt:
     type: string
   prompt_targets:

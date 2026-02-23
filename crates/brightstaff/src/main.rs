@@ -211,6 +211,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             agents_list,
                             listeners,
                             span_attributes,
+                            llm_providers,
                         )
                         .with_context(parent_cx)
                         .await;

@@ -74,6 +74,7 @@ impl ApiDefinition for OpenAIApi {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ChatCompletionsRequest {
     pub messages: Vec<Message>,
+    #[serde(default)]
     pub model: String,
     // pub audio: Option<Audio> // GOOD FIRST ISSUE: future support for audio input
     pub frequency_penalty: Option<f32>,

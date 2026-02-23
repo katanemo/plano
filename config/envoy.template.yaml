@@ -595,7 +595,7 @@ static_resources:
   clusters:
 
     - name: arch
-      connect_timeout: 5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -618,9 +618,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: anthropic
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -643,9 +646,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: deepseek
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -668,9 +674,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: xai
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -693,9 +702,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: moonshotai
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -718,9 +730,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: zhipu
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -743,9 +758,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: together_ai
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -768,9 +786,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: gemini
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -793,9 +814,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: groq
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -818,9 +842,12 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: mistral
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -839,9 +866,16 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
           sni: api.mistral.ai
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: TLSv1_2
+              tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
 
     - name: openai
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -864,6 +898,9 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
     - name: mistral_7b_instruct
       connect_timeout: 0.5s
       type: STRICT_DNS
@@ -884,7 +921,7 @@ static_resources:
       {% if cluster.connect_timeout -%}
       connect_timeout: {{ cluster.connect_timeout }}
       {% else -%}
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       {% endif -%}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
@@ -913,12 +950,15 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
       {% endif %}
 {% endfor %}
 
 {% for local_llm_provider in local_llms %}
     - name: {{ local_llm_provider.cluster_name }}
-      connect_timeout: 0.5s
+      connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
@@ -946,6 +986,9 @@ static_resources:
             tls_params:
               tls_minimum_protocol_version: TLSv1_2
               tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: {{ upstream_tls_ca_path | default('/etc/ssl/certs/ca-certificates.crt') }}
       {% endif %}
 
 {% endfor %}

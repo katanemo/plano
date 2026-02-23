@@ -29,6 +29,7 @@ impl TryFrom<&[u8]> for ResponsesAPIResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponsesAPIRequest {
     /// The model to use for generating the response
+    #[serde(default)]
     pub model: String,
 
     /// Text, image, or file inputs to the model

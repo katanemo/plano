@@ -3,15 +3,17 @@ use std::time::Instant;
 
 use bytes::Bytes;
 use common::configuration::SpanAttributes;
+use common::llm_providers::LlmProviders;
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
 use hermesllm::ProviderRequestType;
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
-use hyper::{Request, Response};
+use hyper::{Request, Response, StatusCode};
 use opentelemetry::trace::get_active_span;
 use serde::ser::Error as SerError;
+use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::agent_selector::{AgentSelectionError, AgentSelector};
@@ -42,6 +44,7 @@ pub async fn agent_chat(
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
     span_attributes: Arc<Option<SpanAttributes>>,
+    llm_providers: Arc<RwLock<LlmProviders>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let custom_attrs =
         collect_custom_trace_attributes(request.headers(), span_attributes.as_ref().as_ref());
@@ -75,6 +78,7 @@ pub async fn agent_chat(
             orchestrator_service,
             agents_list,
             listeners,
+            llm_providers,
             request_id,
             custom_attrs,
         )
@@ -160,6 +164,7 @@ async fn handle_agent_chat_inner(
     orchestrator_service: Arc<OrchestratorService>,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    llm_providers: Arc<RwLock<LlmProviders>>,
     request_id: String,
     custom_attrs: std::collections::HashMap<String, String>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
@@ -230,16 +235,36 @@ async fn handle_agent_chat_inner(
             AgentFilterChainError::RequestParsing(serde_json::Error::custom(err_msg))
         })?;
 
-    let client_request = match ProviderRequestType::try_from((&chat_request_bytes[..], &api_type)) {
-        Ok(request) => request,
-        Err(err) => {
-            warn!("failed to parse request as ProviderRequestType: {}", err);
-            let err_msg = format!("Failed to parse request: {}", err);
-            return Err(AgentFilterChainError::RequestParsing(
-                serde_json::Error::custom(err_msg),
-            ));
+    let mut client_request =
+        match ProviderRequestType::try_from((&chat_request_bytes[..], &api_type)) {
+            Ok(request) => request,
+            Err(err) => {
+                warn!("failed to parse request as ProviderRequestType: {}", err);
+                let err_msg = format!("Failed to parse request: {}", err);
+                return Err(AgentFilterChainError::RequestParsing(
+                    serde_json::Error::custom(err_msg),
+                ));
+            }
+        };
+
+    // If model is not specified in the request, resolve from default provider
+    if client_request.model().is_empty() {
+        match llm_providers.read().await.default() {
+            Some(default_provider) => {
+                let default_model = default_provider.name.clone();
+                info!(default_model = %default_model, "no model specified in request, using default provider");
+                client_request.set_model(default_model);
+            }
+            None => {
+                let err_msg = "No model specified in request and no default provider configured";
+                warn!("{}", err_msg);
+                let mut bad_request =
+                    Response::new(ResponseHandler::create_full_body(err_msg.to_string()));
+                *bad_request.status_mut() = StatusCode::BAD_REQUEST;
+                return Ok(bad_request);
+            }
         }
-    };
+    }
 
     let message: Vec<OpenAIMessage> = client_request.get_messages();
 

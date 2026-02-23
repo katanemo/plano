@@ -79,13 +79,13 @@ jobs:
           load: true
           tags: |
             ${{ env.PLANO_DOCKER_IMAGE }}
-            ${{ env.DOCKER_IMAGE }}:0.4.7
+            ${{ env.DOCKER_IMAGE }}:0.4.8
             ${{ env.DOCKER_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Save image as artifact
-        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.7 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
+        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.8 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
