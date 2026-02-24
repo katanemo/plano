@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use bytes::Bytes;
+use common::errors::BrightStaffError;
 use common::llm_providers::LlmProviders;
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
@@ -24,12 +25,12 @@ use crate::tracing::{operation_component, set_service_name};
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
 pub enum AgentFilterChainError {
+    #[error("Forwarded error: {0}")]
+    Brightstaff(#[from] BrightStaffError),
     #[error("Agent selection error: {0}")]
     Selection(#[from] AgentSelectionError),
     #[error("Pipeline processing error: {0}")]
     Pipeline(#[from] PipelineError),
-    #[error("Response handling error: {0}")]
-    Response(#[from] super::response_handler::ResponseError),
     #[error("Request parsing error: {0}")]
     RequestParsing(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
@@ -103,16 +104,15 @@ pub async fn agent_chat(
                         "agent_response": body
                     });
 
+                    let status_code = hyper::StatusCode::from_u16(*status)
+                        .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+
                     let json_string = error_json.to_string();
-                    let mut response =
-                        Response::new(ResponseHandler::create_full_body(json_string));
-                    *response.status_mut() = hyper::StatusCode::from_u16(*status)
-                        .unwrap_or(hyper::StatusCode::BAD_REQUEST);
-                    response.headers_mut().insert(
-                        hyper::header::CONTENT_TYPE,
-                        "application/json".parse().unwrap(),
-                    );
-                    return Ok(response);
+                    return Ok(BrightStaffError::ForwardedError {
+                        status_code,
+                        message: json_string,
+                    }
+                    .into_response());
                 }
 
                 // Print detailed error information with full error chain for other errors
@@ -145,8 +145,11 @@ pub async fn agent_chat(
                 // Log the error for debugging
                 info!(error = %error_json, "structured error info");
 
-                // Return JSON error response
-                Ok(ResponseHandler::create_json_error_response(&error_json))
+                Ok(BrightStaffError::ForwardedError {
+                    status_code: StatusCode::BAD_REQUEST,
+                    message: error_json.to_string(),
+                }
+                .into_response())
             }
         }
     }
@@ -249,10 +252,7 @@ async fn handle_agent_chat_inner(
             None => {
                 let err_msg = "No model specified in request and no default provider configured";
                 warn!("{}", err_msg);
-                let mut bad_request =
-                    Response::new(ResponseHandler::create_full_body(err_msg.to_string()));
-                *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-                return Ok(bad_request);
+                return Ok(BrightStaffError::NoModelSpecified.into_response());
             }
         }
     }

@@ -61,10 +61,10 @@ pub enum BrightStaffError {
     #[error("Conversation state not found for previous_response_id: {0}")]
     ConversationStateNotFound(String),
 
-    #[error("Internal server error: {0}")]
+    #[error("Internal server error")]
     InternalServerError(String),
 
-    #[error("Invalid request: {0}")]
+    #[error("Invalid request")]
     InvalidRequest(String),
 
     #[error("{message}")]
@@ -72,6 +72,12 @@ pub enum BrightStaffError {
         status_code: StatusCode,
         message: String,
     },
+
+    #[error("Stream error: {0}")]
+    StreamError(String),
+
+    #[error("Failed to create response: {0}")]
+    ResponseCreationFailed(#[from] hyper::http::Error),
 }
 
 impl BrightStaffError {
@@ -110,6 +116,18 @@ impl BrightStaffError {
                 status_code,
                 message,
             } => (*status_code, "ForwardedError", json!({ "reason": message })),
+
+            BrightStaffError::StreamError(reason) => (
+                StatusCode::BAD_REQUEST,
+                "StreamError",
+                json!({ "reason": reason }),
+            ),
+
+            BrightStaffError::ResponseCreationFailed(reason) => (
+                StatusCode::BAD_REQUEST,
+                "ResponseCreationFailed",
+                json!({ "reason": reason.to_string() }),
+            ),
         };
 
         let body_json = json!({
@@ -140,5 +158,63 @@ impl BrightStaffError {
                         .boxed(),
                 )
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http_body_util::BodyExt; // For .collect().await
+
+    #[tokio::test]
+    async fn test_model_not_found_format() {
+        let err = BrightStaffError::ModelNotFound("gpt-5-secret".to_string());
+        let response = err.into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        // Helper to extract body as JSON
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(body["error"]["code"], "ModelNotFound");
+        assert_eq!(
+            body["error"]["details"]["rejected_model_id"],
+            "gpt-5-secret"
+        );
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("gpt-5-secret"));
+    }
+
+    #[tokio::test]
+    async fn test_forwarded_error_preserves_status() {
+        let err = BrightStaffError::ForwardedError {
+            status_code: StatusCode::TOO_MANY_REQUESTS,
+            message: "Rate limit exceeded on agent side".to_string(),
+        };
+
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(body["error"]["code"], "ForwardedError");
+    }
+
+    #[tokio::test]
+    async fn test_hyper_error_wrapping() {
+        // Manually trigger a hyper error by creating an invalid URI/Header
+        let hyper_err = hyper::http::Response::builder()
+            .status(1000) // Invalid status
+            .body(())
+            .unwrap_err();
+
+        let err = BrightStaffError::ResponseCreationFailed(hyper_err);
+        let response = err.into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
