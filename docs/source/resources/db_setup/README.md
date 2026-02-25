@@ -64,8 +64,9 @@ After setting up the database table, configure your application to use Supabase 
 
 **Example:**
 ```bash
-# If your password is "MyPass#123", encode it as "MyPass%23123"
-export DATABASE_URL="postgresql://postgres.myproject:MyPass%23123@aws-0-us-west-2.pooler.supabase.com:5432/postgres"
+# If your password is "MyPass#123", URL-encode special characters (# becomes %23)
+export DB_PASSWORD="MyPass%23123"
+export DATABASE_URL="postgresql://postgres.myproject:${DB_PASSWORD}@aws-0-us-west-2.pooler.supabase.com:5432/postgres"
 ```
 
 ### Testing the Connection

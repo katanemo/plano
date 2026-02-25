@@ -138,17 +138,10 @@ Run the SQL schema to create the required table:
 Configuration
 ^^^^^^^^^^^^^
 
-Once the database table is created, configure Plano to use PostgreSQL storage:
+Once the database table is created, configure Plano to use PostgreSQL storage.
 
-.. code-block:: yaml
-
-   state_storage:
-     type: postgres
-     connection_string: "postgresql://user:password@host:5432/database"
-
-**Using Environment Variables**
-
-You should **never** hardcode credentials. Use environment variables instead:
+.. important::
+   **Never** hardcode credentials. Always use environment variables in your connection string.
 
 .. code-block:: yaml
 
