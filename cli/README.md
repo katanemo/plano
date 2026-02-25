@@ -71,6 +71,17 @@ uv run planoai logs --follow
 uv run planoai <command> [options]
 ```
 
+### CI: Keep CLI templates and demos in sync
+
+The CLI templates in `cli/planoai/templates/` are the source of truth for mapped
+demo `config.yaml` files.
+
+Use the sync utility to write mapped demo configs from templates:
+
+```bash
+uv run python -m planoai.template_sync
+```
+
 ### Optional: Manual Virtual Environment Activation
 
 While `uv run` handles the virtual environment automatically, you can activate it manually if needed:
@@ -80,4 +91,4 @@ source .venv/bin/activate
 planoai build  # No need for 'uv run' when activated
 ```
 
-**Note:** For end-user installation instructions, see the [plano documentation](https://docs.planoai.dev).
+**Note:** For end-user installation instructions, see the [Plano documentation](https://docs.planoai.dev).

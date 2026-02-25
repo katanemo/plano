@@ -2,15 +2,18 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use bytes::Bytes;
+use common::errors::BrightStaffError;
+use common::llm_providers::LlmProviders;
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::providers::request::ProviderRequest;
 use hermesllm::ProviderRequestType;
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
-use hyper::{Request, Response};
+use hyper::{Request, Response, StatusCode};
 use opentelemetry::trace::get_active_span;
 use serde::ser::Error as SerError;
+use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::agent_selector::{AgentSelectionError, AgentSelector};
@@ -22,12 +25,12 @@ use crate::tracing::{operation_component, set_service_name};
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
 pub enum AgentFilterChainError {
+    #[error("Forwarded error: {0}")]
+    Brightstaff(#[from] BrightStaffError),
     #[error("Agent selection error: {0}")]
     Selection(#[from] AgentSelectionError),
     #[error("Pipeline processing error: {0}")]
     Pipeline(#[from] PipelineError),
-    #[error("Response handling error: {0}")]
-    Response(#[from] super::response_handler::ResponseError),
     #[error("Request parsing error: {0}")]
     RequestParsing(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
@@ -40,6 +43,7 @@ pub async fn agent_chat(
     _: String,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    llm_providers: Arc<RwLock<LlmProviders>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Extract request_id from headers or generate a new one
     let request_id: String = match request
@@ -71,6 +75,7 @@ pub async fn agent_chat(
             orchestrator_service,
             agents_list,
             listeners,
+            llm_providers,
             request_id,
         )
         .await
@@ -99,16 +104,15 @@ pub async fn agent_chat(
                         "agent_response": body
                     });
 
+                    let status_code = hyper::StatusCode::from_u16(*status)
+                        .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+
                     let json_string = error_json.to_string();
-                    let mut response =
-                        Response::new(ResponseHandler::create_full_body(json_string));
-                    *response.status_mut() = hyper::StatusCode::from_u16(*status)
-                        .unwrap_or(hyper::StatusCode::BAD_REQUEST);
-                    response.headers_mut().insert(
-                        hyper::header::CONTENT_TYPE,
-                        "application/json".parse().unwrap(),
-                    );
-                    return Ok(response);
+                    return Ok(BrightStaffError::ForwardedError {
+                        status_code,
+                        message: json_string,
+                    }
+                    .into_response());
                 }
 
                 // Print detailed error information with full error chain for other errors
@@ -141,8 +145,11 @@ pub async fn agent_chat(
                 // Log the error for debugging
                 info!(error = %error_json, "structured error info");
 
-                // Return JSON error response
-                Ok(ResponseHandler::create_json_error_response(&error_json))
+                Ok(BrightStaffError::ForwardedError {
+                    status_code: StatusCode::BAD_REQUEST,
+                    message: error_json.to_string(),
+                }
+                .into_response())
             }
         }
     }
@@ -155,6 +162,7 @@ async fn handle_agent_chat_inner(
     orchestrator_service: Arc<OrchestratorService>,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    llm_providers: Arc<RwLock<LlmProviders>>,
     request_id: String,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
@@ -221,16 +229,33 @@ async fn handle_agent_chat_inner(
             AgentFilterChainError::RequestParsing(serde_json::Error::custom(err_msg))
         })?;
 
-    let client_request = match ProviderRequestType::try_from((&chat_request_bytes[..], &api_type)) {
-        Ok(request) => request,
-        Err(err) => {
-            warn!("failed to parse request as ProviderRequestType: {}", err);
-            let err_msg = format!("Failed to parse request: {}", err);
-            return Err(AgentFilterChainError::RequestParsing(
-                serde_json::Error::custom(err_msg),
-            ));
+    let mut client_request =
+        match ProviderRequestType::try_from((&chat_request_bytes[..], &api_type)) {
+            Ok(request) => request,
+            Err(err) => {
+                warn!("failed to parse request as ProviderRequestType: {}", err);
+                let err_msg = format!("Failed to parse request: {}", err);
+                return Err(AgentFilterChainError::RequestParsing(
+                    serde_json::Error::custom(err_msg),
+                ));
+            }
+        };
+
+    // If model is not specified in the request, resolve from default provider
+    if client_request.model().is_empty() {
+        match llm_providers.read().await.default() {
+            Some(default_provider) => {
+                let default_model = default_provider.name.clone();
+                info!(default_model = %default_model, "no model specified in request, using default provider");
+                client_request.set_model(default_model);
+            }
+            None => {
+                let err_msg = "No model specified in request and no default provider configured";
+                warn!("{}", err_msg);
+                return Ok(BrightStaffError::NoModelSpecified.into_response());
+            }
         }
-    };
+    }
 
     let message: Vec<OpenAIMessage> = client_request.get_messages();
 

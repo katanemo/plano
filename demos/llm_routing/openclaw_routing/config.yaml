@@ -12,7 +12,6 @@ listeners:
     timeout: 30s
 
 llm_providers:
-
   # Kimi K2.5 — Moonshot AI's open model (1T MoE, 32B active params)
   # Great for general conversation, agentic tasks, and multimodal work
   # OpenAI-compatible API at $0.60/M input, $2.50/M output tokens
@@ -21,13 +20,13 @@ llm_providers:
     base_url: https://api.moonshot.ai/v1
     default: true
     routing_preferences:
-      - name: code generation
-        description: generating code, writing scripts, implementing functions, and building tool integrations
+      - name: general conversation
+        description: general chat, greetings, casual conversation, Q&A, and everyday questions
 
   # Claude — Anthropic's most capable model
   # Best for complex reasoning, code, tool use, and evaluation
   - model: anthropic/claude-sonnet-4-5
     access_key: $ANTHROPIC_API_KEY
     routing_preferences:
-      - name: general conversation
-        description: general chat, greetings, casual conversation, Q&A, and everyday questions
+      - name: code generation
+        description: generating code, writing scripts, implementing functions, and building tool integrations

@@ -46,6 +46,117 @@ Also, Plano utilizes `Envoy event-based thread model <https://blog.envoyproxy.io
 Worker threads rarely share state and operate in a trivially parallel fashion. This threading model
 enables scaling to very high core count CPUs.
 
+.. code-block:: text
+
+   ┌─────────────────────────────────────────────────────────────────────────────────────┐
+   │                                    P L A N O                                        │
+   │                  AI-native proxy and data plane for agentic applications            │
+   │                                                                                     │
+   │                              ┌─────────────────────┐                                │
+   │                              │    YOUR CLIENTS     │                                │
+   │                              │ (apps· agents · UI) │                                │
+   │                              └──────────┬──────────┘                                │
+   │                                         │                                           │
+   │          ┌──────────────────────────────┼──────────────────────────┐                │
+   │          │                              │                          │                │
+   │   ┌──────▼──────────┐         ┌─────────▼────────┐       ┌────────▼─────────┐       │
+   │   │  Agent Port(s)  │         │   Model Port     │       │  Function-Call   │       │
+   │   │  :8001+         │         │   :12000         │       │  Port  :10000    │       │
+   │   │                 │         │                  │       │                  │       │
+   │   │  route your     │         │  direct LLM      │       │  prompt-target / │       │
+   │   │  prompts to     │         │  calls with      │       │  tool dispatch   │       │
+   │   │  the right      │         │  model-alias     │       │  with parameter  │       │
+   │   │  agent          │         │  translation     │       │  extraction      │       │
+   │   └──────┬──────────┘         └─────────┬────────┘       └────────┬─────────┘       │
+   │          └──────────────────────────────┼─────────────────────────┘                 │
+   │                                         │                                           │
+   │  ╔══════════════════════════════════════▼══════════════════════════════════════╗    │
+   │  ║            BRIGHTSTAFF (SUBSYSTEM) —  Agentic Control Plane                 ║    │
+   │  ║            Async · non-blocking · parallel per-request Tokio tasks          ║    │
+   │  ║                                                                             ║    │
+   │  ║   ┌─────────────────────────────────────────────────────────────────────┐   ║    │
+   │  ║   │  Agentic ROUTER                                                     │   ║    │
+   │  ║   │  Reads listener config · maps incoming request to execution path    │   ║    │
+   │  ║   │                                                                     │   ║    │
+   │  ║   │   /agents/*  ──────────────────────►  AGENT PATH                    │   ║    │
+   │  ║   │   /v1/chat|messages|responses ──────►  LLM PATH                     │   ║    │
+   │  ║   └─────────────────────────────────────────────────────────────────────┘   ║    │
+   │  ║                                                                             ║    │
+   │  ║   ─────────────────────── AGENT PATH ────────────────────────────────────   ║    │
+   │  ║                                                                             ║    │
+   │  ║   ┌──────────────────────────────────────────────────────────────────────┐  ║    │
+   │  ║   │  FILTER CHAIN                        (pipeline_processor.rs)         │  ║    │
+   │  ║   │                                                                      │  ║    │
+   │  ║   │  prompt ──► [input_guards] ──► [query_rewrite] ──► [context_builder] │  ║    │
+   │  ║   │             guardrails       prompt mutation      RAG / enrichment   │  ║    │
+   │  ║   │                                                                      │  ║    │
+   │  ║   │  Each filter: HTTP or MCP · can mutate, enrich, or short-circuit     │  ║    │
+   │  ║   └──────────────────────────────────┬───────────────────────────────────┘  ║    │
+   │  ║                                      │                                      ║    │
+   │  ║   ┌──────────────────────────────────▼───────────────────────────────────┐  ║    │
+   │  ║   │  AGENT ORCHESTRATOR               (agent_chat_completions.rs)        │  ║    │
+   │  ║   │  Select agent · forward enriched request · manage conversation state │  ║    │
+   │  ║   │  Stream response back · multi-turn aware                             │  ║    │
+   │  ║   └──────────────────────────────────────────────────────────────────────┘  ║    │
+   │  ║                                                                             ║    │
+   │  ║   ─────────────────────── LLM PATH ──────────────────────────────────────   ║    │
+   │  ║                                                                             ║    │
+   │  ║   ┌──────────────────────────────────────────────────────────────────────┐  ║    │
+   │  ║   │  MODEL ROUTER                       (llm_router.rs + router_chat.rs) │  ║    │
+   │  ║   │  Model alias resolution · preference-based provider selection        │  ║    │
+   │  ║   │  "fast-llm" → gpt-4o-mini  ·  "smart-llm" → gpt-4o                   │  ║    │
+   │  ║   └──────────────────────────────────────────────────────────────────────┘  ║    │
+   │  ║                                                                             ║    │
+   │  ║   ─────────────────── ALWAYS ON (every request) ─────────────────────────   ║    │
+   │  ║                                                                             ║    │
+   │  ║   ┌────────────────────┐  ┌─────────────────────┐  ┌──────────────────┐     ║    │
+   │  ║   │  SIGNALS ANALYZER  │  │   STATE STORAGE     │  │  OTEL TRACING    │     ║    │
+   │  ║   │  loop detection    │  │   memory / postgres │  │  traceparent     │     ║    │
+   │  ║   │  repetition score  │  │   /v1/responses     │  │  span injection  │     ║    │
+   │  ║   │  quality indicators│  │   stateful API      │  │  trace export    │     ║    │
+   │  ║   └────────────────────┘  └─────────────────────┘  └──────────────────┘     ║    │
+   │  ╚═════════════════════════════════════╤═══════════════════════════════════════╝    │
+   │                                        │                                            │
+   │  ┌─────────────────────────────────────▼──────────────────────────────────────┐     │
+   │  │  LLM GATEWAY   (llm_gateway.wasm — embedded in Envoy egress filter chain)  │     │
+   │  │                                                                            │     │
+   │  │  Rate limiting  ·  Provider format translation  ·  TTFT metrics            │     │
+   │  │  OpenAI → Anthropic · Gemini · Mistral · Groq · DeepSeek · xAI · Bedrock   │     │
+   │  │                                                                            │     │
+   │  │  Envoy handles beneath this: TLS origination · SNI · retry + backoff       │     │
+   │  │  connection pooling · LOGICAL_DNS · structured access logs                 │     │
+   │  └─────────────────────────────────────┬──────────────────────────────────────┘     │
+   │                                         │                                           │
+   └─────────────────────────────────────────┼───────────────────────────────────────────┘
+                                             │
+                 ┌───────────────────────────┼────────────────────────────┐
+                 │                           │                             │
+       ┌─────────▼──────────┐   ┌────────────▼──────────┐   ┌────────────▼──────────┐
+       │  LLM PROVIDERS     │   │  EXTERNAL AGENTS      │   │  TOOL / API BACKENDS  │
+       │  OpenAI · Anthropic│   │  (filter chain svc)   │   │  (endpoint clusters)  │
+       │  Gemini · Mistral  │   │  HTTP / MCP  :10500+  │   │  user-defined hosts   │
+       │  Groq · DeepSeek   │   │  input_guards         │   │                       │
+       │  xAI · Together.ai │   │  query_rewriter       │   │                       │
+       └────────────────────┘   │  context_builder      │   └───────────────────────┘
+                                └───────────────────────┘
+
+
+     HOW PLANO IS DIFFERENT
+     ─────────────────────────────────────────────────────────────────────────────────
+     Brightstaff is the entire agentic brain — one async Rust binary that handles
+     agent selection, filter chain orchestration, model routing, state, and signals
+     without blocking a thread per request.
+
+     Filter chains are programmable dataplane steps — reusable HTTP/MCP services
+     you wire into any agent, executing in-path before the agent ever sees the prompt.
+
+     The LLM gateway is a zero-overhead WASM plugin inside Envoy — format translation
+     and rate limiting happen in-process with the proxy, not as a separate service hop.
+
+     Envoy provides the transport substrate (TLS, HTTP codecs, retries, connection
+     pools, access logs) so Plano never reimplements solved infrastructure problems.
+
+
 Request Flow (Ingress)
 ----------------------
 

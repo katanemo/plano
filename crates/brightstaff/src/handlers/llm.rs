@@ -8,9 +8,9 @@ use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full};
+use http_body_util::BodyExt;
 use hyper::header::{self};
-use hyper::{Request, Response, StatusCode};
+use hyper::{Request, Response};
 use opentelemetry::global;
 use opentelemetry::trace::get_active_span;
 use opentelemetry_http::HeaderInjector;
@@ -30,11 +30,7 @@ use crate::state::{
 };
 use crate::tracing::{llm as tracing_llm, operation_component, set_service_name};
 
-fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-    Full::new(chunk.into())
-        .map_err(|never| match never {})
-        .boxed()
-}
+use common::errors::BrightStaffError;
 
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
@@ -135,10 +131,11 @@ async fn llm_chat_inner(
                 error = %err,
                 "failed to parse request as ProviderRequestType"
             );
-            let err_msg = format!("Failed to parse request: {}", err);
-            let mut bad_request = Response::new(full(err_msg));
-            *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-            return Ok(bad_request);
+            return Ok(BrightStaffError::InvalidRequest(format!(
+                "Failed to parse request: {}",
+                err
+            ))
+            .into_response());
         }
     };
 
@@ -150,9 +147,28 @@ async fn llm_chat_inner(
         Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
     );
 
+    // If model is not specified in the request, resolve from default provider
+    let model_from_request = client_request.model().to_string();
+    let model_from_request = if model_from_request.is_empty() {
+        match llm_providers.read().await.default() {
+            Some(default_provider) => {
+                let default_model = default_provider.name.clone();
+                info!(default_model = %default_model, "no model specified in request, using default provider");
+                client_request.set_model(default_model.clone());
+                default_model
+            }
+            None => {
+                let err_msg = "No model specified in request and no default provider configured";
+                warn!("{}", err_msg);
+                return Ok(BrightStaffError::NoModelSpecified.into_response());
+            }
+        }
+    } else {
+        model_from_request
+    };
+
     // Model alias resolution: update model field in client_request immediately
     // This ensures all downstream objects use the resolved model
-    let model_from_request = client_request.model().to_string();
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
@@ -165,14 +181,8 @@ async fn llm_chat_inner(
         .get(&alias_resolved_model)
         .is_none()
     {
-        let err_msg = format!(
-            "Model '{}' not found in configured providers",
-            alias_resolved_model
-        );
         warn!(model = %alias_resolved_model, "model not found in configured providers");
-        let mut bad_request = Response::new(full(err_msg));
-        *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-        return Ok(bad_request);
+        return Ok(BrightStaffError::ModelNotFound(alias_resolved_model).into_response());
     }
 
     // Handle provider/model slug format (e.g., "openai/gpt-4")
@@ -267,13 +277,10 @@ async fn llm_chat_inner(
                         Err(StateStorageError::NotFound(_)) => {
                             // Return 409 Conflict when previous_response_id not found
                             warn!(previous_response_id = %prev_resp_id, "previous response_id not found");
-                            let err_msg = format!(
-                                "Conversation state not found for previous_response_id: {}",
-                                prev_resp_id
-                            );
-                            let mut conflict_response = Response::new(full(err_msg));
-                            *conflict_response.status_mut() = StatusCode::CONFLICT;
-                            return Ok(conflict_response);
+                            return Ok(BrightStaffError::ConversationStateNotFound(
+                                prev_resp_id.to_string(),
+                            )
+                            .into_response());
                         }
                         Err(e) => {
                             // Log warning but continue on other storage errors
@@ -324,9 +331,11 @@ async fn llm_chat_inner(
     {
         Ok(result) => result,
         Err(err) => {
-            let mut internal_error = Response::new(full(err.message));
-            *internal_error.status_mut() = err.status_code;
-            return Ok(internal_error);
+            return Ok(BrightStaffError::ForwardedError {
+                status_code: err.status_code,
+                message: err.message,
+            }
+            .into_response());
         }
     };
 
@@ -392,10 +401,11 @@ async fn llm_chat_inner(
     {
         Ok(res) => res,
         Err(err) => {
-            let err_msg = format!("Failed to send request: {}", err);
-            let mut internal_error = Response::new(full(err_msg));
-            *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(internal_error);
+            return Ok(BrightStaffError::InternalServerError(format!(
+                "Failed to send request: {}",
+                err
+            ))
+            .into_response());
         }
     };
 
@@ -452,12 +462,11 @@ async fn llm_chat_inner(
 
     match response.body(streaming_response.body) {
         Ok(response) => Ok(response),
-        Err(err) => {
-            let err_msg = format!("Failed to create response: {}", err);
-            let mut internal_error = Response::new(full(err_msg));
-            *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            Ok(internal_error)
-        }
+        Err(err) => Ok(BrightStaffError::InternalServerError(format!(
+            "Failed to create response: {}",
+            err
+        ))
+        .into_response()),
     }
 }
 
