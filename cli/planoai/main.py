@@ -388,7 +388,9 @@ def logs(debug, follow):
 
 
 @click.command()
-@click.argument("type", type=click.Choice(["claude"]), required=True)
+@click.argument(
+    "type", type=click.Choice(["claude", "codex", "opencode"]), required=True
+)
 @click.argument("file", required=False)  # Optional file argument
 @click.option(
     "--path", default=".", help="Path to the directory containing plano_config.yaml"
@@ -401,7 +403,7 @@ def logs(debug, follow):
 def cli_agent(type, file, path, settings):
     """Start a CLI agent connected to Plano.
 
-    CLI_AGENT: The type of CLI agent to start (currently only 'claude' is supported)
+    CLI_AGENT: The type of CLI agent to start (claude, codex, opencode)
     """
 
     # Check if plano docker container is running
@@ -418,7 +420,7 @@ def cli_agent(type, file, path, settings):
         sys.exit(1)
 
     try:
-        start_cli_agent(plano_config_file, settings)
+        start_cli_agent(plano_config_file, settings, type)
     except SystemExit:
         # Re-raise SystemExit to preserve exit codes
         raise

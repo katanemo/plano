@@ -144,17 +144,32 @@ def stop_docker_container(service=PLANO_DOCKER_NAME):
         log.info(f"Failed to shut down services: {str(e)}")
 
 
-def start_cli_agent(plano_config_file=None, settings_json="{}"):
+def start_cli_agent(plano_config_file=None, settings_json="{}", agent_type="claude"):
     """Start a CLI client connected to Plano."""
 
     with open(plano_config_file, "r") as file:
         plano_config = file.read()
         plano_config_yaml = yaml.safe_load(plano_config)
 
-    # Get egress listener configuration
-    egress_config = plano_config_yaml.get("listeners", {}).get("egress_traffic", {})
-    host = egress_config.get("host", "127.0.0.1")
-    port = egress_config.get("port", 12000)
+    # Get egress listener configuration (supports both legacy dict and list formats)
+    host = "127.0.0.1"
+    port = 12000
+    listeners = plano_config_yaml.get("listeners")
+    if isinstance(listeners, dict):
+        egress_config = listeners.get("egress_traffic", {})
+        host = egress_config.get("host", host)
+        port = egress_config.get("port", port)
+    elif isinstance(listeners, list):
+        model_listener = next(
+            (
+                listener
+                for listener in listeners
+                if listener.get("type") in ("model", "model_listener")
+            ),
+            {},
+        )
+        host = model_listener.get("host", host)
+        port = model_listener.get("port", port)
 
     # Parse additional settings from command line
     try:
@@ -167,31 +182,90 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
     env = os.environ.copy()
     env.update(
         {
-            "ANTHROPIC_AUTH_TOKEN": "test",  # Use test token for plano
-            "ANTHROPIC_API_KEY": "",
-            "ANTHROPIC_BASE_URL": f"http://{host}:{port}",
             "NO_PROXY": host,
             "DISABLE_TELEMETRY": "true",
-            "DISABLE_COST_WARNINGS": "true",
             "API_TIMEOUT_MS": "600000",
         }
     )
 
-    # Set ANTHROPIC_SMALL_FAST_MODEL from additional_settings or model alias
-    if "ANTHROPIC_SMALL_FAST_MODEL" in additional_settings:
-        env["ANTHROPIC_SMALL_FAST_MODEL"] = additional_settings[
-            "ANTHROPIC_SMALL_FAST_MODEL"
-        ]
-    else:
-        # Check if arch.claude.code.small.fast alias exists in model_aliases
-        model_aliases = plano_config_yaml.get("model_aliases", {})
-        if "arch.claude.code.small.fast" in model_aliases:
+    model_aliases = plano_config_yaml.get("model_aliases", {})
+    command_path = None
+    command_args = []
+    handled_settings = {"NON_INTERACTIVE_MODE"}
+
+    if agent_type == "claude":
+        env.update(
+            {
+                "ANTHROPIC_AUTH_TOKEN": "test",  # Use test token for plano
+                "ANTHROPIC_API_KEY": "",
+                "ANTHROPIC_BASE_URL": f"http://{host}:{port}",
+                "DISABLE_COST_WARNINGS": "true",
+            }
+        )
+        command_path = "claude"
+
+        # Set ANTHROPIC_SMALL_FAST_MODEL from additional_settings or model alias
+        if "ANTHROPIC_SMALL_FAST_MODEL" in additional_settings:
+            env["ANTHROPIC_SMALL_FAST_MODEL"] = additional_settings[
+                "ANTHROPIC_SMALL_FAST_MODEL"
+            ]
+        elif "arch.claude.code.small.fast" in model_aliases:
             env["ANTHROPIC_SMALL_FAST_MODEL"] = "arch.claude.code.small.fast"
         else:
             log.info(
                 "Tip: Set an alias 'arch.claude.code.small.fast' in your model_aliases config to set a small fast model Claude Code"
             )
             log.info("Or provide ANTHROPIC_SMALL_FAST_MODEL in --settings JSON")
+
+        handled_settings.add("ANTHROPIC_SMALL_FAST_MODEL")
+
+    elif agent_type == "codex":
+        env.update(
+            {
+                # Codex uses OpenAI-compatible auth/base URL when routing through Plano.
+                "OPENAI_API_KEY": env.get("OPENAI_API_KEY", "test"),
+                "OPENAI_BASE_URL": f"http://{host}:{port}/v1",
+            }
+        )
+        command_path = "codex"
+
+        codex_model = additional_settings.get("CODEX_MODEL")
+        if codex_model is None and "arch.codex.default" in model_aliases:
+            # Codex expects known model metadata. Resolve alias to concrete target by default
+            # to avoid metadata fallback warnings for custom alias names.
+            codex_model = model_aliases["arch.codex.default"].get(
+                "target", "arch.codex.default"
+            )
+        if codex_model:
+            command_args.extend(["-m", codex_model])
+
+        handled_settings.add("CODEX_MODEL")
+    elif agent_type == "opencode":
+        env.update(
+            {
+                # OpenCode uses OpenAI-compatible auth/base URL when routing through Plano.
+                "OPENAI_API_KEY": env.get("OPENAI_API_KEY", "test"),
+                "OPENAI_BASE_URL": f"http://{host}:{port}/v1",
+            }
+        )
+        command_path = "opencode"
+
+        opencode_model = additional_settings.get("OPENCODE_MODEL")
+        if opencode_model is None and "arch.opencode.default" in model_aliases:
+            opencode_model = model_aliases["arch.opencode.default"].get(
+                "target", "arch.opencode.default"
+            )
+
+        if opencode_model:
+            # Set both generic and client-specific model env vars for compatibility.
+            env["OPENAI_MODEL"] = opencode_model
+            env["OPENCODE_MODEL"] = opencode_model
+
+        handled_settings.add("OPENCODE_MODEL")
+    else:
+        raise ValueError(
+            f"Unsupported cli-agent type '{agent_type}'. Supported values: claude, codex, opencode"
+        )
 
     # Non-interactive mode configuration from additional_settings only
     if additional_settings.get("NON_INTERACTIVE_MODE", False):
@@ -204,31 +278,32 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
             }
         )
 
-    # Build claude command arguments
-    claude_args = []
-
-    # Add settings if provided, excluding those already handled as environment variables
+    # Add passthrough settings for supported agents.
     if additional_settings:
-        # Filter out settings that are already processed as environment variables
-        claude_settings = {
-            k: v
-            for k, v in additional_settings.items()
-            if k not in ["ANTHROPIC_SMALL_FAST_MODEL", "NON_INTERACTIVE_MODE"]
+        passthrough_settings = {
+            k: v for k, v in additional_settings.items() if k not in handled_settings
         }
-        if claude_settings:
-            claude_args.append(f"--settings={json.dumps(claude_settings)}")
+        if agent_type == "claude" and passthrough_settings:
+            command_args.append(f"--settings={json.dumps(passthrough_settings)}")
 
-    # Use claude from PATH
-    claude_path = "claude"
-    log.info(f"Connecting Claude Code Agent to Plano at {host}:{port}")
+    log.info(f"Connecting {agent_type} CLI agent to Plano at {host}:{port}")
 
     try:
-        subprocess.run([claude_path] + claude_args, env=env, check=True)
+        subprocess.run([command_path] + command_args, env=env, check=True)
     except subprocess.CalledProcessError as e:
-        log.error(f"Error starting claude: {e}")
+        log.error(f"Error starting {agent_type}: {e}")
         sys.exit(1)
     except FileNotFoundError:
-        log.error(
-            f"{claude_path} not found. Make sure Claude Code is installed: npm install -g @anthropic-ai/claude-code"
-        )
+        if agent_type == "claude":
+            log.error(
+                "claude not found. Make sure Claude Code is installed: npm install -g @anthropic-ai/claude-code"
+            )
+        elif agent_type == "codex":
+            log.error(
+                "codex not found. Make sure Codex CLI is installed: npm install -g @openai/codex"
+            )
+        else:
+            log.error(
+                "opencode not found. Make sure OpenCode CLI is installed and available in PATH"
+            )
         sys.exit(1)
