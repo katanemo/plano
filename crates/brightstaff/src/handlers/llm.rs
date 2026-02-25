@@ -4,7 +4,7 @@ use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
 use common::llm_providers::LlmProviders;
-use hermesllm::apis::openai_responses::InputParam;
+use hermesllm::apis::openai_responses::{InputParam, Tool as ResponsesTool};
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
 
-use crate::handlers::router_chat::router_chat_get_upstream_model;
+use crate::handlers::router_chat::{router_chat_get_upstream_model, RoutingResult};
 use crate::handlers::utils::{
     create_streaming_response, truncate_message, ObservableStreamProcessor,
 };
@@ -314,6 +314,33 @@ async fn llm_chat_inner(
         }
     }
 
+    // OpenAI Responses API rejects some tool fields that Codex may emit (e.g. domains on web_search).
+    // Strip those unsupported fields before serializing.
+    if matches!(
+        client_api,
+        Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
+    ) {
+        if let ProviderRequestType::ResponsesAPIRequest(ref mut responses_req) = client_request {
+            let mut stripped_domains_fields = 0usize;
+            if let Some(tools) = responses_req.tools.as_mut() {
+                for tool in tools.iter_mut() {
+                    if let ResponsesTool::WebSearchPreview { domains, .. } = tool {
+                        if domains.is_some() {
+                            *domains = None;
+                            stripped_domains_fields += 1;
+                        }
+                    }
+                }
+            }
+            if stripped_domains_fields > 0 {
+                debug!(
+                    stripped_domains_fields = stripped_domains_fields,
+                    "removed unsupported web_search domains fields for OpenAI Responses API"
+                );
+            }
+        }
+    }
+
     // Serialize request for upstream BEFORE router consumes it
     let client_request_bytes_for_upstream = ProviderRequestType::to_bytes(&client_request).unwrap();
 
@@ -345,9 +372,23 @@ async fn llm_chat_inner(
     {
         Ok(result) => result,
         Err(err) => {
-            let mut internal_error = Response::new(full(err.message));
-            *internal_error.status_mut() = err.status_code;
-            return Ok(internal_error);
+            // Codex /v1/responses can include tools (e.g. web_search) that cannot be
+            // converted to ChatCompletions for routing. Fall back to alias-resolved model
+            // instead of failing the full request.
+            if request_path == "/v1/responses" && err.message.contains("Unsupported conversion") {
+                warn!(
+                    request_id = %request_id,
+                    error = %err.message,
+                    "routing conversion unsupported for responses request; falling back to validated model"
+                );
+                RoutingResult {
+                    model_name: "none".to_string(),
+                }
+            } else {
+                let mut internal_error = Response::new(full(err.message));
+                *internal_error.status_mut() = err.status_code;
+                return Ok(internal_error);
+            }
         }
     };
 

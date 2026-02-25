@@ -137,6 +137,8 @@ pub enum InputItem {
         call_id: String,
         output: String,
     },
+    /// Unknown input item type (forward-compatible passthrough)
+    Unknown(serde_json::Value),
 }
 
 /// Input message with role and content
@@ -285,7 +287,9 @@ pub enum Tool {
         filters: Option<serde_json::Value>,
     },
     /// Web search tool
+    #[serde(alias = "web_search")]
     WebSearchPreview {
+        #[serde(skip_serializing_if = "Option::is_none")]
         domains: Option<Vec<String>>,
         search_context_size: Option<String>,
         user_location: Option<UserLocation>,
