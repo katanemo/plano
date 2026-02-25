@@ -41,6 +41,7 @@ pub struct Listener {
     pub name: String,
     pub router: Option<String>,
     pub agents: Option<Vec<AgentFilterChain>>,
+    pub filter_chain: Option<Vec<String>>,
     pub port: u16,
 }
 

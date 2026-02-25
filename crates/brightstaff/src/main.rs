@@ -221,6 +221,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             model_aliases,
                             llm_providers,
                             state_storage,
+                            listeners,
+                            agents_list,
                         )
                         .with_context(parent_cx)
                         .await
