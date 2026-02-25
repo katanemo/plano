@@ -136,6 +136,7 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../../resources/deployment.html">Deployment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../resources/configuration_reference.html">Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../resources/cli_reference.html">CLI Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../resources/llms_txt.html">llms.txt</a></li>
 </ul>
 </nav>
@@ -608,52 +609,7 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 </section>
 <section id="additional-resources">
 <h2>Additional Resources<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#additional-resources" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#additional-resources'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<section id="cli-reference">
-<h3>CLI Reference<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#cli-reference" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#cli-reference'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<dl>
-<dt><code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">trace</span></code></dt><dd><p>Trace requests captured by the local OTLP listener.</p>
-<p><strong>Synopsis</strong></p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>trace<span class="w"> </span><span class="o">[</span>TARGET<span class="o">]</span><span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
-</span></code></pre></div>
-</div>
-<p><strong>Targets</strong></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">last</span></code> (default): show the most recent trace.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">any</span></code>: allow interactive selection when available.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&lt;trace-id&gt;</span></code>: full 32-hex trace ID.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&lt;short-id&gt;</span></code>: first 8 hex characters.</p></li>
-</ul>
-<p><strong>Options</strong></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--filter</span> <span class="pre">&lt;pattern&gt;</span></code>: limit displayed attributes to matching keys (supports <code class="docutils literal notranslate"><span class="pre">*</span></code>).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--where</span> <span class="pre">&lt;key=value&gt;</span></code>: match traces containing a specific attribute (repeatable, AND).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--list</span></code>: list trace IDs only.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--no-interactive</span></code>: disable interactive prompts/selections.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--limit</span> <span class="pre">&lt;n&gt;</span></code>: limit the number of traces returned.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--since</span> <span class="pre">&lt;window&gt;</span></code>: look back window (<code class="docutils literal notranslate"><span class="pre">5m</span></code>, <code class="docutils literal notranslate"><span class="pre">2h</span></code>, <code class="docutils literal notranslate"><span class="pre">1d</span></code>).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--json</span></code>: output raw JSON instead of formatted output.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--verbose,</span> <span class="pre">-v</span></code>: show all span attributes. By default, inbound/outbound
-spans are displayed in a compact view.</p></li>
-</ul>
-<p><strong>Environment</strong></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">PLANO_TRACE_PORT</span></code>: gRPC port used by <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">trace</span></code> to query traces
-(defaults to <code class="docutils literal notranslate"><span class="pre">4317</span></code>).</p></li>
-</ul>
-</dd>
-<dt><code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">trace</span> <span class="pre">listen</span></code></dt><dd><p>Start a local OTLP/gRPC listener.</p>
-<p><strong>Synopsis</strong></p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>trace<span class="w"> </span>listen<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
-</span></code></pre></div>
-</div>
-<p><strong>Options</strong></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--host</span> <span class="pre">&lt;host&gt;</span></code>: bind address (default: <code class="docutils literal notranslate"><span class="pre">0.0.0.0</span></code>).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">--port</span> <span class="pre">&lt;port&gt;</span></code>: gRPC listener port (default: <code class="docutils literal notranslate"><span class="pre">4317</span></code>).</p></li>
-</ul>
-</dd>
-</dl>
-</section>
+<p>For full command documentation (including <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">trace</span></code> and all other CLI commands), see <a class="reference internal" href="../../resources/cli_reference.html#cli-reference"><span class="std std-ref">CLI Reference</span></a>.</p>
 <section id="external-references">
 <h3>External References<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#external-references" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#external-references'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
 <ul class="simple">
@@ -725,7 +681,6 @@ spans are displayed in a compact view.</p></li>
 <li><a :data-current="activeSection === '#best-practices'" class="reference internal" href="#best-practices">Best Practices</a></li>
 <li><a :data-current="activeSection === '#summary'" class="reference internal" href="#summary">Summary</a></li>
 <li><a :data-current="activeSection === '#additional-resources'" class="reference internal" href="#additional-resources">Additional Resources</a><ul>
-<li><a :data-current="activeSection === '#cli-reference'" class="reference internal" href="#cli-reference">CLI Reference</a></li>
 <li><a :data-current="activeSection === '#external-references'" class="reference internal" href="#external-references">External References</a></li>
 </ul>
 </li>
@@ -737,7 +692,7 @@ spans are displayed in a compact view.</p></li>
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Feb 24, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Feb 25, 2026. </p>
 </div>
 </div>
 </footer>

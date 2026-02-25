@@ -1,6 +1,6 @@
 Plano Docs v0.4.8
 llms.txt (auto-generated)
-Generated (UTC): 2026-02-24T22:35:03.557756+00:00
+Generated (UTC): 2026-02-25T03:18:03.713401+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -25,6 +25,7 @@ Table of contents
 - Guardrails (guides/prompt_guard)
 - Conversational State (guides/state)
 - Welcome to Plano! (index)
+- CLI Reference (resources/cli_reference)
 - Configuration Reference (resources/configuration_reference)
 - Deployment (resources/deployment)
 - llms.txt (resources/llms_txt)
@@ -4453,63 +4454,7 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 
 Additional Resources
 
-CLI Reference
-
-planoai trace
-
-Trace requests captured by the local OTLP listener.
-
-Synopsis
-
-$ planoai trace [TARGET] [OPTIONS]
-
-Targets
-
-last (default): show the most recent trace.
-
-any: allow interactive selection when available.
-
-<trace-id>: full 32-hex trace ID.
-
-<short-id>: first 8 hex characters.
-
-Options
-
---filter <pattern>: limit displayed attributes to matching keys (supports *).
-
---where <key=value>: match traces containing a specific attribute (repeatable, AND).
-
---list: list trace IDs only.
-
---no-interactive: disable interactive prompts/selections.
-
---limit <n>: limit the number of traces returned.
-
---since <window>: look back window (5m, 2h, 1d).
-
---json: output raw JSON instead of formatted output.
-
---verbose, -v: show all span attributes. By default, inbound/outbound
-spans are displayed in a compact view.
-
-Environment
-
-PLANO_TRACE_PORT: gRPC port used by planoai trace to query traces
-(defaults to 4317).
-
-planoai trace listen
-
-Start a local OTLP/gRPC listener.
-
-Synopsis
-
-$ planoai trace listen [OPTIONS]
-
-Options
-
---host <host>: bind address (default: 0.0.0.0).
-
---port <port>: gRPC listener port (default: 4317).
+For full command documentation (including planoai trace and all other CLI commands), see cli_reference.
 
 External References
 
@@ -5713,6 +5658,286 @@ Guides
 
 
 Resources
+
+---
+
+CLI Reference
+-------------
+Doc: resources/cli_reference
+
+CLI Reference
+
+This reference documents the full planoai command-line interface for day-to-day development, local testing, and operational workflows.
+Use this page as the canonical source for command syntax, options, and recommended usage patterns.
+
+Quick Navigation
+
+cli_reference_global
+
+cli_reference_up
+
+cli_reference_down
+
+cli_reference_build
+
+cli_reference_logs
+
+cli_reference_init
+
+cli_reference_trace
+
+cli_reference_prompt_targets
+
+cli_reference_cli_agent
+
+
+
+Global CLI Usage
+
+Command
+
+$ planoai [COMMAND] [OPTIONS]
+
+Common global options
+
+--help: Show the top-level command menu.
+
+--version: Show installed CLI version and update status.
+
+Help patterns
+
+$ planoai --help
+$ planoai trace --help
+$ planoai init --help
+
+planoai default command screenshot
+
+planoai command showing the top-level command menu.
+
+
+
+planoai up
+
+Start Plano using a configuration file.
+
+Synopsis
+
+$ planoai up [FILE] [--path <dir>] [--foreground] [--with-tracing] [--tracing-port <port>]
+
+Arguments
+
+FILE (optional): explicit path to config file.
+
+Options
+
+--path <dir>: directory to search for config (default .).
+
+--foreground: run Plano in foreground.
+
+--with-tracing: start local OTLP/gRPC trace collector.
+
+--tracing-port <port>: collector port (default 4317).
+
+If you use --with-tracing, ensure that port 4317 is free and not already in use by Jaeger or any other observability services or processes. If port 4317 is occupied, the command will fail to start the trace collector.
+
+Examples
+
+$ planoai up config.yaml
+$ planoai up --path ./deploy
+$ planoai up --with-tracing
+$ planoai up --with-tracing --tracing-port 4318
+
+
+
+planoai down
+
+Stop Plano (container/process stack managed by the CLI).
+
+Synopsis
+
+$ planoai down
+
+
+
+planoai build
+
+Build Plano Docker image from repository source.
+
+Synopsis
+
+$ planoai build
+
+
+
+planoai logs
+
+Stream Plano logs.
+
+Synopsis
+
+$ planoai logs [--follow] [--debug]
+
+Options
+
+--follow: stream logs continuously.
+
+--debug: include additional gateway/debug streams.
+
+Examples
+
+$ planoai logs
+$ planoai logs --follow
+$ planoai logs --follow --debug
+
+
+
+planoai init
+
+Generate a new config.yaml using an interactive wizard, built-in templates, or a clean empty file.
+
+Synopsis
+
+$ planoai init [--template <id> | --clean] [--output <path>] [--force] [--list-templates]
+
+Options
+
+--template <id>: create config from a built-in template id.
+
+--clean: create an empty config file.
+
+--output, -o <path>: output path (default config.yaml).
+
+--force: overwrite existing output file.
+
+--list-templates: print available template IDs and exit.
+
+Examples
+
+$ planoai init
+$ planoai init --list-templates
+$ planoai init --template coding_agent_routing
+$ planoai init --clean --output ./config/config.yaml
+
+planoai init command screenshot
+
+planoai init --list-templates showing built-in starter templates.
+
+
+
+planoai trace
+
+Inspect request traces from the local OTLP listener.
+
+Synopsis
+
+$ planoai trace [TARGET] [OPTIONS]
+
+Targets
+
+last (default): show most recent trace.
+
+any: consider all traces (interactive selection when terminal supports it).
+
+listen: start local OTLP listener.
+
+down: stop background listener.
+
+<trace-id>: full 32-hex trace id.
+
+<short-id>: first 8 hex chars of trace id.
+
+Display options
+
+--filter <pattern>: keep only matching attribute keys (supports * via “glob” syntax).
+
+--where <key=value>: locate traces containing key/value (repeatable, AND semantics).
+
+--list: list trace IDs instead of full trace output (use with --no-interactive to fetch plain-text trace IDs only).
+
+--no-interactive: disable interactive selection prompts.
+
+--limit <n>: limit returned traces.
+
+--since <window>: lookback window such as 5m, 2h, 1d.
+
+--json: emit JSON payloads.
+
+--verbose, -v: show full attribute output (disable compact trimming). Useful for debugging internal attributes.
+
+Listener options (for ``TARGET=listen``)
+
+--host <host>: bind host (default 0.0.0.0).
+
+--port <port>: bind port (default 4317).
+
+When using listen, ensure that port 4317 is free and not already in use by Jaeger or any other observability services or processes. If port 4317 is occupied, the command will fail to start the trace collector. You cannot use other services on the same port when running.
+
+Environment
+
+PLANO_TRACE_PORT: query port used by planoai trace when reading traces (default 4317).
+
+Examples
+
+# Start/stop listener
+$ planoai trace listen
+$ planoai trace down
+
+# Basic inspection
+$ planoai trace
+$ planoai trace 7f4e9a1c
+$ planoai trace 7f4e9a1c0d9d4a0bb9bf5a8a7d13f62a
+
+# Filtering and automation
+$ planoai trace --where llm.model=openai/gpt-5.2 --since 30m
+$ planoai trace --filter "http.*"
+$ planoai trace --list --limit 5
+$ planoai trace --where http.status_code=500 --json
+
+planoai trace command screenshot
+
+planoai trace command showing trace inspection and filtering capabilities.
+
+Operational notes
+
+--host and --port are valid only when TARGET is listen.
+
+--list cannot be combined with a specific trace-id target.
+
+
+
+planoai prompt_targets
+
+Generate prompt-target metadata from Python methods.
+
+Synopsis
+
+$ planoai prompt_targets --file <python-file>
+
+Options
+
+--file, --f <python-file>: required path to a .py source file.
+
+
+
+planoai cli_agent
+
+Start an interactive CLI agent session against a running Plano deployment.
+
+Synopsis
+
+$ planoai cli_agent claude [FILE] [--path <dir>] [--settings '<json>']
+
+Arguments
+
+type: currently claude.
+
+FILE (optional): config file path.
+
+Options
+
+--path <dir>: directory containing config file.
+
+--settings <json>: JSON settings payload for agent startup.
 
 ---
 
