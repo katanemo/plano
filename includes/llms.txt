@@ -1,6 +1,6 @@
 Plano Docs v0.4.8
 llms.txt (auto-generated)
-Generated (UTC): 2026-02-25T03:18:03.713401+00:00
+Generated (UTC): 2026-02-25T21:15:02.974485+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -5540,7 +5540,7 @@ export DB_PASSWORD="your-secure-password"
 # Run Plano or config validation
 ./plano
 
-Special Characters in Passwords: If your password contains special characters like #, @, or &, you must URL-encode them in the connection string. For example, MyPass#123 becomes MyPass%23123.
+Special Characters in Passwords: If your password contains special characters like #, @, or &, you must URL-encode them in the connection string. For example, P@ss#123 becomes P%40ss%23123.
 
 Supabase Connection Strings
 
@@ -5574,12 +5574,12 @@ Example Configuration
 
 state_storage:
   type: postgres
-  connection_string: "postgresql://postgres.myproject:$DB_PASSWORD@aws-0-us-west-2.pooler.supabase.com:5432/postgres"
+  connection_string: "postgresql://postgres.[YOUR-PROJECT-REF]:$DB_PASSWORD@aws-0-[REGION].pooler.supabase.com:5432/postgres"
 
 Then set the environment variable:
 
-# If your password is "MyPass#123", encode it as "MyPass%23123"
-export DB_PASSWORD="MyPass%23123"
+# If your password is "P@ss#123", encode it as "P%40ss%23123"
+export DB_PASSWORD="<your-url-encoded-password>"
 
 Troubleshooting
 

@@ -335,7 +335,7 @@
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p><strong>Special Characters in Passwords</strong>: If your password contains special characters like <code class="docutils literal notranslate"><span class="pre">#</span></code>, <code class="docutils literal notranslate"><span class="pre">@</span></code>, or <code class="docutils literal notranslate"><span class="pre">&amp;</span></code>, you must URL-encode them in the connection string. For example, <code class="docutils literal notranslate"><span class="pre">MyPass#123</span></code> becomes <code class="docutils literal notranslate"><span class="pre">MyPass%23123</span></code>.</p>
+<p><strong>Special Characters in Passwords</strong>: If your password contains special characters like <code class="docutils literal notranslate"><span class="pre">#</span></code>, <code class="docutils literal notranslate"><span class="pre">@</span></code>, or <code class="docutils literal notranslate"><span class="pre">&amp;</span></code>, you must URL-encode them in the connection string. For example, <code class="docutils literal notranslate"><span class="pre">P@ss#123</span></code> becomes <code class="docutils literal notranslate"><span class="pre">P%40ss%23123</span></code>.</p>
 </div>
 </section>
 <section id="supabase-connection-strings">
@@ -362,12 +362,12 @@
 <p><strong>Example Configuration</strong></p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">state_storage</span><span class="p">:</span>
 </span><span id="line-2"><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">postgres</span>
-</span><span id="line-3"><span class="w">  </span><span class="nt">connection_string</span><span class="p">:</span><span class="w"> </span><span class="s">"postgresql://postgres.myproject:$DB_PASSWORD@aws-0-us-west-2.pooler.supabase.com:5432/postgres"</span>
+</span><span id="line-3"><span class="w">  </span><span class="nt">connection_string</span><span class="p">:</span><span class="w"> </span><span class="s">"postgresql://postgres.[YOUR-PROJECT-REF]:$DB_PASSWORD@aws-0-[REGION].pooler.supabase.com:5432/postgres"</span>
 </span></code></pre></div>
 </div>
 <p>Then set the environment variable:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># If your password is "MyPass#123", encode it as "MyPass%23123"</span>
-</span><span id="line-2"><span class="nb">export</span><span class="w"> </span><span class="nv">DB_PASSWORD</span><span class="o">=</span><span class="s2">"MyPass%23123"</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># If your password is "P@ss#123", encode it as "P%40ss%23123"</span>
+</span><span id="line-2"><span class="nb">export</span><span class="w"> </span><span class="nv">DB_PASSWORD</span><span class="o">=</span><span class="s2">"&lt;your-url-encoded-password&gt;"</span>
 </span></code></pre></div>
 </div>
 </section>
