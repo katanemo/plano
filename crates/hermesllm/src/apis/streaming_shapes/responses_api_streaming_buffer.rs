@@ -236,7 +236,8 @@ impl ResponsesAPIStreamBuffer {
             }),
             store: Some(true),
             text: Some(TextConfig {
-                format: TextFormat::Text,
+                format: Some(TextFormat::Text),
+                verbosity: None,
             }),
             audio: None,
             modalities: None,

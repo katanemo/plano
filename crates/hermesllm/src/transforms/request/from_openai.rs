@@ -466,6 +466,9 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
                         ResponsesTool::Computer { .. } => Err(TransformError::UnsupportedConversion(
                             "Computer tool is not supported in ChatCompletions API. Only function tools are supported.".to_string()
                         )),
+                        ResponsesTool::Custom { .. } => Err(TransformError::UnsupportedConversion(
+                            "Custom tool is not supported in ChatCompletions API. Only function tools are supported.".to_string()
+                        )),
                     }
                 }).collect::<Result<Vec<_>, _>>()
             }).transpose()?,

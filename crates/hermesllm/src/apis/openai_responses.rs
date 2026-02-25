@@ -209,10 +209,13 @@ pub struct AudioConfig {
 }
 
 /// Text configuration
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextConfig {
     /// Text format configuration
-    pub format: TextFormat,
+    pub format: Option<TextFormat>,
+    /// Controls response verbosity for models that support it.
+    pub verbosity: Option<String>,
 }
 
 /// Text format
@@ -301,6 +304,12 @@ pub enum Tool {
         display_width_px: Option<i32>,
         display_height_px: Option<i32>,
         display_number: Option<i32>,
+    },
+    /// Custom tool (forward-compatible passthrough for provider-specific tools)
+    #[serde(rename = "custom")]
+    Custom {
+        #[serde(flatten)]
+        config: serde_json::Value,
     },
 }
 

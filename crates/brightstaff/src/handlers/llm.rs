@@ -14,7 +14,7 @@ use hyper::{Request, Response, StatusCode};
 use opentelemetry::global;
 use opentelemetry::trace::get_active_span;
 use opentelemetry_http::HeaderInjector;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
@@ -149,6 +149,8 @@ async fn llm_chat_inner(
         client_api,
         Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
     );
+    let requires_native_responses_tools =
+        responses_request_uses_non_function_tools(&client_request);
 
     // If model is not specified in the request, resolve from default provider
     let model_from_request = client_request.model().to_string();
@@ -394,13 +396,43 @@ async fn llm_chat_inner(
 
     // Determine final model to use
     // Router returns "none" as a sentinel value when it doesn't select a specific model
-    let router_selected_model = routing_result.model_name;
+    let router_selected_model = routing_result.model_name.clone();
     let resolved_model = if router_selected_model != "none" {
         // Router selected a specific model via routing preferences
-        router_selected_model
+        router_selected_model.clone()
     } else {
         // Router returned "none" sentinel, use validated resolved_model from request
         alias_resolved_model.clone()
+    };
+    let resolved_model = if requires_native_responses_tools {
+        match select_capability_compatible_model(
+            &llm_providers,
+            &resolved_model,
+            is_streaming_request,
+        )
+        .await
+        {
+            Some(compatible_model) => {
+                if compatible_model != resolved_model {
+                    warn!(
+                        request_id = %request_id,
+                        selected_model = %resolved_model,
+                        compatible_model = %compatible_model,
+                        "selected model cannot serve responses web/file/computer tools; rerouting to compatible model"
+                    );
+                }
+                compatible_model
+            }
+            None => {
+                let err_msg = "No configured model can serve OpenAI Responses API requests with non-function tools".to_string();
+                warn!(request_id = %request_id, error = %err_msg, "capability-aware routing failed");
+                let mut bad_request = Response::new(full(err_msg));
+                *bad_request.status_mut() = StatusCode::BAD_REQUEST;
+                return Ok(bad_request);
+            }
+        }
+    } else {
+        resolved_model
     };
     tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
 
@@ -539,6 +571,81 @@ fn resolve_model_alias(
         }
     }
     model_from_request.to_string()
+}
+
+fn responses_request_uses_non_function_tools(client_request: &ProviderRequestType) -> bool {
+    match client_request {
+        ProviderRequestType::ResponsesAPIRequest(req) => req
+            .tools
+            .as_ref()
+            .map(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| !matches!(tool, ResponsesTool::Function { .. }))
+            })
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+async fn model_supports_native_responses_api(
+    llm_providers: &Arc<RwLock<LlmProviders>>,
+    model_name: &str,
+    is_streaming: bool,
+) -> bool {
+    let upstream_path = get_upstream_path(
+        llm_providers,
+        model_name,
+        "/v1/responses",
+        model_name,
+        is_streaming,
+    )
+    .await;
+    matches!(
+        SupportedUpstreamAPIs::from_endpoint(&upstream_path),
+        Some(SupportedUpstreamAPIs::OpenAIResponsesAPI(_))
+    )
+}
+
+async fn select_capability_compatible_model(
+    llm_providers: &Arc<RwLock<LlmProviders>>,
+    preferred_model: &str,
+    is_streaming: bool,
+) -> Option<String> {
+    if model_supports_native_responses_api(llm_providers, preferred_model, is_streaming).await {
+        return Some(preferred_model.to_string());
+    }
+
+    let (default_candidate, ordered_candidates): (Option<String>, Vec<String>) = {
+        let providers = llm_providers.read().await;
+        let default_candidate = providers.default().map(|p| p.name.clone());
+
+        let mut seen = HashSet::new();
+        let mut candidates = Vec::new();
+        for (key, provider) in providers.iter() {
+            if key != &provider.name || provider.internal == Some(true) {
+                continue;
+            }
+            if seen.insert(provider.name.clone()) {
+                candidates.push(provider.name.clone());
+            }
+        }
+        (default_candidate, candidates)
+    };
+
+    if let Some(default_model) = default_candidate {
+        if model_supports_native_responses_api(llm_providers, &default_model, is_streaming).await {
+            return Some(default_model);
+        }
+    }
+
+    for candidate in ordered_candidates {
+        if model_supports_native_responses_api(llm_providers, &candidate, is_streaming).await {
+            return Some(candidate);
+        }
+    }
+
+    None
 }
 
 /// Calculates the upstream path for the provider based on the model name.

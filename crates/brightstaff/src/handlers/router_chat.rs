@@ -40,13 +40,16 @@ pub async fn router_chat_get_upstream_model(
 ) -> Result<RoutingResult, RoutingError> {
     // Clone metadata for routing before converting (which consumes client_request)
     let routing_metadata = client_request.metadata().clone();
+    let fallback_messages = client_request.get_messages();
 
-    // Convert to ChatCompletionsRequest for routing (regardless of input type)
-    let chat_request = match ProviderRequestType::try_from((
+    // Convert to ChatCompletionsRequest for routing when possible.
+    // If conversion fails for unsupported Responses tools (e.g. `custom`),
+    // route based on normalized OpenAI messages extracted from the original request.
+    let routing_messages = match ProviderRequestType::try_from((
         client_request,
         &SupportedUpstreamAPIs::OpenAIChatCompletions(hermesllm::apis::OpenAIApi::ChatCompletions),
     )) {
-        Ok(ProviderRequestType::ChatCompletionsRequest(req)) => req,
+        Ok(ProviderRequestType::ChatCompletionsRequest(req)) => req.messages,
         Ok(
             ProviderRequestType::MessagesRequest(_)
             | ProviderRequestType::BedrockConverse(_)
@@ -59,20 +62,29 @@ pub async fn router_chat_get_upstream_model(
             ));
         }
         Err(err) => {
-            warn!(
-                "failed to convert request to ChatCompletionsRequest: {}",
-                err
-            );
-            return Err(RoutingError::internal_error(format!(
-                "Failed to convert request: {}",
-                err
-            )));
+            let err_text = err.to_string();
+            if err_text.contains("Unsupported conversion") {
+                warn!(
+                    "routing conversion unsupported; falling back to routing with normalized request messages: {}",
+                    err_text
+                );
+                fallback_messages
+            } else {
+                warn!(
+                    "failed to convert request to ChatCompletionsRequest: {}",
+                    err
+                );
+                return Err(RoutingError::internal_error(format!(
+                    "Failed to convert request: {}",
+                    err
+                )));
+            }
         }
     };
 
     debug!(
-        request = %serde_json::to_string(&chat_request).unwrap(),
-        "router request"
+        message_count = routing_messages.len(),
+        "router request prepared"
     );
 
     // Extract usage preferences from metadata
@@ -87,14 +99,11 @@ pub async fn router_chat_get_upstream_model(
         .and_then(|s| serde_yaml::from_str(s).ok());
 
     // Prepare log message with latest message from chat request
-    let latest_message_for_log = chat_request
-        .messages
-        .last()
-        .map_or("None".to_string(), |msg| {
-            msg.content
-                .as_ref()
-                .map_or("None".to_string(), |c| c.to_string().replace('\n', "\\n"))
-        });
+    let latest_message_for_log = routing_messages.last().map_or("None".to_string(), |msg| {
+        msg.content
+            .as_ref()
+            .map_or("None".to_string(), |c| c.to_string().replace('\n', "\\n"))
+    });
 
     const MAX_MESSAGE_LENGTH: usize = 50;
     let latest_message_for_log = if latest_message_for_log.chars().count() > MAX_MESSAGE_LENGTH {
@@ -120,7 +129,7 @@ pub async fn router_chat_get_upstream_model(
     // Attempt to determine route using the router service
     let routing_result = router_service
         .determine_route(
-            &chat_request.messages,
+            &routing_messages,
             traceparent,
             usage_preferences,
             request_id,

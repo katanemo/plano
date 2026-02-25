@@ -1139,6 +1139,27 @@ impl HttpContext for StreamContext {
 
         let current_time = get_current_time().unwrap();
         if end_of_stream && body_size == 0 {
+            // Flush any buffered partial SSE event on stream end.
+            // This handles cases where the last logical SSE event (for example, response.completed)
+            // was split across chunks and the tail only arrives at end-of-stream.
+            if self.streaming_response {
+                let provider_id = self.get_provider_id();
+                match self.handle_streaming_response(&[], provider_id) {
+                    Ok(serialized_body) => {
+                        if !serialized_body.is_empty() {
+                            self.set_http_response_body(0, 0, &serialized_body);
+                            debug!(
+                                "request_id={}: flushed buffered streaming bytes on end_of_stream, size={}",
+                                self.request_identifier(),
+                                serialized_body.len()
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        // Ignore flush errors and proceed with end-of-request handling.
+                    }
+                }
+            }
             debug!(
                 "request_id={}: response body complete, total_bytes={}",
                 self.request_identifier(),
