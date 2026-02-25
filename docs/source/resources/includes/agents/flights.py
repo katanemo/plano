@@ -28,7 +28,7 @@ EXTRACTION_MODEL = "openai/gpt-4o-mini"
 
 # FlightAware AeroAPI configuration
 AEROAPI_BASE_URL = "https://aeroapi.flightaware.com/aeroapi"
-AEROAPI_KEY = os.getenv("AEROAPI_KEY", "ESVFX7TJLxB7OTuayUv0zTQBryA3tOPr")
+AEROAPI_KEY = os.getenv("AEROAPI_KEY")
 
 # HTTP client for API calls
 http_client = httpx.AsyncClient(timeout=30.0)
