@@ -8,6 +8,7 @@ listeners:
 model_providers:
   # OpenAI Models
   - model: openai/gpt-5-2025-08-07
+    default: true
     access_key: $OPENAI_API_KEY
     routing_preferences:
       - name: code generation
@@ -18,24 +19,20 @@ model_providers:
     routing_preferences:
       - name: code understanding
         description: understand and explain existing code snippets, functions, or libraries
-  # Anthropic Models
+
+  # Anthropic Model
   - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
-  - model: anthropic/claude-haiku-4-5-20251001
-    default: true
-    access_key: $ANTHROPIC_API_KEY
-
-  # Ollama Models
+  # Ollama Model (optional local fallback)
   - model: ollama/llama3.1
     base_url: http://host.docker.internal:11434
 
-
-# Model aliases - friendly names that map to actual provider names
+# Model aliases for Codex sessions
 model_aliases:
-  # Alias for a small faster Claude model
-  arch.claude.code.small.fast:
-    target: claude-haiku-4-5-20251001
+  # Default model Codex should request when launched by planoai cli-agent codex
+  arch.codex.default:
+    target: gpt-5-2025-08-07
 
 tracing:
   random_sampling: 100
