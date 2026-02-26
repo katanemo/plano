@@ -20,8 +20,8 @@ jobs:
   pre-commit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
       - uses: pre-commit/action@v3.0.1
 
   # ──────────────────────────────────────────────
@@ -33,10 +33,10 @@ jobs:
       run:
         working-directory: ./cli
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Free disk space on runner
         run: |
@@ -88,7 +88,7 @@ jobs:
         run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.8 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: plano-image
           path: /tmp/plano-image.tar
@@ -102,15 +102,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp
@@ -129,10 +129,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp
@@ -173,7 +173,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Free disk space on runner
         run: |
@@ -182,7 +182,7 @@ jobs:
           docker volume prune -f || true
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp
@@ -191,7 +191,7 @@ jobs:
         run: docker load -i /tmp/plano-image.tar
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
@@ -223,7 +223,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Free disk space on runner
         run: |
@@ -232,7 +232,7 @@ jobs:
           docker volume prune -f || true
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp
@@ -241,7 +241,7 @@ jobs:
         run: docker load -i /tmp/plano-image.tar
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
@@ -273,7 +273,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Free disk space on runner
         run: |
@@ -282,7 +282,7 @@ jobs:
           docker volume prune -f || true
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp
@@ -291,7 +291,7 @@ jobs:
         run: docker load -i /tmp/plano-image.tar
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
@@ -330,15 +330,15 @@ jobs:
         working-directory: ./tests/archgw
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp
@@ -388,15 +388,15 @@ jobs:
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp
@@ -440,15 +440,15 @@ jobs:
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
       - name: Download plano image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: plano-image
           path: /tmp

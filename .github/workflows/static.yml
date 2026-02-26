@@ -13,7 +13,7 @@ jobs:
     steps:
       # Check out the code from the repository
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       # Set up Docker
       - name: Set up Docker
