@@ -1,0 +1,13 @@
+services:
+  plano:
+    image: katanemo/plano:latest
+    ports:
+      - "12000:12000"
+    volumes:
+      - ./config_mock_llm.yaml:/app/plano_config.yaml
+      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - OPENAI_API_KEY=mock-key
+      - ANTHROPIC_API_KEY=mock-key
