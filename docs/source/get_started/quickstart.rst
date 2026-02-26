@@ -17,11 +17,19 @@ Follow this guide to learn how to quickly set up Plano and integrate it into you
 Prerequisites
 -------------
 
-Before you begin, ensure you have the following:
+Plano can run in **Docker mode** (default) or **native mode** (no Docker required). Choose one:
+
+**Docker mode** (default):
 
 1. `Docker System <https://docs.docker.com/get-started/get-docker/>`_ (v24)
 2. `Docker Compose <https://docs.docker.com/compose/install/>`_ (v2.29)
 3. `Python <https://www.python.org/downloads/>`_ (v3.10+)
+
+**Native mode** (no Docker):
+
+1. `Python <https://www.python.org/downloads/>`_ (v3.10+)
+2. `Rust <https://rustup.rs>`_ with the ``wasm32-wasip1`` target (``rustup target add wasm32-wasip1``)
+3. OpenSSL dev headers (``libssl-dev`` on Debian/Ubuntu, ``openssl`` on macOS)
 
 Plano's CLI allows you to manage and interact with the Plano efficiently. To install the CLI, simply run the following command:
 
@@ -84,17 +92,22 @@ Step 2. Start plano
 
 Once the config file is created, ensure that you have environment variables set up for ``ANTHROPIC_API_KEY`` and ``OPENAI_API_KEY`` (or these are defined in a ``.env`` file).
 
-Start Plano:
+**Docker mode** (default):
 
 .. code-block:: console
 
    $ planoai up plano_config.yaml
-   # Or if installed with uv tool: uvx planoai up plano_config.yaml
-   2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.8
-   2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!
-   2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano
-   ...
-   2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!
+
+**Native mode** (no Docker):
+
+.. code-block:: console
+
+   $ planoai build --native   # one-time: compile WASM plugins and brightstaff
+   $ planoai up plano_config.yaml --native
+
+Envoy is automatically downloaded on the first native run and cached at ``~/.plano/bin/``.
+
+To stop Plano, run ``planoai down`` (or ``planoai down --native`` for native mode).
 
 Step 3: Interact with LLM
 ~~~~~~~~~~~~~~~~~~~~~~~~~
