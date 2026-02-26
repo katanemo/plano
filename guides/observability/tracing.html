@@ -287,6 +287,100 @@ tools.</p>
 </ul>
 <p>For complete details on all available signals, detection methods, and best practices, see the <a class="reference internal" href="../../concepts/signals.html"><span class="doc">Signals™</span></a> guide.</p>
 </section>
+<section id="custom-span-attributes">
+<h2>Custom Span Attributes<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#custom-span-attributes" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#custom-span-attributes'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Plano can automatically attach <strong>custom span attributes</strong> derived from request headers and <strong>static</strong> attributes
+defined in configuration. This lets you stamp
+traces with identifiers like workspace, tenant, or user IDs without changing application code or adding
+custom instrumentation.</p>
+<p><strong>Why This Is Useful</strong></p>
+<ul class="simple">
+<li><p><strong>Tenant-aware debugging</strong>: Filter traces by <code class="docutils literal notranslate"><span class="pre">workspace.id</span></code> or <code class="docutils literal notranslate"><span class="pre">tenant.id</span></code>.</p></li>
+<li><p><strong>Customer-specific visibility</strong>: Attribute performance or errors to a specific customer.</p></li>
+<li><p><strong>Low overhead</strong>: No code changes in agents or clients—just headers.</p></li>
+</ul>
+<section id="how-it-works">
+<h3>How It Works<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#how-it-works" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#how-it-works'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>You configure one or more header prefixes. Any incoming HTTP header whose name starts with one of these
+prefixes is captured as a span attribute. You can also provide static attributes that are always injected.</p>
+<ul class="simple">
+<li><p>The <strong>prefix is only for matching</strong>, not the resulting attribute key.</p></li>
+<li><p>The attribute key is the header name <strong>with the prefix removed</strong>, then hyphens converted to dots.</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Custom span attributes are attached to LLM spans when handling <code class="docutils literal notranslate"><span class="pre">/v1/...</span></code> requests via <code class="docutils literal notranslate"><span class="pre">llm_chat</span></code>. For orchestrator requests to <code class="docutils literal notranslate"><span class="pre">/agents/...</span></code>,
+these attributes are added to both the orchestrator selection span and to each agent span created by <code class="docutils literal notranslate"><span class="pre">agent_chat</span></code>.</p>
+</div>
+<p><strong>Example</strong></p>
+<p>Configured prefix:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="n">tracing</span><span class="p">:</span>
+</span><span id="line-2">  <span class="n">span_attributes</span><span class="p">:</span>
+</span><span id="line-3">    <span class="n">header_prefixes</span><span class="p">:</span>
+</span><span id="line-4">      <span class="o">-</span> <span class="n">x</span><span class="o">-</span><span class="n">katanemo</span><span class="o">-</span>
+</span></code></pre></div>
+</div>
+<p>Incoming headers:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="n">X</span><span class="o">-</span><span class="n">Katanemo</span><span class="o">-</span><span class="n">Workspace</span><span class="o">-</span><span class="n">Id</span><span class="p">:</span> <span class="n">ws_123</span>
+</span><span id="line-2"><span class="n">X</span><span class="o">-</span><span class="n">Katanemo</span><span class="o">-</span><span class="n">Tenant</span><span class="o">-</span><span class="n">Id</span><span class="p">:</span> <span class="n">ten_456</span>
+</span></code></pre></div>
+</div>
+<p>Resulting span attributes:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="n">workspace</span><span class="o">.</span><span class="n">id</span> <span class="o">=</span> <span class="s2">"ws_123"</span>
+</span><span id="line-2"><span class="n">tenant</span><span class="o">.</span><span class="n">id</span> <span class="o">=</span> <span class="s2">"ten_456"</span>
+</span></code></pre></div>
+</div>
+</section>
+<section id="configuration">
+<h3>Configuration<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#configuration" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#configuration'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>Add the prefix list under <code class="docutils literal notranslate"><span class="pre">tracing</span></code> in your config:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">tracing</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="nt">random_sampling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="line-3"><span class="w">  </span><span class="nt">span_attributes</span><span class="p">:</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">header_prefixes</span><span class="p">:</span>
+</span><span id="line-5"><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-katanemo-</span>
+</span><span id="line-6"><span class="w">    </span><span class="nt">static</span><span class="p">:</span>
+</span><span id="line-7"><span class="w">      </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
+</span><span id="line-8"><span class="w">      </span><span class="nt">service.version</span><span class="p">:</span><span class="w"> </span><span class="s">"1.0.0"</span>
+</span></code></pre></div>
+</div>
+<p>Static attributes are always injected alongside any header-derived attributes. If a header-derived
+attribute key matches a static key, the header value overrides the static value.</p>
+<p>You can provide multiple prefixes:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">tracing</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="nt">span_attributes</span><span class="p">:</span>
+</span><span id="line-3"><span class="w">    </span><span class="nt">header_prefixes</span><span class="p">:</span>
+</span><span id="line-4"><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-katanemo-</span>
+</span><span id="line-5"><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-tenant-</span>
+</span><span id="line-6"><span class="w">    </span><span class="nt">static</span><span class="p">:</span>
+</span><span id="line-7"><span class="w">      </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
+</span><span id="line-8"><span class="w">      </span><span class="nt">service.version</span><span class="p">:</span><span class="w"> </span><span class="s">"1.0.0"</span>
+</span></code></pre></div>
+</div>
+</section>
+<section id="notes-and-examples">
+<h3>Notes and Examples<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#notes-and-examples" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#notes-and-examples'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<ul class="simple">
+<li><p><strong>Prefix must match exactly</strong>: <code class="docutils literal notranslate"><span class="pre">katanemo-</span></code> does not match <code class="docutils literal notranslate"><span class="pre">x-katanemo-</span></code> headers.</p></li>
+<li><p><strong>Trailing dash is recommended</strong>: Without it, <code class="docutils literal notranslate"><span class="pre">x-katanemo</span></code> would also match <code class="docutils literal notranslate"><span class="pre">x-katanemo-foo</span></code> and
+<code class="docutils literal notranslate"><span class="pre">x-katanemofoo</span></code>.</p></li>
+<li><p><strong>Keys are always strings</strong>: Values are captured as string attributes.</p></li>
+</ul>
+<p><strong>Prefix mismatch example</strong></p>
+<p>Config:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="n">tracing</span><span class="p">:</span>
+</span><span id="line-2">  <span class="n">span_attributes</span><span class="p">:</span>
+</span><span id="line-3">    <span class="n">header_prefixes</span><span class="p">:</span>
+</span><span id="line-4">      <span class="o">-</span> <span class="n">x</span><span class="o">-</span><span class="n">katanemo</span><span class="o">-</span>
+</span></code></pre></div>
+</div>
+<p>Request headers:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="n">X</span><span class="o">-</span><span class="n">Other</span><span class="o">-</span><span class="n">User</span><span class="o">-</span><span class="n">Id</span><span class="p">:</span> <span class="n">usr_999</span>
+</span></code></pre></div>
+</div>
+<p>Result: no attributes are captured from <code class="docutils literal notranslate"><span class="pre">X-Other-User-Id</span></code>.</p>
+</section>
+</section>
 <section id="benefits-of-using-traceparent-headers">
 <h2>Benefits of Using <code class="docutils literal notranslate"><span class="pre">Traceparent</span></code> Headers<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#benefits-of-using-traceparent-headers" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#benefits-of-using-traceparent-headers'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <ul class="simple">
@@ -656,6 +750,12 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 </ul>
 </li>
 <li><a :data-current="activeSection === '#behavioral-signals-in-traces'" class="reference internal" href="#behavioral-signals-in-traces">Behavioral Signals in Traces</a></li>
+<li><a :data-current="activeSection === '#custom-span-attributes'" class="reference internal" href="#custom-span-attributes">Custom Span Attributes</a><ul>
+<li><a :data-current="activeSection === '#how-it-works'" class="reference internal" href="#how-it-works">How It Works</a></li>
+<li><a :data-current="activeSection === '#configuration'" class="reference internal" href="#configuration">Configuration</a></li>
+<li><a :data-current="activeSection === '#notes-and-examples'" class="reference internal" href="#notes-and-examples">Notes and Examples</a></li>
+</ul>
+</li>
 <li><a :data-current="activeSection === '#benefits-of-using-traceparent-headers'" class="reference internal" href="#benefits-of-using-traceparent-headers">Benefits of Using <code class="docutils literal notranslate"><span class="pre">Traceparent</span></code> Headers</a></li>
 <li><a :data-current="activeSection === '#how-to-initiate-a-trace'" class="reference internal" href="#how-to-initiate-a-trace">How to Initiate A Trace</a></li>
 <li><a :data-current="activeSection === '#tracing-with-the-cli'" class="reference internal" href="#tracing-with-the-cli">Tracing with the CLI</a><ul>
@@ -692,7 +792,7 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Feb 25, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Feb 26, 2026. </p>
 </div>
 </div>
 </footer>
