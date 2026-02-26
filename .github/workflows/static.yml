@@ -17,7 +17,7 @@ jobs:
 
       # Set up Docker
       - name: Set up Docker
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       # Build and run the Docker container to generate the documentation
       - name: Build documentation using Docker
@@ -30,7 +30,7 @@ jobs:
 
       # Deploy the docs to GitHub Pages
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs/build/html  # Adjust this path based on where the HTML is generated

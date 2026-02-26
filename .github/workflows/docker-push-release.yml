@@ -42,7 +42,7 @@ jobs:
             type=raw,value={{tag}}
 
       - name: Build and Push ARM64 Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -81,7 +81,7 @@ jobs:
             type=raw,value={{tag}}
 
       - name: Build and Push AMD64 Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
