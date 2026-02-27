@@ -116,6 +116,7 @@ html_theme_options = asdict(theme_options)
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
+html_js_files = ["js/fix-copy.js"]
 
 pygments_style = "lovelace"
 pygments_style_dark = "github-dark"
