@@ -457,6 +457,12 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
+    {# Skip default egress_traffic_llm listener if user already defined a listener on port 12001 #}
+    {% set user_listener_ports = [] %}
+    {% for listener in listeners %}
+      {% set _ = user_listener_ports.append(listener.port) %}
+    {% endfor %}
+    {% if 12001 not in user_listener_ports %}
     - name: egress_traffic_llm
       address:
         socket_address:
@@ -591,6 +597,7 @@ static_resources:
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+    {% endif %}
 
   clusters:
 
