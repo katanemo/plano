@@ -3,9 +3,16 @@
 ### Travel Agent Chat Completion Request
 POST {{llm_endpoint}}/v1/chat/completions HTTP/1.1
 Content-Type: application/json
+X-Acme-Workspace-Id: ws_7e2c5d91b4224f59b0e6a4e0125c21b3
+X-Acme-Tenant-Id: ten_4102a8c7fa6542b084b395d2df184a9a
+X-Acme-User-Id: usr_19df7e6751b846f9ba026776e3c12abe
+X-Acme-Admin-Level: 3
+X-Acme-Environment: production
+X-Acme-Is-Internal: false
+X-Acme-Cost-Center: HD100
 
 {
-  "model": "gpt-4o",
+  "model": "gpt-5.2",
   "messages": [
     {
       "role": "user",
@@ -20,7 +27,28 @@ Content-Type: application/json
       "content": "What is one Alaska flight that goes direct to Atlanta from Seattle?"
     }
   ],
-  "max_tokens": 1000,
+  "max_completion_tokens": 1000,
+  "stream": false,
+  "temperature": 1.0
+}
+
+
+### Travel Agent Request (prefix mismatch - ignored)
+POST {{llm_endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+X-Other-Workspace-Id: ws_7e2c5d91b4224f59b0e6a4e0125c21b3
+X-Other-Tenant-Id: ten_4102a8c7fa6542b084b395d2df184a9a
+X-Other-User-Id: usr_19df7e6751b846f9ba026776e3c12abe
+
+{
+  "model": "gpt-5.2",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What's the weather in Seattle?"
+    }
+  ],
+  "max_completion_tokens": 1000,
   "stream": false,
   "temperature": 1.0
 }

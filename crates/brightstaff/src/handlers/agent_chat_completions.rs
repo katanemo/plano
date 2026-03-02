@@ -2,6 +2,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use bytes::Bytes;
+use common::configuration::SpanAttributes;
+use common::errors::BrightStaffError;
 use common::llm_providers::LlmProviders;
 use hermesllm::apis::OpenAIMessage;
 use hermesllm::clients::SupportedAPIsFromClient;
@@ -19,17 +21,17 @@ use super::agent_selector::{AgentSelectionError, AgentSelector};
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
 use super::response_handler::ResponseHandler;
 use crate::router::plano_orchestrator::OrchestratorService;
-use crate::tracing::{operation_component, set_service_name};
+use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
 pub enum AgentFilterChainError {
+    #[error("Forwarded error: {0}")]
+    Brightstaff(#[from] BrightStaffError),
     #[error("Agent selection error: {0}")]
     Selection(#[from] AgentSelectionError),
     #[error("Pipeline processing error: {0}")]
     Pipeline(#[from] PipelineError),
-    #[error("Response handling error: {0}")]
-    Response(#[from] super::response_handler::ResponseError),
     #[error("Request parsing error: {0}")]
     RequestParsing(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
@@ -42,8 +44,11 @@ pub async fn agent_chat(
     _: String,
     agents_list: Arc<tokio::sync::RwLock<Option<Vec<common::configuration::Agent>>>>,
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
+    span_attributes: Arc<Option<SpanAttributes>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let custom_attrs =
+        collect_custom_trace_attributes(request.headers(), span_attributes.as_ref().as_ref());
     // Extract request_id from headers or generate a new one
     let request_id: String = match request
         .headers()
@@ -76,6 +81,7 @@ pub async fn agent_chat(
             listeners,
             llm_providers,
             request_id,
+            custom_attrs,
         )
         .await
         {
@@ -103,16 +109,15 @@ pub async fn agent_chat(
                         "agent_response": body
                     });
 
+                    let status_code = hyper::StatusCode::from_u16(*status)
+                        .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+
                     let json_string = error_json.to_string();
-                    let mut response =
-                        Response::new(ResponseHandler::create_full_body(json_string));
-                    *response.status_mut() = hyper::StatusCode::from_u16(*status)
-                        .unwrap_or(hyper::StatusCode::BAD_REQUEST);
-                    response.headers_mut().insert(
-                        hyper::header::CONTENT_TYPE,
-                        "application/json".parse().unwrap(),
-                    );
-                    return Ok(response);
+                    return Ok(BrightStaffError::ForwardedError {
+                        status_code,
+                        message: json_string,
+                    }
+                    .into_response());
                 }
 
                 // Print detailed error information with full error chain for other errors
@@ -145,8 +150,11 @@ pub async fn agent_chat(
                 // Log the error for debugging
                 info!(error = %error_json, "structured error info");
 
-                // Return JSON error response
-                Ok(ResponseHandler::create_json_error_response(&error_json))
+                Ok(BrightStaffError::ForwardedError {
+                    status_code: StatusCode::BAD_REQUEST,
+                    message: error_json.to_string(),
+                }
+                .into_response())
             }
         }
     }
@@ -161,6 +169,7 @@ async fn handle_agent_chat_inner(
     listeners: Arc<tokio::sync::RwLock<Vec<common::configuration::Listener>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
     request_id: String,
+    custom_attrs: std::collections::HashMap<String, String>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(orchestrator_service);
@@ -183,6 +192,9 @@ async fn handle_agent_chat_inner(
 
     get_active_span(|span| {
         span.update_name(listener.name.to_string());
+        for (key, value) in &custom_attrs {
+            span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+        }
     });
 
     info!(listener = %listener.name, "handling request");
@@ -249,10 +261,7 @@ async fn handle_agent_chat_inner(
             None => {
                 let err_msg = "No model specified in request and no default provider configured";
                 warn!("{}", err_msg);
-                let mut bad_request =
-                    Response::new(ResponseHandler::create_full_body(err_msg.to_string()));
-                *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-                return Ok(bad_request);
+                return Ok(BrightStaffError::NoModelSpecified.into_response());
             }
         }
     }
@@ -348,6 +357,9 @@ async fn handle_agent_chat_inner(
             set_service_name(operation_component::AGENT);
             get_active_span(|span| {
                 span.update_name(format!("{} /v1/chat/completions", agent_name));
+                for (key, value) in &custom_attrs {
+                    span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+                }
             });
 
             pipeline_processor

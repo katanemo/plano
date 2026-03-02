@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::ModelAlias;
+use common::configuration::{ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -8,9 +8,9 @@ use hermesllm::apis::openai_responses::{InputParam, Tool as ResponsesTool};
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full};
+use http_body_util::BodyExt;
 use hyper::header::{self};
-use hyper::{Request, Response, StatusCode};
+use hyper::{Request, Response};
 use opentelemetry::global;
 use opentelemetry::trace::get_active_span;
 use opentelemetry_http::HeaderInjector;
@@ -28,13 +28,11 @@ use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
-use crate::tracing::{llm as tracing_llm, operation_component, set_service_name};
+use crate::tracing::{
+    collect_custom_trace_attributes, llm as tracing_llm, operation_component, set_service_name,
+};
 
-fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-    Full::new(chunk.into())
-        .map_err(|never| match never {})
-        .boxed()
-}
+use common::errors::BrightStaffError;
 
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
@@ -42,6 +40,7 @@ pub async fn llm_chat(
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
+    span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
@@ -54,6 +53,8 @@ pub async fn llm_chat(
         Some(id) => id,
         None => uuid::Uuid::new_v4().to_string(),
     };
+    let custom_attrs =
+        collect_custom_trace_attributes(&request_headers, span_attributes.as_ref().as_ref());
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -75,6 +76,7 @@ pub async fn llm_chat(
         full_qualified_llm_provider_url,
         model_aliases,
         llm_providers,
+        custom_attrs,
         state_storage,
         request_id,
         request_path,
@@ -91,6 +93,7 @@ async fn llm_chat_inner(
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
+    custom_attrs: HashMap<String, String>,
     state_storage: Option<Arc<dyn StateStorage>>,
     request_id: String,
     request_path: String,
@@ -98,6 +101,11 @@ async fn llm_chat_inner(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
+    get_active_span(|span| {
+        for (key, value) in &custom_attrs {
+            span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+        }
+    });
 
     // Extract or generate traceparent - this establishes the trace context for all spans
     let traceparent: String = match request_headers
@@ -135,10 +143,11 @@ async fn llm_chat_inner(
                 error = %err,
                 "failed to parse request as ProviderRequestType"
             );
-            let err_msg = format!("Failed to parse request: {}", err);
-            let mut bad_request = Response::new(full(err_msg));
-            *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-            return Ok(bad_request);
+            return Ok(BrightStaffError::InvalidRequest(format!(
+                "Failed to parse request: {}",
+                err
+            ))
+            .into_response());
         }
     };
 
@@ -165,9 +174,7 @@ async fn llm_chat_inner(
             None => {
                 let err_msg = "No model specified in request and no default provider configured";
                 warn!("{}", err_msg);
-                let mut bad_request = Response::new(full(err_msg.to_string()));
-                *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-                return Ok(bad_request);
+                return Ok(BrightStaffError::NoModelSpecified.into_response());
             }
         }
     } else {
@@ -188,14 +195,8 @@ async fn llm_chat_inner(
         .get(&alias_resolved_model)
         .is_none()
     {
-        let err_msg = format!(
-            "Model '{}' not found in configured providers",
-            alias_resolved_model
-        );
         warn!(model = %alias_resolved_model, "model not found in configured providers");
-        let mut bad_request = Response::new(full(err_msg));
-        *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-        return Ok(bad_request);
+        return Ok(BrightStaffError::ModelNotFound(alias_resolved_model).into_response());
     }
 
     // Handle provider/model slug format (e.g., "openai/gpt-4")
@@ -290,13 +291,10 @@ async fn llm_chat_inner(
                         Err(StateStorageError::NotFound(_)) => {
                             // Return 409 Conflict when previous_response_id not found
                             warn!(previous_response_id = %prev_resp_id, "previous response_id not found");
-                            let err_msg = format!(
-                                "Conversation state not found for previous_response_id: {}",
-                                prev_resp_id
-                            );
-                            let mut conflict_response = Response::new(full(err_msg));
-                            *conflict_response.status_mut() = StatusCode::CONFLICT;
-                            return Ok(conflict_response);
+                            return Ok(BrightStaffError::ConversationStateNotFound(
+                                prev_resp_id.to_string(),
+                            )
+                            .into_response());
                         }
                         Err(e) => {
                             // Log warning but continue on other storage errors
@@ -387,9 +385,11 @@ async fn llm_chat_inner(
                     model_name: "none".to_string(),
                 }
             } else {
-                let mut internal_error = Response::new(full(err.message));
-                *internal_error.status_mut() = err.status_code;
-                return Ok(internal_error);
+                return Ok(BrightStaffError::ForwardedError {
+                    status_code: err.status_code,
+                    message: err.message,
+                }
+                .into_response());
             }
         }
     };
@@ -426,9 +426,7 @@ async fn llm_chat_inner(
             None => {
                 let err_msg = "No configured model can serve OpenAI Responses API requests with non-function tools".to_string();
                 warn!(request_id = %request_id, error = %err_msg, "capability-aware routing failed");
-                let mut bad_request = Response::new(full(err_msg));
-                *bad_request.status_mut() = StatusCode::BAD_REQUEST;
-                return Ok(bad_request);
+                return Ok(BrightStaffError::InvalidRequest(err_msg).into_response());
             }
         }
     } else {
@@ -486,10 +484,11 @@ async fn llm_chat_inner(
     {
         Ok(res) => res,
         Err(err) => {
-            let err_msg = format!("Failed to send request: {}", err);
-            let mut internal_error = Response::new(full(err_msg));
-            *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(internal_error);
+            return Ok(BrightStaffError::InternalServerError(format!(
+                "Failed to send request: {}",
+                err
+            ))
+            .into_response());
         }
     };
 
@@ -546,12 +545,11 @@ async fn llm_chat_inner(
 
     match response.body(streaming_response.body) {
         Ok(response) => Ok(response),
-        Err(err) => {
-            let err_msg = format!("Failed to create response: {}", err);
-            let mut internal_error = Response::new(full(err_msg));
-            *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            Ok(internal_error)
-        }
+        Err(err) => Ok(BrightStaffError::InternalServerError(format!(
+            "Failed to create response: {}",
+            err
+        ))
+        .into_response()),
     }
 }
 

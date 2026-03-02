@@ -114,6 +114,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ));
 
     let model_aliases = Arc::new(plano_config.model_aliases.clone());
+    let span_attributes = Arc::new(
+        plano_config
+            .tracing
+            .as_ref()
+            .and_then(|tracing| tracing.span_attributes.clone()),
+    );
 
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in plano_config.yaml
@@ -173,6 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
+        let span_attributes = span_attributes.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
@@ -183,6 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
+            let span_attributes = span_attributes.clone();
             let state_storage = state_storage.clone();
 
             async move {
@@ -202,6 +210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             agents_list,
                             listeners,
+                            span_attributes,
                             llm_providers,
                         )
                         .with_context(parent_cx)
@@ -220,6 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             model_aliases,
                             llm_providers,
+                            span_attributes,
                             state_storage,
                         )
                         .with_context(parent_cx)

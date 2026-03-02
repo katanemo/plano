@@ -165,7 +165,7 @@ Then set the environment variable before running Plano:
    ./plano
 
 .. warning::
-   **Special Characters in Passwords**: If your password contains special characters like ``#``, ``@``, or ``&``, you must URL-encode them in the connection string. For example, ``MyPass#123`` becomes ``MyPass%23123``.
+   **Special Characters in Passwords**: If your password contains special characters like ``#``, ``@``, or ``&``, you must URL-encode them in the connection string. For example, ``P@ss#123`` becomes ``P%40ss%23123``.
 
 Supabase Connection Strings
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -202,14 +202,14 @@ Use the direct connection (port 5432):
 
    state_storage:
      type: postgres
-     connection_string: "postgresql://postgres.myproject:$DB_PASSWORD@aws-0-us-west-2.pooler.supabase.com:5432/postgres"
+     connection_string: "postgresql://postgres.[YOUR-PROJECT-REF]:$DB_PASSWORD@aws-0-[REGION].pooler.supabase.com:5432/postgres"
 
 Then set the environment variable:
 
 .. code-block:: bash
 
-   # If your password is "MyPass#123", encode it as "MyPass%23123"
-   export DB_PASSWORD="MyPass%23123"
+   # If your password is "P@ss#123", encode it as "P%40ss%23123"
+   export DB_PASSWORD="<your-url-encoded-password>"
 
 Troubleshooting
 ---------------

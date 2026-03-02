@@ -390,7 +390,19 @@ properties:
         type: boolean
       opentracing_grpc_endpoint:
         type: string
-      additionalProperties: false
+      span_attributes:
+        type: object
+        properties:
+          header_prefixes:
+            type: array
+            items:
+              type: string
+          static:
+            type: object
+            additionalProperties:
+              type: string
+        additionalProperties: false
+    additionalProperties: false
   mode:
     type: string
     enum:
@@ -403,7 +415,7 @@ properties:
         type: string
       model:
         type: string
-      additionalProperties: false
+    additionalProperties: false
   state_storage:
     type: object
     properties:
