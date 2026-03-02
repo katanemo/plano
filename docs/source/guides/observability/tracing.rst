@@ -453,6 +453,30 @@ Handle incoming requests:
            print(f"Payment service response: {response.content}")
 
 
+Exposing a Trace UI via Listener Routes
+----------------------------------------
+
+If you run a trace collector with a web UI (such as Jaeger) alongside Plano, you can expose it through the same
+listener port using the ``routes`` configuration. This avoids publishing extra ports and gives developers a single
+endpoint for both agent traffic and trace inspection.
+
+.. code-block:: yaml
+
+   listeners:
+     - type: agent
+       name: agent_1
+       port: 8001
+       routes:
+         - path_prefix: /traces
+           upstream: http://jaeger:16686
+       agents:
+         - id: my_agent
+           description: my agent
+
+With this configuration, browsing to ``http://localhost:8001/traces`` opens the Jaeger UI while all other
+requests continue to be routed to the agent. See :ref:`plano_overview_listeners` for more details on the
+``routes`` block.
+
 Integrating with Tracing Tools
 ------------------------------
 

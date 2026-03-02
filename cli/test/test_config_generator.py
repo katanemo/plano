@@ -291,6 +291,63 @@ tracing:
 
 """,
     },
+    {
+        "id": "routes_with_agents",
+        "expected_error": None,
+        "plano_config": """
+version: v0.3.0
+
+agents:
+  - id: test_agent
+    url: http://localhost:10500
+
+listeners:
+  - type: agent
+    name: agent_1
+    port: 8001
+    routes:
+      - path_prefix: /traces
+        upstream: http://localhost:16686
+    agents:
+      - id: test_agent
+        description: a test agent
+
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+
+""",
+    },
+    {
+        "id": "routes_only_listener",
+        "expected_error": None,
+        "plano_config": """
+version: v0.3.0
+
+listeners:
+  - type: agent
+    name: observability
+    port: 8002
+    routes:
+      - path_prefix: /traces
+        upstream: http://localhost:16686
+      - path_prefix: /metrics
+        upstream: http://localhost:9090
+
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+
+""",
+    },
 ]
 
 

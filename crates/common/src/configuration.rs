@@ -37,10 +37,17 @@ pub struct AgentFilterChain {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListenerRoute {
+    pub path_prefix: String,
+    pub upstream: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Listener {
     pub name: String,
     pub router: Option<String>,
     pub agents: Option<Vec<AgentFilterChain>>,
+    pub routes: Option<Vec<ListenerRoute>>,
     pub port: u16,
 }
 

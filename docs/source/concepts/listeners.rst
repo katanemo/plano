@@ -77,3 +77,33 @@ listener with address, port, and protocol details:
 When you start Plano, you specify a listener address/port that you want to bind downstream. Plano also exposes a
 predefined internal listener (``127.0.0.1:12000``) that you can use to proxy egress calls originating from your
 application to LLMs (API-based or hosted) via prompt targets.
+
+Internal Service Routes
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Listeners support an optional ``routes`` block that lets you forward path-prefix traffic to co-located internal
+services (for example, a Jaeger tracing UI or a Prometheus dashboard) through the same listener port:
+
+.. code-block:: yaml
+
+   listeners:
+     - type: agent
+       name: agent_1
+       port: 8001
+       routes:
+         - path_prefix: /traces
+           upstream: http://jaeger:16686
+         - path_prefix: /metrics
+           upstream: http://localhost:9090
+       agents:
+         - id: my_agent
+           description: my agent
+
+With the configuration above, requests to ``http://localhost:8001/traces`` are proxied to the Jaeger UI, while
+all other requests are routed to the agent as usual. Each route entry requires:
+
+- ``path_prefix`` — the URL prefix to match (e.g., ``/traces``).
+- ``upstream`` — the full URL of the internal service to forward to.
+
+Routes are evaluated before the default agent catch-all, so specific prefixes always take priority. A listener
+can also define only ``routes`` (without ``agents``) to act as a lightweight reverse proxy for internal services.

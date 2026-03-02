@@ -277,7 +277,7 @@ static_resources:
 
     {% for listener in listeners %}
 
-    {% if listener.agents %}
+    {% if listener.agents or listener.routes %}
 
     # agent listeners
     - name: {{ listener.name | replace(" ", "_") }}
@@ -330,6 +330,17 @@ static_resources:
                             prefix: "/healthz"
                           direct_response:
                             status: 200
+                        {% if listener.routes %}
+                        {% for route in listener.routes %}
+                        - match:
+                            prefix: "{{ route.path_prefix }}"
+                          route:
+                            auto_host_rewrite: true
+                            cluster: {{ route.cluster_name }}
+                            timeout: {{ listener.timeout | default('30s') }}
+                        {% endfor %}
+                        {% endif %}
+                        {% if listener.agents %}
                         - match:
                             prefix: "/"
                           route:
@@ -337,6 +348,7 @@ static_resources:
                             prefix_rewrite: "/agents/"
                             cluster: bright_staff
                             timeout: {{ listener.timeout | default('30s') }}
+                        {% endif %}
                 http_filters:
                   - name: envoy.filters.http.compressor
                     typed_config:

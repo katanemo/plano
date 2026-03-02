@@ -93,6 +93,19 @@ properties:
                 required:
                   - id
                   - description
+            routes:
+              type: array
+              items:
+                type: object
+                properties:
+                  path_prefix:
+                    type: string
+                  upstream:
+                    type: string
+                additionalProperties: false
+                required:
+                  - path_prefix
+                  - upstream
           additionalProperties: false
           required:
             - type

@@ -51,6 +51,7 @@ This starts:
 - Flight Agent on port 10520
 - Open WebUI on port 8080
 - Plano Proxy on port 8001
+- Jaeger UI accessible at http://localhost:8001/traces (routed through Plano)
 
 ### 4. Test the System
 
@@ -105,8 +106,29 @@ Both agents run as Docker containers and communicate with Plano via `host.docker
 
 ## Observability
 
-This demo includes full OpenTelemetry (OTel) compatible distributed tracing to monitor and debug agent interactions:
+This demo includes full OpenTelemetry (OTel) compatible distributed tracing to monitor and debug agent interactions.
 The tracing data provides complete visibility into the multi-agent system, making it easy to identify bottlenecks, debug issues, and optimize performance.
+
+Jaeger UI is accessible through Plano's agent listener using the `routes` config:
+
+```bash
+# Access Jaeger UI through the same Plano port
+curl http://localhost:8001/traces
+```
+
+This is configured in `config.yaml` using the `routes` field on the listener, which proxies `/traces` requests to the Jaeger service:
+
+```yaml
+listeners:
+  - type: agent
+    name: travel_booking_service
+    port: 8001
+    routes:
+      - path_prefix: /traces
+        upstream: http://jaeger:16686
+    agents:
+      ...
+```
 
 For more details on setting up and using tracing, see the [Plano Observability documentation](https://docs.planoai.dev/guides/observability/tracing.html).
 

@@ -55,6 +55,10 @@ listeners:
     port: 8001
     router: plano_orchestrator_v1
     address: 0.0.0.0
+    # Routes forward path-prefix traffic to internal services (e.g., Jaeger UI)
+    routes:
+      - path_prefix: /traces
+        upstream: http://jaeger:16686
     agents:
       - id: rag_agent
         description: virtual assistant for retrieval augmented generation tasks

@@ -18,6 +18,9 @@ listeners:
     name: travel_booking_service
     port: 8001
     router: plano_orchestrator_v1
+    routes:
+      - path_prefix: /traces
+        upstream: http://jaeger:16686
     agents:
       - id: weather_agent
         description: |

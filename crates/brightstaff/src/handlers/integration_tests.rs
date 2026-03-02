@@ -74,6 +74,7 @@ mod tests {
         let listener = Listener {
             name: "test-listener".to_string(),
             agents: Some(vec![agent_pipeline.clone()]),
+            routes: None,
             port: 8080,
             router: None,
         };

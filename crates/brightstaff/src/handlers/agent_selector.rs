@@ -194,6 +194,7 @@ mod tests {
         Listener {
             name: name.to_string(),
             agents: Some(agents),
+            routes: None,
             port: 8080,
             router: None,
         }

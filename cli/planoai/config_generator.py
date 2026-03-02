@@ -145,6 +145,41 @@ def validate_and_render_schema():
                 inferred_clusters[name]["port"],
             ) = get_endpoint_and_port(endpoint, protocol)
 
+    # Process routes in listeners and generate clusters for upstream services
+    for listener in listeners:
+        for route in listener.get("routes", []):
+            path_prefix = route.get("path_prefix", "")
+            upstream = route.get("upstream", "")
+            if not path_prefix or not upstream:
+                continue
+
+            urlparse_result = urlparse(upstream)
+            if not urlparse_result.scheme or not urlparse_result.hostname:
+                raise Exception(
+                    f"Invalid upstream URL '{upstream}' in route for listener '{listener.get('name')}'. "
+                    f"Must be a valid URL with scheme (http/https) and hostname."
+                )
+
+            protocol = urlparse_result.scheme
+            port = urlparse_result.port
+            if port is None:
+                port = 80 if protocol == "http" else 443
+
+            sanitized_prefix = (
+                path_prefix.strip("/").replace("/", "_").replace("-", "_")
+            )
+            listener_name = listener.get("name", "unknown").replace(" ", "_")
+            cluster_name = f"route_{listener_name}_{sanitized_prefix}"
+
+            route["cluster_name"] = cluster_name
+
+            if cluster_name not in inferred_clusters:
+                inferred_clusters[cluster_name] = {
+                    "endpoint": urlparse_result.hostname,
+                    "port": port,
+                    "protocol": protocol,
+                }
+
     print("defined clusters from plano_config.yaml: ", json.dumps(inferred_clusters))
 
     if "prompt_targets" in config_yaml:
