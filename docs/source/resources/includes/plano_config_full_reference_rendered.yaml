@@ -19,10 +19,6 @@ endpoints:
   mistral_local:
     endpoint: 127.0.0.1
     port: 8001
-  route_travel_booking_service_traces:
-    endpoint: jaeger
-    port: 16686
-    protocol: http
   weather_agent:
     endpoint: host.docker.internal
     port: 10510
