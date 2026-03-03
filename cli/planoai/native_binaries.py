@@ -133,11 +133,41 @@ def ensure_envoy_binary():
             os.unlink(tmp_path)
 
 
+def _find_local_wasm_plugins():
+    """Check for WASM plugins built from source. Returns (prompt_gw, llm_gw) or None."""
+    repo_root = find_repo_root()
+    if not repo_root:
+        return None
+    wasm_dir = os.path.join(repo_root, "crates", "target", "wasm32-wasip1", "release")
+    prompt_gw = os.path.join(wasm_dir, "prompt_gateway.wasm")
+    llm_gw = os.path.join(wasm_dir, "llm_gateway.wasm")
+    if os.path.exists(prompt_gw) and os.path.exists(llm_gw):
+        return prompt_gw, llm_gw
+    return None
+
+
+def _find_local_brightstaff():
+    """Check for brightstaff binary built from source. Returns path or None."""
+    repo_root = find_repo_root()
+    if not repo_root:
+        return None
+    path = os.path.join(repo_root, "crates", "target", "release", "brightstaff")
+    if os.path.exists(path) and os.access(path, os.X_OK):
+        return path
+    return None
+
+
 def ensure_wasm_plugins():
-    """Download WASM plugins if not cached or version changed. Returns (prompt_gateway_path, llm_gateway_path)."""
+    """Find or download WASM plugins. Checks: local build → cached download → fresh download."""
+    # 1. Local source build (inside repo)
+    local = _find_local_wasm_plugins()
+    if local:
+        log.info(f"Using locally-built WASM plugins: {local[0]}")
+        return local
+
+    # 2. Cached download
     version = planoai.__version__
     version_path = os.path.join(PLANO_PLUGINS_DIR, "wasm.version")
-
     prompt_gw_path = os.path.join(PLANO_PLUGINS_DIR, "prompt_gateway.wasm")
     llm_gw_path = os.path.join(PLANO_PLUGINS_DIR, "llm_gateway.wasm")
 
@@ -154,6 +184,7 @@ def ensure_wasm_plugins():
         else:
             log.info("WASM plugins found (unknown version, re-downloading...)")
 
+    # 3. Download from GitHub releases
     os.makedirs(PLANO_PLUGINS_DIR, exist_ok=True)
 
     for name, dest in [
@@ -173,7 +204,14 @@ def ensure_wasm_plugins():
 
 
 def ensure_brightstaff_binary():
-    """Download brightstaff binary if not cached or version changed. Returns path to binary."""
+    """Find or download brightstaff binary. Checks: local build → cached download → fresh download."""
+    # 1. Local source build (inside repo)
+    local = _find_local_brightstaff()
+    if local:
+        log.info(f"Using locally-built brightstaff: {local}")
+        return local
+
+    # 2. Cached download
     version = planoai.__version__
     brightstaff_path = os.path.join(PLANO_BIN_DIR, "brightstaff")
     version_path = os.path.join(PLANO_BIN_DIR, "brightstaff.version")
@@ -191,6 +229,7 @@ def ensure_brightstaff_binary():
         else:
             log.info("brightstaff found (unknown version, re-downloading...)")
 
+    # 3. Download from GitHub releases
     slug = _get_platform_slug()
     filename = f"brightstaff-{slug}"
     url = f"{PLANO_RELEASE_BASE_URL}/{version}/{filename}"
@@ -231,7 +270,7 @@ def find_wasm_plugins():
     if missing:
         print(f"Error: WASM plugins not found: {', '.join(missing)}")
         print(f"  Expected at: {wasm_dir}/")
-        print("  Run 'planoai build --native' first to build them.")
+        print("  Run 'planoai build' first to build them.")
         sys.exit(1)
 
     return prompt_gw, llm_gw
@@ -252,7 +291,7 @@ def find_brightstaff_binary():
     )
     if not os.path.exists(brightstaff_path):
         print(f"Error: brightstaff binary not found at {brightstaff_path}")
-        print("  Run 'planoai build --native' first to build it.")
+        print("  Run 'planoai build' first to build it.")
         sys.exit(1)
 
     return brightstaff_path
