@@ -92,7 +92,7 @@ def convert_legacy_listeners(
         "type": "model_listener",
         "port": 12000,
         "address": "0.0.0.0",
-        "timeout": "30s",
+        "timeout": "300s",
         "model_providers": model_providers or [],
     }
 
@@ -101,7 +101,7 @@ def convert_legacy_listeners(
         "type": "prompt_listener",
         "port": 10000,
         "address": "0.0.0.0",
-        "timeout": "30s",
+        "timeout": "300s",
     }
 
     # Handle None case
