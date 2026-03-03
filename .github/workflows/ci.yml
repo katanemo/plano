@@ -54,6 +54,60 @@ jobs:
         run: uv run pytest
 
   # ──────────────────────────────────────────────
+  # Native mode smoke test — build from source & start natively
+  # ──────────────────────────────────────────────
+  native-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Install planoai CLI
+        working-directory: ./cli
+        run: |
+          uv sync
+          uv tool install .
+
+      - name: Build native binaries
+        run: planoai build
+
+      - name: Start plano natively
+        env:
+          OPENAI_API_KEY: test-key-not-used
+        run: planoai up tests/e2e/config_native_smoke.yaml
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:12000/healthz > /dev/null 2>&1; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Health check failed after 30s"
+          cat ~/.plano/run/logs/envoy.log || true
+          cat ~/.plano/run/logs/brightstaff.log || true
+          exit 1
+
+      - name: Stop plano
+        if: always()
+        run: planoai down || true
+
+  # ──────────────────────────────────────────────
   # Single Docker build — shared by all downstream jobs
   # ──────────────────────────────────────────────
   docker-build:
