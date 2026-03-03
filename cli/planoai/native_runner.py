@@ -13,13 +13,39 @@ from planoai.consts import (
 )
 from planoai.docker_cli import health_check_endpoint
 from planoai.native_binaries import (
+    ensure_brightstaff_binary,
     ensure_envoy_binary,
-    find_brightstaff_binary,
-    find_wasm_plugins,
+    ensure_wasm_plugins,
 )
 from planoai.utils import find_repo_root, getLogger
 
 log = getLogger(__name__)
+
+
+def _find_config_dir():
+    """Locate the directory containing plano_config_schema.yaml and envoy.template.yaml.
+
+    Checks package data first (pip-installed), then falls back to the repo checkout.
+    """
+    import planoai
+
+    pkg_data = os.path.join(os.path.dirname(planoai.__file__), "data")
+    if os.path.isdir(pkg_data) and os.path.exists(
+        os.path.join(pkg_data, "plano_config_schema.yaml")
+    ):
+        return pkg_data
+
+    repo_root = find_repo_root()
+    if repo_root:
+        config_dir = os.path.join(repo_root, "config")
+        if os.path.isdir(config_dir):
+            return config_dir
+
+    print(
+        "Error: Could not find config templates. "
+        "Make sure you're inside the plano repository or have the planoai package installed."
+    )
+    sys.exit(1)
 
 
 @contextlib.contextmanager
@@ -43,17 +69,9 @@ def render_native_config(plano_config_file, env, with_tracing=False):
     """Render envoy and plano configs for native mode. Returns (envoy_config_path, plano_config_rendered_path)."""
     import yaml
 
-    repo_root = find_repo_root()
-    if not repo_root:
-        print(
-            "Error: Could not find repository root. "
-            "Make sure you're inside the plano repository."
-        )
-        sys.exit(1)
-
     os.makedirs(PLANO_RUN_DIR, exist_ok=True)
 
-    prompt_gw_path, llm_gw_path = find_wasm_plugins()
+    prompt_gw_path, llm_gw_path = ensure_wasm_plugins()
 
     # If --with-tracing, inject tracing config if not already present
     effective_config_file = os.path.abspath(plano_config_file)
@@ -76,7 +94,7 @@ def render_native_config(plano_config_file, env, with_tracing=False):
     )
 
     # Set environment variables that config_generator.validate_and_render_schema() reads
-    config_dir = os.path.join(repo_root, "config")
+    config_dir = _find_config_dir()
     overrides = {
         "PLANO_CONFIG_FILE": effective_config_file,
         "PLANO_CONFIG_SCHEMA_FILE": os.path.join(
@@ -150,8 +168,8 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
             print(msg)
 
     envoy_path = ensure_envoy_binary()
-    find_wasm_plugins()  # validate they exist
-    brightstaff_path = find_brightstaff_binary()
+    ensure_wasm_plugins()
+    brightstaff_path = ensure_brightstaff_binary()
     envoy_config_path, plano_config_rendered_path = render_native_config(
         plano_config_file, env, with_tracing=with_tracing
     )
@@ -267,7 +285,7 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
             stop_native()
     else:
         status_print(f"[dim]Logs: {log_dir}[/dim]")
-        status_print(f"[dim]Run 'planoai down --native' to stop.[/dim]")
+        status_print(f"[dim]Run 'planoai down' to stop.[/dim]")
 
 
 def _daemon_exec(args, env, log_path):
@@ -379,15 +397,7 @@ def stop_native():
 
 def native_validate_config(plano_config_file):
     """Validate config in-process without Docker."""
-    repo_root = find_repo_root()
-    if not repo_root:
-        print(
-            "Error: Could not find repository root. "
-            "Make sure you're inside the plano repository."
-        )
-        sys.exit(1)
-
-    config_dir = os.path.join(repo_root, "config")
+    config_dir = _find_config_dir()
 
     # Create temp dir for rendered output (we just want validation)
     os.makedirs(PLANO_RUN_DIR, exist_ok=True)

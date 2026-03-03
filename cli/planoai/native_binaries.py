@@ -5,9 +5,12 @@ import sys
 import tarfile
 import tempfile
 
+import planoai
 from planoai.consts import (
     ENVOY_VERSION,
     PLANO_BIN_DIR,
+    PLANO_PLUGINS_DIR,
+    PLANO_RELEASE_BASE_URL,
 )
 from planoai.utils import find_repo_root, getLogger
 
@@ -15,7 +18,7 @@ log = getLogger(__name__)
 
 
 def _get_platform_slug():
-    """Return the platform slug for Envoy binary downloads."""
+    """Return the platform slug for binary downloads."""
     system = platform.system().lower()
     machine = platform.machine().lower()
 
@@ -30,7 +33,7 @@ def _get_platform_slug():
         if system == "darwin" and machine == "x86_64":
             print(
                 "Error: macOS x86_64 (Intel) is not supported. "
-                "Pre-built Envoy binaries are only available for Apple Silicon (arm64)."
+                "Pre-built binaries are only available for Apple Silicon (arm64)."
             )
             sys.exit(1)
         print(
@@ -40,6 +43,20 @@ def _get_platform_slug():
         sys.exit(1)
 
     return slug
+
+
+def _download_file(url, dest):
+    """Download a file from *url* to *dest* using curl."""
+    try:
+        subprocess.run(
+            ["curl", "-fSL", "-o", dest, url],
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error downloading: {e}")
+        print(f"URL: {url}")
+        print("Please check your internet connection and try again.")
+        sys.exit(1)
 
 
 def ensure_envoy_binary():
@@ -78,10 +95,7 @@ def ensure_envoy_binary():
         tmp_path = tmp.name
 
     try:
-        subprocess.run(
-            ["curl", "-fSL", "-o", tmp_path, url],
-            check=True,
-        )
+        _download_file(url, tmp_path)
 
         print("Extracting Envoy binary...")
         with tarfile.open(tmp_path, "r:xz") as tar:
@@ -114,14 +128,84 @@ def ensure_envoy_binary():
         print(f"Envoy {ENVOY_VERSION} installed at {envoy_path}")
         return envoy_path
 
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading Envoy: {e}")
-        print(f"URL: {url}")
-        print("Please check your internet connection and try again.")
-        sys.exit(1)
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+def ensure_wasm_plugins():
+    """Download WASM plugins if not cached or version changed. Returns (prompt_gateway_path, llm_gateway_path)."""
+    version = planoai.__version__
+    version_path = os.path.join(PLANO_PLUGINS_DIR, "wasm.version")
+
+    prompt_gw_path = os.path.join(PLANO_PLUGINS_DIR, "prompt_gateway.wasm")
+    llm_gw_path = os.path.join(PLANO_PLUGINS_DIR, "llm_gateway.wasm")
+
+    if os.path.exists(prompt_gw_path) and os.path.exists(llm_gw_path):
+        if os.path.exists(version_path):
+            with open(version_path, "r") as f:
+                cached_version = f.read().strip()
+            if cached_version == version:
+                log.info(f"WASM plugins {version} found at {PLANO_PLUGINS_DIR}")
+                return prompt_gw_path, llm_gw_path
+            print(
+                f"WASM plugins version changed ({cached_version} → {version}), re-downloading..."
+            )
+        else:
+            log.info("WASM plugins found (unknown version, re-downloading...)")
+
+    os.makedirs(PLANO_PLUGINS_DIR, exist_ok=True)
+
+    for name, dest in [
+        ("prompt_gateway.wasm", prompt_gw_path),
+        ("llm_gateway.wasm", llm_gw_path),
+    ]:
+        url = f"{PLANO_RELEASE_BASE_URL}/{version}/{name}"
+        print(f"Downloading {name} ({version})...")
+        print(f"  URL: {url}")
+        _download_file(url, dest)
+        print(f"  Saved to {dest}")
+
+    with open(version_path, "w") as f:
+        f.write(version)
+
+    return prompt_gw_path, llm_gw_path
+
+
+def ensure_brightstaff_binary():
+    """Download brightstaff binary if not cached or version changed. Returns path to binary."""
+    version = planoai.__version__
+    brightstaff_path = os.path.join(PLANO_BIN_DIR, "brightstaff")
+    version_path = os.path.join(PLANO_BIN_DIR, "brightstaff.version")
+
+    if os.path.exists(brightstaff_path) and os.access(brightstaff_path, os.X_OK):
+        if os.path.exists(version_path):
+            with open(version_path, "r") as f:
+                cached_version = f.read().strip()
+            if cached_version == version:
+                log.info(f"brightstaff {version} found at {brightstaff_path}")
+                return brightstaff_path
+            print(
+                f"brightstaff version changed ({cached_version} → {version}), re-downloading..."
+            )
+        else:
+            log.info("brightstaff found (unknown version, re-downloading...)")
+
+    slug = _get_platform_slug()
+    filename = f"brightstaff-{slug}"
+    url = f"{PLANO_RELEASE_BASE_URL}/{version}/{filename}"
+
+    os.makedirs(PLANO_BIN_DIR, exist_ok=True)
+
+    print(f"Downloading brightstaff ({version}) for {slug}...")
+    print(f"  URL: {url}")
+    _download_file(url, brightstaff_path)
+
+    os.chmod(brightstaff_path, 0o755)
+    with open(version_path, "w") as f:
+        f.write(version)
+    print(f"brightstaff {version} installed at {brightstaff_path}")
+    return brightstaff_path
 
 
 def find_wasm_plugins():

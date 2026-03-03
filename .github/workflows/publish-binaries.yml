@@ -1,0 +1,99 @@
+name: Publish pre-compiled binaries (release)
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-wasm-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Build WASM plugins
+        working-directory: crates
+        run: cargo build --release --target wasm32-wasip1 -p llm_gateway -p prompt_gateway
+
+      - name: Upload WASM plugins to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            crates/target/wasm32-wasip1/release/prompt_gateway.wasm \
+            crates/target/wasm32-wasip1/release/llm_gateway.wasm \
+            --clobber
+
+  build-brightstaff-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build brightstaff
+        working-directory: crates
+        run: cargo build --release -p brightstaff
+
+      - name: Upload brightstaff to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp crates/target/release/brightstaff brightstaff-linux-amd64
+          gh release upload "${{ github.event.release.tag_name }}" \
+            brightstaff-linux-amd64 \
+            --clobber
+
+  build-brightstaff-linux-arm64:
+    runs-on: [linux-arm64]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build brightstaff
+        working-directory: crates
+        run: cargo build --release -p brightstaff
+
+      - name: Upload brightstaff to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp crates/target/release/brightstaff brightstaff-linux-arm64
+          gh release upload "${{ github.event.release.tag_name }}" \
+            brightstaff-linux-arm64 \
+            --clobber
+
+  build-brightstaff-darwin-arm64:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build brightstaff
+        working-directory: crates
+        run: cargo build --release -p brightstaff
+
+      - name: Upload brightstaff to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp crates/target/release/brightstaff brightstaff-darwin-arm64
+          gh release upload "${{ github.event.release.tag_name }}" \
+            brightstaff-darwin-arm64 \
+            --clobber

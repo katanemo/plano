@@ -16,3 +16,6 @@ PLANO_PLUGINS_DIR = os.path.join(PLANO_HOME, "plugins")
 ENVOY_VERSION = "v1.37.0"  # keep in sync with Dockerfile ARG ENVOY_VERSION
 NATIVE_PID_FILE = os.path.join(PLANO_RUN_DIR, "plano.pid")
 DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT = "http://localhost:4317"
+
+PLANO_GITHUB_REPO = "katanemo/archgw"
+PLANO_RELEASE_BASE_URL = f"https://github.com/{PLANO_GITHUB_REPO}/releases/download"

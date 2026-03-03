@@ -262,12 +262,12 @@ def build(native):
     show_default=True,
 )
 @click.option(
-    "--native",
+    "--docker",
     default=False,
-    help="Run Plano natively without Docker (requires prior 'planoai build --native').",
+    help="Run Plano inside Docker instead of natively.",
     is_flag=True,
 )
-def up(file, path, foreground, with_tracing, tracing_port, native):
+def up(file, path, foreground, with_tracing, tracing_port, docker):
     """Starts Plano."""
     from rich.status import Status
 
@@ -284,11 +284,11 @@ def up(file, path, foreground, with_tracing, tracing_port, native):
         )
         sys.exit(1)
 
-    if native:
+    if not docker:
         from planoai.native_runner import native_validate_config
 
         with Status(
-            "[dim]Validating configuration (native)[/dim]",
+            "[dim]Validating configuration[/dim]",
             spinner="dots",
             spinner_style="dim",
         ):
@@ -303,7 +303,9 @@ def up(file, path, foreground, with_tracing, tracing_port, native):
                 sys.exit(1)
     else:
         with Status(
-            "[dim]Validating configuration[/dim]", spinner="dots", spinner_style="dim"
+            "[dim]Validating configuration (Docker)[/dim]",
+            spinner="dots",
+            spinner_style="dim",
         ):
             (
                 validation_return_code,
@@ -321,9 +323,9 @@ def up(file, path, foreground, with_tracing, tracing_port, native):
 
     # Set up environment
     default_otel = (
-        DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT
-        if native
-        else DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
+        DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
+        if docker
+        else DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT
     )
     env_stage = {
         "OTEL_TRACING_GRPC_ENDPOINT": default_otel,
@@ -394,13 +396,13 @@ def up(file, path, foreground, with_tracing, tracing_port, native):
                 sys.exit(1)
 
         # Update the OTEL endpoint so the gateway sends traces to the right port
-        tracing_host = "localhost" if native else "host.docker.internal"
+        tracing_host = "host.docker.internal" if docker else "localhost"
         otel_endpoint = f"http://{tracing_host}:{tracing_port}"
         env_stage["OTEL_TRACING_GRPC_ENDPOINT"] = otel_endpoint
 
     env.update(env_stage)
     try:
-        if native:
+        if not docker:
             from planoai.native_runner import start_native
 
             start_native(
@@ -426,27 +428,28 @@ def up(file, path, foreground, with_tracing, tracing_port, native):
 
 @click.command()
 @click.option(
-    "--native",
+    "--docker",
     default=False,
-    help="Stop a natively-running Plano instance.",
+    help="Stop a Docker-based Plano instance.",
     is_flag=True,
 )
-def down(native):
+def down(docker):
     """Stops Plano."""
     console = _console()
     _print_cli_header(console)
 
-    if native:
+    if not docker:
         from planoai.native_runner import stop_native
 
         with console.status(
-            f"[{PLANO_COLOR}]Shutting down Plano (native)...[/{PLANO_COLOR}]",
+            f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]",
             spinner="dots",
         ):
             stop_native()
     else:
         with console.status(
-            f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]", spinner="dots"
+            f"[{PLANO_COLOR}]Shutting down Plano (Docker)...[/{PLANO_COLOR}]",
+            spinner="dots",
         ):
             stop_docker_container()
 
