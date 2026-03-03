@@ -134,6 +134,14 @@ def render_native_config(plano_config_file, env, with_tracing=False):
     os.makedirs(log_dir, exist_ok=True)
     envoy_content = envoy_content.replace("/var/log/", log_dir + "/")
 
+    # Replace Linux CA cert path with platform-appropriate path
+    import platform
+
+    if platform.system() == "Darwin":
+        envoy_content = envoy_content.replace(
+            "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/cert.pem"
+        )
+
     with open(envoy_config_path, "w") as f:
         f.write(envoy_content)
 
