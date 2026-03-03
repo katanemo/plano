@@ -1,0 +1,353 @@
+[
+  {
+    "id": "advanced-prompt-targets",
+    "section": 8,
+    "sectionTitle": "Advanced Patterns",
+    "title": "Design Prompt Targets with Precise Parameter Schemas",
+    "impact": "HIGH",
+    "tags": [
+      "advanced",
+      "prompt-targets",
+      "functions",
+      "llm",
+      "api-integration"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Design Prompt Targets with Precise Parameter Schemas\"",
+      "input": "prompt_targets:\n  - name: get_flight_info\n    description: Get flight information\n    parameters:\n      - name: flight         # What format? \"AA123\"? \"AA 123\"? \"American 123\"?\n        type: str\n        required: true\n    endpoint:\n      name: flights_api\n      path: /flight?id={flight}",
+      "expected": "version: v0.3.0\n\nendpoints:\n  flights_api:\n    endpoint: api.flightaware.com\n    protocol: https\n    connect_timeout: \"5s\"\n\nprompt_targets:\n  - name: get_flight_status\n    description: >\n      Get real-time status, gate information, and delays for a specific flight number.\n      Use when the user asks about a flight's current status, arrival time, or gate.\n    parameters:\n      - name: flight_number\n        description: >\n          IATA airline code followed by flight number, e.g., \"AA123\", \"UA456\", \"DL789\".\n          Extract from user message — do not include spaces.\n        type: str\n        required: true\n        format: \"^[A-Z]{2}[0-9]{1,4}$\"    # Regex hint for validation\n\n      - name: date\n        description: >\n          Flight date in YYYY-MM-DD format. Use today's date if not specified.\n        type: str\n        required: false\n        format: date\n\n    endpoint:\n      name: flights_api\n      path: /flights/{flight_number}?date={date}\n      http_method: GET\n      http_headers:\n        Authorization: \"Bearer $FLIGHTAWARE_API_KEY\"\n\n  - name: search_flights\n    description: >\n      Search for available flights between two cities or airports.\n      Use when the user wants to find flights, compare options, or book travel.\n    parameters:\n      - name: origin\n        description: Departure airport IATA code (e.g., \"JFK\", \"LAX\", \"ORD\")\n        type: str\n        required: true\n      - name: destination\n        description: Arrival airport IATA code (e.g., \"LHR\", \"CDG\", \"NRT\")\n        type: str\n        required: true\n      - name: departure_date\n        description: Departure date in YYYY-MM-DD format\n        type: str\n        required: true\n        format: date\n      - name: cabin_class\n        description: Preferred cabin class\n        type: str\n        required: false\n        default: economy\n        enum: [economy, premium_economy, business, first]\n      - name: passengers\n        description: Number of adult passengers (1-9)\n        type: int\n        required: false\n        default: 1\n\n    endpoint:\n      name: flights_api\n      path: /search?from={origin}&to={destination}&date={departure_date}&class={cabin_class}&pax={passengers}\n      http_method: GET\n      http_headers:\n        Authorization: \"Bearer $FLIGHTAWARE_API_KEY\"\n\n    system_prompt: |\n      You are a travel assistant. Present flight search results clearly,\n      highlighting the best value options. Include price, duration, and\n      number of stops for each option.\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\nlisteners:\n  - type: prompt\n    name: travel_functions\n    port: 10000\n    timeout: \"30s\"",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Design Prompt Targets with Precise Parameter Schemas\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "agent-descriptions",
+    "section": 3,
+    "sectionTitle": "Agent Orchestration",
+    "title": "Write Capability-Focused Agent Descriptions for Accurate Routing",
+    "impact": "HIGH",
+    "tags": [
+      "agent",
+      "orchestration",
+      "descriptions",
+      "routing",
+      "multi-agent"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Write Capability-Focused Agent Descriptions for Accurate Routing\"",
+      "input": "listeners:\n  - type: agent\n    name: orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: agent_1\n        description: Helps users with information    # Too generic — matches everything\n\n      - id: agent_2\n        description: Also helps users               # Indistinguishable from agent_1",
+      "expected": "version: v0.3.0\n\nagents:\n  - id: weather_agent\n    url: http://host.docker.internal:8001\n  - id: flight_agent\n    url: http://host.docker.internal:8002\n  - id: hotel_agent\n    url: http://host.docker.internal:8003\n\nlisteners:\n  - type: agent\n    name: travel_orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: weather_agent\n        description: >\n          Provides real-time weather conditions and multi-day forecasts for any city\n          worldwide. Handles questions about temperature, precipitation, wind, humidity,\n          sunrise/sunset times, and severe weather alerts. Examples: \"What's the weather\n          in Tokyo?\", \"Will it rain in London this weekend?\", \"Sunrise time in New York.\"\n\n      - id: flight_agent\n        description: >\n          Provides live flight status, schedules, gate information, delays, and\n          aircraft details for any flight number or route between airports.\n          Handles questions about departures, arrivals, and airline information.\n          Examples: \"Is AA123 on time?\", \"Flights from JFK to LAX tomorrow.\"\n\n      - id: hotel_agent\n        description: >\n          Searches and books hotel accommodations, compares room types, pricing,\n          and availability. Handles check-in/check-out dates, amenities, and\n          cancellation policies. Examples: \"Hotels near Times Square for next Friday.\"",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Write Capability-Focused Agent Descriptions for Accurate Routing\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "agent-orchestration",
+    "section": 3,
+    "sectionTitle": "Agent Orchestration",
+    "title": "Register All Sub-Agents in Both `agents` and `listeners.agents`",
+    "impact": "CRITICAL",
+    "tags": [
+      "agent",
+      "orchestration",
+      "config",
+      "multi-agent"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Register All Sub-Agents in Both `agents` and `listeners.agents`\"",
+      "input": "version: v0.3.0\n\nagents:\n  - id: weather_agent\n    url: http://host.docker.internal:8001\n  - id: news_agent              # Defined but never referenced in any listener\n    url: http://host.docker.internal:8002\n\nlisteners:\n  - type: agent\n    name: orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: weather_agent\n        description: Provides weather forecasts and current conditions.\n      # news_agent is missing here — the orchestrator cannot route to it\n\nagents:\n  - id: weather_agent\n    url: http://host.docker.internal:8001\n\nlisteners:\n  - type: agent\n    name: orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: weather_agent\n        description: Provides weather forecasts.\n      - id: flights_agent        # ID not in global agents[] — startup error\n        description: Provides flight status information.",
+      "expected": "version: v0.3.0\n\nagents:\n  - id: weather_agent\n    url: http://host.docker.internal:8001\n  - id: flights_agent\n    url: http://host.docker.internal:8002\n  - id: hotels_agent\n    url: http://host.docker.internal:8003\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\nlisteners:\n  - type: agent\n    name: travel_orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: weather_agent\n        description: Real-time weather, forecasts, and climate data for any city.\n      - id: flights_agent\n        description: Live flight status, schedules, gates, and delays.\n      - id: hotels_agent\n        description: Hotel search, availability, pricing, and booking.\n        default: true    # Fallback if no other agent matches",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Register All Sub-Agents in Both `agents` and `listeners.agents`\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "config-listeners",
+    "section": 1,
+    "sectionTitle": "Configuration Fundamentals",
+    "title": "Choose the Right Listener Type for Your Use Case",
+    "impact": "CRITICAL",
+    "tags": [
+      "config",
+      "listeners",
+      "architecture",
+      "routing"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Choose the Right Listener Type for Your Use Case\"",
+      "input": "version: v0.3.0\n\n# Wrong: a model listener cannot route to backend agent services\nlisteners:\n  - type: model\n    name: main\n    port: 12000\n\nagents:\n  - id: weather_agent\n    url: http://host.docker.internal:8001",
+      "expected": "version: v0.3.0\n\nagents:\n  - id: weather_agent\n    url: http://host.docker.internal:8001\n  - id: travel_agent\n    url: http://host.docker.internal:8002\n\nlisteners:\n  - type: agent\n    name: orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: weather_agent\n        description: Provides real-time weather, forecasts, and conditions for any city.\n      - id: travel_agent\n        description: Books flights, hotels, and travel itineraries.\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Choose the Right Listener Type for Your Use Case\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "config-providers",
+    "section": 1,
+    "sectionTitle": "Configuration Fundamentals",
+    "title": "Register Model Providers with Correct Format Identifiers",
+    "impact": "CRITICAL",
+    "tags": [
+      "config",
+      "model-providers",
+      "llm",
+      "api-format"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Register Model Providers with Correct Format Identifiers\"",
+      "input": "model_providers:\n  - model: gpt-4o            # Missing openai/ prefix — Plano cannot route this\n    access_key: $OPENAI_API_KEY\n\n  - model: claude-3-5-sonnet # Missing anthropic/ prefix\n    access_key: $ANTHROPIC_API_KEY",
+      "expected": "model_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\n  - model: anthropic/claude-sonnet-4-20250514\n    access_key: $ANTHROPIC_API_KEY\n\n  - model: gemini/gemini-2.0-flash\n    access_key: $GOOGLE_API_KEY\n\nmodel_providers:\n  - model: custom/llama3\n    base_url: http://host.docker.internal:11434/v1   # Ollama endpoint\n    provider_interface: openai                        # Ollama speaks OpenAI format\n    default: true",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Register Model Providers with Correct Format Identifiers\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "config-secrets",
+    "section": 1,
+    "sectionTitle": "Configuration Fundamentals",
+    "title": "Use Environment Variable Substitution for All Secrets",
+    "impact": "CRITICAL",
+    "tags": [
+      "config",
+      "security",
+      "secrets",
+      "api-keys",
+      "environment-variables"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Use Environment Variable Substitution for All Secrets\"",
+      "input": "version: v0.3.0\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: abcdefghijklmnopqrstuvwxyz...   # Hardcoded — never do this\n\nstate_storage:\n  type: postgres\n  connection_string: \"postgresql://admin:mysecretpassword@prod-db:5432/plano\"\n\nprompt_targets:\n  - name: get_data\n    endpoint:\n      name: my_api\n      http_headers:\n        Authorization: \"Bearer abcdefghijklmnopqrstuvwxyz\"   # Hardcoded token",
+      "expected": "version: v0.3.0\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\n  - model: anthropic/claude-sonnet-4-20250514\n    access_key: $ANTHROPIC_API_KEY\n\nstate_storage:\n  type: postgres\n  connection_string: \"postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:5432/${DB_NAME}\"\n\nprompt_targets:\n  - name: get_data\n    endpoint:\n      name: my_api\n      http_headers:\n        Authorization: \"Bearer $MY_API_TOKEN\"\n\n# .env — add to .gitignore\nOPENAI_API_KEY=abcdefghijklmnopqrstuvwxyz...\nANTHROPIC_API_KEY=abcdefghijklmnopqrstuvwxyz...\nDB_USER=plano\nDB_PASS=secure-password\nDB_HOST=localhost\nMY_API_TOKEN=abcdefghijklmnopqrstuvwxyz...",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Use Environment Variable Substitution for All Secrets\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "config-version",
+    "section": 1,
+    "sectionTitle": "Configuration Fundamentals",
+    "title": "Always Specify a Supported Config Version",
+    "impact": "CRITICAL",
+    "tags": [
+      "config",
+      "versioning",
+      "validation"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Always Specify a Supported Config Version\"",
+      "input": "# No version field — fails schema validation\nlisteners:\n  - type: model\n    name: model_listener\n    port: 12000\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY",
+      "expected": "version: v0.3.0\n\nlisteners:\n  - type: model\n    name: model_listener\n    port: 12000\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Always Specify a Supported Config Version\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "deploy-docker",
+    "section": 7,
+    "sectionTitle": "Deployment & Security",
+    "title": "Understand Plano's Docker Network Topology for Agent URL Configuration",
+    "impact": "HIGH",
+    "tags": [
+      "deployment",
+      "docker",
+      "networking",
+      "agents",
+      "urls"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Understand Plano's Docker Network Topology for Agent URL Configuration\"",
+      "input": "version: v0.3.0\n\nagents:\n  - id: weather_agent\n    url: http://localhost:8001       # Wrong: this is Plano's own container\n\n  - id: flight_agent\n    url: http://127.0.0.1:8002      # Wrong: same issue\n\nfilters:\n  - id: input_guards\n    url: http://localhost:10500      # Wrong: filter server unreachable",
+      "expected": "version: v0.3.0\n\nagents:\n  - id: weather_agent\n    url: http://host.docker.internal:8001    # Correct: reaches host port 8001\n\n  - id: flight_agent\n    url: http://host.docker.internal:8002    # Correct: reaches host port 8002\n\nfilters:\n  - id: input_guards\n    url: http://host.docker.internal:10500   # Correct: reaches filter server on host\n\nendpoints:\n  internal_api:\n    endpoint: host.docker.internal            # Correct for internal API on host\n    protocol: http\n\n# Kubernetes / Docker Compose — use service names\nagents:\n  - id: weather_agent\n    url: http://weather-service:8001    # Kubernetes service DNS\n\n# External cloud services — use full domain\nagents:\n  - id: cloud_agent\n    url: https://my-agent.us-east-1.amazonaws.com/v1\n\n# Custom TLS (self-signed or internal CA)\noverrides:\n  upstream_tls_ca_path: /etc/ssl/certs/internal-ca.pem",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Understand Plano's Docker Network Topology for Agent URL Configuration\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "deploy-state",
+    "section": 7,
+    "sectionTitle": "Deployment & Security",
+    "title": "Use PostgreSQL State Storage for Multi-Turn Conversations in Production",
+    "impact": "HIGH",
+    "tags": [
+      "deployment",
+      "state",
+      "postgres",
+      "memory",
+      "multi-turn",
+      "production"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Use PostgreSQL State Storage for Multi-Turn Conversations in Production\"",
+      "input": "version: v0.3.0\n\n# Memory storage — all conversations lost on planoai down / container restart\nstate_storage:\n  type: memory\n\nlisteners:\n  - type: agent\n    name: customer_support\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: support_agent\n        description: Customer support assistant with conversation history.",
+      "expected": "version: v0.3.0\n\nstate_storage:\n  type: postgres\n  connection_string: \"postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:5432/${DB_NAME}\"\n\nlisteners:\n  - type: agent\n    name: customer_support\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: support_agent\n        description: Customer support assistant with access to full conversation history.\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\n# Start PostgreSQL with Docker\ndocker run -d \\\n  --name plano-postgres \\\n  -e POSTGRES_USER=plano \\\n  -e POSTGRES_PASSWORD=devpassword \\\n  -e POSTGRES_DB=plano \\\n  -p 5432:5432 \\\n  postgres:16\n\n# Set environment variables\nexport DB_USER=plano\nexport DB_PASS=devpassword\nexport DB_HOST=host.docker.internal   # Use host.docker.internal from inside Plano container\nexport DB_NAME=plano\n\nDB_USER=plano_prod\nDB_PASS=<strong-random-password>\nDB_HOST=your-rds-endpoint.amazonaws.com\nDB_NAME=plano",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Use PostgreSQL State Storage for Multi-Turn Conversations in Production\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "filter-guardrails",
+    "section": 4,
+    "sectionTitle": "Filter Chains & Guardrails",
+    "title": "Configure Prompt Guards with Actionable Rejection Messages",
+    "impact": "MEDIUM",
+    "tags": [
+      "filter",
+      "guardrails",
+      "jailbreak",
+      "security",
+      "ux"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Configure Prompt Guards with Actionable Rejection Messages\"",
+      "input": "version: v0.3.0\n\nprompt_guards:\n  input_guards:\n    jailbreak:\n      on_exception: {}    # Empty — returns unhelpful generic error\n\nprompt_guards:\n  input_guards:\n    jailbreak:\n      on_exception:\n        message: \"Error code 403: guard triggered\"    # Unhelpful to the user",
+      "expected": "version: v0.3.0\n\nprompt_guards:\n  input_guards:\n    jailbreak:\n      on_exception:\n        message: >\n          I'm not able to help with that request. This assistant is designed\n          to help with [your use case, e.g., customer support, coding questions].\n          Please rephrase your question or contact support@yourdomain.com\n          if you believe this is an error.\n\n# Built-in jailbreak detection (fast, no external service needed)\nprompt_guards:\n  input_guards:\n    jailbreak:\n      on_exception:\n        message: \"This request cannot be processed. Please ask about our products and services.\"\n\n# MCP-based custom guards for additional policy enforcement\nfilters:\n  - id: topic_restriction\n    url: http://host.docker.internal:10500\n    type: mcp\n    transport: streamable-http\n    tool: topic_restriction    # Custom filter for domain-specific restrictions\n\nlisteners:\n  - type: agent\n    name: customer_support\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: support_agent\n        description: Customer support assistant for product questions and order issues.\n        filter_chain:\n          - topic_restriction    # Additional custom topic filtering",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Configure Prompt Guards with Actionable Rejection Messages\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "filter-mcp",
+    "section": 4,
+    "sectionTitle": "Filter Chains & Guardrails",
+    "title": "Configure MCP Filters with Explicit Type and Transport",
+    "impact": "MEDIUM",
+    "tags": [
+      "filter",
+      "mcp",
+      "integration",
+      "configuration"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Configure MCP Filters with Explicit Type and Transport\"",
+      "input": "filters:\n  - id: my_guard          # Plano infers type=mcp, transport=streamable-http, tool=my_guard\n    url: http://localhost:10500\n    # If your MCP server uses a different tool name or transport, this silently misroutes",
+      "expected": "version: v0.3.0\n\nfilters:\n  - id: input_guards\n    url: http://host.docker.internal:10500\n    type: mcp                        # Explicitly MCP protocol\n    transport: streamable-http       # Streamable HTTP transport\n    tool: input_guards               # MCP tool name (matches MCP server registration)\n\n  - id: query_rewriter\n    url: http://host.docker.internal:10501\n    type: mcp\n    transport: streamable-http\n    tool: rewrite_query              # Tool name differs from filter ID — explicit is safer\n\n  - id: custom_validator\n    url: http://host.docker.internal:10503\n    type: http                       # Plain HTTP filter (not MCP)\n    # No tool field for HTTP filters\n\nfilters:\n  - id: auth_validator\n    url: http://host.docker.internal:9000/validate\n    type: http    # Plano POSTs the request, expects the modified request back",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Configure MCP Filters with Explicit Type and Transport\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "filter-ordering",
+    "section": 4,
+    "sectionTitle": "Filter Chains & Guardrails",
+    "title": "Order Filter Chains with Guards First, Enrichment Last",
+    "impact": "HIGH",
+    "tags": [
+      "filter",
+      "guardrails",
+      "security",
+      "pipeline",
+      "ordering"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Order Filter Chains with Guards First, Enrichment Last\"",
+      "input": "filters:\n  - id: context_builder\n    url: http://host.docker.internal:10502    # Runs expensive RAG retrieval first\n  - id: query_rewriter\n    url: http://host.docker.internal:10501\n  - id: input_guards\n    url: http://host.docker.internal:10500    # Guards run last — jailbreak gets context\n\nlisteners:\n  - type: agent\n    name: rag_orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: rag_agent\n        filter_chain:\n          - context_builder   # Wrong: expensive enrichment before safety check\n          - query_rewriter\n          - input_guards",
+      "expected": "version: v0.3.0\n\nfilters:\n  - id: input_guards\n    url: http://host.docker.internal:10500\n    type: mcp\n    transport: streamable-http\n  - id: query_rewriter\n    url: http://host.docker.internal:10501\n    type: mcp\n    transport: streamable-http\n  - id: context_builder\n    url: http://host.docker.internal:10502\n    type: mcp\n    transport: streamable-http\n\nlisteners:\n  - type: agent\n    name: rag_orchestrator\n    port: 8000\n    router: plano_orchestrator_v1\n    agents:\n      - id: rag_agent\n        description: Answers questions using internal knowledge base documents.\n        filter_chain:\n          - input_guards      # 1. Block jailbreaks and policy violations\n          - query_rewriter    # 2. Normalize the safe query\n          - context_builder   # 3. Retrieve relevant context for the clean query",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Order Filter Chains with Guards First, Enrichment Last\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "observe-span-attributes",
+    "section": 5,
+    "sectionTitle": "Observability & Debugging",
+    "title": "Add Custom Span Attributes for Correlation and Filtering",
+    "impact": "MEDIUM",
+    "tags": [
+      "observability",
+      "tracing",
+      "span-attributes",
+      "correlation"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Add Custom Span Attributes for Correlation and Filtering\"",
+      "input": "tracing:\n  random_sampling: 20\n  # No span_attributes — cannot filter by user, session, or environment",
+      "expected": "version: v0.3.0\n\ntracing:\n  random_sampling: 20\n  trace_arch_internal: true\n\n  span_attributes:\n    # Match all headers with this prefix, then map to span attributes by:\n    # 1) stripping the prefix and 2) converting hyphens to dots\n    header_prefixes:\n      - x-katanemo-\n\n    # Static attributes added to every span from this Plano instance\n    static:\n      environment: production\n      service.name: plano-gateway\n      deployment.region: us-east-1\n      service.version: \"2.1.0\"\n      team: platform-engineering\n\nimport httpx\n\nresponse = httpx.post(\n    \"http://localhost:12000/v1/chat/completions\",\n    headers={\n        \"x-katanemo-request-id\": \"req_abc123\",\n        \"x-katanemo-user-id\": \"usr_12\",\n        \"x-katanemo-session-id\": \"sess_xyz456\",\n        \"x-katanemo-tenant-id\": \"acme-corp\",\n    },\n    json={\"model\": \"plano.v1\", \"messages\": [...]}\n)\n\n# Find all requests from a specific user\nplanoai trace --where user.id=usr_12\n\n# Find all traces from production environment\nplanoai trace --where environment=production\n\n# Find traces from a specific tenant\nplanoai trace --where tenant.id=acme-corp",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Add Custom Span Attributes for Correlation and Filtering\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "observe-tracing",
+    "section": 5,
+    "sectionTitle": "Observability & Debugging",
+    "title": "Enable Tracing with Appropriate Sampling for Your Environment",
+    "impact": "HIGH",
+    "tags": [
+      "observability",
+      "tracing",
+      "opentelemetry",
+      "otel",
+      "debugging"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Enable Tracing with Appropriate Sampling for Your Environment\"",
+      "input": "version: v0.3.0\n\nlisteners:\n  - type: model\n    name: model_listener\n    port: 12000\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\n# No tracing block — no visibility into routing, latency, or errors",
+      "expected": "version: v0.3.0\n\nlisteners:\n  - type: model\n    name: model_listener\n    port: 12000\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\ntracing:\n  random_sampling: 100              # 100% for development/debugging\n  trace_arch_internal: true         # Include Plano's internal routing spans\n\ntracing:\n  random_sampling: 10               # Sample 10% of requests in production\n  trace_arch_internal: false        # Skip internal spans to reduce noise\n  span_attributes:\n    header_prefixes:\n      - x-katanemo-               # Match all x-katanemo-* headers\n    static:\n      environment: production\n      service.name: my-plano-service\n      version: \"1.0.0\"\n\n# Start Plano with built-in OTEL collector\nplanoai up config.yaml --with-tracing",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Enable Tracing with Appropriate Sampling for Your Environment\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "routing-aliases",
+    "section": 2,
+    "sectionTitle": "Routing & Model Selection",
+    "title": "Use Model Aliases for Semantic, Stable Model References",
+    "impact": "MEDIUM",
+    "tags": [
+      "routing",
+      "model-aliases",
+      "maintainability",
+      "client-integration"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Use Model Aliases for Semantic, Stable Model References\"",
+      "input": "# config.yaml — no aliases defined\nversion: v0.3.0\n\nlisteners:\n  - type: model\n    name: model_listener\n    port: 12000\n\nmodel_providers:\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    default: true\n\n# Client code — brittle, must be updated when model changes\nclient.chat.completions.create(model=\"gpt-4o\", ...)",
+      "expected": "version: v0.3.0\n\nlisteners:\n  - type: model\n    name: model_listener\n    port: 12000\n\nmodel_providers:\n  - model: openai/gpt-4o-mini\n    access_key: $OPENAI_API_KEY\n    default: true\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n  - model: anthropic/claude-sonnet-4-20250514\n    access_key: $ANTHROPIC_API_KEY\n\nmodel_aliases:\n  plano.fast.v1:\n    target: gpt-4o-mini          # Cheap, fast — for high-volume tasks\n\n  plano.smart.v1:\n    target: gpt-4o               # High capability — for complex reasoning\n\n  plano.creative.v1:\n    target: claude-sonnet-4-20250514  # Strong creative writing and analysis\n\n  plano.v1:\n    target: gpt-4o               # Default production alias\n\n# Client code — stable, alias is the contract\nclient.chat.completions.create(model=\"plano.smart.v1\", ...)",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Use Model Aliases for Semantic, Stable Model References\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "routing-default",
+    "section": 2,
+    "sectionTitle": "Routing & Model Selection",
+    "title": "Always Set Exactly One Default Model Provider",
+    "impact": "HIGH",
+    "tags": [
+      "routing",
+      "defaults",
+      "model-providers",
+      "reliability"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Always Set Exactly One Default Model Provider\"",
+      "input": "version: v0.3.0\n\nmodel_providers:\n  - model: openai/gpt-4o-mini     # No default: true anywhere\n    access_key: $OPENAI_API_KEY\n    routing_preferences:\n      - name: summarization\n        description: Summarizing documents and extracting key points\n\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    routing_preferences:\n      - name: code_generation\n        description: Writing new functions and implementing algorithms\n\nmodel_providers:\n  - model: openai/gpt-4o-mini\n    default: true               # First default\n    access_key: $OPENAI_API_KEY\n\n  - model: openai/gpt-4o\n    default: true               # Second default — confusing\n    access_key: $OPENAI_API_KEY",
+      "expected": "version: v0.3.0\n\nmodel_providers:\n  - model: openai/gpt-4o-mini\n    access_key: $OPENAI_API_KEY\n    default: true               # Handles general/unclassified requests\n    routing_preferences:\n      - name: summarization\n        description: Summarizing documents, articles, and meeting notes\n      - name: classification\n        description: Categorizing inputs, labeling, and intent detection\n\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    routing_preferences:\n      - name: code_generation\n        description: Writing, debugging, and reviewing code\n      - name: complex_reasoning\n        description: Multi-step math, logical analysis, research synthesis",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Always Set Exactly One Default Model Provider\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "routing-passthrough",
+    "section": 2,
+    "sectionTitle": "Routing & Model Selection",
+    "title": "Use Passthrough Auth for Proxy and Multi-Tenant Setups",
+    "impact": "MEDIUM",
+    "tags": [
+      "routing",
+      "authentication",
+      "proxy",
+      "litellm",
+      "multi-tenant"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Use Passthrough Auth for Proxy and Multi-Tenant Setups\"",
+      "input": "model_providers:\n  - model: custom/proxy\n    base_url: http://host.docker.internal:8000\n    access_key: $SOME_KEY    # Plano overwrites the client's auth — proxy rejects it",
+      "expected": "version: v0.3.0\n\nlisteners:\n  - type: model\n    name: model_listener\n    port: 12000\n\nmodel_providers:\n  - model: custom/litellm-proxy\n    base_url: http://host.docker.internal:4000    # LiteLLM server\n    provider_interface: openai                    # LiteLLM uses OpenAI format\n    passthrough_auth: true                        # Forward client's Bearer token\n    default: true\n\nmodel_providers:\n  # Plano acts as a passthrough gateway; each client has their own OpenAI key\n  - model: openai/gpt-4o\n    passthrough_auth: true    # No access_key here — client's key is forwarded\n    default: true\n\nmodel_providers:\n  - model: openai/gpt-4o-mini\n    access_key: $OPENAI_API_KEY    # Plano manages this key\n    default: true\n    routing_preferences:\n      - name: quick tasks\n        description: Short answers, simple lookups, fast completions\n\n  - model: custom/vllm-llama\n    base_url: http://gpu-server:8000\n    provider_interface: openai\n    passthrough_auth: true         # vLLM cluster handles its own auth\n    routing_preferences:\n      - name: long context\n        description: Processing very long documents, multi-document analysis",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Use Passthrough Auth for Proxy and Multi-Tenant Setups\" and explain how to fix it."
+    }
+  },
+  {
+    "id": "routing-preferences",
+    "section": 2,
+    "sectionTitle": "Routing & Model Selection",
+    "title": "Write Task-Specific Routing Preference Descriptions",
+    "impact": "HIGH",
+    "tags": [
+      "routing",
+      "model-selection",
+      "preferences",
+      "llm-routing"
+    ],
+    "testCase": {
+      "description": "Detect and fix: \"Write Task-Specific Routing Preference Descriptions\"",
+      "input": "model_providers:\n  - model: openai/gpt-4o-mini\n    access_key: $OPENAI_API_KEY\n    default: true\n    routing_preferences:\n      - name: simple\n        description: easy tasks      # Too vague — what is \"easy\"?\n\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    routing_preferences:\n      - name: hard\n        description: hard tasks      # Too vague — overlaps with \"easy\"",
+      "expected": "model_providers:\n  - model: openai/gpt-4o-mini\n    access_key: $OPENAI_API_KEY\n    default: true\n    routing_preferences:\n      - name: summarization\n        description: >\n          Summarizing documents, articles, emails, or meeting transcripts.\n          Extracting key points, generating TL;DR sections, condensing long text.\n      - name: classification\n        description: >\n          Categorizing inputs, sentiment analysis, spam detection,\n          intent classification, labeling structured data fields.\n      - name: translation\n        description: >\n          Translating text between languages, localization tasks.\n\n  - model: openai/gpt-4o\n    access_key: $OPENAI_API_KEY\n    routing_preferences:\n      - name: code_generation\n        description: >\n          Writing new functions, classes, or modules from scratch.\n          Implementing algorithms, boilerplate generation, API integrations.\n      - name: code_review\n        description: >\n          Reviewing code for bugs, security vulnerabilities, performance issues.\n          Suggesting refactors, explaining complex code, debugging errors.\n      - name: complex_reasoning\n        description: >\n          Multi-step math problems, logical deduction, strategic planning,\n          research synthesis requiring chain-of-thought reasoning.",
+      "evaluationPrompt": "Given the following Plano config or CLI usage, identify if it violates the rule \"Write Task-Specific Routing Preference Descriptions\" and explain how to fix it."
+    }
+  }
+]
