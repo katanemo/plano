@@ -36,8 +36,8 @@ uv sync
 # Start gateway with model alias routing config
 log "startup plano gateway with model alias routing demo"
 cd ../../
-planoai down || true
-planoai up demos/llm_routing/model_alias_routing/config_with_aliases.yaml
+planoai down --docker || true
+planoai up --docker demos/llm_routing/model_alias_routing/config_with_aliases.yaml
 cd -
 
 # Run both test suites that share this config in a single pytest invocation
@@ -46,4 +46,4 @@ uv run pytest -n auto test_model_alias_routing.py test_openai_responses_api_clie
 
 # Cleanup
 log "shutting down"
-planoai down || true
+planoai down --docker || true

@@ -35,8 +35,8 @@ uv sync
 # Start gateway with state storage config
 log "startup plano gateway with state storage config"
 cd ../../
-planoai down || true
-planoai up tests/e2e/config_memory_state_v1_responses.yaml
+planoai down --docker || true
+planoai up --docker tests/e2e/config_memory_state_v1_responses.yaml
 cd -
 
 # Run tests
@@ -45,4 +45,4 @@ uv run pytest test_openai_responses_api_client_with_state.py
 
 # Cleanup
 log "shutting down"
-planoai down || true
+planoai down --docker || true

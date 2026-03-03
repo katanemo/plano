@@ -21,7 +21,7 @@ do
   echo "****************************************"
   cd ../../$demo
   echo "starting plano"
-  planoai up config.yaml
+  planoai up --docker config.yaml
   echo "starting docker containers"
   # only execute docker compose if demo is llm_routing/preference_based_routing
   if [ "$demo" == "llm_routing/preference_based_routing" ]; then
@@ -38,7 +38,7 @@ do
     exit 1
   fi
   echo "stopping docker containers and plano"
-  planoai down
+  planoai down --docker
   docker compose down -v
   cd ../../shared/test_runner
 done

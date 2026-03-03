@@ -26,7 +26,7 @@ start_demo() {
 
   # Step 3: Start Plano
   echo "Starting Plano with arch_config_with_aliases.yaml..."
-  planoai up arch_config_with_aliases.yaml
+  planoai up --docker arch_config_with_aliases.yaml
 
   echo "\n\nPlano started successfully."
   echo "Please run the following CURL command to test model alias routing. Additional instructions are in the README.md file. \n"
@@ -48,7 +48,7 @@ start_demo() {
 stop_demo() {
   # Step 2: Stop Plano
   echo "Stopping Plano..."
-  planoai down
+  planoai down --docker
 }
 
 # Main script logic

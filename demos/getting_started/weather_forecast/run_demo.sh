@@ -74,7 +74,7 @@ start_demo() {
 
   # Step 4: Start Plano
   echo "Starting Plano with config.yaml..."
-  planoai up config.yaml
+  planoai up --docker config.yaml
 
   # Step 5: Start Network Agent with the chosen Docker Compose file
   echo "Starting Network Agent with $COMPOSE_FILE..."
@@ -93,7 +93,7 @@ stop_demo() {
 
   # Stop Plano
   echo "Stopping Plano..."
-  planoai down
+  planoai down --docker
 }
 
 # Main script logic
