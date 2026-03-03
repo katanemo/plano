@@ -132,12 +132,12 @@ def main(ctx, version):
 
 @click.command()
 @click.option(
-    "--native",
+    "--docker",
     default=False,
-    help="Build WASM plugins and brightstaff natively (requires Rust toolchain).",
+    help="Build the Docker image instead of native binaries.",
     is_flag=True,
 )
-def build(native):
+def build(docker):
     """Build Plano from source. Works from any directory within the repo."""
 
     # Find the repo root
@@ -148,7 +148,7 @@ def build(native):
         )
         sys.exit(1)
 
-    if native:
+    if not docker:
         import shutil
 
         crates_dir = os.path.join(repo_root, "crates")
