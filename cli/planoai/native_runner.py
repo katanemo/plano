@@ -274,14 +274,17 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
         status_print(f"[dim]Running in foreground. Press Ctrl+C to stop.[/dim]")
         status_print(f"[dim]Logs: {log_dir}[/dim]")
         try:
-            # Tail both log files
+            import glob
+
+            access_logs = sorted(glob.glob(os.path.join(log_dir, "access_*.log")))
             tail_proc = subprocess.Popen(
                 [
                     "tail",
                     "-f",
                     os.path.join(log_dir, "envoy.log"),
                     os.path.join(log_dir, "brightstaff.log"),
-                ],
+                ]
+                + access_logs,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
             )
