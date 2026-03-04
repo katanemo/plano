@@ -23,7 +23,6 @@ Plano uses a [preference-aligned router](https://arxiv.org/abs/2506.16655) to an
 
 ## Prerequisites
 
-- **Docker** running
 - **Plano CLI**: `uv tool install planoai` or `pip install planoai`
 - **OpenClaw**: `npm install -g openclaw@latest`
 - **API keys**:
@@ -43,7 +42,7 @@ export ANTHROPIC_API_KEY="your-anthropic-key"
 
 ```bash
 cd demos/llm_routing/openclaw_routing
-planoai up --service plano --foreground
+planoai up config.yaml
 ```
 
 ### 3. Set Up OpenClaw

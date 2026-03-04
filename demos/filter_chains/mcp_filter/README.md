@@ -35,21 +35,21 @@ This demo consists of four components:
 
 ## Quick Start
 
-### 1. Start everything with Docker Compose
+### 1. Start the demo
 ```bash
-docker compose up --build
+export OPENAI_API_KEY="your-key"
+./run_demo.sh
 ```
 
-This brings up:
+This starts Plano natively and brings up via Docker Compose:
 - Input Guards MCP server on port 10500
 - Query Rewriter MCP server on port 10501
 - Context Builder MCP server on port 10502
 - RAG Agent REST server on port 10505
-- Plano listener on port 8001 (and gateway on 12000)
 - Jaeger UI for viewing traces at http://localhost:16686
 - AnythingLLM at http://localhost:3001 for interactive queries
 
-> Set `OPENAI_API_KEY` in your environment before running; `LLM_GATEWAY_ENDPOINT` defaults to `http://host.docker.internal:12000/v1`.
+Plano runs natively on the host (port 8001 and 12000).
 
 ### 2. Test the system
 
