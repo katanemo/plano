@@ -28,7 +28,7 @@ model_providers:
 
   # Ollama Models
   - model: ollama/llama3.1
-    base_url: http://host.docker.internal:11434
+    base_url: http://localhost:11434
 
 
 # Model aliases - friendly names that map to actual provider names

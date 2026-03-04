@@ -13,7 +13,7 @@ model_providers:
 
   - name: arch-router
     model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
-    base_url: http://host.docker.internal:11434
+    base_url: http://localhost:11434
 
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY

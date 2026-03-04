@@ -598,9 +598,9 @@ Ollama
       - model: ollama/llama3.1
         base_url: http://localhost:11434
 
-      # Ollama in Docker (from host)
+      # Ollama running locally
       - model: ollama/codellama
-        base_url: http://host.docker.internal:11434
+        base_url: http://localhost:11434
 
 
 OpenAI-Compatible Providers

@@ -194,9 +194,9 @@ Here is a minimal configuration that wires Plano-Orchestrator to two HTTP servic
 
   agents:
     - id: flight_agent
-      url: http://host.docker.internal:10520  # your flights service
+      url: http://localhost:10520  # your flights service
     - id: hotel_agent
-      url: http://host.docker.internal:10530  # your hotels service
+      url: http://localhost:10530  # your hotels service
 
   model_providers:
     - model: openai/gpt-4o

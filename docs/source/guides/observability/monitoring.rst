@@ -59,7 +59,7 @@ are some sample configuration files for both, respectively.
         scheme: http
         static_configs:
         - targets:
-            - host.docker.internal:19901
+            - localhost:19901
         params:
         format: ["prometheus"]
 

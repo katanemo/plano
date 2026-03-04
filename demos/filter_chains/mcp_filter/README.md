@@ -74,16 +74,16 @@ The `config.yaml` defines how agents are connected:
 ```yaml
 filters:
   - id: input_guards
-    url: http://host.docker.internal:10500
+    url: http://localhost:10500
     # type: mcp (default)
     # tool: input_guards (default - same as filter id)
 
   - id: query_rewriter
-    url: http://host.docker.internal:10501
+    url: http://localhost:10501
     # type: mcp (default)
 
   - id: context_builder
-    url: http://host.docker.internal:10502
+    url: http://localhost:10502
 ```
 
 ## How It Works
