@@ -19,7 +19,7 @@ start_demo() {
 
   # Step 3: Start Plano
   echo "Starting Plano with arch_config_with_aliases.yaml..."
-  planoai up --docker arch_config_with_aliases.yaml
+  planoai up arch_config_with_aliases.yaml
 
   echo "\n\nPlano started successfully."
   echo "Please run the following command to test the setup: python bench.py\n"
@@ -29,7 +29,7 @@ start_demo() {
 stop_demo() {
   # Step 2: Stop Plano
   echo "Stopping Plano..."
-  planoai down --docker
+  planoai down
 }
 
 # Main script logic
