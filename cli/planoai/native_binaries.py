@@ -1,5 +1,7 @@
+import gzip
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -184,17 +186,22 @@ def ensure_wasm_plugins():
         else:
             log.info("WASM plugins found (unknown version, re-downloading...)")
 
-    # 3. Download from GitHub releases
+    # 3. Download from GitHub releases (gzipped)
     os.makedirs(PLANO_PLUGINS_DIR, exist_ok=True)
 
     for name, dest in [
         ("prompt_gateway.wasm", prompt_gw_path),
         ("llm_gateway.wasm", llm_gw_path),
     ]:
-        url = f"{PLANO_RELEASE_BASE_URL}/{version}/{name}"
-        print(f"Downloading {name} ({version})...")
+        gz_name = f"{name}.gz"
+        url = f"{PLANO_RELEASE_BASE_URL}/{version}/{gz_name}"
+        print(f"Downloading {gz_name} ({version})...")
         print(f"  URL: {url}")
-        _download_file(url, dest)
+        gz_dest = dest + ".gz"
+        _download_file(url, gz_dest)
+        with gzip.open(gz_dest, "rb") as f_in, open(dest, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        os.unlink(gz_dest)
         print(f"  Saved to {dest}")
 
     with open(version_path, "w") as f:
@@ -229,16 +236,20 @@ def ensure_brightstaff_binary():
         else:
             log.info("brightstaff found (unknown version, re-downloading...)")
 
-    # 3. Download from GitHub releases
+    # 3. Download from GitHub releases (gzipped)
     slug = _get_platform_slug()
-    filename = f"brightstaff-{slug}"
+    filename = f"brightstaff-{slug}.gz"
     url = f"{PLANO_RELEASE_BASE_URL}/{version}/{filename}"
 
     os.makedirs(PLANO_BIN_DIR, exist_ok=True)
 
     print(f"Downloading brightstaff ({version}) for {slug}...")
     print(f"  URL: {url}")
-    _download_file(url, brightstaff_path)
+    gz_path = brightstaff_path + ".gz"
+    _download_file(url, gz_path)
+    with gzip.open(gz_path, "rb") as f_in, open(brightstaff_path, "wb") as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    os.unlink(gz_path)
 
     os.chmod(brightstaff_path, 0o755)
     with open(version_path, "w") as f:

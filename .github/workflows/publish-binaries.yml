@@ -28,13 +28,15 @@ jobs:
         working-directory: crates
         run: cargo build --release --target wasm32-wasip1 -p llm_gateway -p prompt_gateway
 
-      - name: Upload WASM plugins to release
+      - name: Compress and upload WASM plugins to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          gzip -k crates/target/wasm32-wasip1/release/prompt_gateway.wasm
+          gzip -k crates/target/wasm32-wasip1/release/llm_gateway.wasm
           gh release upload "${{ github.event.release.tag_name || inputs.tag }}" \
-            crates/target/wasm32-wasip1/release/prompt_gateway.wasm \
-            crates/target/wasm32-wasip1/release/llm_gateway.wasm \
+            crates/target/wasm32-wasip1/release/prompt_gateway.wasm.gz \
+            crates/target/wasm32-wasip1/release/llm_gateway.wasm.gz \
             --clobber
 
   build-brightstaff-linux-amd64:
@@ -50,13 +52,14 @@ jobs:
         working-directory: crates
         run: cargo build --release -p brightstaff
 
-      - name: Upload brightstaff to release
+      - name: Compress and upload brightstaff to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp crates/target/release/brightstaff brightstaff-linux-amd64
+          gzip brightstaff-linux-amd64
           gh release upload "${{ github.event.release.tag_name || inputs.tag }}" \
-            brightstaff-linux-amd64 \
+            brightstaff-linux-amd64.gz \
             --clobber
 
   build-brightstaff-linux-arm64:
@@ -72,13 +75,14 @@ jobs:
         working-directory: crates
         run: cargo build --release -p brightstaff
 
-      - name: Upload brightstaff to release
+      - name: Compress and upload brightstaff to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp crates/target/release/brightstaff brightstaff-linux-arm64
+          gzip brightstaff-linux-arm64
           gh release upload "${{ github.event.release.tag_name || inputs.tag }}" \
-            brightstaff-linux-arm64 \
+            brightstaff-linux-arm64.gz \
             --clobber
 
   build-brightstaff-darwin-arm64:
@@ -94,11 +98,12 @@ jobs:
         working-directory: crates
         run: cargo build --release -p brightstaff
 
-      - name: Upload brightstaff to release
+      - name: Compress and upload brightstaff to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp crates/target/release/brightstaff brightstaff-darwin-arm64
+          gzip brightstaff-darwin-arm64
           gh release upload "${{ github.event.release.tag_name || inputs.tag }}" \
-            brightstaff-darwin-arm64 \
+            brightstaff-darwin-arm64.gz \
             --clobber
