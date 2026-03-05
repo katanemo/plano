@@ -65,7 +65,7 @@ Create a ``docker-compose.yml`` file with the following configuration:
    # docker-compose.yml
    services:
      plano:
-       image: katanemo/plano:0.4.10
+       image: katanemo/plano:0.4.11
        container_name: plano
        ports:
          - "10000:10000" # ingress (client -> plano)
