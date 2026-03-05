@@ -163,7 +163,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install planoai
-        run: pip install ./cli
+        run: pip install -e ./cli
 
       - name: Validate plano config
         run: bash config/validate_plano_config.sh

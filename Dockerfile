@@ -72,7 +72,7 @@ COPY cli/README.md ./
 COPY config/plano_config_schema.yaml /config/plano_config_schema.yaml
 COPY config/envoy.template.yaml /config/envoy.template.yaml
 
-RUN uv run pip install --no-cache-dir .
+RUN pip install --no-cache-dir -e .
 
 COPY cli/planoai planoai/
 COPY config/envoy.template.yaml .
