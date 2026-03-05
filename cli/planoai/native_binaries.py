@@ -123,6 +123,7 @@ def ensure_envoy_binary():
 
     try:
         _download_file(url, tmp_path, label=f"Envoy {ENVOY_VERSION}")
+        print(f"  Extracting Envoy {ENVOY_VERSION}...", end="", flush=True)
         with tarfile.open(tmp_path, "r:xz") as tar:
             # Find the envoy binary inside the archive
             envoy_member = None
@@ -147,10 +148,10 @@ def ensure_envoy_binary():
             with open(envoy_path, "wb") as out:
                 out.write(f.read())
 
+        print(" done")
         os.chmod(envoy_path, 0o755)
         with open(version_path, "w") as f:
             f.write(ENVOY_VERSION)
-        log.info(f"Envoy {ENVOY_VERSION} installed at {envoy_path}")
         return envoy_path
 
     finally:
@@ -220,9 +221,11 @@ def ensure_wasm_plugins():
         url = f"{PLANO_RELEASE_BASE_URL}/{version}/{gz_name}"
         gz_dest = dest + ".gz"
         _download_file(url, gz_dest, label=f"{name} ({version})")
+        print(f"  Decompressing {name}...", end="", flush=True)
         with gzip.open(gz_dest, "rb") as f_in, open(dest, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
         os.unlink(gz_dest)
+        print(" done")
 
     with open(version_path, "w") as f:
         f.write(version)
@@ -265,14 +268,15 @@ def ensure_brightstaff_binary():
 
     gz_path = brightstaff_path + ".gz"
     _download_file(url, gz_path, label=f"brightstaff ({version}, {slug})")
+    print("  Decompressing brightstaff...", end="", flush=True)
     with gzip.open(gz_path, "rb") as f_in, open(brightstaff_path, "wb") as f_out:
         shutil.copyfileobj(f_in, f_out)
+    print(" done")
     os.unlink(gz_path)
 
     os.chmod(brightstaff_path, 0o755)
     with open(version_path, "w") as f:
         f.write(version)
-    log.info(f"brightstaff {version} installed at {brightstaff_path}")
     return brightstaff_path
 
 
