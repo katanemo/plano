@@ -184,8 +184,8 @@ impl SupportedAPIsFromClient {
             SupportedAPIsFromClient::OpenAIResponsesAPI(_) => {
                 // For Responses API, check if provider supports it, otherwise translate to chat/completions
                 match provider_id {
-                    // OpenAI and compatible providers that support /v1/responses
-                    ProviderId::OpenAI => route_by_provider("/responses"),
+                    // Providers that support /v1/responses natively
+                    ProviderId::OpenAI | ProviderId::XAI => route_by_provider("/responses"),
                     // All other providers: translate to /chat/completions
                     _ => route_by_provider("/chat/completions"),
                 }
@@ -652,6 +652,21 @@ mod tests {
                 Some("/custom/azure/path")
             ),
             "/custom/azure/path/gpt-4-deployment/chat/completions?api-version=2025-01-01-preview"
+        );
+    }
+
+    #[test]
+    fn test_responses_api_targets_xai_native_responses_endpoint() {
+        let api = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        assert_eq!(
+            api.target_endpoint_for_provider(
+                &ProviderId::XAI,
+                "/v1/responses",
+                "grok-4-1-fast-reasoning",
+                false,
+                None
+            ),
+            "/v1/responses"
         );
     }
 }

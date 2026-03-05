@@ -130,6 +130,7 @@ pub fn extract_input_items(input: &InputParam) -> Vec<InputItem> {
                 }]),
             })]
         }
+        InputParam::SingleItem(item) => vec![item.clone()],
         InputParam::Items(items) => items.clone(),
     }
 }
