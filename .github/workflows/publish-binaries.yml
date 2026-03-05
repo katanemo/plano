@@ -32,11 +32,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gzip -k crates/target/wasm32-wasip1/release/prompt_gateway.wasm
-          gzip -k crates/target/wasm32-wasip1/release/llm_gateway.wasm
+          cp crates/target/wasm32-wasip1/release/prompt_gateway.wasm prompt_gateway.wasm
+          cp crates/target/wasm32-wasip1/release/llm_gateway.wasm llm_gateway.wasm
+          gzip prompt_gateway.wasm
+          gzip llm_gateway.wasm
           gh release upload "${{ github.event.release.tag_name || inputs.tag }}" \
-            crates/target/wasm32-wasip1/release/prompt_gateway.wasm.gz \
-            crates/target/wasm32-wasip1/release/llm_gateway.wasm.gz \
+            prompt_gateway.wasm.gz \
+            llm_gateway.wasm.gz \
             --clobber
 
   build-brightstaff-linux-amd64:
