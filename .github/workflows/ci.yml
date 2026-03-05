@@ -152,7 +152,6 @@ jobs:
   # Validate plano config
   # ──────────────────────────────────────────────
   validate-config:
-    needs: docker-build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -163,14 +162,8 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Download plano image
-        uses: actions/download-artifact@v7
-        with:
-          name: plano-image
-          path: /tmp
-
-      - name: Load plano image
-        run: docker load -i /tmp/plano-image.tar
+      - name: Install planoai
+        run: pip install ./cli
 
       - name: Validate plano config
         run: bash config/validate_plano_config.sh
