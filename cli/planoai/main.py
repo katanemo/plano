@@ -179,7 +179,7 @@ def build(docker):
                 cwd=crates_dir,
                 check=True,
             )
-            console.print("[green]✓[/green] WASM plugins built")
+            log.info("WASM plugins built")
         except subprocess.CalledProcessError as e:
             console.print(f"[red]✗[/red] WASM build failed: {e}")
             sys.exit(1)
@@ -197,7 +197,7 @@ def build(docker):
                 cwd=crates_dir,
                 check=True,
             )
-            console.print("[green]✓[/green] brightstaff built")
+            log.info("brightstaff built")
         except subprocess.CalledProcessError as e:
             console.print(f"[red]✗[/red] brightstaff build failed: {e}")
             sys.exit(1)
@@ -319,7 +319,7 @@ def up(file, path, foreground, with_tracing, tracing_port, docker):
                 console.print(f"  [dim]{validation_stderr.strip()}[/dim]")
             sys.exit(1)
 
-    console.print(f"[green]✓[/green] Configuration valid")
+    log.info("Configuration valid")
 
     # Set up environment
     default_otel = (
