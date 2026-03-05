@@ -161,6 +161,11 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
     """Start Envoy and brightstaff natively."""
     from planoai.core import _get_gateway_ports
 
+    # Stop any existing instance first
+    if os.path.exists(NATIVE_PID_FILE):
+        log.info("Stopping existing Plano instance...")
+        stop_native()
+
     envoy_path = ensure_envoy_binary()
     ensure_wasm_plugins()
     brightstaff_path = ensure_brightstaff_binary()
@@ -350,7 +355,7 @@ def _kill_pid(pid):
 def stop_native():
     """Stop natively-running Envoy and brightstaff processes."""
     if not os.path.exists(NATIVE_PID_FILE):
-        print("No native Plano instance found (PID file missing).")
+        log.info("No native Plano instance found (PID file missing).")
         return
 
     with open(NATIVE_PID_FILE, "r") as f:
