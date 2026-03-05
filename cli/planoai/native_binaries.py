@@ -100,15 +100,13 @@ def ensure_envoy_binary():
             with open(version_path, "r") as f:
                 cached_version = f.read().strip()
             if cached_version == ENVOY_VERSION:
-                log.info(f"Envoy {ENVOY_VERSION} found at {envoy_path}")
+                log.info(f"Envoy {ENVOY_VERSION} (cached)")
                 return envoy_path
-            print(
+            log.info(
                 f"Envoy version changed ({cached_version} → {ENVOY_VERSION}), re-downloading..."
             )
         else:
-            log.info(
-                f"Envoy binary found at {envoy_path} (unknown version, re-downloading...)"
-            )
+            log.info("Envoy binary found (unknown version, re-downloading...)")
 
     slug = _get_platform_slug()
     url = (
@@ -123,6 +121,7 @@ def ensure_envoy_binary():
 
     try:
         _download_file(url, tmp_path, label=f"Envoy {ENVOY_VERSION}")
+        log.info(f"Extracting Envoy {ENVOY_VERSION}...")
         with tarfile.open(tmp_path, "r:xz") as tar:
             # Find the envoy binary inside the archive
             envoy_member = None
@@ -150,7 +149,6 @@ def ensure_envoy_binary():
         os.chmod(envoy_path, 0o755)
         with open(version_path, "w") as f:
             f.write(ENVOY_VERSION)
-        log.info(f"Envoy {ENVOY_VERSION} installed at {envoy_path}")
         return envoy_path
 
     finally:
@@ -187,7 +185,7 @@ def ensure_wasm_plugins():
     # 1. Local source build (inside repo)
     local = _find_local_wasm_plugins()
     if local:
-        log.info(f"Using locally-built WASM plugins: {local[0]}")
+        log.info("Using locally-built WASM plugins")
         return local
 
     # 2. Cached download
@@ -201,9 +199,9 @@ def ensure_wasm_plugins():
             with open(version_path, "r") as f:
                 cached_version = f.read().strip()
             if cached_version == version:
-                log.info(f"WASM plugins {version} found at {PLANO_PLUGINS_DIR}")
+                log.info(f"WASM plugins {version} (cached)")
                 return prompt_gw_path, llm_gw_path
-            print(
+            log.info(
                 f"WASM plugins version changed ({cached_version} → {version}), re-downloading..."
             )
         else:
@@ -220,6 +218,7 @@ def ensure_wasm_plugins():
         url = f"{PLANO_RELEASE_BASE_URL}/{version}/{gz_name}"
         gz_dest = dest + ".gz"
         _download_file(url, gz_dest, label=f"{name} ({version})")
+        log.info(f"Decompressing {name}...")
         with gzip.open(gz_dest, "rb") as f_in, open(dest, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
         os.unlink(gz_dest)
@@ -235,7 +234,7 @@ def ensure_brightstaff_binary():
     # 1. Local source build (inside repo)
     local = _find_local_brightstaff()
     if local:
-        log.info(f"Using locally-built brightstaff: {local}")
+        log.info("Using locally-built brightstaff")
         return local
 
     # 2. Cached download
@@ -248,9 +247,9 @@ def ensure_brightstaff_binary():
             with open(version_path, "r") as f:
                 cached_version = f.read().strip()
             if cached_version == version:
-                log.info(f"brightstaff {version} found at {brightstaff_path}")
+                log.info(f"brightstaff {version} (cached)")
                 return brightstaff_path
-            print(
+            log.info(
                 f"brightstaff version changed ({cached_version} → {version}), re-downloading..."
             )
         else:
@@ -265,6 +264,7 @@ def ensure_brightstaff_binary():
 
     gz_path = brightstaff_path + ".gz"
     _download_file(url, gz_path, label=f"brightstaff ({version}, {slug})")
+    log.info("Decompressing brightstaff...")
     with gzip.open(gz_path, "rb") as f_in, open(brightstaff_path, "wb") as f_out:
         shutil.copyfileobj(f_in, f_out)
     os.unlink(gz_path)
@@ -272,7 +272,6 @@ def ensure_brightstaff_binary():
     os.chmod(brightstaff_path, 0o755)
     with open(version_path, "w") as f:
         f.write(version)
-    log.info(f"brightstaff {version} installed at {brightstaff_path}")
     return brightstaff_path
 
 
