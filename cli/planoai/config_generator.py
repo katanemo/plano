@@ -466,6 +466,15 @@ def validate_and_render_schema():
         "upstream_tls_ca_path", "/etc/ssl/certs/ca-certificates.crt"
     )
 
+    upstream_timeout_ms = overrides.get("upstream_timeout_ms")
+    if upstream_timeout_ms is not None:
+        timeout_s = f"{int(upstream_timeout_ms) // 1000}s"
+        llm_gateway["timeout"] = timeout_s
+        prompt_gateway["timeout"] = timeout_s
+        for listener in listeners:
+            if listener.get("type") == "agent" and "timeout" not in listener:
+                listener["timeout"] = timeout_s
+
     data = {
         "prompt_gateway_listener": prompt_gateway,
         "llm_gateway_listener": llm_gateway,
