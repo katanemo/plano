@@ -69,7 +69,6 @@ RUN pip install --no-cache-dir uv
 COPY cli/pyproject.toml ./
 COPY cli/uv.lock ./
 COPY cli/README.md ./
-COPY cli/hatch_build.py ./
 COPY config/plano_config_schema.yaml /config/plano_config_schema.yaml
 COPY config/envoy.template.yaml /config/envoy.template.yaml
 

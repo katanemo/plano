@@ -30,7 +30,7 @@ jobs:
           enable-cache: true
 
       - name: Build package
-        run: uv build
+        run: uv build --wheel
 
       - name: Publish to PyPI
         env:
