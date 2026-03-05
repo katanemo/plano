@@ -2,7 +2,6 @@ import gzip
 import os
 import platform
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -47,16 +46,45 @@ def _get_platform_slug():
     return slug
 
 
-def _download_file(url, dest):
-    """Download a file from *url* to *dest* using curl."""
+def _download_file(url, dest, label=None):
+    """Download a file from *url* to *dest* with a progress bar."""
+    import urllib.request
+    import urllib.error
+
+    if label is None:
+        label = os.path.basename(dest)
+
     try:
-        subprocess.run(
-            ["curl", "-fSL", "-o", dest, url],
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading: {e}")
-        print(f"URL: {url}")
+        response = urllib.request.urlopen(url)
+        total = int(response.headers.get("Content-Length", 0))
+        downloaded = 0
+        block_size = 64 * 1024
+
+        with open(dest, "wb") as f:
+            while True:
+                chunk = response.read(block_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    pct = downloaded * 100 // total
+                    bar_len = 30
+                    filled = bar_len * downloaded // total
+                    bar = "█" * filled + "░" * (bar_len - filled)
+                    mb = downloaded / (1024 * 1024)
+                    total_mb = total / (1024 * 1024)
+                    print(
+                        f"\r  {label} {bar} {pct}% ({mb:.1f}/{total_mb:.1f} MB)",
+                        end="",
+                        flush=True,
+                    )
+
+        print()  # newline after progress bar
+
+    except urllib.error.URLError as e:
+        print(f"\nError downloading {label}: {e}")
+        print(f"  URL: {url}")
         print("Please check your internet connection and try again.")
         sys.exit(1)
 
@@ -90,16 +118,11 @@ def ensure_envoy_binary():
 
     os.makedirs(PLANO_BIN_DIR, exist_ok=True)
 
-    print(f"Downloading Envoy {ENVOY_VERSION} for {slug}...")
-    print(f"  URL: {url}")
-
     with tempfile.NamedTemporaryFile(suffix=".tar.xz", delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
-        _download_file(url, tmp_path)
-
-        print("Extracting Envoy binary...")
+        _download_file(url, tmp_path, label=f"Envoy {ENVOY_VERSION}")
         with tarfile.open(tmp_path, "r:xz") as tar:
             # Find the envoy binary inside the archive
             envoy_member = None
@@ -127,7 +150,7 @@ def ensure_envoy_binary():
         os.chmod(envoy_path, 0o755)
         with open(version_path, "w") as f:
             f.write(ENVOY_VERSION)
-        print(f"Envoy {ENVOY_VERSION} installed at {envoy_path}")
+        log.info(f"Envoy {ENVOY_VERSION} installed at {envoy_path}")
         return envoy_path
 
     finally:
@@ -195,14 +218,11 @@ def ensure_wasm_plugins():
     ]:
         gz_name = f"{name}.gz"
         url = f"{PLANO_RELEASE_BASE_URL}/{version}/{gz_name}"
-        print(f"Downloading {gz_name} ({version})...")
-        print(f"  URL: {url}")
         gz_dest = dest + ".gz"
-        _download_file(url, gz_dest)
+        _download_file(url, gz_dest, label=f"{name} ({version})")
         with gzip.open(gz_dest, "rb") as f_in, open(dest, "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
         os.unlink(gz_dest)
-        print(f"  Saved to {dest}")
 
     with open(version_path, "w") as f:
         f.write(version)
@@ -243,10 +263,8 @@ def ensure_brightstaff_binary():
 
     os.makedirs(PLANO_BIN_DIR, exist_ok=True)
 
-    print(f"Downloading brightstaff ({version}) for {slug}...")
-    print(f"  URL: {url}")
     gz_path = brightstaff_path + ".gz"
-    _download_file(url, gz_path)
+    _download_file(url, gz_path, label=f"brightstaff ({version}, {slug})")
     with gzip.open(gz_path, "rb") as f_in, open(brightstaff_path, "wb") as f_out:
         shutil.copyfileobj(f_in, f_out)
     os.unlink(gz_path)
@@ -254,7 +272,7 @@ def ensure_brightstaff_binary():
     os.chmod(brightstaff_path, 0o755)
     with open(version_path, "w") as f:
         f.write(version)
-    print(f"brightstaff {version} installed at {brightstaff_path}")
+    log.info(f"brightstaff {version} installed at {brightstaff_path}")
     return brightstaff_path
 
 
