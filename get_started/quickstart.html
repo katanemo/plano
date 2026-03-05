@@ -175,11 +175,16 @@
 </div>
 <section id="prerequisites">
 <h2>Prerequisites<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#prerequisites" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#prerequisites'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Before you begin, ensure you have the following:</p>
+<p>Plano runs <strong>natively</strong> by default — no Docker or Rust toolchain required. Pre-compiled binaries are downloaded automatically on first run.</p>
+<ol class="arabic simple">
+<li><p><a class="reference external" href="https://www.python.org/downloads/" rel="nofollow noopener">Python<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> (v3.10+)</p></li>
+<li><p>Supported platforms: Linux (x86_64, aarch64), macOS (Apple Silicon)</p></li>
+</ol>
+<p><strong>Docker mode</strong> (optional):</p>
+<p>If you prefer to run inside Docker, add <code class="docutils literal notranslate"><span class="pre">--docker</span></code> to <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">up</span></code> / <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">down</span></code>. This requires:</p>
 <ol class="arabic simple">
 <li><p><a class="reference external" href="https://docs.docker.com/get-started/get-docker/" rel="nofollow noopener">Docker System<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> (v24)</p></li>
 <li><p><a class="reference external" href="https://docs.docker.com/compose/install/" rel="nofollow noopener">Docker Compose<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> (v2.29)</p></li>
-<li><p><a class="reference external" href="https://www.python.org/downloads/" rel="nofollow noopener">Python<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> (v3.10+)</p></li>
 </ol>
 <p>Plano’s CLI allows you to manage and interact with the Plano efficiently. To install the CLI, simply run the following command:</p>
 <div class="admonition tip">
@@ -228,14 +233,14 @@
 <section id="step-2-start-plano">
 <h3>Step 2. Start plano<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#step-2-start-plano" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#step-2-start-plano'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
 <p>Once the config file is created, ensure that you have environment variables set up for <code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code> and <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code> (or these are defined in a <code class="docutils literal notranslate"><span class="pre">.env</span></code> file).</p>
-<p>Start Plano:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml
-</span><span id="line-2"><span class="gp"># </span>Or<span class="w"> </span><span class="k">if</span><span class="w"> </span>installed<span class="w"> </span>with<span class="w"> </span>uv<span class="w"> </span>tool:<span class="w"> </span>uvx<span class="w"> </span>planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml
-</span><span id="line-3"><span class="go">2024-12-05 11:24:51,288 - planoai.main - INFO - Starting plano cli version: 0.4.9</span>
-</span><span id="line-4"><span class="go">2024-12-05 11:24:51,825 - planoai.utils - INFO - Schema validation successful!</span>
-</span><span id="line-5"><span class="go">2024-12-05 11:24:51,825 - planoai.main - INFO - Starting plano</span>
-</span><span id="line-6"><span class="go">...</span>
-</span><span id="line-7"><span class="go">2024-12-05 11:25:16,131 - planoai.core - INFO - Container is healthy!</span>
+</span></code></pre></div>
+</div>
+<p>On the first run, Plano automatically downloads Envoy, WASM plugins, and brightstaff and caches them at <code class="docutils literal notranslate"><span class="pre">~/.plano/</span></code>.</p>
+<p>To stop Plano, run <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">down</span></code>.</p>
+<p><strong>Docker mode</strong> (optional):</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml<span class="w"> </span>--docker
+</span><span id="line-2"><span class="gp">$ </span>planoai<span class="w"> </span>down<span class="w"> </span>--docker
 </span></code></pre></div>
 </div>
 </section>
@@ -316,9 +321,9 @@
 </span><span id="line-2">
 </span><span id="line-3"><span class="nt">agents</span><span class="p">:</span>
 </span><span id="line-4"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">flight_agent</span>
-</span><span id="line-5"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://host.docker.internal:10520</span><span class="w">  </span><span class="c1"># your flights service</span>
+</span><span id="line-5"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:10520</span><span class="w">  </span><span class="c1"># your flights service</span>
 </span><span id="line-6"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hotel_agent</span>
-</span><span id="line-7"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://host.docker.internal:10530</span><span class="w">  </span><span class="c1"># your hotels service</span>
+</span><span id="line-7"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:10530</span><span class="w">  </span><span class="c1"># your hotels service</span>
 </span><span id="line-8">
 </span><span id="line-9"><span class="nt">model_providers</span><span class="p">:</span>
 </span><span id="line-10"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
@@ -516,7 +521,7 @@
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 01, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 05, 2026. </p>
 </div>
 </div>
 </footer>

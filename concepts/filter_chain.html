@@ -194,16 +194,16 @@ and a context builder that prepares retrieval context before the agent runs.</p>
 </span><span id="line-2"><span class="linenos"> 2</span>
 </span><span id="line-3"><span class="linenos"> 3</span><span class="nt">agents</span><span class="p">:</span>
 </span><span id="line-4"><span class="linenos"> 4</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rag_agent</span>
-</span><span id="line-5"><span class="linenos"> 5</span><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://host.docker.internal:10505</span>
+</span><span id="line-5"><span class="linenos"> 5</span><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:10505</span>
 </span><span id="line-6"><span class="linenos"> 6</span>
 </span><span id="line-7"><mark><span class="linenos"> 7</span><span class="nt">filters</span><span class="p">:</span>
 </mark></span><span id="line-8"><mark><span class="linenos"> 8</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">query_rewriter</span>
-</mark></span><span id="line-9"><mark><span class="linenos"> 9</span><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://host.docker.internal:10501</span>
+</mark></span><span id="line-9"><mark><span class="linenos"> 9</span><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:10501</span>
 </mark></span><span id="line-10"><mark><span class="linenos">10</span><span class="w">    </span><span class="c1"># type: mcp # default is mcp</span>
 </mark></span><span id="line-11"><mark><span class="linenos">11</span><span class="w">    </span><span class="c1"># transport: streamable-http # default is streamable-http</span>
 </mark></span><span id="line-12"><mark><span class="linenos">12</span><span class="w">    </span><span class="c1"># tool: query_rewriter # default name is the filter id</span>
 </mark></span><span id="line-13"><mark><span class="linenos">13</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">context_builder</span>
-</mark></span><span id="line-14"><mark><span class="linenos">14</span><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://host.docker.internal:10502</span>
+</mark></span><span id="line-14"><mark><span class="linenos">14</span><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:10502</span>
 </mark></span><span id="line-15"><span class="linenos">15</span>
 </span><span id="line-16"><span class="linenos">16</span><span class="nt">model_providers</span><span class="p">:</span>
 </span><span id="line-17"><span class="linenos">17</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o-mini</span>
@@ -294,7 +294,7 @@ powerful abstraction for evolving your agent workflows over time.</p>
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 01, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 05, 2026. </p>
 </div>
 </div>
 </footer>

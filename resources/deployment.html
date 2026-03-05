@@ -162,7 +162,41 @@
 <div id="content" role="main">
 <section id="deployment">
 <span id="id1"></span><h1>Deployment<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#deployment"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h1>
-<p>This guide shows how to deploy Plano directly using Docker without the <code class="docutils literal notranslate"><span class="pre">plano</span></code> CLI, including basic runtime checks for routing and health monitoring.</p>
+<p>Plano can be deployed in two ways: <strong>natively</strong> on the host (default) or inside a <strong>Docker container</strong>.</p>
+<section id="native-deployment-default">
+<h2>Native Deployment (Default)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#native-deployment-default" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#native-deployment-default'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Plano runs natively by default. Pre-compiled binaries (Envoy, WASM plugins, brightstaff) are automatically downloaded on the first run and cached at <code class="docutils literal notranslate"><span class="pre">~/.plano/</span></code>.</p>
+<p>Supported platforms: Linux (x86_64, aarch64), macOS (Apple Silicon).</p>
+<section id="start-plano">
+<h3>Start Plano<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#start-plano" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#start-plano'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml
+</span></code></pre></div>
+</div>
+<p>Options:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">--foreground</span></code> — stay attached and stream logs (Ctrl+C to stop)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--with-tracing</span></code> — start a local OTLP trace collector</p></li>
+</ul>
+<p>Runtime files (rendered configs, logs, PID file) are stored in <code class="docutils literal notranslate"><span class="pre">~/.plano/run/</span></code>.</p>
+</section>
+<section id="stop-plano">
+<h3>Stop Plano<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#stop-plano" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#stop-plano'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">planoai<span class="w"> </span>down
+</span></code></pre></div>
+</div>
+</section>
+<section id="build-from-source-developer">
+<h3>Build from Source (Developer)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#build-from-source-developer" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#build-from-source-developer'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>If you want to build from source instead of using pre-compiled binaries, you need:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://rustup.rs" rel="nofollow noopener">Rust<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> with the <code class="docutils literal notranslate"><span class="pre">wasm32-wasip1</span></code> target</p></li>
+<li><p>OpenSSL dev headers (<code class="docutils literal notranslate"><span class="pre">libssl-dev</span></code> on Debian/Ubuntu, <code class="docutils literal notranslate"><span class="pre">openssl</span></code> on macOS)</p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">planoai<span class="w"> </span>build<span class="w"> </span>--native
+</span></code></pre></div>
+</div>
+</section>
+</section>
 <section id="docker-deployment">
 <h2>Docker Deployment<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#docker-deployment" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#docker-deployment'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>Below is a minimal, production-ready example showing how to deploy the Plano  Docker image directly and run basic runtime checks. Adjust image names, tags, and the <code class="docutils literal notranslate"><span class="pre">plano_config.yaml</span></code> path to match your environment.</p>
@@ -200,6 +234,11 @@
 <p>Check container health and logs:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">docker<span class="w"> </span>compose<span class="w"> </span>ps
 </span><span id="line-2">docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>plano
+</span></code></pre></div>
+</div>
+<p>You can also use the CLI with Docker mode:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">planoai<span class="w"> </span>up<span class="w"> </span>plano_config.yaml<span class="w"> </span>--docker
+</span><span id="line-2">planoai<span class="w"> </span>down<span class="w"> </span>--docker
 </span></code></pre></div>
 </div>
 </section>
@@ -282,6 +321,12 @@
 </div></div><aside class="hidden text-sm xl:block" id="right-sidebar">
 <div class="sticky top-16 -mt-10 max-h-[calc(100vh-5rem)] h-full overflow-y-auto pt-6 space-y-2"><p class="font-medium">On this page</p>
 <ul>
+<li><a :data-current="activeSection === '#native-deployment-default'" class="reference internal" href="#native-deployment-default">Native Deployment (Default)</a><ul>
+<li><a :data-current="activeSection === '#start-plano'" class="reference internal" href="#start-plano">Start Plano</a></li>
+<li><a :data-current="activeSection === '#stop-plano'" class="reference internal" href="#stop-plano">Stop Plano</a></li>
+<li><a :data-current="activeSection === '#build-from-source-developer'" class="reference internal" href="#build-from-source-developer">Build from Source (Developer)</a></li>
+</ul>
+</li>
 <li><a :data-current="activeSection === '#docker-deployment'" class="reference internal" href="#docker-deployment">Docker Deployment</a><ul>
 <li><a :data-current="activeSection === '#docker-compose-setup'" class="reference internal" href="#docker-compose-setup">Docker Compose Setup</a></li>
 <li><a :data-current="activeSection === '#starting-the-stack'" class="reference internal" href="#starting-the-stack">Starting the Stack</a></li>
@@ -304,7 +349,7 @@
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 01, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 05, 2026. </p>
 </div>
 </div>
 </footer>
