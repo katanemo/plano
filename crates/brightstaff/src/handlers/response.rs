@@ -27,6 +27,39 @@ impl ResponseHandler {
             .boxed()
     }
 
+    /// Create a JSON error response with BAD_REQUEST status
+    pub fn create_json_error_response(
+        json: &serde_json::Value,
+    ) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let body = Self::create_full_body(json.to_string());
+        let mut response = Response::new(body);
+        *response.status_mut() = hyper::StatusCode::BAD_REQUEST;
+        response.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            "application/json".parse().unwrap(),
+        );
+        response
+    }
+
+    /// Create a BAD_REQUEST error response with a message
+    pub fn create_bad_request(message: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let json = serde_json::json!({"error": message});
+        Self::create_json_error_response(&json)
+    }
+
+    /// Create an INTERNAL_SERVER_ERROR response with a message
+    pub fn create_internal_error(message: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let json = serde_json::json!({"error": message});
+        let body = Self::create_full_body(json.to_string());
+        let mut response = Response::new(body);
+        *response.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+        response.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            "application/json".parse().unwrap(),
+        );
+        response
+    }
+
     /// Create a streaming response from a reqwest response.
     /// The spawned streaming task is instrumented with both `agent_span` and `orchestrator_span`
     /// so their durations reflect the actual time spent streaming to the client.
@@ -113,7 +146,7 @@ impl ResponseHandler {
                 SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
 
             let sse_iter = SseStreamIter::try_from(response_bytes.as_ref()).map_err(|e| {
-                ResponseError::StreamError(format!("Failed to parse SSE stream: {}", e))
+                BrightStaffError::StreamError(format!("Failed to parse SSE stream: {}", e))
             })?;
             let mut accumulated_text = String::new();
 

@@ -29,7 +29,7 @@ pub enum AgentFilterChainError {
     #[error("Pipeline processing error: {0}")]
     Pipeline(#[from] PipelineError),
     #[error("Response handling error: {0}")]
-    Response(#[from] crate::handlers::response::ResponseError),
+    Response(#[from] common::errors::BrightStaffError),
     #[error("Request parsing error: {0}")]
     RequestParsing(#[from] serde_json::Error),
     #[error("HTTP error: {0}")]
