@@ -283,10 +283,7 @@ async fn handle_agent_chat_inner(
             get_active_span(|span| {
                 span.update_name(format!("{} /v1/chat/completions", agent_name));
                 for (key, value) in &custom_attrs {
-                    span.set_attribute(opentelemetry::KeyValue::new(
-                        key.clone(),
-                        value.clone(),
-                    ));
+                    span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
                 }
             });
 
