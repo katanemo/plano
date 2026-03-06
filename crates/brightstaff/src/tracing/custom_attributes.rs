@@ -52,6 +52,7 @@ pub fn collect_custom_trace_attributes(
     attributes
 }
 
+#[allow(dead_code)]
 pub fn append_span_attributes(
     mut span_builder: SpanBuilder,
     attributes: &HashMap<String, String>,

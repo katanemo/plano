@@ -1,10 +1,12 @@
 mod constants;
+mod custom_attributes;
 mod init;
 mod service_name_exporter;
 
 pub use constants::{
     error, http, llm, operation_component, routing, signals, OperationNameBuilder,
 };
+pub use custom_attributes::collect_custom_trace_attributes;
 pub use init::init_tracer;
 pub use service_name_exporter::{ServiceNameOverrideExporter, SERVICE_NAME_OVERRIDE_KEY};
 

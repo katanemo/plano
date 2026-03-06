@@ -29,7 +29,9 @@ use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
-use crate::tracing::{llm as tracing_llm, operation_component, set_service_name};
+use crate::tracing::{
+    collect_custom_trace_attributes, llm as tracing_llm, operation_component, set_service_name,
+};
 use router::router_chat_get_upstream_model;
 
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
@@ -45,6 +47,8 @@ pub async fn llm_chat(
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
     let request_id = extract_request_id(&request);
+    let custom_attrs =
+        collect_custom_trace_attributes(&request_headers, state.span_attributes.as_ref().as_ref());
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -60,20 +64,33 @@ pub async fn llm_chat(
     );
 
     // Execute the rest of the handler inside the span
-    llm_chat_inner(request, state, request_id, request_path, request_headers)
-        .instrument(request_span)
-        .await
+    llm_chat_inner(
+        request,
+        state,
+        custom_attrs,
+        request_id,
+        request_path,
+        request_headers,
+    )
+    .instrument(request_span)
+    .await
 }
 
 async fn llm_chat_inner(
     request: Request<hyper::body::Incoming>,
     state: Arc<AppState>,
+    custom_attrs: HashMap<String, String>,
     request_id: String,
     request_path: String,
     mut request_headers: hyper::HeaderMap,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
+    get_active_span(|span| {
+        for (key, value) in &custom_attrs {
+            span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+        }
+    });
 
     let traceparent = extract_or_generate_traceparent(&request_headers);
 

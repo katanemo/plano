@@ -19,7 +19,7 @@ use crate::app_state::AppState;
 use crate::handlers::errors::build_error_chain_response;
 use crate::handlers::request::extract_request_id;
 use crate::handlers::response::ResponseHandler;
-use crate::tracing::{operation_component, set_service_name};
+use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
 /// Main errors for agent chat completions
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +41,8 @@ pub async fn agent_chat(
     state: Arc<AppState>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_id = extract_request_id(&request);
+    let custom_attrs =
+        collect_custom_trace_attributes(request.headers(), state.span_attributes.as_ref().as_ref());
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -56,7 +58,7 @@ pub async fn agent_chat(
         // Set service name for orchestrator operations
         set_service_name(operation_component::ORCHESTRATOR);
 
-        match handle_agent_chat_inner(request, state, request_id).await {
+        match handle_agent_chat_inner(request, state, request_id, custom_attrs).await {
             Ok(response) => Ok(response),
             Err(err) => {
                 // Check if this is a client error from the pipeline that should be cascaded
@@ -84,7 +86,7 @@ pub async fn agent_chat(
                     let mut response =
                         Response::new(ResponseHandler::create_full_body(json_string));
                     *response.status_mut() = hyper::StatusCode::from_u16(*status)
-                        .unwrap_or(hyper::StatusCode::BAD_REQUEST);
+                        .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
                     response.headers_mut().insert(
                         hyper::header::CONTENT_TYPE,
                         "application/json".parse().unwrap(),
@@ -104,6 +106,7 @@ async fn handle_agent_chat_inner(
     request: Request<hyper::body::Incoming>,
     state: Arc<AppState>,
     request_id: String,
+    custom_attrs: std::collections::HashMap<String, String>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
     // Initialize services
     let agent_selector = AgentSelector::new(Arc::clone(&state.orchestrator_service));
@@ -126,6 +129,9 @@ async fn handle_agent_chat_inner(
 
     get_active_span(|span| {
         span.update_name(listener.name.to_string());
+        for (key, value) in &custom_attrs {
+            span.set_attribute(opentelemetry::KeyValue::new(key.clone(), value.clone()));
+        }
     });
 
     info!(listener = %listener.name, "handling request");
@@ -276,6 +282,12 @@ async fn handle_agent_chat_inner(
             set_service_name(operation_component::AGENT);
             get_active_span(|span| {
                 span.update_name(format!("{} /v1/chat/completions", agent_name));
+                for (key, value) in &custom_attrs {
+                    span.set_attribute(opentelemetry::KeyValue::new(
+                        key.clone(),
+                        value.clone(),
+                    ));
+                }
             });
 
             pipeline_processor

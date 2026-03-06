@@ -72,11 +72,11 @@ fn cors_preflight() -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Err
 /// Load and parse the YAML configuration file.
 ///
 /// The path is read from `PLANO_CONFIG_PATH_RENDERED` (env) or falls back to
-/// `./arch_config_rendered.yaml`.
+/// `./plano_config_rendered.yaml`.
 fn load_config() -> Result<Configuration, Box<dyn std::error::Error + Send + Sync>> {
     let path = env::var("PLANO_CONFIG_PATH_RENDERED")
-        .unwrap_or_else(|_| "./arch_config_rendered.yaml".to_string());
-    eprintln!("loading arch_config.yaml from {}", path);
+        .unwrap_or_else(|_| "./plano_config_rendered.yaml".to_string());
+    eprintln!("loading plano_config.yaml from {}", path);
 
     let contents = fs::read_to_string(&path).map_err(|e| format!("failed to read {path}: {e}"))?;
 
@@ -136,6 +136,13 @@ async fn init_app_state(
 
     let state_storage = init_state_storage(config).await?;
 
+    let span_attributes = Arc::new(
+        config
+            .tracing
+            .as_ref()
+            .and_then(|tracing| tracing.span_attributes.clone()),
+    );
+
     Ok(AppState {
         router_service,
         orchestrator_service,
@@ -145,6 +152,7 @@ async fn init_app_state(
         listeners: Arc::new(RwLock::new(config.listeners.clone())),
         state_storage,
         llm_provider_url,
+        span_attributes,
         http_client: reqwest::Client::new(),
     })
 }

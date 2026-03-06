@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::configuration::{Agent, Listener, ModelAlias};
+use common::configuration::{Agent, Listener, ModelAlias, SpanAttributes};
 use common::llm_providers::LlmProviders;
 use tokio::sync::RwLock;
 
@@ -22,6 +22,7 @@ pub struct AppState {
     pub listeners: Arc<RwLock<Vec<Listener>>>,
     pub state_storage: Option<Arc<dyn StateStorage>>,
     pub llm_provider_url: String,
+    pub span_attributes: Arc<Option<SpanAttributes>>,
     /// Shared HTTP client for upstream LLM requests (connection pooling / keep-alive).
     pub http_client: reqwest::Client,
 }

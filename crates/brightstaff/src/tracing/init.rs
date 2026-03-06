@@ -99,6 +99,9 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
         // Create OTLP exporter to send spans to collector.
         // Use `if let` to destructure the endpoint, avoiding an unwrap.
         if let Some(endpoint) = otel_endpoint.as_deref().filter(|_| tracing_enabled) {
+            if std::env::var("OTEL_SERVICE_NAME").is_err() {
+                std::env::set_var("OTEL_SERVICE_NAME", "plano");
+            }
             // Create ServiceNameOverrideExporter to support per-span service names
             // This allows spans to have different service names (e.g., plano(orchestrator),
             // plano(filter), plano(llm)) by setting the "service.name.override" attribute
