@@ -71,10 +71,10 @@ fn cors_preflight() -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Err
 
 /// Load and parse the YAML configuration file.
 ///
-/// The path is read from `ARCH_CONFIG_PATH_RENDERED` (env) or falls back to
+/// The path is read from `PLANO_CONFIG_PATH_RENDERED` (env) or falls back to
 /// `./arch_config_rendered.yaml`.
 fn load_config() -> Result<Configuration, Box<dyn std::error::Error + Send + Sync>> {
-    let path = env::var("ARCH_CONFIG_PATH_RENDERED")
+    let path = env::var("PLANO_CONFIG_PATH_RENDERED")
         .unwrap_or_else(|_| "./arch_config_rendered.yaml".to_string());
     eprintln!("loading arch_config.yaml from {}", path);
 
