@@ -497,13 +497,16 @@ async fn send_upstream(
         "Routing to upstream"
     );
 
-    request_headers.insert(
-        ARCH_PROVIDER_HINT_HEADER,
-        header::HeaderValue::from_str(resolved_model).unwrap(),
-    );
+    if let Ok(val) = header::HeaderValue::from_str(resolved_model) {
+        request_headers.insert(ARCH_PROVIDER_HINT_HEADER, val);
+    }
     request_headers.insert(
         header::HeaderName::from_static(ARCH_IS_STREAMING_HEADER),
-        header::HeaderValue::from_str(&is_streaming_request.to_string()).unwrap(),
+        header::HeaderValue::from_static(if is_streaming_request {
+            "true"
+        } else {
+            "false"
+        }),
     );
     request_headers.remove(header::CONTENT_LENGTH);
 
@@ -535,9 +538,10 @@ async fn send_upstream(
     let response_headers = llm_response.headers().clone();
     let upstream_status = llm_response.status();
     let mut response = Response::builder().status(upstream_status);
-    let headers = response.headers_mut().unwrap();
-    for (name, value) in response_headers.iter() {
-        headers.insert(name, value.clone());
+    if let Some(headers) = response.headers_mut() {
+        for (name, value) in response_headers.iter() {
+            headers.insert(name, value.clone());
+        }
     }
 
     let byte_stream = llm_response.bytes_stream();
@@ -637,8 +641,9 @@ async fn get_upstream_path(
 ) -> String {
     let (provider_id, base_url_path_prefix) = get_provider_info(llm_providers, model_name).await;
 
-    let client_api = SupportedAPIsFromClient::from_endpoint(request_path)
-        .expect("Should have valid API endpoint");
+    let Some(client_api) = SupportedAPIsFromClient::from_endpoint(request_path) else {
+        return request_path.to_string();
+    };
 
     client_api.target_endpoint_for_provider(
         &provider_id,

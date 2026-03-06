@@ -36,7 +36,7 @@ impl ResponseHandler {
         *response.status_mut() = hyper::StatusCode::BAD_REQUEST;
         response.headers_mut().insert(
             hyper::header::CONTENT_TYPE,
-            "application/json".parse().unwrap(),
+            hyper::header::HeaderValue::from_static("application/json"),
         );
         response
     }
@@ -55,7 +55,7 @@ impl ResponseHandler {
         *response.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
         response.headers_mut().insert(
             hyper::header::CONTENT_TYPE,
-            "application/json".parse().unwrap(),
+            hyper::header::HeaderValue::from_static("application/json"),
         );
         response
     }

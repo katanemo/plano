@@ -141,12 +141,11 @@ impl PipelineProcessor {
         Ok(chat_history_updated)
     }
 
-    /// Build common MCP headers for requests
-    fn build_mcp_headers(
-        &self,
+    /// Prepare headers shared by all agent/filter requests: removes
+    /// content-length, injects trace context, sets upstream host and retry.
+    fn build_agent_headers(
         request_headers: &HeaderMap,
         agent_id: &str,
-        session_id: Option<&str>,
     ) -> Result<HeaderMap, PipelineError> {
         let mut headers = request_headers.clone();
         headers.remove(hyper::header::CONTENT_LENGTH);
@@ -167,24 +166,34 @@ impl PipelineProcessor {
 
         headers.insert(
             ENVOY_RETRY_HEADER,
-            hyper::header::HeaderValue::from_str("3").unwrap(),
+            hyper::header::HeaderValue::from_static("3"),
         );
+
+        Ok(headers)
+    }
+
+    /// Build headers for MCP requests (adds Accept, Content-Type, optional session id).
+    fn build_mcp_headers(
+        &self,
+        request_headers: &HeaderMap,
+        agent_id: &str,
+        session_id: Option<&str>,
+    ) -> Result<HeaderMap, PipelineError> {
+        let mut headers = Self::build_agent_headers(request_headers, agent_id)?;
 
         headers.insert(
             "Accept",
             hyper::header::HeaderValue::from_static("application/json, text/event-stream"),
         );
-
         headers.insert(
             "Content-Type",
             hyper::header::HeaderValue::from_static("application/json"),
         );
 
         if let Some(sid) = session_id {
-            headers.insert(
-                "mcp-session-id",
-                hyper::header::HeaderValue::from_str(sid).unwrap(),
-            );
+            if let Ok(val) = hyper::header::HeaderValue::from_str(sid) {
+                headers.insert("mcp-session-id", val);
+            }
         }
 
         Ok(headers)
@@ -530,33 +539,11 @@ impl PipelineProcessor {
         });
 
         // Build headers
-        let mut agent_headers = request_headers.clone();
-        agent_headers.remove(hyper::header::CONTENT_LENGTH);
-
-        // Inject OpenTelemetry trace context automatically
-        agent_headers.remove(TRACE_PARENT_HEADER);
-        global::get_text_map_propagator(|propagator| {
-            let cx =
-                tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderInjector(&mut agent_headers));
-        });
-
-        agent_headers.insert(
-            ARCH_UPSTREAM_HOST_HEADER,
-            hyper::header::HeaderValue::from_str(&agent.id)
-                .map_err(|_| PipelineError::AgentNotFound(agent.id.clone()))?,
-        );
-
-        agent_headers.insert(
-            ENVOY_RETRY_HEADER,
-            hyper::header::HeaderValue::from_str("3").unwrap(),
-        );
-
+        let mut agent_headers = Self::build_agent_headers(request_headers, &agent.id)?;
         agent_headers.insert(
             "Accept",
             hyper::header::HeaderValue::from_static("application/json"),
         );
-
         agent_headers.insert(
             "Content-Type",
             hyper::header::HeaderValue::from_static("application/json"),
@@ -629,27 +616,7 @@ impl PipelineProcessor {
             .map_err(|e| PipelineError::NoContentInResponse(e.to_string()))?;
         debug!("sending request to terminal agent {}", terminal_agent.id);
 
-        let mut agent_headers = request_headers.clone();
-        agent_headers.remove(hyper::header::CONTENT_LENGTH);
-
-        // Inject OpenTelemetry trace context automatically
-        agent_headers.remove(TRACE_PARENT_HEADER);
-        global::get_text_map_propagator(|propagator| {
-            let cx =
-                tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderInjector(&mut agent_headers));
-        });
-
-        agent_headers.insert(
-            ARCH_UPSTREAM_HOST_HEADER,
-            hyper::header::HeaderValue::from_str(&terminal_agent.id)
-                .map_err(|_| PipelineError::AgentNotFound(terminal_agent.id.clone()))?,
-        );
-
-        agent_headers.insert(
-            ENVOY_RETRY_HEADER,
-            hyper::header::HeaderValue::from_str("3").unwrap(),
-        );
+        let agent_headers = Self::build_agent_headers(request_headers, &terminal_agent.id)?;
 
         let response = self
             .client

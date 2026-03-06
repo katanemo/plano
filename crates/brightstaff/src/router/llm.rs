@@ -83,7 +83,9 @@ impl RouterService {
             return Ok(None);
         }
 
-        if (usage_preferences.is_none() || usage_preferences.as_ref().unwrap().len() < 2)
+        if usage_preferences
+            .as_ref()
+            .is_none_or(|prefs| prefs.len() < 2)
             && !self.llm_usage_defined
         {
             return Ok(None);
@@ -108,18 +110,18 @@ impl RouterService {
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
         );
-        headers.insert(
-            header::HeaderName::from_static(ARCH_PROVIDER_HINT_HEADER),
-            header::HeaderValue::from_str(&self.routing_provider_name).unwrap(),
-        );
-        headers.insert(
-            header::HeaderName::from_static(TRACE_PARENT_HEADER),
-            header::HeaderValue::from_str(traceparent).unwrap(),
-        );
-        headers.insert(
-            header::HeaderName::from_static(REQUEST_ID_HEADER),
-            header::HeaderValue::from_str(request_id).unwrap(),
-        );
+        if let Ok(val) = header::HeaderValue::from_str(&self.routing_provider_name) {
+            headers.insert(
+                header::HeaderName::from_static(ARCH_PROVIDER_HINT_HEADER),
+                val,
+            );
+        }
+        if let Ok(val) = header::HeaderValue::from_str(traceparent) {
+            headers.insert(header::HeaderName::from_static(TRACE_PARENT_HEADER), val);
+        }
+        if let Ok(val) = header::HeaderValue::from_str(request_id) {
+            headers.insert(header::HeaderName::from_static(REQUEST_ID_HEADER), val);
+        }
         headers.insert(
             header::HeaderName::from_static("model"),
             header::HeaderValue::from_static("arch-router"),
