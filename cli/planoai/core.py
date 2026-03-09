@@ -33,8 +33,11 @@ def _get_gateway_ports(plano_config_file: str) -> list[int]:
     with open(plano_config_file) as f:
         plano_config_dict = yaml.safe_load(f)
 
+    model_providers = plano_config_dict.get("llm_providers") or plano_config_dict.get(
+        "model_providers"
+    )
     listeners, _, _ = convert_legacy_listeners(
-        plano_config_dict.get("listeners"), plano_config_dict.get("llm_providers")
+        plano_config_dict.get("listeners"), model_providers
     )
 
     all_ports = [listener.get("port") for listener in listeners]

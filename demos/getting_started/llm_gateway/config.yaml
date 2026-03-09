@@ -44,7 +44,7 @@ model_providers:
     access_key: $TOGETHER_API_KEY
 
   - model: custom/test-model
-    base_url: http://host.docker.internal:11223
+    base_url: http://localhost:11223
     provider_interface: openai
 
 tracing:

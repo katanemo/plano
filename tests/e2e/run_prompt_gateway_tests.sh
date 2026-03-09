@@ -41,8 +41,8 @@ cd -
 # Start gateway with prompt_gateway config
 log "startup plano gateway with function calling demo"
 cd ../../
-planoai down || true
-planoai up demos/getting_started/weather_forecast/config.yaml
+planoai down --docker || true
+planoai up --docker demos/getting_started/weather_forecast/config.yaml
 cd -
 
 # Run tests
@@ -51,7 +51,7 @@ uv run pytest test_prompt_gateway.py
 
 # Cleanup
 log "shutting down"
-planoai down || true
+planoai down --docker || true
 cd ../../demos/getting_started/weather_forecast
 docker compose down
 cd -

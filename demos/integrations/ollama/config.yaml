@@ -9,7 +9,7 @@ model_providers:
 
   - model: my_llm_provider/llama3.2
     provider_interface: openai
-    base_url: http://host.docker.internal:11434
+    base_url: http://localhost:11434
     default: true
 
 system_prompt: |

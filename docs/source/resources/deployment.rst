@@ -3,7 +3,47 @@
 Deployment
 ==========
 
-This guide shows how to deploy Plano directly using Docker without the ``plano`` CLI, including basic runtime checks for routing and health monitoring.
+Plano can be deployed in two ways: **natively** on the host (default) or inside a **Docker container**.
+
+Native Deployment (Default)
+---------------------------
+
+Plano runs natively by default. Pre-compiled binaries (Envoy, WASM plugins, brightstaff) are automatically downloaded on the first run and cached at ``~/.plano/``.
+
+Supported platforms: Linux (x86_64, aarch64), macOS (Apple Silicon).
+
+Start Plano
+~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   planoai up plano_config.yaml
+
+Options:
+
+- ``--foreground`` — stay attached and stream logs (Ctrl+C to stop)
+- ``--with-tracing`` — start a local OTLP trace collector
+
+Runtime files (rendered configs, logs, PID file) are stored in ``~/.plano/run/``.
+
+Stop Plano
+~~~~~~~~~~
+
+.. code-block:: bash
+
+   planoai down
+
+Build from Source (Developer)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you want to build from source instead of using pre-compiled binaries, you need:
+
+- `Rust <https://rustup.rs>`_ with the ``wasm32-wasip1`` target
+- OpenSSL dev headers (``libssl-dev`` on Debian/Ubuntu, ``openssl`` on macOS)
+
+.. code-block:: bash
+
+   planoai build --native
 
 Docker Deployment
 -----------------
@@ -25,7 +65,7 @@ Create a ``docker-compose.yml`` file with the following configuration:
    # docker-compose.yml
    services:
      plano:
-       image: katanemo/plano:0.4.9
+       image: katanemo/plano:0.4.11
        container_name: plano
        ports:
          - "10000:10000" # ingress (client -> plano)
@@ -52,6 +92,13 @@ Check container health and logs:
 
    docker compose ps
    docker compose logs -f plano
+
+You can also use the CLI with Docker mode:
+
+.. code-block:: bash
+
+   planoai up plano_config.yaml --docker
+   planoai down --docker
 
 Runtime Tests
 -------------

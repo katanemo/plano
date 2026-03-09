@@ -9,7 +9,7 @@ This demo consists of two intelligent agents that work together seamlessly:
 - **Weather Agent** - Real-time weather conditions and multi-day forecasts for any city worldwide
 - **Flight Agent** - Live flight information between airports with real-time tracking
 
-All agents use Plano's agent orchestration LLM to intelligently route user requests to the appropriate specialized agent based on conversation context and user intent. Both agents run as Docker containers for easy deployment.
+All agents use Plano's agent orchestration LLM to intelligently route user requests to the appropriate specialized agent based on conversation context and user intent.
 
 ## Features
 
@@ -22,8 +22,8 @@ All agents use Plano's agent orchestration LLM to intelligently route user reque
 
 ## Prerequisites
 
-- Docker and Docker Compose
-- [Plano CLI](https://docs.planoai.dev/get_started/quickstart.html#prerequisites) installed
+- [Plano CLI](https://docs.planoai.dev/get_started/quickstart.html#prerequisites) installed (`pip install planoai`)
+- Docker and Docker Compose (for agent services)
 - [OpenAI API key](https://platform.openai.com/api-keys)
 - [FlightAware AeroAPI key](https://www.flightaware.com/aeroapi/portal)
 
@@ -40,17 +40,18 @@ export AEROAPI_KEY="your-flightaware-api-key"
 export OPENAI_API_KEY="your OpenAI api key"
 ```
 
-### 2. Start All Agents & Plano with Docker
+### 2. Start the Demo
 
 ```bash
-docker compose up --build
+./run_demo.sh
 ```
 
-This starts:
+This starts Plano natively and brings up via Docker Compose:
 - Weather Agent on port 10510
 - Flight Agent on port 10520
 - Open WebUI on port 8080
-- Plano Proxy on port 8001
+
+Plano runs natively on the host (port 8001).
 
 ### 4. Test the System
 
@@ -92,7 +93,7 @@ Assistant: [Both weather_agent and flight_agent respond simultaneously]
  Weather     Flight
   Agent       Agent
  (10510)     (10520)
- [Docker]    [Docker]
+ (10510)     (10520)
 ```
 
 Each agent:
@@ -101,7 +102,7 @@ Each agent:
 3. Generates response using GPT-5.2
 4. Streams response back to user
 
-Both agents run as Docker containers and communicate with Plano via `host.docker.internal`.
+Both agents run as Docker containers and communicate with Plano running natively on the host.
 
 ## Observability
 

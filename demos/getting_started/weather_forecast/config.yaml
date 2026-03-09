@@ -11,7 +11,7 @@ listeners:
 
 endpoints:
   weather_forecast_service:
-    endpoint: host.docker.internal:18083
+    endpoint: localhost:18083
     connect_timeout: 0.005s
 
 overrides:

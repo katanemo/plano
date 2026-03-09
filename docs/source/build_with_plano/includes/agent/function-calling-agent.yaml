@@ -54,6 +54,6 @@ endpoints:
     # value could be ip address or a hostname with port
     # this could also be a list of endpoints for load balancing
     # for example endpoint: [ ip1:port, ip2:port ]
-    endpoint: host.docker.internal:18083
+    endpoint: localhost:18083
     # max time to wait for a connection to be established
     connect_timeout: 0.005s

@@ -1,6 +1,6 @@
 [project]
 name = "planoai"
-version = "0.4.9"
+version = "0.4.11"
 description = "Python-based CLI tool to manage Plano."
 authors = [{name = "Katanemo Labs, Inc."}]
 readme = "README.md"
@@ -36,6 +36,10 @@ path = "planoai/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["planoai"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"../config/plano_config_schema.yaml" = "planoai/data/plano_config_schema.yaml"
+"../config/envoy.template.yaml" = "planoai/data/envoy.template.yaml"
 
 [tool.hatch.build.targets.sdist]
 include = ["planoai/**"]

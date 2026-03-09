@@ -45,8 +45,8 @@ uv sync
 
 log startup plano gateway with function calling demo
 cd ../../
-planoai down
-planoai up demos/getting_started/weather_forecast/config.yaml
+planoai down --docker
+planoai up --docker demos/getting_started/weather_forecast/config.yaml
 cd -
 
 log running e2e tests for prompt gateway
@@ -55,11 +55,11 @@ uv run pytest test_prompt_gateway.py
 
 log shutting down the plano gateway service for prompt_gateway demo
 log ===============================================================
-planoai down
+planoai down --docker
 
 log startup plano gateway with model alias routing demo
 cd ../../
-planoai up demos/llm_routing/model_alias_routing/config_with_aliases.yaml
+planoai up --docker demos/llm_routing/model_alias_routing/config_with_aliases.yaml
 cd -
 
 log running e2e tests for model alias routing
@@ -71,8 +71,8 @@ log ========================================
 uv run pytest test_openai_responses_api_client.py
 
 log startup plano gateway with state storage for openai responses api client demo
-planoai down
-planoai up config_memory_state_v1_responses.yaml
+planoai down --docker
+planoai up --docker config_memory_state_v1_responses.yaml
 
 log running e2e tests for openai responses api client
 log ========================================

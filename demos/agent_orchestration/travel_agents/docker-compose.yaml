@@ -1,18 +1,5 @@
 
 services:
-  plano:
-    build:
-      context: ../../../
-      dockerfile: Dockerfile
-    ports:
-      - "12000:12000"
-      - "8001:8001"
-    environment:
-      - PLANO_CONFIG_PATH=/config/config.yaml
-      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
-    volumes:
-      - ./config.yaml:/app/plano_config.yaml
-      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
   weather-agent:
     build:
       context: .

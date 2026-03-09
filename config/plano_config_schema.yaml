@@ -388,6 +388,8 @@ properties:
         type: integer
       trace_arch_internal:
         type: boolean
+      opentracing_grpc_endpoint:
+        type: string
       span_attributes:
         type: object
         properties:

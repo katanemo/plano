@@ -1,21 +1,5 @@
 
 services:
-  plano:
-    build:
-      context: ../../../
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8001"
-      - "12000:12000"
-    environment:
-      - PLANO_CONFIG_PATH=/app/plano_config.yaml
-      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
-      - OTEL_TRACING_GRPC_ENDPOINT=http://jaeger:4317
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    volumes:
-      - ./config.yaml:/app/plano_config.yaml:ro
-      - /etc/ssl/cert.pem:/etc/ssl/cert.pem
-
   crewai-flight-agent:
     build:
       dockerfile: Dockerfile
@@ -23,7 +7,7 @@ services:
     ports:
       - "10520:10520"
     environment:
-      - LLM_GATEWAY_ENDPOINT=http://plano:12000/v1
+      - LLM_GATEWAY_ENDPOINT=http://host.docker.internal:12000/v1
       - AEROAPI_KEY=${AEROAPI_KEY:?AEROAPI_KEY environment variable is required but not set}
       - PYTHONUNBUFFERED=1
     command: ["python", "-u", "crewai/flight_agent.py"]
@@ -35,7 +19,7 @@ services:
     ports:
       - "10510:10510"
     environment:
-      - LLM_GATEWAY_ENDPOINT=http://plano:12000/v1
+      - LLM_GATEWAY_ENDPOINT=http://host.docker.internal:12000/v1
     command: ["python", "-u", "langchain/weather_agent.py"]
 
   anythingllm:
@@ -48,7 +32,7 @@ services:
     environment:
       - STORAGE_DIR=/app/server/storage
       - LLM_PROVIDER=generic-openai
-      - GENERIC_OPEN_AI_BASE_PATH=http://plano:8001/v1
+      - GENERIC_OPEN_AI_BASE_PATH=http://host.docker.internal:8001/v1
       - GENERIC_OPEN_AI_MODEL_PREF=gpt-4o-mini
       - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
       - GENERIC_OPEN_AI_API_KEY=sk-placeholder
