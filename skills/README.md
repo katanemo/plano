@@ -15,6 +15,18 @@ npx skills add katanemo/plano
 
 This skills collection is published from the `skills/` directory in the `katanemo/plano` monorepo.
 
+Install a specific skill:
+
+```bash
+npx skills add katanemo/plano --skill plano-routing-model-selection
+```
+
+List available skills before install:
+
+```bash
+npx skills add katanemo/plano --list
+```
+
 ## Using Skills in Agents
 
 After installation, these skills are available to your coding agent and can be invoked with normal language. You do not need special syntax unless your tooling requires it.
@@ -42,6 +54,27 @@ After installation, these skills are available to your coding agent and can be i
 - **Filters/guardrails:** "Use filter-chain skills to harden input/output safety."
 - **Observability:** "Use observability skills to add traceability and debug routing."
 - **CLI/deployment:** "Use CLI and deployment skills to produce a startup checklist."
+
+## Available Skills
+
+- `plano-agent-skills` - Umbrella skill covering all Plano areas
+- `plano-config-fundamentals` - Config versioning, listeners, providers, secrets
+- `plano-routing-model-selection` - Defaults, aliases, passthrough auth, preferences
+- `plano-agent-orchestration` - Agent registration and routing descriptions
+- `plano-filter-guardrails` - MCP filters, guardrail messaging, filter ordering
+- `plano-observability-debugging` - Tracing setup, span attributes, trace analysis
+- `plano-cli-operations` - `planoai up`, `cli_agent`, init, prompt target generation
+- `plano-deployment-security` - Docker networking, health checks, state storage
+- `plano-advanced-patterns` - Multi-listener architecture and prompt target schema design
+
+## Local Testing
+
+```bash
+# From repo root
+npx skills add ./skills --list
+npx skills add ./skills --skill plano-agent-skills -y
+npx skills list
+```
 
 ## Structure
 
