@@ -147,8 +147,6 @@ pub enum InputItem {
         call_id: String,
         output: serde_json::Value,
     },
-    /// Forward-compat fallback for unknown input item shapes.
-    Unknown(serde_json::Value),
 }
 
 /// Input message with role and content
@@ -201,9 +199,6 @@ pub enum InputContent {
         data: Option<String>,
         format: Option<String>,
     },
-    /// Forward-compat fallback for unknown content parts.
-    #[serde(other)]
-    Unknown,
 }
 
 /// Modality options
@@ -1055,61 +1050,39 @@ impl ProviderRequest for ResponsesAPIRequest {
     }
 
     fn extract_messages_text(&self) -> String {
+        fn content_items_to_text(content_items: &[InputContent]) -> String {
+            content_items.iter().fold(String::new(), |acc, content| {
+                acc + " "
+                    + &match content {
+                        InputContent::InputText { text } => text.clone(),
+                        InputContent::InputImage { .. } => "[Image]".to_string(),
+                        InputContent::InputFile { .. } => "[File]".to_string(),
+                        InputContent::InputAudio { .. } => "[Audio]".to_string(),
+                    }
+            })
+        }
+
+        fn message_content_to_text(content: &MessageContent) -> String {
+            match content {
+                MessageContent::Text(text) => text.clone(),
+                MessageContent::Items(content_items) => content_items_to_text(content_items),
+            }
+        }
+
         match &self.input {
             InputParam::Text(text) => text.clone(),
             InputParam::SingleItem(item) => {
                 // Normalize single-item input for extraction behavior parity.
                 match item {
-                    InputItem::Message(msg) => match &msg.content {
-                        MessageContent::Text(text) => text.clone(),
-                        MessageContent::Items(content_items) => {
-                            content_items.iter().fold(String::new(), |acc, content| {
-                                acc + " "
-                                    + &match content {
-                                        InputContent::InputText { text } => text.clone(),
-                                        InputContent::InputImage { .. } => "[Image]".to_string(),
-                                        InputContent::InputFile { .. } => "[File]".to_string(),
-                                        InputContent::InputAudio { .. } => "[Audio]".to_string(),
-                                        InputContent::Unknown => String::new(),
-                                    }
-                            })
-                        }
-                    },
+                    InputItem::Message(msg) => message_content_to_text(&msg.content),
                     _ => String::new(),
                 }
             }
-            InputParam::Items(items) => {
-                items.iter().fold(String::new(), |acc, item| {
-                    match item {
-                        InputItem::Message(msg) => {
-                            let content_text = match &msg.content {
-                                MessageContent::Text(text) => text.clone(),
-                                MessageContent::Items(content_items) => {
-                                    content_items.iter().fold(String::new(), |acc, content| {
-                                        acc + " "
-                                            + &match content {
-                                                InputContent::InputText { text } => text.clone(),
-                                                InputContent::InputImage { .. } => {
-                                                    "[Image]".to_string()
-                                                }
-                                                InputContent::InputFile { .. } => {
-                                                    "[File]".to_string()
-                                                }
-                                                InputContent::InputAudio { .. } => {
-                                                    "[Audio]".to_string()
-                                                }
-                                                InputContent::Unknown => String::new(),
-                                            }
-                                    })
-                                }
-                            };
-                            acc + " " + &content_text
-                        }
-                        // Skip non-message items (references, outputs, etc.)
-                        _ => acc,
-                    }
-                })
-            }
+            InputParam::Items(items) => items.iter().fold(String::new(), |acc, item| match item {
+                InputItem::Message(msg) => acc + " " + &message_content_to_text(&msg.content),
+                // Skip non-message items (references, outputs, etc.)
+                _ => acc,
+            }),
         }
     }
 

@@ -136,7 +136,6 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                                         }
                                                         InputContent::InputFile { .. } => None, // Skip files for now
                                                         InputContent::InputAudio { .. } => None, // Skip audio for now
-                                                        InputContent::Unknown => None,
                                                     })
                                                     .collect(),
                                             )
@@ -162,7 +161,6 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                                     }
                                                     InputContent::InputFile { .. } => None, // Skip files for now
                                                     InputContent::InputAudio { .. } => None, // Skip audio for now
-                                                    InputContent::Unknown => None,
                                                 })
                                                 .collect(),
                                         )
@@ -228,7 +226,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                 tool_calls: Some(vec![tool_call]),
                             });
                         }
-                        InputItem::ItemReference { .. } | InputItem::Unknown(_) => {
+                        InputItem::ItemReference { .. } => {
                             // Item references/unknown entries are metadata-like and can be skipped
                             // for chat-completions conversion.
                         }

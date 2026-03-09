@@ -185,7 +185,7 @@ impl SupportedAPIsFromClient {
                 // For Responses API, check if provider supports it, otherwise translate to chat/completions
                 match provider_id {
                     // Providers that support /v1/responses natively
-                    ProviderId::OpenAI | ProviderId::XAI => route_by_provider("/responses"),
+                    ProviderId::OpenAI => route_by_provider("/responses"),
                     // All other providers: translate to /chat/completions
                     _ => route_by_provider("/chat/completions"),
                 }
@@ -656,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn test_responses_api_targets_xai_native_responses_endpoint() {
+    fn test_responses_api_targets_xai_chat_completions_endpoint() {
         let api = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
         assert_eq!(
             api.target_endpoint_for_provider(
@@ -666,7 +666,7 @@ mod tests {
                 false,
                 None
             ),
-            "/v1/responses"
+            "/v1/chat/completions"
         );
     }
 }

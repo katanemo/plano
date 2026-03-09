@@ -4,9 +4,9 @@ use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
 use common::llm_providers::LlmProviders;
-use hermesllm::apis::openai_responses::{InputParam, ResponsesAPIRequest, Tool as ResponsesTool};
+use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
-use hermesllm::{ProviderId, ProviderRequest, ProviderRequestType};
+use hermesllm::{ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::header::{self};
@@ -236,12 +236,11 @@ async fn llm_chat_inner(
     if client_request.remove_metadata_key("plano_preference_config") {
         debug!("removed plano_preference_config from metadata");
     }
-    if provider_id == ProviderId::XAI {
-        if let ProviderRequestType::ResponsesAPIRequest(ref mut responses_req) = client_request {
-            normalize_responses_tools_for_xai(responses_req);
-        }
+    if let Some(ref client_api_kind) = client_api {
+        let upstream_api =
+            provider_id.compatible_api_for_client(client_api_kind, is_streaming_request);
+        client_request.normalize_for_upstream(provider_id, &upstream_api);
     }
-
     // === v1/responses state management: Determine upstream API and combine input if needed ===
     // Do this BEFORE routing since routing consumes the request
     // Only process state if state_storage is configured
@@ -487,7 +486,6 @@ async fn llm_chat_inner(
         .into_response()),
     }
 }
-
 /// Resolves model aliases by looking up the requested model in the model_aliases map.
 /// Returns the target model if an alias is found, otherwise returns the original model.
 fn resolve_model_alias(
@@ -555,91 +553,5 @@ async fn get_provider_info(
         // Last resort: use OpenAI as hardcoded fallback
         warn!("No default provider found, falling back to OpenAI");
         (hermesllm::ProviderId::OpenAI, None)
-    }
-}
-
-fn normalize_xai_responses_tool(tool: ResponsesTool, idx: usize) -> ResponsesTool {
-    match tool {
-        ResponsesTool::Custom {
-            name, description, ..
-        } => ResponsesTool::Function {
-            name: name.unwrap_or_else(|| format!("custom_tool_{}", idx + 1)),
-            description,
-            parameters: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "input": { "type": "string" }
-                },
-                "required": ["input"],
-                "additionalProperties": true
-            })),
-            strict: Some(false),
-        },
-        other => other,
-    }
-}
-
-fn normalize_responses_tools_for_xai(req: &mut ResponsesAPIRequest) {
-    if let Some(tools) = req.tools.take() {
-        req.tools = Some(
-            tools
-                .into_iter()
-                .enumerate()
-                .map(|(idx, tool)| normalize_xai_responses_tool(tool, idx))
-                .collect(),
-        );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{normalize_xai_responses_tool, ResponsesTool};
-
-    #[test]
-    fn test_normalize_xai_custom_tool_to_function() {
-        let normalized = normalize_xai_responses_tool(
-            ResponsesTool::Custom {
-                name: Some("run_patch".to_string()),
-                description: Some("Apply patch text".to_string()),
-                format: Some(serde_json::json!({"kind":"patch","version":"v1"})),
-            },
-            0,
-        );
-
-        match normalized {
-            ResponsesTool::Function {
-                name,
-                description,
-                parameters,
-                strict,
-            } => {
-                assert_eq!(name, "run_patch");
-                assert_eq!(description.as_deref(), Some("Apply patch text"));
-                assert!(parameters.is_some());
-                assert_eq!(strict, Some(false));
-            }
-            _ => panic!("expected function tool after xAI normalization"),
-        }
-    }
-
-    #[test]
-    fn test_normalize_xai_non_custom_tool_unchanged() {
-        let normalized = normalize_xai_responses_tool(
-            ResponsesTool::Function {
-                name: "search_docs".to_string(),
-                description: Some("Search docs".to_string()),
-                parameters: Some(serde_json::json!({"type":"object"})),
-                strict: Some(true),
-            },
-            1,
-        );
-
-        match normalized {
-            ResponsesTool::Function { name, strict, .. } => {
-                assert_eq!(name, "search_docs");
-                assert_eq!(strict, Some(true));
-            }
-            _ => panic!("expected function tool to remain unchanged"),
-        }
     }
 }

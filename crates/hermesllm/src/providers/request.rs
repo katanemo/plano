@@ -5,6 +5,7 @@ use crate::apis::amazon_bedrock::{ConverseRequest, ConverseStreamRequest};
 use crate::apis::openai_responses::ResponsesAPIRequest;
 use crate::clients::endpoints::SupportedAPIsFromClient;
 use crate::clients::endpoints::SupportedUpstreamAPIs;
+use crate::ProviderId;
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -68,6 +69,25 @@ impl ProviderRequestType {
             Self::BedrockConverse(r) => r.set_messages(messages),
             Self::BedrockConverseStream(r) => r.set_messages(messages),
             Self::ResponsesAPIRequest(r) => r.set_messages(messages),
+        }
+    }
+
+    /// Apply provider-specific request normalization before sending upstream.
+    pub fn normalize_for_upstream(
+        &mut self,
+        provider_id: ProviderId,
+        upstream_api: &SupportedUpstreamAPIs,
+    ) {
+        if provider_id == ProviderId::XAI
+            && matches!(
+                upstream_api,
+                SupportedUpstreamAPIs::OpenAIChatCompletions(_)
+            )
+        {
+            if let Self::ChatCompletionsRequest(req) = self {
+                // xAI's legacy live-search shape is deprecated on chat/completions.
+                req.web_search_options = None;
+            }
         }
     }
 }
@@ -785,6 +805,62 @@ mod tests {
             }
             _ => panic!("Expected ChatCompletionsRequest variant"),
         }
+    }
+
+    #[test]
+    fn test_normalize_for_upstream_xai_clears_chat_web_search_options() {
+        use crate::apis::openai::{Message, MessageContent, OpenAIApi, Role};
+
+        let mut request = ProviderRequestType::ChatCompletionsRequest(ChatCompletionsRequest {
+            model: "grok-4".to_string(),
+            messages: vec![Message {
+                role: Role::User,
+                content: Some(MessageContent::Text("hello".to_string())),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            web_search_options: Some(serde_json::json!({"search_context_size":"medium"})),
+            ..Default::default()
+        });
+
+        request.normalize_for_upstream(
+            ProviderId::XAI,
+            &SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
+        );
+
+        let ProviderRequestType::ChatCompletionsRequest(req) = request else {
+            panic!("expected chat request");
+        };
+        assert!(req.web_search_options.is_none());
+    }
+
+    #[test]
+    fn test_normalize_for_upstream_non_xai_keeps_chat_web_search_options() {
+        use crate::apis::openai::{Message, MessageContent, OpenAIApi, Role};
+
+        let mut request = ProviderRequestType::ChatCompletionsRequest(ChatCompletionsRequest {
+            model: "gpt-4o".to_string(),
+            messages: vec![Message {
+                role: Role::User,
+                content: Some(MessageContent::Text("hello".to_string())),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            web_search_options: Some(serde_json::json!({"search_context_size":"medium"})),
+            ..Default::default()
+        });
+
+        request.normalize_for_upstream(
+            ProviderId::OpenAI,
+            &SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
+        );
+
+        let ProviderRequestType::ChatCompletionsRequest(req) = request else {
+            panic!("expected chat request");
+        };
+        assert!(req.web_search_options.is_some());
     }
 
     #[test]

@@ -20,7 +20,6 @@ use common::llm_providers::LlmProviders;
 use common::ratelimit::Header;
 use common::stats::{IncrementingMetric, RecordingMetric};
 use common::{ratelimit, routing, tokenizer};
-use hermesllm::apis::openai_responses::{ResponsesAPIRequest, Tool as ResponsesTool};
 use hermesllm::apis::streaming_shapes::amazon_bedrock_binary_frame::BedrockBinaryFrameDecoder;
 use hermesllm::apis::streaming_shapes::sse::{SseEvent, SseStreamBuffer, SseStreamBufferTrait};
 use hermesllm::apis::streaming_shapes::sse_chunk_processor::SseChunkProcessor;
@@ -1048,11 +1047,7 @@ impl HttpContext for StreamContext {
 
                 match ProviderRequestType::try_from((deserialized_client_request, upstream)) {
                     Ok(mut request) => {
-                        normalize_xai_responses_tools_for_upstream(
-                            &mut request,
-                            self.get_provider_id(),
-                            upstream,
-                        );
+                        request.normalize_for_upstream(self.get_provider_id(), upstream);
                         debug!(
                             "request_id={}: upstream request payload: {}",
                             self.request_identifier(),
@@ -1228,51 +1223,6 @@ impl HttpContext for StreamContext {
         }
 
         Action::Continue
-    }
-}
-
-fn normalize_xai_responses_tools_for_upstream(
-    request: &mut ProviderRequestType,
-    provider_id: ProviderId,
-    resolved_api: &SupportedUpstreamAPIs,
-) {
-    if provider_id != ProviderId::XAI {
-        return;
-    }
-    if !matches!(resolved_api, SupportedUpstreamAPIs::OpenAIResponsesAPI(_)) {
-        return;
-    }
-    if let ProviderRequestType::ResponsesAPIRequest(responses_req) = request {
-        normalize_responses_tools_for_xai(responses_req);
-    }
-}
-
-fn normalize_responses_tools_for_xai(req: &mut ResponsesAPIRequest) {
-    if let Some(tools) = req.tools.take() {
-        req.tools = Some(
-            tools
-                .into_iter()
-                .enumerate()
-                .map(|(idx, tool)| match tool {
-                    ResponsesTool::Custom {
-                        name, description, ..
-                    } => ResponsesTool::Function {
-                        name: name.unwrap_or_else(|| format!("custom_tool_{}", idx + 1)),
-                        description,
-                        parameters: Some(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "input": { "type": "string" }
-                            },
-                            "required": ["input"],
-                            "additionalProperties": true
-                        })),
-                        strict: Some(false),
-                    },
-                    other => other,
-                })
-                .collect(),
-        );
     }
 }
 

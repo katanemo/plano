@@ -159,18 +159,18 @@ def _resolve_cli_agent_endpoint(plano_config_yaml: dict) -> tuple[str, int]:
 
     if isinstance(listeners, dict):
         egress_config = listeners.get("egress_traffic", {})
-        host = egress_config.get("host") or egress_config.get("address") or "127.0.0.1"
+        host = egress_config.get("host") or egress_config.get("address") or "0.0.0.0"
         port = egress_config.get("port", 12000)
         return host, port
 
     if isinstance(listeners, list):
         for listener in listeners:
             if listener.get("type") in ["model", "model_listener"]:
-                host = listener.get("host") or listener.get("address") or "127.0.0.1"
+                host = listener.get("host") or listener.get("address") or "0.0.0.0"
                 port = listener.get("port", 12000)
                 return host, port
 
-    return "127.0.0.1", 12000
+    return "0.0.0.0", 12000
 
 
 def _apply_non_interactive_env(env: dict, additional_settings: dict) -> None:

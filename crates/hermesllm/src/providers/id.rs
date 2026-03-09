@@ -166,11 +166,10 @@ impl ProviderId {
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
-            // OpenAI Responses API - OpenAI and xAI support this natively
-            (
-                ProviderId::OpenAI | ProviderId::XAI,
-                SupportedAPIsFromClient::OpenAIResponsesAPI(_),
-            ) => SupportedUpstreamAPIs::OpenAIResponsesAPI(OpenAIApi::Responses),
+            // OpenAI Responses API
+            (ProviderId::OpenAI, SupportedAPIsFromClient::OpenAIResponsesAPI(_)) => {
+                SupportedUpstreamAPIs::OpenAIResponsesAPI(OpenAIApi::Responses)
+            }
 
             // Amazon Bedrock natively supports Bedrock APIs
             (ProviderId::AmazonBedrock, SupportedAPIsFromClient::OpenAIChatCompletions(_)) => {
@@ -331,14 +330,14 @@ mod tests {
     }
 
     #[test]
-    fn test_xai_uses_responses_api_for_responses_clients() {
+    fn test_xai_uses_chat_completions_for_responses_clients() {
         use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
         let client_api = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
         let upstream = ProviderId::XAI.compatible_api_for_client(&client_api, false);
         assert!(matches!(
             upstream,
-            SupportedUpstreamAPIs::OpenAIResponsesAPI(OpenAIApi::Responses)
+            SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
         ));
     }
 }
