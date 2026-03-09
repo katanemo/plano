@@ -10,8 +10,38 @@ Skills are principle-based guides that help coding agents (Claude Code, Cursor, 
 
 ```bash
 # Install via npx skills
-npx skills add katanemo/plano-agent-skills
+npx skills add katanemo/plano
 ```
+
+This skills collection is published from the `skills/` directory in the `katanemo/plano` monorepo.
+
+## Using Skills in Agents
+
+After installation, these skills are available to your coding agent and can be invoked with normal language. You do not need special syntax unless your tooling requires it.
+
+### Natural Language Invocation Examples
+
+- "Use the Plano skills to validate this `config.yaml` and fix issues."
+- "Apply Plano routing best practices to improve model/provider selection."
+- "Review this agent listener config with the orchestration rules."
+- "Refactor this filter chain to follow guardrail ordering best practices."
+- "Audit this setup against Plano deployment and security recommendations."
+
+### Prompting Tips for Better Results
+
+- Name your goal and file: "Harden `config.yaml` for production."
+- Ask for an action: "Generate a patch," "fix directly," or "explain the changes."
+- Include runtime context when relevant: trace output, logs, listener errors.
+- Ask for verification: "Run a final validation check after edits."
+
+### Invoke by Skill Area (Optional)
+
+- **Configuration:** "Use Plano configuration fundamentals on this config."
+- **Routing:** "Use routing/model-selection skills to tune defaults and aliases."
+- **Agent orchestration:** "Use agent orchestration skills to improve routing accuracy."
+- **Filters/guardrails:** "Use filter-chain skills to harden input/output safety."
+- **Observability:** "Use observability skills to add traceability and debug routing."
+- **CLI/deployment:** "Use CLI and deployment skills to produce a startup checklist."
 
 ## Structure
 
