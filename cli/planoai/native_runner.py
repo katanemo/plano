@@ -423,3 +423,41 @@ def native_validate_config(plano_config_file):
         # Suppress verbose print output from config_generator
         with contextlib.redirect_stdout(io.StringIO()):
             validate_and_render_schema()
+
+
+def native_logs(debug=False, follow=False):
+    """Stream logs from native-mode Plano."""
+    import glob as glob_mod
+
+    log_dir = os.path.join(PLANO_RUN_DIR, "logs")
+    if not os.path.isdir(log_dir):
+        log.error(f"No native log directory found at {log_dir}")
+        log.error("Is Plano running? Start it with: planoai up <config.yaml>")
+        sys.exit(1)
+
+    log_files = sorted(glob_mod.glob(os.path.join(log_dir, "access_*.log")))
+    if debug:
+        log_files.extend(
+            [
+                os.path.join(log_dir, "envoy.log"),
+                os.path.join(log_dir, "brightstaff.log"),
+            ]
+        )
+
+    # Filter to files that exist
+    log_files = [f for f in log_files if os.path.exists(f)]
+    if not log_files:
+        log.error(f"No log files found in {log_dir}")
+        sys.exit(1)
+
+    tail_args = ["tail"]
+    if follow:
+        tail_args.append("-f")
+    tail_args.extend(log_files)
+
+    try:
+        proc = subprocess.Popen(tail_args, stdout=sys.stdout, stderr=sys.stderr)
+        proc.wait()
+    except KeyboardInterrupt:
+        if proc.poll() is None:
+            proc.terminate()

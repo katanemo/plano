@@ -509,8 +509,20 @@ def generate_prompt_targets(file):
     is_flag=True,
 )
 @click.option("--follow", help="Follow the logs", is_flag=True)
-def logs(debug, follow):
+@click.option(
+    "--docker",
+    default=False,
+    help="Stream logs from a Docker-based Plano instance.",
+    is_flag=True,
+)
+def logs(debug, follow, docker):
     """Stream logs from access logs services."""
+
+    if not docker:
+        from planoai.native_runner import native_logs
+
+        native_logs(debug=debug, follow=follow)
+        return
 
     plano_process = None
     try:
