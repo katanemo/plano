@@ -22,18 +22,27 @@ start_demo() {
   echo "Starting Plano with config.yaml..."
   planoai up config.yaml
 
-  # Step 4: Start Network Agent
-  echo "Starting HR Agent using Docker Compose..."
-  docker compose up -d  # Run in detached mode
+  # Step 4: Start agents natively
+  echo "Starting agents..."
+  bash start_agents.sh &
+
+  # Step 5: Optionally start UI services (AnythingLLM)
+  if [ "$1" == "--with-ui" ]; then
+    echo "Starting UI services (AnythingLLM)..."
+    docker compose up -d
+  fi
 }
 
 # Function to stop the demo
 stop_demo() {
-  # Step 1: Stop Docker Compose services
-  echo "Stopping HR Agent using Docker Compose..."
-  docker compose down -v
+  # Stop agents
+  echo "Stopping agents..."
+  pkill -f start_agents.sh 2>/dev/null || true
 
-  # Step 2: Stop Plano
+  # Stop Docker Compose services if running
+  docker compose down 2>/dev/null || true
+
+  # Stop Plano
   echo "Stopping Plano..."
   planoai down
 }
@@ -42,6 +51,5 @@ stop_demo() {
 if [ "$1" == "down" ]; then
   stop_demo
 else
-  # Default action is to bring the demo up
-  start_demo
+  start_demo "$1"
 fi

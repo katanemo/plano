@@ -76,19 +76,27 @@ start_demo() {
   echo "Starting Plano with config.yaml..."
   planoai up config.yaml
 
-  # Step 5: Start Network Agent with the chosen Docker Compose file
-  echo "Starting Network Agent with $COMPOSE_FILE..."
-  docker compose -f "$COMPOSE_FILE" up -d # Run in detached mode
+  # Step 5: Start agents natively
+  echo "Starting agents..."
+  bash start_agents.sh &
+
+  # Step 6: Optionally start UI services (AnythingLLM, Jaeger, etc.)
+  if [ "$1" == "--with-ui" ] || [ "$2" == "--with-ui" ]; then
+    echo "Starting UI services with $COMPOSE_FILE..."
+    docker compose -f "$COMPOSE_FILE" up -d
+  fi
 }
 
 # Function to stop the demo
 stop_demo() {
-  echo "Stopping all Docker Compose services..."
+  # Stop agents
+  echo "Stopping agents..."
+  pkill -f start_agents.sh 2>/dev/null || true
 
-  # Stop all services by iterating through all configurations
+  # Stop all Docker Compose services if running
+  echo "Stopping Docker Compose services..."
   for compose_file in ./docker-compose*.yaml; do
-    echo "Stopping services in $compose_file..."
-    docker compose -f "$compose_file" down
+    docker compose -f "$compose_file" down 2>/dev/null || true
   done
 
   # Stop Plano
@@ -101,6 +109,6 @@ if [ "$1" == "down" ]; then
   # Call stop_demo with the second argument as the demo to stop
   stop_demo
 else
-  # Use the argument (jaeger, logfire, signoz) to determine the compose file
-  start_demo "$1"
+  # Use the argument (jaeger, logfire, signoz, --with-ui) to determine the compose file
+  start_demo "$1" "$2"
 fi

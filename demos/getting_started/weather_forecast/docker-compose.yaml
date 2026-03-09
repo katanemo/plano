@@ -1,14 +1,4 @@
 services:
-  weather_forecast_service:
-    build:
-      context: ./
-    environment:
-      - OLTP_HOST=http://jaeger:4317
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "18083:80"
-
   anythingllm:
     image: mintplexlabs/anythingllm
     restart: always

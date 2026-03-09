@@ -10,19 +10,27 @@ cd demos/llm_routing/preference_based_routing
 ./run_demo.sh
 ```
 
-Or manually:
+To also start AnythingLLM (chat UI) and Jaeger (tracing):
+
+```bash
+./run_demo.sh --with-ui
+```
+
+Then open AnythingLLM at http://localhost:3001/
+
+Or start manually:
 
 1. Start Plano
 ```bash
 planoai up config.yaml
 ```
 
-2. Start AnythingLLM
+2. (Optional) Start AnythingLLM and Jaeger
 ```bash
 docker compose up -d
 ```
 
-3. open AnythingLLM http://localhost:3001/
+3. Test with curl or open AnythingLLM http://localhost:3001/
 
 # Testing out preference based routing
 

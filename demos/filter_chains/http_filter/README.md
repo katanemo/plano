@@ -41,23 +41,27 @@ export OPENAI_API_KEY="your-key"
 ./run_demo.sh
 ```
 
-This starts Plano natively and brings up via Docker Compose:
-- Input Guards MCP server on port 10500
-- Query Rewriter MCP server on port 10501
-- Context Builder MCP server on port 10502
+This starts Plano natively and runs agents as local processes:
+- Input Guards HTTP server on port 10500
+- Query Rewriter HTTP server on port 10501
+- Context Builder HTTP server on port 10502
 - RAG Agent REST server on port 10505
-- Jaeger UI for viewing traces at http://localhost:16686
-- AnythingLLM at http://localhost:3001 for interactive queries
 
 Plano runs natively on the host (port 8001 and 12000).
 
+To also start AnythingLLM (chat UI) and Jaeger (tracing):
+
+```bash
+./run_demo.sh --with-ui
+```
+
+This additionally starts:
+- Jaeger UI for viewing traces at http://localhost:16686
+- AnythingLLM at http://localhost:3001 for interactive queries
+
 ### 2. Test the system
 
-**Option A: Using AnythingLLM (recommended)**
-
-Navigate to http://localhost:3001 and send queries through the chat interface.
-
-**Option B: Using curl**
+**Option A: Using curl (recommended)**
 ```bash
 curl -X POST http://localhost:8001/v1/chat/completions \
   -H "Content-Type: application/json" \
