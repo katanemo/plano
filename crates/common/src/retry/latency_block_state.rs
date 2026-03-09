@@ -118,3 +118,265 @@ impl Default for LatencyBlockStateManager {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn test_new_manager_has_no_blocks() {
+        let mgr = LatencyBlockStateManager::new();
+        assert!(!mgr.is_blocked("openai/gpt-4o"));
+        assert!(mgr.remaining_block_duration("openai/gpt-4o").is_none());
+    }
+
+    #[test]
+    fn test_record_block_and_is_blocked() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 60, 5500);
+        assert!(mgr.is_blocked("openai/gpt-4o"));
+        assert!(!mgr.is_blocked("anthropic/claude"));
+    }
+
+    #[test]
+    fn test_remaining_block_duration() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 10, 5000);
+        let remaining = mgr.remaining_block_duration("openai/gpt-4o").unwrap();
+        assert!(remaining <= Duration::from_secs(11));
+        assert!(remaining > Duration::from_secs(8));
+    }
+
+    #[test]
+    fn test_expired_entry_cleaned_up_on_is_blocked() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 0, 5000);
+        thread::sleep(Duration::from_millis(10));
+        assert!(!mgr.is_blocked("openai/gpt-4o"));
+    }
+
+    #[test]
+    fn test_expired_entry_cleaned_up_on_remaining() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 0, 5000);
+        thread::sleep(Duration::from_millis(10));
+        assert!(mgr.remaining_block_duration("openai/gpt-4o").is_none());
+    }
+
+    #[test]
+    fn test_max_expiration_semantics_longer_wins() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 10, 5000);
+        let first_remaining = mgr.remaining_block_duration("openai/gpt-4o").unwrap();
+
+        mgr.record_block("openai/gpt-4o", 60, 6000);
+        let second_remaining = mgr.remaining_block_duration("openai/gpt-4o").unwrap();
+        assert!(second_remaining > first_remaining);
+    }
+
+    #[test]
+    fn test_max_expiration_semantics_shorter_does_not_overwrite() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 60, 5000);
+        let first_remaining = mgr.remaining_block_duration("openai/gpt-4o").unwrap();
+
+        mgr.record_block("openai/gpt-4o", 5, 6000);
+        let second_remaining = mgr.remaining_block_duration("openai/gpt-4o").unwrap();
+        // Should still be close to the original 60s
+        assert!(second_remaining > Duration::from_secs(50));
+        let diff = if first_remaining > second_remaining {
+            first_remaining - second_remaining
+        } else {
+            second_remaining - first_remaining
+        };
+        assert!(diff < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_is_model_blocked_model_scope() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 60, 5000);
+
+        assert!(mgr.is_model_blocked("openai/gpt-4o", BlockScope::Model));
+        assert!(!mgr.is_model_blocked("openai/gpt-4o-mini", BlockScope::Model));
+    }
+
+    #[test]
+    fn test_is_model_blocked_provider_scope() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai", 60, 5000);
+
+        assert!(mgr.is_model_blocked("openai/gpt-4o", BlockScope::Provider));
+        assert!(mgr.is_model_blocked("openai/gpt-4o-mini", BlockScope::Provider));
+        assert!(!mgr.is_model_blocked("anthropic/claude", BlockScope::Provider));
+    }
+
+    #[test]
+    fn test_multiple_identifiers_independent() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 60, 5000);
+        mgr.record_block("anthropic/claude", 30, 4000);
+
+        assert!(mgr.is_blocked("openai/gpt-4o"));
+        assert!(mgr.is_blocked("anthropic/claude"));
+        assert!(!mgr.is_blocked("azure/gpt-4o"));
+    }
+
+    #[test]
+    fn test_record_block_stores_measured_latency() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 60, 5500);
+
+        // Verify the entry exists and has the correct latency
+        let entry = mgr.global_state.get("openai/gpt-4o").unwrap();
+        assert_eq!(entry.1, 5500);
+    }
+
+    #[test]
+    fn test_latency_updated_when_expiration_extended() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 10, 5000);
+
+        // Extend with longer duration and different latency
+        mgr.record_block("openai/gpt-4o", 60, 7000);
+
+        let entry = mgr.global_state.get("openai/gpt-4o").unwrap();
+        assert_eq!(entry.1, 7000);
+    }
+
+    #[test]
+    fn test_latency_not_updated_when_expiration_not_extended() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 60, 5000);
+
+        // Shorter duration — should NOT update
+        mgr.record_block("openai/gpt-4o", 5, 9000);
+
+        let entry = mgr.global_state.get("openai/gpt-4o").unwrap();
+        // Latency should remain 5000 since expiration wasn't extended
+        assert_eq!(entry.1, 5000);
+    }
+
+    #[test]
+    fn test_zero_duration_block_expires_immediately() {
+        let mgr = LatencyBlockStateManager::new();
+        mgr.record_block("openai/gpt-4o", 0, 5000);
+        thread::sleep(Duration::from_millis(5));
+        assert!(!mgr.is_blocked("openai/gpt-4o"));
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let mgr = LatencyBlockStateManager::default();
+        assert!(!mgr.is_blocked("anything"));
+    }
+
+    // --- Property-based tests ---
+
+    use proptest::prelude::*;
+
+    fn arb_identifier() -> impl Strategy<Value = String> {
+        prop_oneof![
+            "[a-z]{3,8}/[a-z0-9\\-]{3,12}".prop_map(|s| s),
+            "[a-z]{3,8}".prop_map(|s| s),
+        ]
+    }
+
+    /// A single block recording: (block_duration_seconds, measured_latency_ms)
+    fn arb_block_recording() -> impl Strategy<Value = (u64, u64)> {
+        (1u64..=600, 100u64..=30_000)
+    }
+
+    // Feature: retry-on-ratelimit, Property 22: Latency Block State Max Expiration Update
+    // **Validates: Requirements 14.15**
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        /// Property 22 – Case 1: After recording multiple blocks for the same identifier
+        /// with different durations, the remaining block duration reflects the maximum
+        /// duration recorded (max-expiration semantics).
+        #[test]
+        fn prop_latency_block_max_expiration_update(
+            identifier in arb_identifier(),
+            recordings in prop::collection::vec(arb_block_recording(), 2..=10),
+        ) {
+            let mgr = LatencyBlockStateManager::new();
+
+            for &(duration, latency) in &recordings {
+                mgr.record_block(&identifier, duration, latency);
+            }
+
+            let max_duration = recordings.iter().map(|&(d, _)| d).max().unwrap();
+
+            // The identifier should still be blocked
+            let remaining = mgr.remaining_block_duration(&identifier);
+            prop_assert!(
+                remaining.is_some(),
+                "Identifier {} should be blocked after {} recordings (max_duration={}s)",
+                identifier, recordings.len(), max_duration
+            );
+
+            let remaining_secs = remaining.unwrap().as_secs();
+
+            // Remaining should be close to max_duration (allow 2s tolerance for execution time)
+            prop_assert!(
+                remaining_secs >= max_duration.saturating_sub(2),
+                "Remaining {}s should reflect the max duration ({}s), not a smaller value. Recordings: {:?}",
+                remaining_secs, max_duration, recordings
+            );
+
+            prop_assert!(
+                remaining_secs <= max_duration + 1,
+                "Remaining {}s should not exceed max duration {}s + tolerance. Recordings: {:?}",
+                remaining_secs, max_duration, recordings
+            );
+        }
+
+        /// Property 22 – Case 2: measured_latency_ms is updated when expiration is extended
+        /// but NOT when a shorter duration is recorded.
+        #[test]
+        fn prop_latency_block_measured_latency_update_semantics(
+            identifier in arb_identifier(),
+            first_duration in 10u64..=300,
+            first_latency in 100u64..=30_000,
+            extra_duration in 1u64..=300,
+            longer_latency in 100u64..=30_000,
+            shorter_duration in 1u64..=9,
+            shorter_latency in 100u64..=30_000,
+        ) {
+            let mgr = LatencyBlockStateManager::new();
+
+            // Record initial block
+            mgr.record_block(&identifier, first_duration, first_latency);
+            {
+                let entry = mgr.global_state.get(&identifier).unwrap();
+                prop_assert_eq!(entry.1, first_latency);
+            }
+
+            // Record a longer duration — latency SHOULD be updated
+            let longer_duration = first_duration + extra_duration;
+            mgr.record_block(&identifier, longer_duration, longer_latency);
+            {
+                let entry = mgr.global_state.get(&identifier).unwrap();
+                prop_assert_eq!(
+                    entry.1, longer_latency,
+                    "Latency should be updated to {} when expiration is extended (duration {} > {})",
+                    longer_latency, longer_duration, first_duration
+                );
+            }
+
+            // Record a shorter duration — latency should NOT be updated
+            mgr.record_block(&identifier, shorter_duration, shorter_latency);
+            {
+                let entry = mgr.global_state.get(&identifier).unwrap();
+                prop_assert_eq!(
+                    entry.1, longer_latency,
+                    "Latency should remain {} (not {}) when shorter duration {} < {} doesn't extend expiration",
+                    longer_latency, shorter_latency, shorter_duration, longer_duration
+                );
+            }
+        }
+    }
+}
+
