@@ -1,0 +1,22 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_1
+    address: 0.0.0.0
+    port: 12000
+
+model_providers:
+
+  - access_key: $OPENAI_API_KEY
+    default: true
+    model: openai/gpt-4o
+    retry_on_ratelimit: true
+    max_retries: 2
+    retry_to_same_provider: false # If false, Plano will pick another random model from the list
+    retry_backoff_base_ms: 25 # Base delay for exponential backoff
+    retry_backoff_max_ms: 1000 # Maximum delay for exponential backoff
+
+  - access_key: $ANTHROPIC_API_KEY
+    model: anthropic/claude-sonnet-4-5
+

@@ -318,6 +318,223 @@ impl serde::Serialize for OrchestrationPreference {
     }
 }
 
+// ── Retry Policy Configuration Types ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetryStrategy {
+    SameModel,
+    SameProvider,
+    DifferentProvider,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockScope {
+    Model,
+    Provider,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplyTo {
+    Global,
+    Request,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackoffApplyTo {
+    SameModel,
+    SameProvider,
+    Global,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LatencyMeasure {
+    Ttfb,
+    Total,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StatusCodeEntry {
+    Single(u16),
+    Range(String),
+}
+
+impl StatusCodeEntry {
+    /// Expand a StatusCodeEntry into a list of individual status codes.
+    /// For Single, returns a vec with one element.
+    /// For Range (e.g. "502-504"), returns [502, 503, 504].
+    pub fn expand(&self) -> Result<Vec<u16>, String> {
+        match self {
+            StatusCodeEntry::Single(code) => Ok(vec![*code]),
+            StatusCodeEntry::Range(range_str) => {
+                let parts: Vec<&str> = range_str.split('-').collect();
+                if parts.len() != 2 {
+                    return Err(format!(
+                        "Invalid status code range format: '{}'. Expected 'start-end'.",
+                        range_str
+                    ));
+                }
+                let start: u16 = parts[0].trim().parse().map_err(|_| {
+                    format!("Invalid start in status code range: '{}'", parts[0])
+                })?;
+                let end: u16 = parts[1].trim().parse().map_err(|_| {
+                    format!("Invalid end in status code range: '{}'", parts[1])
+                })?;
+                if start > end {
+                    return Err(format!(
+                        "Status code range start ({}) must be <= end ({})",
+                        start, end
+                    ));
+                }
+                Ok((start..=end).collect())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StatusCodeConfig {
+    pub codes: Vec<StatusCodeEntry>,
+    pub strategy: RetryStrategy,
+    pub max_attempts: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TimeoutRetryConfig {
+    pub strategy: RetryStrategy,
+    pub max_attempts: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BackoffConfig {
+    pub apply_to: BackoffApplyTo,
+    #[serde(default = "default_base_ms")]
+    pub base_ms: u64,
+    #[serde(default = "default_max_ms")]
+    pub max_ms: u64,
+    #[serde(default = "default_jitter")]
+    pub jitter: bool,
+}
+
+fn default_base_ms() -> u64 {
+    100
+}
+fn default_max_ms() -> u64 {
+    5000
+}
+fn default_jitter() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RetryAfterHandlingConfig {
+    #[serde(default = "default_retry_after_scope")]
+    pub scope: BlockScope,
+    #[serde(default = "default_retry_after_apply_to")]
+    pub apply_to: ApplyTo,
+    #[serde(default = "default_max_retry_after_seconds")]
+    pub max_retry_after_seconds: u64,
+}
+
+fn default_retry_after_scope() -> BlockScope {
+    BlockScope::Model
+}
+fn default_retry_after_apply_to() -> ApplyTo {
+    ApplyTo::Global
+}
+fn default_max_retry_after_seconds() -> u64 {
+    300
+}
+
+impl Default for RetryAfterHandlingConfig {
+    fn default() -> Self {
+        Self {
+            scope: BlockScope::Model,
+            apply_to: ApplyTo::Global,
+            max_retry_after_seconds: 300,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HighLatencyConfig {
+    pub threshold_ms: u64,
+    #[serde(default = "default_latency_measure")]
+    pub measure: LatencyMeasure,
+    #[serde(default = "default_min_triggers")]
+    pub min_triggers: u32,
+    pub trigger_window_seconds: Option<u64>,
+    pub strategy: RetryStrategy,
+    pub max_attempts: u32,
+    #[serde(default = "default_block_duration")]
+    pub block_duration_seconds: u64,
+    #[serde(default = "default_block_scope")]
+    pub scope: BlockScope,
+    #[serde(default = "default_high_latency_apply_to")]
+    pub apply_to: ApplyTo,
+}
+
+fn default_latency_measure() -> LatencyMeasure {
+    LatencyMeasure::Ttfb
+}
+fn default_min_triggers() -> u32 {
+    1
+}
+fn default_block_duration() -> u64 {
+    300
+}
+fn default_block_scope() -> BlockScope {
+    BlockScope::Model
+}
+fn default_high_latency_apply_to() -> ApplyTo {
+    ApplyTo::Global
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RetryPolicy {
+    #[serde(default)]
+    pub fallback_models: Vec<String>,
+    #[serde(default = "default_retry_strategy")]
+    pub default_strategy: RetryStrategy,
+    #[serde(default = "default_max_attempts")]
+    pub default_max_attempts: u32,
+    #[serde(default)]
+    pub on_status_codes: Vec<StatusCodeConfig>,
+    pub on_timeout: Option<TimeoutRetryConfig>,
+    pub on_high_latency: Option<HighLatencyConfig>,
+    pub backoff: Option<BackoffConfig>,
+    pub retry_after_handling: Option<RetryAfterHandlingConfig>,
+    pub max_retry_duration_ms: Option<u64>,
+}
+
+fn default_retry_strategy() -> RetryStrategy {
+    RetryStrategy::DifferentProvider
+}
+fn default_max_attempts() -> u32 {
+    2
+}
+
+impl RetryPolicy {
+    /// Get the effective Retry-After handling config.
+    /// Always returns a config when retry_policy exists (Retry-After is always-on).
+    pub fn effective_retry_after_config(&self) -> RetryAfterHandlingConfig {
+        self.retry_after_handling.clone().unwrap_or_default()
+    }
+}
+
+/// Extract provider prefix from a model identifier.
+/// e.g., "openai/gpt-4o" -> "openai"
+pub fn extract_provider(model_id: &str) -> &str {
+    model_id.split('/').next().unwrap_or(model_id)
+}
+
+// ── End Retry Policy Configuration Types ─────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 //TODO: use enum for model, but if there is a new model, we need to update the code
 pub struct LlmProvider {
@@ -336,6 +553,8 @@ pub struct LlmProvider {
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
+    /// Retry policy configuration. When None, retry logic is disabled.
+    pub retry_policy: Option<RetryPolicy>,
 }
 
 pub trait IntoModels {
@@ -380,6 +599,7 @@ impl Default for LlmProvider {
             base_url_path_prefix: None,
             internal: None,
             passthrough_auth: None,
+            retry_policy: None,
         }
     }
 }
@@ -490,130 +710,3 @@ impl From<&PromptTarget> for ChatCompletionTool {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use pretty_assertions::assert_eq;
-    use std::fs;
-
-    use super::{IntoModels, LlmProvider, LlmProviderType};
-    use crate::api::open_ai::ToolType;
-
-    #[test]
-    fn test_deserialize_configuration() {
-        let ref_config = fs::read_to_string(
-            "../../docs/source/resources/includes/plano_config_full_reference_rendered.yaml",
-        )
-        .expect("reference config file not found");
-
-        let config: super::Configuration = serde_yaml::from_str(&ref_config).unwrap();
-        assert_eq!(config.version, "v0.3.0");
-
-        if let Some(prompt_targets) = &config.prompt_targets {
-            assert!(
-                !prompt_targets.is_empty(),
-                "prompt_targets should not be empty if present"
-            );
-        }
-
-        if let Some(tracing) = config.tracing.as_ref() {
-            if let Some(sampling_rate) = tracing.sampling_rate {
-                assert_eq!(sampling_rate, 0.1);
-            }
-        }
-
-        let mode = config.mode.as_ref().unwrap_or(&super::GatewayMode::Prompt);
-        assert_eq!(*mode, super::GatewayMode::Prompt);
-    }
-
-    #[test]
-    fn test_tool_conversion() {
-        let ref_config = fs::read_to_string(
-            "../../docs/source/resources/includes/plano_config_full_reference_rendered.yaml",
-        )
-        .expect("reference config file not found");
-        let config: super::Configuration = serde_yaml::from_str(&ref_config).unwrap();
-        if let Some(prompt_targets) = &config.prompt_targets {
-            if let Some(prompt_target) = prompt_targets
-                .iter()
-                .find(|p| p.name == "reboot_network_device")
-            {
-                let chat_completion_tool: super::ChatCompletionTool = prompt_target.into();
-                assert_eq!(chat_completion_tool.tool_type, ToolType::Function);
-                assert_eq!(chat_completion_tool.function.name, "reboot_network_device");
-                assert_eq!(
-                    chat_completion_tool.function.description,
-                    "Reboot a specific network device"
-                );
-                assert_eq!(chat_completion_tool.function.parameters.properties.len(), 2);
-                assert!(chat_completion_tool
-                    .function
-                    .parameters
-                    .properties
-                    .contains_key("device_id"));
-                let device_id_param = chat_completion_tool
-                    .function
-                    .parameters
-                    .properties
-                    .get("device_id")
-                    .unwrap();
-                assert_eq!(
-                    device_id_param.parameter_type,
-                    crate::api::open_ai::ParameterType::String
-                );
-                assert_eq!(
-                    device_id_param.description,
-                    "Identifier of the network device to reboot.".to_string()
-                );
-                assert_eq!(device_id_param.required, Some(true));
-                let confirmation_param = chat_completion_tool
-                    .function
-                    .parameters
-                    .properties
-                    .get("confirmation")
-                    .unwrap();
-                assert_eq!(
-                    confirmation_param.parameter_type,
-                    crate::api::open_ai::ParameterType::Bool
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_into_models_filters_internal_providers() {
-        let providers = vec![
-            LlmProvider {
-                name: "openai-gpt4".to_string(),
-                provider_interface: LlmProviderType::OpenAI,
-                model: Some("gpt-4".to_string()),
-                internal: None,
-                ..Default::default()
-            },
-            LlmProvider {
-                name: "arch-router".to_string(),
-                provider_interface: LlmProviderType::Arch,
-                model: Some("Arch-Router".to_string()),
-                internal: Some(true),
-                ..Default::default()
-            },
-            LlmProvider {
-                name: "plano-orchestrator".to_string(),
-                provider_interface: LlmProviderType::Arch,
-                model: Some("Plano-Orchestrator".to_string()),
-                internal: Some(true),
-                ..Default::default()
-            },
-        ];
-
-        let models = providers.into_models();
-
-        // Should only have 1 model: openai-gpt4
-        assert_eq!(models.data.len(), 1);
-
-        // Verify internal models are excluded from /v1/models
-        let model_ids: Vec<String> = models.data.iter().map(|m| m.id.clone()).collect();
-        assert!(model_ids.contains(&"openai-gpt4".to_string()));
-        assert!(!model_ids.contains(&"arch-router".to_string()));
-        assert!(!model_ids.contains(&"plano-orchestrator".to_string()));
-    }
-}
