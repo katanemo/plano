@@ -1036,6 +1036,30 @@ pub struct ListInputItemsResponse {
 // ProviderRequest Implementation
 // ============================================================================
 
+fn append_input_content_text(buffer: &mut String, content: &InputContent) {
+    match content {
+        InputContent::InputText { text } => buffer.push_str(text),
+        InputContent::InputImage { .. } => buffer.push_str("[Image]"),
+        InputContent::InputFile { .. } => buffer.push_str("[File]"),
+        InputContent::InputAudio { .. } => buffer.push_str("[Audio]"),
+    }
+}
+
+fn append_content_items_text(buffer: &mut String, content_items: &[InputContent]) {
+    for content in content_items {
+        // Preserve existing behavior: each content item is prefixed with a space.
+        buffer.push(' ');
+        append_input_content_text(buffer, content);
+    }
+}
+
+fn append_message_content_text(buffer: &mut String, content: &MessageContent) {
+    match content {
+        MessageContent::Text(text) => buffer.push_str(text),
+        MessageContent::Items(content_items) => append_content_items_text(buffer, content_items),
+    }
+}
+
 impl ProviderRequest for ResponsesAPIRequest {
     fn model(&self) -> &str {
         &self.model
@@ -1057,29 +1081,7 @@ impl ProviderRequest for ResponsesAPIRequest {
                 match item {
                     InputItem::Message(msg) => {
                         let mut extracted = String::new();
-                        match &msg.content {
-                            MessageContent::Text(text) => extracted.push_str(text),
-                            MessageContent::Items(content_items) => {
-                                for content in content_items {
-                                    // Preserve existing behavior: each content item is prefixed with a space.
-                                    extracted.push(' ');
-                                    match content {
-                                        InputContent::InputText { text } => {
-                                            extracted.push_str(text)
-                                        }
-                                        InputContent::InputImage { .. } => {
-                                            extracted.push_str("[Image]")
-                                        }
-                                        InputContent::InputFile { .. } => {
-                                            extracted.push_str("[File]")
-                                        }
-                                        InputContent::InputAudio { .. } => {
-                                            extracted.push_str("[Audio]")
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        append_message_content_text(&mut extracted, &msg.content);
                         extracted
                     }
                     _ => String::new(),
@@ -1091,29 +1093,7 @@ impl ProviderRequest for ResponsesAPIRequest {
                     if let InputItem::Message(msg) = item {
                         // Preserve existing behavior: each message is prefixed with a space.
                         extracted.push(' ');
-                        match &msg.content {
-                            MessageContent::Text(text) => extracted.push_str(text),
-                            MessageContent::Items(content_items) => {
-                                for content in content_items {
-                                    // Preserve existing behavior: each content item is prefixed with a space.
-                                    extracted.push(' ');
-                                    match content {
-                                        InputContent::InputText { text } => {
-                                            extracted.push_str(text)
-                                        }
-                                        InputContent::InputImage { .. } => {
-                                            extracted.push_str("[Image]")
-                                        }
-                                        InputContent::InputFile { .. } => {
-                                            extracted.push_str("[File]")
-                                        }
-                                        InputContent::InputAudio { .. } => {
-                                            extracted.push_str("[Audio]")
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        append_message_content_text(&mut extracted, &msg.content);
                     }
                 }
                 extracted
