@@ -1050,39 +1050,74 @@ impl ProviderRequest for ResponsesAPIRequest {
     }
 
     fn extract_messages_text(&self) -> String {
-        fn content_items_to_text(content_items: &[InputContent]) -> String {
-            content_items.iter().fold(String::new(), |acc, content| {
-                acc + " "
-                    + &match content {
-                        InputContent::InputText { text } => text.clone(),
-                        InputContent::InputImage { .. } => "[Image]".to_string(),
-                        InputContent::InputFile { .. } => "[File]".to_string(),
-                        InputContent::InputAudio { .. } => "[Audio]".to_string(),
-                    }
-            })
-        }
-
-        fn message_content_to_text(content: &MessageContent) -> String {
-            match content {
-                MessageContent::Text(text) => text.clone(),
-                MessageContent::Items(content_items) => content_items_to_text(content_items),
-            }
-        }
-
         match &self.input {
             InputParam::Text(text) => text.clone(),
             InputParam::SingleItem(item) => {
                 // Normalize single-item input for extraction behavior parity.
                 match item {
-                    InputItem::Message(msg) => message_content_to_text(&msg.content),
+                    InputItem::Message(msg) => {
+                        let mut extracted = String::new();
+                        match &msg.content {
+                            MessageContent::Text(text) => extracted.push_str(text),
+                            MessageContent::Items(content_items) => {
+                                for content in content_items {
+                                    // Preserve existing behavior: each content item is prefixed with a space.
+                                    extracted.push(' ');
+                                    match content {
+                                        InputContent::InputText { text } => {
+                                            extracted.push_str(text)
+                                        }
+                                        InputContent::InputImage { .. } => {
+                                            extracted.push_str("[Image]")
+                                        }
+                                        InputContent::InputFile { .. } => {
+                                            extracted.push_str("[File]")
+                                        }
+                                        InputContent::InputAudio { .. } => {
+                                            extracted.push_str("[Audio]")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        extracted
+                    }
                     _ => String::new(),
                 }
             }
-            InputParam::Items(items) => items.iter().fold(String::new(), |acc, item| match item {
-                InputItem::Message(msg) => acc + " " + &message_content_to_text(&msg.content),
-                // Skip non-message items (references, outputs, etc.)
-                _ => acc,
-            }),
+            InputParam::Items(items) => {
+                let mut extracted = String::new();
+                for item in items {
+                    if let InputItem::Message(msg) = item {
+                        // Preserve existing behavior: each message is prefixed with a space.
+                        extracted.push(' ');
+                        match &msg.content {
+                            MessageContent::Text(text) => extracted.push_str(text),
+                            MessageContent::Items(content_items) => {
+                                for content in content_items {
+                                    // Preserve existing behavior: each content item is prefixed with a space.
+                                    extracted.push(' ');
+                                    match content {
+                                        InputContent::InputText { text } => {
+                                            extracted.push_str(text)
+                                        }
+                                        InputContent::InputImage { .. } => {
+                                            extracted.push_str("[Image]")
+                                        }
+                                        InputContent::InputFile { .. } => {
+                                            extracted.push_str("[File]")
+                                        }
+                                        InputContent::InputAudio { .. } => {
+                                            extracted.push_str("[Audio]")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                extracted
+            }
         }
     }
 
