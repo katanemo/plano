@@ -1,20 +1,32 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 failed_files=()
 
 for file in $(find . -name config.yaml -o -name plano_config_full_reference.yaml); do
   echo "Validating ${file}..."
-  touch $(pwd)/${file}_rendered
-  if ! docker run --rm -v "$(pwd)/${file}:/app/plano_config.yaml:ro" -v "$(pwd)/${file}_rendered:/app/plano_config_rendered.yaml:rw" --entrypoint /bin/sh ${PLANO_DOCKER_IMAGE:-katanemo/plano:0.4.8} -c "python -m planoai.config_generator" 2>&1 > /dev/null ; then
+  rendered_file="$(pwd)/${file}_rendered"
+  touch "$rendered_file"
+
+  PLANO_CONFIG_FILE="$(pwd)/${file}" \
+  PLANO_CONFIG_SCHEMA_FILE="${SCRIPT_DIR}/plano_config_schema.yaml" \
+  TEMPLATE_ROOT="${SCRIPT_DIR}" \
+  ENVOY_CONFIG_TEMPLATE_FILE="envoy.template.yaml" \
+  PLANO_CONFIG_FILE_RENDERED="$rendered_file" \
+  ENVOY_CONFIG_FILE_RENDERED="/dev/null" \
+  python -m planoai.config_generator 2>&1 > /dev/null
+
+  if [ $? -ne 0 ]; then
     echo "Validation failed for $file"
     failed_files+=("$file")
   fi
+
   RENDERED_CHECKED_IN_FILE=$(echo $file | sed 's/\.yaml$/_rendered.yaml/')
   if [ -f "$RENDERED_CHECKED_IN_FILE" ]; then
     echo "Checking rendered file against checked-in version..."
-    if ! diff -q "${file}_rendered" "$RENDERED_CHECKED_IN_FILE" > /dev/null; then
-      echo "Rendered file ${file}_rendered does not match checked-in version ${RENDERED_CHECKED_IN_FILE}"
-      failed_files+=("${file}_rendered")
+    if ! diff -q "$rendered_file" "$RENDERED_CHECKED_IN_FILE" > /dev/null; then
+      echo "Rendered file $rendered_file does not match checked-in version ${RENDERED_CHECKED_IN_FILE}"
+      failed_files+=("$rendered_file")
     else
       echo "Rendered file matches checked-in version."
     fi

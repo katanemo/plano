@@ -2,6 +2,7 @@ use brightstaff::handlers::agent_chat_completions::agent_chat;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
+use brightstaff::handlers::routing_service::routing_decision;
 use brightstaff::router::llm_router::RouterService;
 use brightstaff::router::plano_orchestrator::OrchestratorService;
 use brightstaff::state::memory::MemoryConversationalStorage;
@@ -114,6 +115,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ));
 
     let model_aliases = Arc::new(plano_config.model_aliases.clone());
+    let span_attributes = Arc::new(
+        plano_config
+            .tracing
+            .as_ref()
+            .and_then(|tracing| tracing.span_attributes.clone()),
+    );
 
     // Initialize trace collector and start background flusher
     // Tracing is enabled if the tracing config is present in plano_config.yaml
@@ -173,6 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
         let listeners = listeners.clone();
+        let span_attributes = span_attributes.clone();
         let state_storage = state_storage.clone();
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
@@ -183,10 +191,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
             let listeners = listeners.clone();
+            let span_attributes = span_attributes.clone();
             let state_storage = state_storage.clone();
 
             async move {
-                let path = req.uri().path();
+                let path = req.uri().path().to_string();
                 // Check if path starts with /agents
                 if path.starts_with("/agents") {
                     // Check if it matches one of the agent API paths
@@ -202,13 +211,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             agents_list,
                             listeners,
+                            span_attributes,
                             llm_providers,
                         )
                         .with_context(parent_cx)
                         .await;
                     }
                 }
-                match (req.method(), path) {
+                if let Some(stripped_path) = path.strip_prefix("/routing") {
+                    let stripped_path = stripped_path.to_string();
+                    if matches!(
+                        stripped_path.as_str(),
+                        CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH
+                    ) {
+                        return routing_decision(
+                            req,
+                            router_service,
+                            stripped_path,
+                            span_attributes,
+                        )
+                        .with_context(parent_cx)
+                        .await;
+                    }
+                }
+                match (req.method(), path.as_str()) {
                     (
                         &Method::POST,
                         CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH,
@@ -220,6 +246,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fully_qualified_url,
                             model_aliases,
                             llm_providers,
+                            span_attributes,
                             state_storage,
                             listeners,
                             agents_list,
@@ -262,7 +289,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         Ok(response)
                     }
                     _ => {
-                        debug!(method = %req.method(), path = %req.uri().path(), "no route found");
+                        debug!(method = %req.method(), path = %path, "no route found");
                         let mut not_found = Response::new(empty());
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
                         Ok(not_found)

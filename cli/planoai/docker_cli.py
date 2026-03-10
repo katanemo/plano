@@ -40,11 +40,35 @@ def docker_remove_container(container: str) -> str:
     return result.returncode
 
 
+def _prepare_docker_config(plano_config_file: str) -> str:
+    """Copy config to a temp file, replacing localhost with host.docker.internal.
+
+    Configs use localhost for native-first mode, but Docker containers need
+    host.docker.internal to reach services on the host.
+    """
+    import tempfile
+
+    with open(plano_config_file, "r") as f:
+        content = f.read()
+
+    if "localhost" not in content:
+        return plano_config_file
+
+    content = content.replace("localhost", "host.docker.internal")
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", prefix="plano_config_", delete=False
+    )
+    tmp.write(content)
+    tmp.close()
+    return tmp.name
+
+
 def docker_start_plano_detached(
     plano_config_file: str,
     env: dict,
     gateway_ports: list[int],
 ) -> str:
+    docker_config = _prepare_docker_config(plano_config_file)
     env_args = [item for key, value in env.items() for item in ["-e", f"{key}={value}"]]
 
     port_mappings = [
@@ -58,7 +82,7 @@ def docker_start_plano_detached(
     port_mappings_args = [item for port in port_mappings for item in ("-p", port)]
 
     volume_mappings = [
-        f"{plano_config_file}:/app/plano_config.yaml:ro",
+        f"{docker_config}:/app/plano_config.yaml:ro",
     ]
     volume_mappings_args = [
         item for volume in volume_mappings for item in ("-v", volume)

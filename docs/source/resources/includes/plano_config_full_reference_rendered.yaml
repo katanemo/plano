@@ -1,31 +1,31 @@
 agents:
 - id: weather_agent
-  url: http://host.docker.internal:10510
+  url: http://localhost:10510
 - id: flight_agent
-  url: http://host.docker.internal:10520
+  url: http://localhost:10520
 endpoints:
   app_server:
     connect_timeout: 0.005s
     endpoint: 127.0.0.1
     port: 80
   flight_agent:
-    endpoint: host.docker.internal
+    endpoint: localhost
     port: 10520
     protocol: http
   input_guards:
-    endpoint: host.docker.internal
+    endpoint: localhost
     port: 10500
     protocol: http
   mistral_local:
     endpoint: 127.0.0.1
     port: 8001
   weather_agent:
-    endpoint: host.docker.internal
+    endpoint: localhost
     port: 10510
     protocol: http
 filters:
 - id: input_guards
-  url: http://host.docker.internal:10500
+  url: http://localhost:10500
 listeners:
 - address: 0.0.0.0
   agents:
@@ -65,8 +65,6 @@ listeners:
     port: 443
     protocol: https
     provider_interface: openai
-  filter_chain:
-  - input_guards
   name: model_1
   port: 12000
   type: model
@@ -132,6 +130,6 @@ prompt_targets:
     required: true
     type: int
 tracing:
-  opentracing_grpc_endpoint: http://host.docker.internal:4317
+  opentracing_grpc_endpoint: http://localhost:4317
   random_sampling: 100
 version: v0.3.0

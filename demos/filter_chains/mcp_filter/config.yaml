@@ -2,21 +2,21 @@ version: v0.3.0
 
 agents:
   - id: rag_agent
-    url: http://host.docker.internal:10505
+    url: http://localhost:10505
 
 filters:
   - id: input_guards
-    url: http://host.docker.internal:10500
+    url: http://localhost:10500
     # type: mcp (default)
     # transport: streamable-http (default)
     # tool: input_guards (default - same as filter id)
   - id: query_rewriter
-    url: http://host.docker.internal:10501
+    url: http://localhost:10501
     # type: mcp (default)
     # transport: streamable-http (default)
     # tool: query_rewriter (default - same as filter id)
   - id: context_builder
-    url: http://host.docker.internal:10502
+    url: http://localhost:10502
 
 model_providers:
   - model: openai/gpt-4o-mini

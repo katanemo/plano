@@ -1,3 +1,6 @@
+# Envoy version — keep in sync with cli/planoai/consts.py ENVOY_VERSION
+ARG ENVOY_VERSION=v1.37.0
+
 # --- Dependency cache ---
 FROM rust:1.93.0 AS deps
 RUN rustup -v target add wasm32-wasip1
@@ -40,7 +43,7 @@ COPY crates/brightstaff/src    brightstaff/src
 RUN find common hermesllm brightstaff -name "*.rs" -exec touch {} +
 RUN cargo build --release -p brightstaff
 
-FROM docker.io/envoyproxy/envoy:v1.37.0 AS envoy
+FROM docker.io/envoyproxy/envoy:${ENVOY_VERSION} AS envoy
 
 FROM python:3.14-slim AS arch
 
@@ -66,8 +69,10 @@ RUN pip install --no-cache-dir uv
 COPY cli/pyproject.toml ./
 COPY cli/uv.lock ./
 COPY cli/README.md ./
+COPY config/plano_config_schema.yaml /config/plano_config_schema.yaml
+COPY config/envoy.template.yaml /config/envoy.template.yaml
 
-RUN uv run pip install --no-cache-dir .
+RUN pip install --no-cache-dir -e .
 
 COPY cli/planoai planoai/
 COPY config/envoy.template.yaml .

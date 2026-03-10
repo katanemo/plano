@@ -436,11 +436,14 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bytes",
  "derivative",
  "duration-string",
  "governor",
  "hermesllm",
  "hex",
+ "http-body-util",
+ "hyper 1.6.0",
  "log",
  "pretty_assertions",
  "proxy-wasm",

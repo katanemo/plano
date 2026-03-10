@@ -142,6 +142,109 @@ In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter tr
 For complete details on all available signals, detection methods, and best practices, see the :doc:`../../concepts/signals` guide.
 
 
+Custom Span Attributes
+-------------------------------------------
+
+Plano can automatically attach **custom span attributes** derived from request headers and **static** attributes
+defined in configuration. This lets you stamp
+traces with identifiers like workspace, tenant, or user IDs without changing application code or adding
+custom instrumentation.
+
+**Why This Is Useful**
+
+- **Tenant-aware debugging**: Filter traces by ``workspace.id`` or ``tenant.id``.
+- **Customer-specific visibility**: Attribute performance or errors to a specific customer.
+- **Low overhead**: No code changes in agents or clients—just headers.
+
+How It Works
+~~~~~~~~~~~~
+
+You configure one or more header prefixes. Any incoming HTTP header whose name starts with one of these
+prefixes is captured as a span attribute. You can also provide static attributes that are always injected.
+
+- The **prefix is only for matching**, not the resulting attribute key.
+- The attribute key is the header name **with the prefix removed**, then hyphens converted to dots.
+
+.. note::
+
+   Custom span attributes are attached to LLM spans when handling ``/v1/...`` requests via ``llm_chat``. For orchestrator requests to ``/agents/...``,
+   these attributes are added to both the orchestrator selection span and to each agent span created by ``agent_chat``.
+
+**Example**
+
+Configured prefix::
+
+  tracing:
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
+
+Incoming headers::
+
+  X-Katanemo-Workspace-Id: ws_123
+  X-Katanemo-Tenant-Id: ten_456
+
+Resulting span attributes::
+
+  workspace.id = "ws_123"
+  tenant.id = "ten_456"
+
+Configuration
+~~~~~~~~~~~~~
+
+Add the prefix list under ``tracing`` in your config:
+
+.. code-block:: yaml
+
+  tracing:
+    random_sampling: 100
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
+      static:
+        environment: production
+        service.version: "1.0.0"
+
+Static attributes are always injected alongside any header-derived attributes. If a header-derived
+attribute key matches a static key, the header value overrides the static value.
+
+You can provide multiple prefixes:
+
+.. code-block:: yaml
+
+  tracing:
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
+        - x-tenant-
+      static:
+        environment: production
+        service.version: "1.0.0"
+
+Notes and Examples
+~~~~~~~~~~~~~~~~~~
+
+- **Prefix must match exactly**: ``katanemo-`` does not match ``x-katanemo-`` headers.
+- **Trailing dash is recommended**: Without it, ``x-katanemo`` would also match ``x-katanemo-foo`` and
+  ``x-katanemofoo``.
+- **Keys are always strings**: Values are captured as string attributes.
+
+**Prefix mismatch example**
+
+Config::
+
+  tracing:
+    span_attributes:
+      header_prefixes:
+        - x-katanemo-
+
+Request headers::
+
+  X-Other-User-Id: usr_999
+
+Result: no attributes are captured from ``X-Other-User-Id``.
+
+
 Benefits of Using ``Traceparent`` Headers
 -----------------------------------------
 
@@ -497,55 +600,7 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 Additional Resources
 --------------------
 
-CLI Reference
-~~~~~~~~~~~~~
-
-``planoai trace``
-  Trace requests captured by the local OTLP listener.
-
-  **Synopsis**
-
-  .. code-block:: console
-
-     $ planoai trace [TARGET] [OPTIONS]
-
-  **Targets**
-
-  - ``last`` (default): show the most recent trace.
-  - ``any``: allow interactive selection when available.
-  - ``<trace-id>``: full 32-hex trace ID.
-  - ``<short-id>``: first 8 hex characters.
-
-  **Options**
-
-  - ``--filter <pattern>``: limit displayed attributes to matching keys (supports ``*``).
-  - ``--where <key=value>``: match traces containing a specific attribute (repeatable, AND).
-  - ``--list``: list trace IDs only.
-  - ``--no-interactive``: disable interactive prompts/selections.
-  - ``--limit <n>``: limit the number of traces returned.
-  - ``--since <window>``: look back window (``5m``, ``2h``, ``1d``).
-  - ``--json``: output raw JSON instead of formatted output.
-  - ``--verbose, -v``: show all span attributes. By default, inbound/outbound
-    spans are displayed in a compact view.
-
-  **Environment**
-
-  - ``PLANO_TRACE_PORT``: gRPC port used by ``planoai trace`` to query traces
-    (defaults to ``4317``).
-
-``planoai trace listen``
-  Start a local OTLP/gRPC listener.
-
-  **Synopsis**
-
-  .. code-block:: console
-
-     $ planoai trace listen [OPTIONS]
-
-  **Options**
-
-  - ``--host <host>``: bind address (default: ``0.0.0.0``).
-  - ``--port <port>``: gRPC listener port (default: ``4317``).
+For full command documentation (including ``planoai trace`` and all other CLI commands), see :ref:`cli_reference`.
 
 External References
 ~~~~~~~~~~~~~~~~~~~

@@ -32,7 +32,7 @@ Basic Configuration
         access_key: $ANTHROPIC_API_KEY
 
       - model: ollama/llama3.1
-        base_url: http://host.docker.internal:11434
+        base_url: http://localhost:11434
 
     # Define aliases that map to the models above
     model_aliases:

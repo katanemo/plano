@@ -39,8 +39,8 @@ Your Request → Plano → Suitable Model → Response
 # Install Claude Code if you haven't already
 npm install -g @anthropic-ai/claude-code
 
-# Ensure Docker is running
-docker --version
+# Install Plano CLI
+pip install planoai
 ```
 
 ### Step 1: Get Configuration

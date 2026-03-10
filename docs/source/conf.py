@@ -17,7 +17,7 @@ from sphinxawesome_theme.postprocess import Icons
 project = "Plano Docs"
 copyright = "2025, Katanemo Labs, Inc"
 author = "Katanemo Labs, Inc"
-release = " v0.4.8"
+release = " v0.4.11"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -116,6 +116,7 @@ html_theme_options = asdict(theme_options)
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
+html_js_files = ["js/fix-copy.js"]
 
 pygments_style = "lovelace"
 pygments_style_dark = "github-dark"

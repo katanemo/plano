@@ -38,17 +38,16 @@ Plano acts as a **framework-agnostic proxy and data plane** that:
 ```bash
 # From the demo directory
 cd demos/agent_orchestration/multi_agent_crewai_langchain
-
-# Build and start all services
-docker-compose up -d
+./run_demo.sh
 ```
 
-This starts:
-- **Plano** (ports 12000, 8001) - routing and orchestration
+This starts Plano natively and brings up via Docker Compose:
 - **CrewAI Flight Agent** (port 10520) - flight search
 - **LangChain Weather Agent** (port 10510) - weather forecasts
 - **AnythingLLM** (port 3001) - chat interface
 - **Jaeger** (port 16686) - distributed tracing
+
+Plano runs natively on the host (ports 12000, 8001).
 
 ### Try It Out
 
@@ -116,7 +115,7 @@ This starts:
 ## Cleanup
 
 ```bash
-docker-compose down
+./run_demo.sh down
 ```
 
 ## Next Steps

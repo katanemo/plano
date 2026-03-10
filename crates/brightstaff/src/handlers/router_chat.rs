@@ -10,6 +10,7 @@ use crate::tracing::routing;
 
 pub struct RoutingResult {
     pub model_name: String,
+    pub route_name: Option<String>,
 }
 
 pub struct RoutingError {
@@ -133,9 +134,12 @@ pub async fn router_chat_get_upstream_model(
 
     match routing_result {
         Ok(route) => match route {
-            Some((_, model_name)) => {
+            Some((route_name, model_name)) => {
                 current_span.record("route.selected_model", model_name.as_str());
-                Ok(RoutingResult { model_name })
+                Ok(RoutingResult {
+                    model_name,
+                    route_name: Some(route_name),
+                })
             }
             None => {
                 // No route determined, return sentinel value "none"
@@ -145,6 +149,7 @@ pub async fn router_chat_get_upstream_model(
 
                 Ok(RoutingResult {
                     model_name: "none".to_string(),
+                    route_name: None,
                 })
             }
         },

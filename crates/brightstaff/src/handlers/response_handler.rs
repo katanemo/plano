@@ -1,24 +1,16 @@
 use bytes::Bytes;
+use common::errors::BrightStaffError;
 use hermesllm::apis::OpenAIApi;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::SseEvent;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full, StreamBody};
 use hyper::body::Frame;
-use hyper::{Response, StatusCode};
+use hyper::Response;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn, Instrument};
-
-/// Errors that can occur during response handling
-#[derive(Debug, thiserror::Error)]
-pub enum ResponseError {
-    #[error("Failed to create response: {0}")]
-    ResponseCreationFailed(#[from] hyper::http::Error),
-    #[error("Stream error: {0}")]
-    StreamError(String),
-}
 
 /// Service for handling HTTP responses and streaming
 pub struct ResponseHandler;
@@ -35,40 +27,6 @@ impl ResponseHandler {
             .boxed()
     }
 
-    /// Create an error response with a given status code and message
-    pub fn create_error_response(
-        status: StatusCode,
-        message: &str,
-    ) -> Response<BoxBody<Bytes, hyper::Error>> {
-        let mut response = Response::new(Self::create_full_body(message.to_string()));
-        *response.status_mut() = status;
-        response
-    }
-
-    /// Create a bad request response
-    pub fn create_bad_request(message: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
-        Self::create_error_response(StatusCode::BAD_REQUEST, message)
-    }
-
-    /// Create an internal server error response
-    pub fn create_internal_error(message: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
-        Self::create_error_response(StatusCode::INTERNAL_SERVER_ERROR, message)
-    }
-
-    /// Create a JSON error response
-    pub fn create_json_error_response(
-        error_json: &serde_json::Value,
-    ) -> Response<BoxBody<Bytes, hyper::Error>> {
-        let json_string = error_json.to_string();
-        let mut response = Response::new(Self::create_full_body(json_string));
-        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-        response.headers_mut().insert(
-            hyper::header::CONTENT_TYPE,
-            "application/json".parse().unwrap(),
-        );
-        response
-    }
-
     /// Create a streaming response from a reqwest response.
     /// The spawned streaming task is instrumented with both `agent_span` and `orchestrator_span`
     /// so their durations reflect the actual time spent streaming to the client.
@@ -77,13 +35,13 @@ impl ResponseHandler {
         llm_response: reqwest::Response,
         agent_span: tracing::Span,
         orchestrator_span: tracing::Span,
-    ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, ResponseError> {
+    ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, BrightStaffError> {
         // Copy headers from the original response
         let response_headers = llm_response.headers();
         let mut response_builder = Response::builder();
 
         let headers = response_builder.headers_mut().ok_or_else(|| {
-            ResponseError::StreamError("Failed to get mutable headers".to_string())
+            BrightStaffError::StreamError("Failed to get mutable headers".to_string())
         })?;
 
         for (header_name, header_value) in response_headers.iter() {
@@ -123,7 +81,7 @@ impl ResponseHandler {
 
         response_builder
             .body(stream_body)
-            .map_err(ResponseError::from)
+            .map_err(BrightStaffError::from)
     }
 
     /// Collect the full response body as a string
@@ -136,7 +94,7 @@ impl ResponseHandler {
     pub async fn collect_full_response(
         &self,
         llm_response: reqwest::Response,
-    ) -> Result<String, ResponseError> {
+    ) -> Result<String, BrightStaffError> {
         use hermesllm::apis::streaming_shapes::sse::SseStreamIter;
 
         let response_headers = llm_response.headers();
@@ -144,10 +102,9 @@ impl ResponseHandler {
             .get(hyper::header::CONTENT_TYPE)
             .is_some_and(|v| v.to_str().unwrap_or("").contains("text/event-stream"));
 
-        let response_bytes = llm_response
-            .bytes()
-            .await
-            .map_err(|e| ResponseError::StreamError(format!("Failed to read response: {}", e)))?;
+        let response_bytes = llm_response.bytes().await.map_err(|e| {
+            BrightStaffError::StreamError(format!("Failed to read response: {}", e))
+        })?;
 
         if is_sse_streaming {
             let client_api =
@@ -185,7 +142,7 @@ impl ResponseHandler {
         } else {
             // If not SSE, treat as regular text response
             let response_text = String::from_utf8(response_bytes.to_vec()).map_err(|e| {
-                ResponseError::StreamError(format!("Failed to decode response: {}", e))
+                BrightStaffError::StreamError(format!("Failed to decode response: {}", e))
             })?;
 
             Ok(response_text)
@@ -203,42 +160,6 @@ impl Default for ResponseHandler {
 mod tests {
     use super::*;
     use hyper::StatusCode;
-
-    #[test]
-    fn test_create_bad_request() {
-        let response = ResponseHandler::create_bad_request("Invalid request");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[test]
-    fn test_create_internal_error() {
-        let response = ResponseHandler::create_internal_error("Server error");
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    #[test]
-    fn test_create_error_response() {
-        let response =
-            ResponseHandler::create_error_response(StatusCode::NOT_FOUND, "Resource not found");
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[test]
-    fn test_create_json_error_response() {
-        let error_json = serde_json::json!({
-            "error": {
-                "type": "TestError",
-                "message": "Test error message"
-            }
-        });
-
-        let response = ResponseHandler::create_json_error_response(&error_json);
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(
-            response.headers().get("content-type").unwrap(),
-            "application/json"
-        );
-    }
 
     #[tokio::test]
     async fn test_create_streaming_response_with_mock() {

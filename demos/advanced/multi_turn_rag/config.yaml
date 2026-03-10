@@ -7,7 +7,7 @@ listeners:
 
 endpoints:
   rag_energy_source_agent:
-    endpoint: host.docker.internal:18083
+    endpoint: localhost:18083
     connect_timeout: 0.005s
 
 model_providers:
