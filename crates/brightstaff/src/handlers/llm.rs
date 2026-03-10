@@ -126,12 +126,26 @@ async fn llm_chat_inner(
         }
     };
 
-    let chat_request_bytes = request.collect().await?.to_bytes();
+    let raw_bytes = request.collect().await?.to_bytes();
 
     debug!(
-        body = %String::from_utf8_lossy(&chat_request_bytes),
+        body = %String::from_utf8_lossy(&raw_bytes),
         "request body received"
     );
+
+    // Extract routing_policy from request body if present
+    let (chat_request_bytes, inline_routing_policy) =
+        match crate::handlers::routing_service::extract_routing_policy(&raw_bytes, false) {
+            Ok(result) => result,
+            Err(err) => {
+                warn!(error = %err, "failed to parse request JSON");
+                return Ok(BrightStaffError::InvalidRequest(format!(
+                    "Failed to parse request: {}",
+                    err
+                ))
+                .into_response());
+            }
+        };
 
     let mut client_request = match ProviderRequestType::try_from((
         &chat_request_bytes[..],
@@ -335,6 +349,7 @@ async fn llm_chat_inner(
             &traceparent,
             &request_path,
             &request_id,
+            inline_routing_policy,
         )
         .await
     }

@@ -62,4 +62,59 @@ curl -s "$PLANO_URL/routing/v1/messages" \
   }' | python3 -m json.tool
 echo ""
 
+# --- Example 5: Inline routing policy in request body ---
+echo "--- 5. Inline routing_policy (no config needed) ---"
+echo ""
+curl -s "$PLANO_URL/routing/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "Write a quicksort implementation in Go"}
+    ],
+    "routing_policy": [
+      {
+        "model": "openai/gpt-4o",
+        "routing_preferences": [
+          {"name": "coding", "description": "code generation, writing functions, debugging"}
+        ]
+      },
+      {
+        "model": "openai/gpt-4o-mini",
+        "routing_preferences": [
+          {"name": "general", "description": "general questions, simple lookups, casual conversation"}
+        ]
+      }
+    ]
+  }' | python3 -m json.tool
+echo ""
+
+# --- Example 6: Inline routing policy with Anthropic format ---
+echo "--- 6. Inline routing_policy (Anthropic format) ---"
+echo ""
+curl -s "$PLANO_URL/routing/v1/messages" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "What is the weather like today?"}
+    ],
+    "routing_policy": [
+      {
+        "model": "openai/gpt-4o",
+        "routing_preferences": [
+          {"name": "coding", "description": "code generation, writing functions, debugging"}
+        ]
+      },
+      {
+        "model": "openai/gpt-4o-mini",
+        "routing_preferences": [
+          {"name": "general", "description": "general questions, simple lookups, casual conversation"}
+        ]
+      }
+    ]
+  }' | python3 -m json.tool
+echo ""
+
 echo "=== Demo Complete ==="
