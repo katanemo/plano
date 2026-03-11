@@ -123,6 +123,42 @@ Each agent:
 
 Both agents run as native local processes and communicate with Plano running natively on the host.
 
+## Running with local Plano-Orchestrator (via vLLM)
+
+By default, Plano uses a hosted Plano-Orchestrator endpoint. To self-host the orchestrator model locally using vLLM on a server with an NVIDIA GPU:
+
+1. Install vLLM and download the model:
+```bash
+pip install vllm
+```
+
+2. Start the vLLM server with the 4B model:
+```bash
+vllm serve katanemo/Plano-Orchestrator-4B \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization 0.3 \
+    --tokenizer katanemo/Plano-Orchestrator-4B \
+    --chat-template chat_template.jinja \
+    --served-model-name Plano-Orchestrator \
+    --enable-prefix-caching
+```
+
+3. Start the demo with the local orchestrator config:
+```bash
+./run_demo.sh --local-orchestrator
+```
+
+4. Test with curl:
+```bash
+curl -X POST http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-5.2", "messages": [{"role": "user", "content": "What is the weather in Istanbul?"}]}'
+```
+
+You should see Plano use your local orchestrator to route the request to the weather agent.
+
 ## Observability
 
 This demo includes full OpenTelemetry (OTel) compatible distributed tracing to monitor and debug agent interactions:
