@@ -10,7 +10,6 @@ from planoai.consts import (
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
-import subprocess
 from planoai.docker_cli import (
     docker_container_status,
     docker_remove_container,
@@ -147,26 +146,48 @@ def stop_docker_container(service=PLANO_DOCKER_NAME):
         log.info(f"Failed to shut down services: {str(e)}")
 
 
-def start_cli_agent(plano_config_file=None, settings_json="{}"):
-    """Start a CLI client connected to Plano."""
-
-    with open(plano_config_file, "r") as file:
-        plano_config = file.read()
-        plano_config_yaml = yaml.safe_load(plano_config)
-
-    # Get egress listener configuration
-    egress_config = plano_config_yaml.get("listeners", {}).get("egress_traffic", {})
-    host = egress_config.get("host", "127.0.0.1")
-    port = egress_config.get("port", 12000)
-
-    # Parse additional settings from command line
+def _parse_cli_agent_settings(settings_json: str) -> dict:
     try:
-        additional_settings = json.loads(settings_json) if settings_json else {}
+        return json.loads(settings_json) if settings_json else {}
     except json.JSONDecodeError:
         log.error("Settings must be valid JSON")
         sys.exit(1)
 
-    # Set up environment variables
+
+def _resolve_cli_agent_endpoint(plano_config_yaml: dict) -> tuple[str, int]:
+    listeners = plano_config_yaml.get("listeners")
+
+    if isinstance(listeners, dict):
+        egress_config = listeners.get("egress_traffic", {})
+        host = egress_config.get("host") or egress_config.get("address") or "0.0.0.0"
+        port = egress_config.get("port", 12000)
+        return host, port
+
+    if isinstance(listeners, list):
+        for listener in listeners:
+            if listener.get("type") in ["model", "model_listener"]:
+                host = listener.get("host") or listener.get("address") or "0.0.0.0"
+                port = listener.get("port", 12000)
+                return host, port
+
+    return "0.0.0.0", 12000
+
+
+def _apply_non_interactive_env(env: dict, additional_settings: dict) -> None:
+    if additional_settings.get("NON_INTERACTIVE_MODE", False):
+        env.update(
+            {
+                "CI": "true",
+                "FORCE_COLOR": "0",
+                "NODE_NO_READLINE": "1",
+                "TERM": "dumb",
+            }
+        )
+
+
+def _start_claude_cli_agent(
+    host: str, port: int, plano_config_yaml: dict, additional_settings: dict
+) -> None:
     env = os.environ.copy()
     env.update(
         {
@@ -186,7 +207,6 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
             "ANTHROPIC_SMALL_FAST_MODEL"
         ]
     else:
-        # Check if arch.claude.code.small.fast alias exists in model_aliases
         model_aliases = plano_config_yaml.get("model_aliases", {})
         if "arch.claude.code.small.fast" in model_aliases:
             env["ANTHROPIC_SMALL_FAST_MODEL"] = "arch.claude.code.small.fast"
@@ -196,23 +216,10 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
             )
             log.info("Or provide ANTHROPIC_SMALL_FAST_MODEL in --settings JSON")
 
-    # Non-interactive mode configuration from additional_settings only
-    if additional_settings.get("NON_INTERACTIVE_MODE", False):
-        env.update(
-            {
-                "CI": "true",
-                "FORCE_COLOR": "0",
-                "NODE_NO_READLINE": "1",
-                "TERM": "dumb",
-            }
-        )
+    _apply_non_interactive_env(env, additional_settings)
 
-    # Build claude command arguments
     claude_args = []
-
-    # Add settings if provided, excluding those already handled as environment variables
     if additional_settings:
-        # Filter out settings that are already processed as environment variables
         claude_settings = {
             k: v
             for k, v in additional_settings.items()
@@ -221,10 +228,8 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
         if claude_settings:
             claude_args.append(f"--settings={json.dumps(claude_settings)}")
 
-    # Use claude from PATH
     claude_path = "claude"
     log.info(f"Connecting Claude Code Agent to Plano at {host}:{port}")
-
     try:
         subprocess.run([claude_path] + claude_args, env=env, check=True)
     except subprocess.CalledProcessError as e:
@@ -235,3 +240,61 @@ def start_cli_agent(plano_config_file=None, settings_json="{}"):
             f"{claude_path} not found. Make sure Claude Code is installed: npm install -g @anthropic-ai/claude-code"
         )
         sys.exit(1)
+
+
+def _start_codex_cli_agent(host: str, port: int, additional_settings: dict) -> None:
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENAI_API_KEY": "test",  # Use test token for plano
+            "OPENAI_BASE_URL": f"http://{host}:{port}/v1",
+            "NO_PROXY": host,
+            "DISABLE_TELEMETRY": "true",
+        }
+    )
+    _apply_non_interactive_env(env, additional_settings)
+
+    codex_model = additional_settings.get("CODEX_MODEL", "gpt-5.3-codex")
+    codex_path = "codex"
+    codex_args = ["--model", codex_model]
+
+    log.info(
+        f"Connecting Codex CLI Agent to Plano at {host}:{port} (default model: {codex_model})"
+    )
+    try:
+        subprocess.run([codex_path] + codex_args, env=env, check=True)
+    except subprocess.CalledProcessError as e:
+        log.error(f"Error starting codex: {e}")
+        sys.exit(1)
+    except FileNotFoundError:
+        log.error(
+            f"{codex_path} not found. Make sure Codex CLI is installed: npm install -g @openai/codex"
+        )
+        sys.exit(1)
+
+
+def start_cli_agent(
+    plano_config_file=None, cli_agent_type="claude", settings_json="{}"
+):
+    """Start a CLI client connected to Plano."""
+
+    with open(plano_config_file, "r") as file:
+        plano_config = file.read()
+        plano_config_yaml = yaml.safe_load(plano_config)
+
+    host, port = _resolve_cli_agent_endpoint(plano_config_yaml)
+
+    additional_settings = _parse_cli_agent_settings(settings_json)
+
+    if cli_agent_type == "claude":
+        _start_claude_cli_agent(host, port, plano_config_yaml, additional_settings)
+        return
+
+    if cli_agent_type == "codex":
+        _start_codex_cli_agent(host, port, additional_settings)
+        return
+
+    log.error(
+        f"Unsupported cli agent type '{cli_agent_type}'. Supported values: claude, codex"
+    )
+    sys.exit(1)

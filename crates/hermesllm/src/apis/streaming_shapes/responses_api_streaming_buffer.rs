@@ -74,6 +74,7 @@ pub struct ResponsesAPIStreamBuffer {
     /// Lifecycle state flags
     created_emitted: bool,
     in_progress_emitted: bool,
+    finalized: bool,
 
     /// Track which output items we've added
     output_items_added: HashMap<i32, String>, // output_index -> item_id
@@ -109,6 +110,7 @@ impl ResponsesAPIStreamBuffer {
             upstream_response_metadata: None,
             created_emitted: false,
             in_progress_emitted: false,
+            finalized: false,
             output_items_added: HashMap::new(),
             text_content: HashMap::new(),
             function_arguments: HashMap::new(),
@@ -236,7 +238,7 @@ impl ResponsesAPIStreamBuffer {
             }),
             store: Some(true),
             text: Some(TextConfig {
-                format: TextFormat::Text,
+                format: Some(TextFormat::Text),
             }),
             audio: None,
             modalities: None,
@@ -255,7 +257,37 @@ impl ResponsesAPIStreamBuffer {
     /// Finalize the response by emitting all *.done events and response.completed.
     /// Call this when the stream is complete (after seeing [DONE] or end_of_stream).
     pub fn finalize(&mut self) {
+        // Idempotent finalize: avoid duplicate response.completed loops.
+        if self.finalized {
+            return;
+        }
+        self.finalized = true;
+
         let mut events = Vec::new();
+
+        // Ensure lifecycle prelude is emitted even if finalize is triggered
+        // by finish_reason before any prior delta was processed.
+        if !self.created_emitted {
+            if self.response_id.is_none() {
+                self.response_id = Some(format!(
+                    "resp_{}",
+                    uuid::Uuid::new_v4().to_string().replace("-", "")
+                ));
+                self.created_at = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() as i64,
+                );
+                self.model = Some("unknown".to_string());
+            }
+            events.push(self.create_response_created_event());
+            self.created_emitted = true;
+        }
+        if !self.in_progress_emitted {
+            events.push(self.create_response_in_progress_event());
+            self.in_progress_emitted = true;
+        }
 
         // Emit done events for all accumulated content
 
@@ -442,6 +474,12 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
                 return;
             }
         };
+
+        // Explicit completion marker from transform layer.
+        if matches!(stream_event.as_ref(), ResponsesAPIStreamEvent::Done { .. }) {
+            self.finalize();
+            return;
+        }
 
         let mut events = Vec::new();
 
@@ -788,5 +826,31 @@ mod tests {
         println!("✓ Incremental deltas: 4 events (1 initial + 3 argument chunks)");
         println!("✓ NO completion events (partial stream, no [DONE])");
         println!("✓ Arguments accumulated: '{{\"location\":\"'\n");
+    }
+
+    #[test]
+    fn test_finish_reason_without_done_still_finalizes_once() {
+        let raw_input = r#"data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
+
+        let client_api = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let upstream_api = SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+
+        let stream_iter = SseStreamIter::try_from(raw_input.as_bytes()).unwrap();
+        let mut buffer = ResponsesAPIStreamBuffer::new();
+
+        for raw_event in stream_iter {
+            let transformed_event =
+                SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
+            buffer.add_transformed_event(transformed_event);
+        }
+
+        let output = String::from_utf8_lossy(&buffer.to_bytes()).to_string();
+        let completed_count = output.matches("event: response.completed").count();
+        assert_eq!(
+            completed_count, 1,
+            "response.completed should be emitted exactly once"
+        );
     }
 }

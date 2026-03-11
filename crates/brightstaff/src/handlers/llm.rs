@@ -135,12 +135,26 @@ async fn llm_chat_inner(
         }
     };
 
-    let chat_request_bytes = request.collect().await?.to_bytes();
+    let raw_bytes = request.collect().await?.to_bytes();
 
     debug!(
-        body = %String::from_utf8_lossy(&chat_request_bytes),
+        body = %String::from_utf8_lossy(&raw_bytes),
         "request body received"
     );
+
+    // Extract routing_policy from request body if present
+    let (chat_request_bytes, inline_routing_policy) =
+        match crate::handlers::routing_service::extract_routing_policy(&raw_bytes, false) {
+            Ok(result) => result,
+            Err(err) => {
+                warn!(error = %err, "failed to parse request JSON");
+                return Ok(BrightStaffError::InvalidRequest(format!(
+                    "Failed to parse request: {}",
+                    err
+                ))
+                .into_response());
+            }
+        };
 
     let mut client_request = match ProviderRequestType::try_from((
         &chat_request_bytes[..],
@@ -193,6 +207,7 @@ async fn llm_chat_inner(
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, &model_aliases);
+    let (provider_id, _) = get_provider_info(&llm_providers, &alias_resolved_model).await;
 
     // Validate that the requested model exists in configuration
     // This matches the validation in llm_gateway routing.rs
@@ -330,6 +345,11 @@ async fn llm_chat_inner(
         }
     }
 
+    if let Some(ref client_api_kind) = client_api {
+        let upstream_api =
+            provider_id.compatible_api_for_client(client_api_kind, is_streaming_request);
+        client_request.normalize_for_upstream(provider_id, &upstream_api);
+    }
     // === v1/responses state management: Determine upstream API and combine input if needed ===
     // Do this BEFORE routing since routing consumes the request
     // Only process state if state_storage is configured
@@ -429,6 +449,7 @@ async fn llm_chat_inner(
             &traceparent,
             &request_path,
             &request_id,
+            inline_routing_policy,
         )
         .await
     }
@@ -575,7 +596,6 @@ async fn llm_chat_inner(
         .into_response()),
     }
 }
-
 /// Resolves model aliases by looking up the requested model in the model_aliases map.
 /// Returns the target model if an alias is found, otherwise returns the original model.
 fn resolve_model_alias(

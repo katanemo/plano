@@ -116,6 +116,8 @@ pub enum InputParam {
     Text(String),
     /// Array of input items (messages, references, outputs, etc.)
     Items(Vec<InputItem>),
+    /// Single input item (some clients send object instead of array)
+    SingleItem(InputItem),
 }
 
 /// Input item - can be a message, item reference, function call output, etc.
@@ -130,12 +132,20 @@ pub enum InputItem {
         item_type: String,
         id: String,
     },
+    /// Function call emitted by model in prior turn
+    FunctionCall {
+        #[serde(rename = "type")]
+        item_type: String,
+        name: String,
+        arguments: String,
+        call_id: String,
+    },
     /// Function call output
     FunctionCallOutput {
         #[serde(rename = "type")]
         item_type: String,
         call_id: String,
-        output: String,
+        output: serde_json::Value,
     },
 }
 
@@ -166,6 +176,7 @@ pub enum MessageRole {
     Assistant,
     System,
     Developer,
+    Tool,
 }
 
 /// Input content types
@@ -173,6 +184,7 @@ pub enum MessageRole {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InputContent {
     /// Text input
+    #[serde(rename = "input_text", alias = "text", alias = "output_text")]
     InputText { text: String },
     /// Image input via URL
     InputImage {
@@ -180,6 +192,7 @@ pub enum InputContent {
         detail: Option<String>,
     },
     /// File input via URL
+    #[serde(rename = "input_file", alias = "file")]
     InputFile { file_url: String },
     /// Audio input
     InputAudio {
@@ -207,10 +220,11 @@ pub struct AudioConfig {
 }
 
 /// Text configuration
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextConfig {
     /// Text format configuration
-    pub format: TextFormat,
+    pub format: Option<TextFormat>,
 }
 
 /// Text format
@@ -285,6 +299,7 @@ pub enum Tool {
         filters: Option<serde_json::Value>,
     },
     /// Web search tool
+    #[serde(rename = "web_search", alias = "web_search_preview")]
     WebSearchPreview {
         domains: Option<Vec<String>>,
         search_context_size: Option<String>,
@@ -297,6 +312,12 @@ pub enum Tool {
         display_width_px: Option<i32>,
         display_height_px: Option<i32>,
         display_number: Option<i32>,
+    },
+    /// Custom tool (provider/SDK-specific tool contract)
+    Custom {
+        name: Option<String>,
+        description: Option<String>,
+        format: Option<serde_json::Value>,
     },
 }
 
@@ -1015,6 +1036,30 @@ pub struct ListInputItemsResponse {
 // ProviderRequest Implementation
 // ============================================================================
 
+fn append_input_content_text(buffer: &mut String, content: &InputContent) {
+    match content {
+        InputContent::InputText { text } => buffer.push_str(text),
+        InputContent::InputImage { .. } => buffer.push_str("[Image]"),
+        InputContent::InputFile { .. } => buffer.push_str("[File]"),
+        InputContent::InputAudio { .. } => buffer.push_str("[Audio]"),
+    }
+}
+
+fn append_content_items_text(buffer: &mut String, content_items: &[InputContent]) {
+    for content in content_items {
+        // Preserve existing behavior: each content item is prefixed with a space.
+        buffer.push(' ');
+        append_input_content_text(buffer, content);
+    }
+}
+
+fn append_message_content_text(buffer: &mut String, content: &MessageContent) {
+    match content {
+        MessageContent::Text(text) => buffer.push_str(text),
+        MessageContent::Items(content_items) => append_content_items_text(buffer, content_items),
+    }
+}
+
 impl ProviderRequest for ResponsesAPIRequest {
     fn model(&self) -> &str {
         &self.model
@@ -1031,36 +1076,27 @@ impl ProviderRequest for ResponsesAPIRequest {
     fn extract_messages_text(&self) -> String {
         match &self.input {
             InputParam::Text(text) => text.clone(),
-            InputParam::Items(items) => {
-                items.iter().fold(String::new(), |acc, item| {
-                    match item {
-                        InputItem::Message(msg) => {
-                            let content_text = match &msg.content {
-                                MessageContent::Text(text) => text.clone(),
-                                MessageContent::Items(content_items) => {
-                                    content_items.iter().fold(String::new(), |acc, content| {
-                                        acc + " "
-                                            + &match content {
-                                                InputContent::InputText { text } => text.clone(),
-                                                InputContent::InputImage { .. } => {
-                                                    "[Image]".to_string()
-                                                }
-                                                InputContent::InputFile { .. } => {
-                                                    "[File]".to_string()
-                                                }
-                                                InputContent::InputAudio { .. } => {
-                                                    "[Audio]".to_string()
-                                                }
-                                            }
-                                    })
-                                }
-                            };
-                            acc + " " + &content_text
-                        }
-                        // Skip non-message items (references, outputs, etc.)
-                        _ => acc,
+            InputParam::SingleItem(item) => {
+                // Normalize single-item input for extraction behavior parity.
+                match item {
+                    InputItem::Message(msg) => {
+                        let mut extracted = String::new();
+                        append_message_content_text(&mut extracted, &msg.content);
+                        extracted
                     }
-                })
+                    _ => String::new(),
+                }
+            }
+            InputParam::Items(items) => {
+                let mut extracted = String::new();
+                for item in items {
+                    if let InputItem::Message(msg) = item {
+                        // Preserve existing behavior: each message is prefixed with a space.
+                        extracted.push(' ');
+                        append_message_content_text(&mut extracted, &msg.content);
+                    }
+                }
+                extracted
             }
         }
     }
@@ -1068,6 +1104,20 @@ impl ProviderRequest for ResponsesAPIRequest {
     fn get_recent_user_message(&self) -> Option<String> {
         match &self.input {
             InputParam::Text(text) => Some(text.clone()),
+            InputParam::SingleItem(item) => match item {
+                InputItem::Message(msg) if matches!(msg.role, MessageRole::User) => {
+                    match &msg.content {
+                        MessageContent::Text(text) => Some(text.clone()),
+                        MessageContent::Items(content_items) => {
+                            content_items.iter().find_map(|content| match content {
+                                InputContent::InputText { text } => Some(text.clone()),
+                                _ => None,
+                            })
+                        }
+                    }
+                }
+                _ => None,
+            },
             InputParam::Items(items) => {
                 items.iter().rev().find_map(|item| {
                     match item {
@@ -1097,6 +1147,9 @@ impl ProviderRequest for ResponsesAPIRequest {
                 .iter()
                 .filter_map(|tool| match tool {
                     Tool::Function { name, .. } => Some(name.clone()),
+                    Tool::Custom {
+                        name: Some(name), ..
+                    } => Some(name.clone()),
                     // Other tool types don't have user-defined names
                     _ => None,
                 })
@@ -1366,6 +1419,7 @@ impl crate::providers::streaming_response::ProviderStreamResponse for ResponsesA
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_response_output_text_delta_deserialization() {
@@ -1505,5 +1559,88 @@ mod tests {
             }
             _ => panic!("Expected ResponseCompleted event"),
         }
+    }
+
+    #[test]
+    fn test_request_deserializes_custom_tool() {
+        let request = json!({
+            "model": "gpt-5.3-codex",
+            "input": "apply the patch",
+            "tools": [
+                {
+                    "type": "custom",
+                    "name": "run_patch",
+                    "description": "Apply patch text",
+                    "format": {
+                        "kind": "patch",
+                        "version": "v1"
+                    }
+                }
+            ]
+        });
+
+        let bytes = serde_json::to_vec(&request).unwrap();
+        let parsed = ResponsesAPIRequest::try_from(bytes.as_slice()).unwrap();
+        let tools = parsed.tools.expect("tools should be present");
+        assert_eq!(tools.len(), 1);
+
+        match &tools[0] {
+            Tool::Custom {
+                name,
+                description,
+                format,
+            } => {
+                assert_eq!(name.as_deref(), Some("run_patch"));
+                assert_eq!(description.as_deref(), Some("Apply patch text"));
+                assert!(format.is_some());
+            }
+            _ => panic!("expected custom tool"),
+        }
+    }
+
+    #[test]
+    fn test_request_deserializes_web_search_tool_alias() {
+        let request = json!({
+            "model": "gpt-5.3-codex",
+            "input": "find repository info",
+            "tools": [
+                {
+                    "type": "web_search",
+                    "domains": ["github.com"],
+                    "search_context_size": "medium"
+                }
+            ]
+        });
+
+        let bytes = serde_json::to_vec(&request).unwrap();
+        let parsed = ResponsesAPIRequest::try_from(bytes.as_slice()).unwrap();
+        let tools = parsed.tools.expect("tools should be present");
+        assert_eq!(tools.len(), 1);
+
+        match &tools[0] {
+            Tool::WebSearchPreview {
+                domains,
+                search_context_size,
+                ..
+            } => {
+                assert_eq!(domains.as_ref().map(Vec::len), Some(1));
+                assert_eq!(search_context_size.as_deref(), Some("medium"));
+            }
+            _ => panic!("expected web search preview tool"),
+        }
+    }
+
+    #[test]
+    fn test_request_deserializes_text_config_without_format() {
+        let request = json!({
+            "model": "gpt-5.3-codex",
+            "input": "hello",
+            "text": {}
+        });
+
+        let bytes = serde_json::to_vec(&request).unwrap();
+        let parsed = ResponsesAPIRequest::try_from(bytes.as_slice()).unwrap();
+        assert!(parsed.text.is_some());
+        assert!(parsed.text.unwrap().format.is_none());
     }
 }
