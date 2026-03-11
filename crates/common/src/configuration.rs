@@ -14,6 +14,12 @@ pub struct Routing {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Orchestration {
+    pub model_provider: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelAlias {
     pub target: String,
 }
@@ -73,6 +79,7 @@ pub struct Configuration {
     pub tracing: Option<Tracing>,
     pub mode: Option<GatewayMode>,
     pub routing: Option<Routing>,
+    pub orchestration: Option<Orchestration>,
     pub agents: Option<Vec<Agent>>,
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,

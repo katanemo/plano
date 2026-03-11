@@ -403,12 +403,26 @@ def validate_and_render_schema():
             }
         )
 
-    if "plano-orchestrator" not in model_provider_name_set:
+    orchestration_config = config_yaml.get("orchestration", {})
+    orchestration_model_provider = orchestration_config.get("llm_provider", None)
+
+    if (
+        orchestration_model_provider
+        and orchestration_model_provider not in model_provider_name_set
+    ):
+        raise Exception(
+            f"Orchestration llm_provider {orchestration_model_provider} is not defined in model_providers"
+        )
+
+    if (
+        orchestration_model_provider is None
+        and "plano-orchestrator" not in model_provider_name_set
+    ):
         updated_model_providers.append(
             {
                 "name": "plano-orchestrator",
                 "provider_interface": "arch",
-                "model": "Plano-Orchestrator",
+                "model": orchestration_config.get("model", "Plano-Orchestrator"),
                 "internal": True,
             }
         )

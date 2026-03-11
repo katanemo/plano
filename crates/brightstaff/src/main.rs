@@ -11,9 +11,7 @@ use brightstaff::state::StateStorage;
 use brightstaff::utils::tracing::init_tracer;
 use bytes::Bytes;
 use common::configuration::{Agent, Configuration};
-use common::consts::{
-    CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
-};
+use common::consts::{CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH};
 use common::llm_providers::LlmProviders;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
@@ -35,6 +33,8 @@ pub mod router;
 const BIND_ADDRESS: &str = "0.0.0.0:9091";
 const DEFAULT_ROUTING_LLM_PROVIDER: &str = "arch-router";
 const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
+const DEFAULT_ORCHESTRATOR_LLM_PROVIDER: &str = "plano-orchestrator";
+const DEFAULT_ORCHESTRATOR_MODEL_NAME: &str = "Plano-Orchestrator";
 
 // Utility function to extract the context from the incoming request headers
 fn extract_context_from_request(req: &Request<Incoming>) -> Context {
@@ -109,9 +109,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         routing_llm_provider,
     ));
 
+    let orchestrator_model_name: String = plano_config
+        .orchestration
+        .as_ref()
+        .and_then(|o| o.model.clone())
+        .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_MODEL_NAME.to_string());
+
+    let orchestrator_llm_provider: String = plano_config
+        .orchestration
+        .as_ref()
+        .and_then(|o| o.model_provider.clone())
+        .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_LLM_PROVIDER.to_string());
+
     let orchestrator_service: Arc<OrchestratorService> = Arc::new(OrchestratorService::new(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
-        PLANO_ORCHESTRATOR_MODEL_NAME.to_string(),
+        orchestrator_model_name,
+        orchestrator_llm_provider,
     ));
 
     let model_aliases = Arc::new(plano_config.model_aliases.clone());

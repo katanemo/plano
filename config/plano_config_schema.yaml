@@ -416,6 +416,14 @@ properties:
       model:
         type: string
     additionalProperties: false
+  orchestration:
+    type: object
+    properties:
+      llm_provider:
+        type: string
+      model:
+        type: string
+    additionalProperties: false
   state_storage:
     type: object
     properties:
