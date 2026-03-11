@@ -2,10 +2,12 @@ use brightstaff::handlers::agent_chat_completions::agent_chat;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
+use brightstaff::handlers::policy_provider::PolicyProviderClient;
 use brightstaff::handlers::routing_service::routing_decision;
 use brightstaff::router::llm_router::RouterService;
 use brightstaff::router::plano_orchestrator::OrchestratorService;
 use brightstaff::state::memory::MemoryConversationalStorage;
+use brightstaff::state::policy_cache::PolicyCache;
 use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
 use brightstaff::utils::tracing::init_tracer;
@@ -108,6 +110,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         routing_model_name,
         routing_llm_provider,
     ));
+    let policy_provider: Option<Arc<PolicyProviderClient>> = plano_config
+        .routing
+        .as_ref()
+        .and_then(|routing| routing.policy_provider.clone())
+        .map(|policy_provider_config| {
+            Arc::new(PolicyProviderClient::new(
+                policy_provider_config,
+                Arc::new(PolicyCache::new()),
+            ))
+        });
 
     let orchestrator_service: Arc<OrchestratorService> = Arc::new(OrchestratorService::new(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
@@ -172,6 +184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let router_service: Arc<RouterService> = Arc::clone(&router_service);
         let orchestrator_service: Arc<OrchestratorService> = Arc::clone(&orchestrator_service);
+        let policy_provider = policy_provider.clone();
         let model_aliases: Arc<
             Option<std::collections::HashMap<String, common::configuration::ModelAlias>>,
         > = Arc::clone(&model_aliases);
@@ -185,6 +198,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let service = service_fn(move |req| {
             let router_service = Arc::clone(&router_service);
             let orchestrator_service = Arc::clone(&orchestrator_service);
+            let policy_provider = policy_provider.clone();
             let parent_cx = extract_context_from_request(&req);
             let llm_provider_url = llm_provider_url.clone();
             let llm_providers = llm_providers.clone();
@@ -227,6 +241,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         return routing_decision(
                             req,
                             router_service,
+                            policy_provider,
                             stripped_path,
                             span_attributes,
                         )
@@ -243,6 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         llm_chat(
                             req,
                             router_service,
+                            policy_provider,
                             fully_qualified_url,
                             model_aliases,
                             llm_providers,

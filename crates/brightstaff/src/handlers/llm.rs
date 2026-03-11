@@ -19,6 +19,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
 
+use crate::handlers::policy_provider::PolicyProviderClient;
 use crate::handlers::router_chat::router_chat_get_upstream_model;
 use crate::handlers::utils::{
     create_streaming_response, truncate_message, ObservableStreamProcessor,
@@ -34,9 +35,11 @@ use crate::tracing::{
 
 use common::errors::BrightStaffError;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
+    policy_provider: Option<Arc<PolicyProviderClient>>,
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
@@ -73,6 +76,7 @@ pub async fn llm_chat(
     llm_chat_inner(
         request,
         router_service,
+        policy_provider,
         full_qualified_llm_provider_url,
         model_aliases,
         llm_providers,
@@ -90,6 +94,7 @@ pub async fn llm_chat(
 async fn llm_chat_inner(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
+    policy_provider: Option<Arc<PolicyProviderClient>>,
     full_qualified_llm_provider_url: String,
     model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: Arc<RwLock<LlmProviders>>,
@@ -134,7 +139,7 @@ async fn llm_chat_inner(
     );
 
     // Extract routing_policy from request body if present
-    let (chat_request_bytes, inline_routing_policy) =
+    let (chat_request_bytes, inline_routing_policy, policy_id) =
         match crate::handlers::routing_service::extract_routing_policy(&raw_bytes, false) {
             Ok(result) => result,
             Err(err) => {
@@ -355,6 +360,8 @@ async fn llm_chat_inner(
             &request_path,
             &request_id,
             inline_routing_policy,
+            policy_id,
+            policy_provider,
         )
         .await
     }

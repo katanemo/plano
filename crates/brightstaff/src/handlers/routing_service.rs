@@ -10,11 +10,13 @@ use hyper::{Request, Response, StatusCode};
 use std::sync::Arc;
 use tracing::{debug, info, info_span, warn, Instrument};
 
+use crate::handlers::policy_provider::PolicyProviderClient;
 use crate::handlers::router_chat::router_chat_get_upstream_model;
 use crate::router::llm_router::RouterService;
 use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
 const ROUTING_POLICY_SIZE_WARNING_BYTES: usize = 5120;
+type ExtractRoutingPolicyResult = (Bytes, Option<Vec<ModelUsagePreference>>, Option<String>);
 
 /// Extracts `routing_policy` from a JSON body, returning the cleaned body bytes
 /// and parsed preferences. The `routing_policy` field is removed from the JSON
@@ -24,9 +26,19 @@ const ROUTING_POLICY_SIZE_WARNING_BYTES: usize = 5120;
 pub fn extract_routing_policy(
     raw_bytes: &[u8],
     warn_on_size: bool,
-) -> Result<(Bytes, Option<Vec<ModelUsagePreference>>), String> {
+) -> Result<ExtractRoutingPolicyResult, String> {
     let mut json_body: serde_json::Value = serde_json::from_slice(raw_bytes)
         .map_err(|err| format!("Failed to parse JSON: {}", err))?;
+
+    let policy_id = json_body
+        .as_object_mut()
+        .and_then(|obj| obj.remove("policy_id"))
+        .map(|policy_id_value| match policy_id_value {
+            serde_json::Value::String(policy_id) if !policy_id.trim().is_empty() => Ok(policy_id),
+            serde_json::Value::String(_) => Err("policy_id cannot be empty".to_string()),
+            _ => Err("policy_id must be a string".to_string()),
+        })
+        .transpose()?;
 
     let preferences = json_body
         .as_object_mut()
@@ -58,7 +70,7 @@ pub fn extract_routing_policy(
         });
 
     let bytes = Bytes::from(serde_json::to_vec(&json_body).unwrap());
-    Ok((bytes, preferences))
+    Ok((bytes, preferences, policy_id))
 }
 
 #[derive(serde::Serialize)]
@@ -71,6 +83,7 @@ struct RoutingDecisionResponse {
 pub async fn routing_decision(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
+    policy_provider: Option<Arc<PolicyProviderClient>>,
     request_path: String,
     span_attributes: Arc<Option<SpanAttributes>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -95,6 +108,7 @@ pub async fn routing_decision(
     routing_decision_inner(
         request,
         router_service,
+        policy_provider,
         request_id,
         request_path,
         request_headers,
@@ -107,6 +121,7 @@ pub async fn routing_decision(
 async fn routing_decision_inner(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
+    policy_provider: Option<Arc<PolicyProviderClient>>,
     request_id: String,
     request_path: String,
     request_headers: hyper::HeaderMap,
@@ -153,17 +168,18 @@ async fn routing_decision_inner(
     );
 
     // Extract routing_policy from request body before parsing as ProviderRequestType
-    let (chat_request_bytes, inline_preferences) = match extract_routing_policy(&raw_bytes, true) {
-        Ok(result) => result,
-        Err(err) => {
-            warn!(error = %err, "failed to parse request JSON");
-            return Ok(BrightStaffError::InvalidRequest(format!(
-                "Failed to parse request JSON: {}",
-                err
-            ))
-            .into_response());
-        }
-    };
+    let (chat_request_bytes, inline_preferences, policy_id) =
+        match extract_routing_policy(&raw_bytes, true) {
+            Ok(result) => result,
+            Err(err) => {
+                warn!(error = %err, "failed to parse request JSON");
+                return Ok(BrightStaffError::InvalidRequest(format!(
+                    "Failed to parse request JSON: {}",
+                    err
+                ))
+                .into_response());
+            }
+        };
 
     let client_request = match ProviderRequestType::try_from((
         &chat_request_bytes[..],
@@ -188,6 +204,8 @@ async fn routing_decision_inner(
         &request_path,
         &request_id,
         inline_preferences,
+        policy_id,
+        policy_provider,
     )
     .await;
 
@@ -218,7 +236,11 @@ async fn routing_decision_inner(
         }
         Err(err) => {
             warn!(error = %err.message, "routing decision failed");
-            Ok(BrightStaffError::InternalServerError(err.message).into_response())
+            Ok(BrightStaffError::ForwardedError {
+                status_code: err.status_code,
+                message: err.message,
+            }
+            .into_response())
         }
     }
 }
@@ -243,9 +265,10 @@ mod tests {
     #[test]
     fn extract_routing_policy_no_policy() {
         let body = make_chat_body("");
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, policy_id) = extract_routing_policy(&body, false).unwrap();
 
         assert!(prefs.is_none());
+        assert!(policy_id.is_none());
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
         assert_eq!(cleaned_json["model"], "gpt-4o-mini");
         assert!(cleaned_json.get("routing_policy").is_none());
@@ -268,7 +291,7 @@ mod tests {
             }
         ]"#;
         let body = make_chat_body(policy);
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, policy_id) = extract_routing_policy(&body, false).unwrap();
 
         let prefs = prefs.expect("should have parsed preferences");
         assert_eq!(prefs.len(), 2);
@@ -280,6 +303,7 @@ mod tests {
         // routing_policy should be stripped from cleaned body
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
         assert!(cleaned_json.get("routing_policy").is_none());
+        assert!(policy_id.is_none());
         assert_eq!(cleaned_json["model"], "gpt-4o-mini");
     }
 
@@ -288,13 +312,14 @@ mod tests {
         // routing_policy is present but has wrong shape
         let policy = r#""routing_policy": "not-an-array""#;
         let body = make_chat_body(policy);
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, policy_id) = extract_routing_policy(&body, false).unwrap();
 
         // Invalid policy should be ignored (returns None), not error
         assert!(prefs.is_none());
         // routing_policy should still be stripped from cleaned body
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
         assert!(cleaned_json.get("routing_policy").is_none());
+        assert!(policy_id.is_none());
     }
 
     #[test]
@@ -309,23 +334,44 @@ mod tests {
     fn extract_routing_policy_empty_array() {
         let policy = r#""routing_policy": []"#;
         let body = make_chat_body(policy);
-        let (_, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (_, prefs, policy_id) = extract_routing_policy(&body, false).unwrap();
 
         let prefs = prefs.expect("empty array is valid");
         assert_eq!(prefs.len(), 0);
+        assert!(policy_id.is_none());
     }
 
     #[test]
     fn extract_routing_policy_preserves_other_fields() {
         let policy = r#""routing_policy": [{"model": "gpt-4o", "routing_preferences": [{"name": "test", "description": "test"}]}], "temperature": 0.5, "max_tokens": 100"#;
         let body = make_chat_body(policy);
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, policy_id) = extract_routing_policy(&body, false).unwrap();
 
         assert!(prefs.is_some());
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
         assert_eq!(cleaned_json["temperature"], 0.5);
         assert_eq!(cleaned_json["max_tokens"], 100);
         assert!(cleaned_json.get("routing_policy").is_none());
+        assert!(policy_id.is_none());
+    }
+
+    #[test]
+    fn extract_routing_policy_extracts_and_strips_policy_id() {
+        let body = make_chat_body(r#""policy_id": "customer-abc-123""#);
+        let (cleaned, prefs, policy_id) = extract_routing_policy(&body, false).unwrap();
+
+        assert!(prefs.is_none());
+        assert_eq!(policy_id, Some("customer-abc-123".to_string()));
+        let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
+        assert!(cleaned_json.get("policy_id").is_none());
+    }
+
+    #[test]
+    fn extract_routing_policy_rejects_non_string_policy_id() {
+        let body = make_chat_body(r#""policy_id": 123"#);
+        let result = extract_routing_policy(&body, false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("policy_id must be a string"));
     }
 
     #[test]

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 pub mod memory;
+pub mod policy_cache;
 pub mod postgresql;
 pub mod response_state_processor;
 
