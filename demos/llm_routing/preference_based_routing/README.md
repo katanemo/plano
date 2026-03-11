@@ -20,14 +20,14 @@ Then open AnythingLLM at http://localhost:3001/
 
 Or start manually:
 
-1. Start Plano
-```bash
-planoai up config.yaml
-```
-
-2. (Optional) Start AnythingLLM and Jaeger
+1. (Optional) Start AnythingLLM and Jaeger
 ```bash
 docker compose up -d
+```
+
+2. Start Plano
+```bash
+planoai up config.yaml
 ```
 
 3. Test with curl or open AnythingLLM http://localhost:3001/
