@@ -92,6 +92,7 @@ pub trait StateStorage: Send + Sync {
             prev_items = prev_count,
             current_items = current_count,
             total_items = combined_input.len(),
+            combined_json = %serde_json::to_string(&combined_input).unwrap_or_else(|_| "serialization_error".to_string()),
             "merged conversation state"
         );
 

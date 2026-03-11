@@ -321,6 +321,7 @@ async fn run_server(state: Arc<AppState>) -> Result<(), Box<dyn std::error::Erro
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = load_config()?;
     let _tracer_provider = init_tracer(config.tracing.as_ref());
+    info!("loaded plano_config.yaml");
     let state = Arc::new(init_app_state(&config).await?);
     run_server(state).await
 }
