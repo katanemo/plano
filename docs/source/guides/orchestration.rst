@@ -402,10 +402,10 @@ Using vLLM
    .. code-block:: yaml
 
        overrides:
-         orchestrator_model: arch/Plano-Orchestrator
+         orchestrator_model: plano/Plano-Orchestrator
 
        model_providers:
-         - model: arch/Plano-Orchestrator
+         - model: plano/Plano-Orchestrator
            base_url: http://<your-server-ip>:8000
 
 5. **Verify the server is running**

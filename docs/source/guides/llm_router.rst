@@ -254,10 +254,10 @@ Using Ollama (recommended for local development)
    .. code-block:: yaml
 
        overrides:
-         router_model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+         router_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
 
        model_providers:
-         - model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+         - model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
            base_url: http://localhost:11434
 
          - model: openai/gpt-5.2
@@ -323,10 +323,10 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
    .. code-block:: yaml
 
        overrides:
-         router_model: Arch-Router
+         router_model: plano/Arch-Router
 
        model_providers:
-         - model: Arch-Router
+         - model: plano/Arch-Router
            base_url: http://<your-server-ip>:10000
 
          - model: openai/gpt-5.2
