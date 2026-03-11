@@ -5,6 +5,7 @@ pub mod llm;
 pub mod models;
 pub mod request;
 pub mod response;
+pub mod routing_service;
 pub mod utils;
 
 #[cfg(test)]

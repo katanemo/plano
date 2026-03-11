@@ -1046,7 +1046,8 @@ impl HttpContext for StreamContext {
                 );
 
                 match ProviderRequestType::try_from((deserialized_client_request, upstream)) {
-                    Ok(request) => {
+                    Ok(mut request) => {
+                        request.normalize_for_upstream(self.get_provider_id(), upstream);
                         debug!(
                             "request_id={}: upstream request payload: {}",
                             self.request_identifier(),

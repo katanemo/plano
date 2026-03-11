@@ -18,7 +18,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
 
-mod router;
+pub(crate) mod router;
 
 use crate::app_state::AppState;
 use crate::handlers::request::extract_request_id;
@@ -120,6 +120,7 @@ async fn llm_chat_inner(
         temperature,
         tool_names,
         user_message_preview,
+        inline_routing_policy,
     } = parsed;
 
     // Record LLM-specific span attributes
@@ -186,6 +187,7 @@ async fn llm_chat_inner(
             &traceparent,
             &request_path,
             &request_id,
+            inline_routing_policy,
         )
         .await
     }
@@ -245,6 +247,7 @@ struct PreparedRequest {
     temperature: Option<f32>,
     tool_names: Option<Vec<String>>,
     user_message_preview: Option<String>,
+    inline_routing_policy: Option<Vec<common::configuration::ModelUsagePreference>>,
 }
 
 /// Parse the body, resolve the model alias, and validate the model exists.
@@ -256,7 +259,7 @@ async fn parse_and_validate_request(
     model_aliases: &Arc<Option<HashMap<String, ModelAlias>>>,
     llm_providers: &Arc<RwLock<LlmProviders>>,
 ) -> Result<PreparedRequest, Response<BoxBody<Bytes, hyper::Error>>> {
-    let chat_request_bytes = request
+    let raw_bytes = request
         .collect()
         .await
         .map_err(|_| {
@@ -267,9 +270,20 @@ async fn parse_and_validate_request(
         .to_bytes();
 
     debug!(
-        body = %String::from_utf8_lossy(&chat_request_bytes),
+        body = %String::from_utf8_lossy(&raw_bytes),
         "request body received"
     );
+
+    // Extract routing_policy from request body if present
+    let (chat_request_bytes, inline_routing_policy) =
+        crate::handlers::routing_service::extract_routing_policy(&raw_bytes, false).map_err(
+            |err| {
+                warn!(error = %err, "failed to parse request JSON");
+                let mut r = Response::new(full(format!("Failed to parse request: {}", err)));
+                *r.status_mut() = StatusCode::BAD_REQUEST;
+                r
+            },
+        )?;
 
     let api_type = SupportedAPIsFromClient::from_endpoint(request_path).ok_or_else(|| {
         warn!(path = %request_path, "unsupported endpoint");
@@ -296,6 +310,7 @@ async fn parse_and_validate_request(
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, model_aliases);
+    let (provider_id, _) = get_provider_info(llm_providers, &alias_resolved_model).await;
 
     // Validate model exists in configuration
     if llm_providers
@@ -332,6 +347,14 @@ async fn parse_and_validate_request(
     if client_request.remove_metadata_key("archgw_preference_config") {
         debug!("removed archgw_preference_config from metadata");
     }
+    if client_request.remove_metadata_key("plano_preference_config") {
+        debug!("removed plano_preference_config from metadata");
+    }
+    if let Some(ref client_api_kind) = client_api {
+        let upstream_api =
+            provider_id.compatible_api_for_client(client_api_kind, is_streaming_request);
+        client_request.normalize_for_upstream(provider_id, &upstream_api);
+    }
 
     Ok(PreparedRequest {
         client_request,
@@ -344,6 +367,7 @@ async fn parse_and_validate_request(
         temperature,
         tool_names,
         user_message_preview,
+        inline_routing_policy,
     })
 }
 

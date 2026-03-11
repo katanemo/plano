@@ -10,6 +10,7 @@ use crate::tracing::routing;
 
 pub struct RoutingResult {
     pub model_name: String,
+    pub route_name: Option<String>,
 }
 
 pub struct RoutingError {
@@ -37,6 +38,7 @@ pub async fn router_chat_get_upstream_model(
     traceparent: &str,
     request_path: &str,
     request_id: &str,
+    inline_usage_preferences: Option<Vec<ModelUsagePreference>>,
 ) -> Result<RoutingResult, RoutingError> {
     // Clone metadata for routing before converting (which consumes client_request)
     let routing_metadata = client_request.metadata().clone();
@@ -75,16 +77,21 @@ pub async fn router_chat_get_upstream_model(
         "router request"
     );
 
-    // Extract usage preferences from metadata
-    let usage_preferences_str: Option<String> = routing_metadata.as_ref().and_then(|metadata| {
-        metadata
-            .get("plano_preference_config")
-            .map(|value| value.to_string())
-    });
-
-    let usage_preferences: Option<Vec<ModelUsagePreference>> = usage_preferences_str
-        .as_ref()
-        .and_then(|s| serde_yaml::from_str(s).ok());
+    // Use inline preferences if provided, otherwise fall back to metadata extraction
+    let usage_preferences: Option<Vec<ModelUsagePreference>> = if inline_usage_preferences.is_some()
+    {
+        inline_usage_preferences
+    } else {
+        let usage_preferences_str: Option<String> =
+            routing_metadata.as_ref().and_then(|metadata| {
+                metadata
+                    .get("plano_preference_config")
+                    .map(|value| value.to_string())
+            });
+        usage_preferences_str
+            .as_ref()
+            .and_then(|s| serde_yaml::from_str(s).ok())
+    };
 
     // Prepare log message with latest message from chat request
     let latest_message_for_log = chat_request
@@ -133,9 +140,12 @@ pub async fn router_chat_get_upstream_model(
 
     match routing_result {
         Ok(route) => match route {
-            Some((_, model_name)) => {
+            Some((route_name, model_name)) => {
                 current_span.record("route.selected_model", model_name.as_str());
-                Ok(RoutingResult { model_name })
+                Ok(RoutingResult {
+                    model_name,
+                    route_name: Some(route_name),
+                })
             }
             None => {
                 // No route determined, return sentinel value "none"
@@ -145,6 +155,7 @@ pub async fn router_chat_get_upstream_model(
 
                 Ok(RoutingResult {
                     model_name: "none".to_string(),
+                    route_name: None,
                 })
             }
         },

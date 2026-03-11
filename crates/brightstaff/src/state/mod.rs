@@ -112,6 +112,7 @@ pub fn extract_input_items(input: &InputParam) -> Vec<InputItem> {
                 }]),
             })]
         }
+        InputParam::SingleItem(item) => vec![item.clone()],
         InputParam::Items(items) => items.clone(),
     }
 }
@@ -127,4 +128,102 @@ pub async fn retrieve_and_combine_input(
     let prev_state = storage.get(previous_response_id).await?;
     let combined_input = storage.merge(&prev_state, current_input);
     Ok(combined_input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_input_items;
+    use hermesllm::apis::openai_responses::{
+        InputContent, InputItem, InputMessage, InputParam, MessageContent, MessageRole,
+    };
+
+    #[test]
+    fn test_extract_input_items_converts_text_to_user_message_item() {
+        let extracted = extract_input_items(&InputParam::Text("hello world".to_string()));
+        assert_eq!(extracted.len(), 1);
+
+        let InputItem::Message(message) = &extracted[0] else {
+            panic!("expected InputItem::Message");
+        };
+        assert!(matches!(message.role, MessageRole::User));
+
+        let MessageContent::Items(items) = &message.content else {
+            panic!("expected MessageContent::Items");
+        };
+        assert_eq!(items.len(), 1);
+
+        let InputContent::InputText { text } = &items[0] else {
+            panic!("expected InputContent::InputText");
+        };
+        assert_eq!(text, "hello world");
+    }
+
+    #[test]
+    fn test_extract_input_items_preserves_single_item() {
+        let item = InputItem::Message(InputMessage {
+            role: MessageRole::Assistant,
+            content: MessageContent::Items(vec![InputContent::InputText {
+                text: "assistant note".to_string(),
+            }]),
+        });
+
+        let extracted = extract_input_items(&InputParam::SingleItem(item.clone()));
+        assert_eq!(extracted.len(), 1);
+        let InputItem::Message(message) = &extracted[0] else {
+            panic!("expected InputItem::Message");
+        };
+        assert!(matches!(message.role, MessageRole::Assistant));
+        let MessageContent::Items(items) = &message.content else {
+            panic!("expected MessageContent::Items");
+        };
+        let InputContent::InputText { text } = &items[0] else {
+            panic!("expected InputContent::InputText");
+        };
+        assert_eq!(text, "assistant note");
+    }
+
+    #[test]
+    fn test_extract_input_items_preserves_items_list() {
+        let items = vec![
+            InputItem::Message(InputMessage {
+                role: MessageRole::User,
+                content: MessageContent::Items(vec![InputContent::InputText {
+                    text: "first".to_string(),
+                }]),
+            }),
+            InputItem::Message(InputMessage {
+                role: MessageRole::Assistant,
+                content: MessageContent::Items(vec![InputContent::InputText {
+                    text: "second".to_string(),
+                }]),
+            }),
+        ];
+
+        let extracted = extract_input_items(&InputParam::Items(items.clone()));
+        assert_eq!(extracted.len(), items.len());
+
+        let InputItem::Message(first) = &extracted[0] else {
+            panic!("expected first item to be message");
+        };
+        assert!(matches!(first.role, MessageRole::User));
+        let MessageContent::Items(first_items) = &first.content else {
+            panic!("expected MessageContent::Items");
+        };
+        let InputContent::InputText { text: first_text } = &first_items[0] else {
+            panic!("expected InputContent::InputText");
+        };
+        assert_eq!(first_text, "first");
+
+        let InputItem::Message(second) = &extracted[1] else {
+            panic!("expected second item to be message");
+        };
+        assert!(matches!(second.role, MessageRole::Assistant));
+        let MessageContent::Items(second_items) = &second.content else {
+            panic!("expected MessageContent::Items");
+        };
+        let InputContent::InputText { text: second_text } = &second_items[0] else {
+            panic!("expected InputContent::InputText");
+        };
+        assert_eq!(second_text, "second");
+    }
 }

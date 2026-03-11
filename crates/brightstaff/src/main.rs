@@ -3,6 +3,7 @@ use brightstaff::handlers::agents::orchestrator::agent_chat;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
+use brightstaff::handlers::routing_service::routing_decision;
 use brightstaff::router::llm::RouterService;
 use brightstaff::router::orchestrator::OrchestratorService;
 use brightstaff::state::memory::MemoryConversationalStorage;
@@ -218,6 +219,24 @@ async fn route(
             return agent_chat(req, Arc::clone(&state))
                 .with_context(parent_cx)
                 .await;
+        }
+    }
+
+    // --- Routing decision routes (/routing/...) ---
+    if let Some(stripped) = path.strip_prefix("/routing") {
+        let stripped = stripped.to_string();
+        if matches!(
+            stripped.as_str(),
+            CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH
+        ) {
+            return routing_decision(
+                req,
+                Arc::clone(&state.router_service),
+                stripped,
+                Arc::clone(&state.span_attributes),
+            )
+            .with_context(parent_cx)
+            .await;
         }
     }
 
