@@ -10,7 +10,8 @@ use crate::apis::anthropic::{
     ToolResultContent,
 };
 use crate::apis::openai::{
-    ChatCompletionsRequest, Message, MessageContent, Role, Tool, ToolChoice, ToolChoiceType,
+    ChatCompletionsRequest, FunctionCall as OpenAIFunctionCall, Message, MessageContent, Role,
+    Tool, ToolCall as OpenAIToolCall, ToolChoice, ToolChoiceType,
 };
 
 use crate::apis::openai_responses::{
@@ -65,6 +66,14 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
 
                 Ok(messages)
             }
+            InputParam::SingleItem(item) => {
+                // Some clients send a single object instead of an array.
+                let nested = ResponsesInputConverter {
+                    input: InputParam::Items(vec![item]),
+                    instructions: converter.instructions,
+                };
+                Vec::<Message>::try_from(nested)
+            }
             InputParam::Items(items) => {
                 // Convert input items to messages
                 let mut converted_messages = Vec::new();
@@ -82,82 +91,145 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
 
                 // Convert each input item
                 for item in items {
-                    if let InputItem::Message(input_msg) = item {
-                        let role = match input_msg.role {
-                            MessageRole::User => Role::User,
-                            MessageRole::Assistant => Role::Assistant,
-                            MessageRole::System => Role::System,
-                            MessageRole::Developer => Role::System, // Map developer to system
-                        };
+                    match item {
+                        InputItem::Message(input_msg) => {
+                            let role = match input_msg.role {
+                                MessageRole::User => Role::User,
+                                MessageRole::Assistant => Role::Assistant,
+                                MessageRole::System => Role::System,
+                                MessageRole::Developer => Role::System, // Map developer to system
+                                MessageRole::Tool => Role::Tool,
+                            };
 
-                        // Convert content based on MessageContent type
-                        let content = match &input_msg.content {
-                            crate::apis::openai_responses::MessageContent::Text(text) => {
-                                // Simple text content
-                                MessageContent::Text(text.clone())
-                            }
-                            crate::apis::openai_responses::MessageContent::Items(content_items) => {
-                                // Check if it's a single text item (can use simple text format)
-                                if content_items.len() == 1 {
-                                    if let InputContent::InputText { text } = &content_items[0] {
-                                        MessageContent::Text(text.clone())
+                            // Convert content based on MessageContent type
+                            let content = match &input_msg.content {
+                                crate::apis::openai_responses::MessageContent::Text(text) => {
+                                    // Simple text content
+                                    MessageContent::Text(text.clone())
+                                }
+                                crate::apis::openai_responses::MessageContent::Items(
+                                    content_items,
+                                ) => {
+                                    // Check if it's a single text item (can use simple text format)
+                                    if content_items.len() == 1 {
+                                        if let InputContent::InputText { text } = &content_items[0]
+                                        {
+                                            MessageContent::Text(text.clone())
+                                        } else {
+                                            // Single non-text item - use parts format
+                                            MessageContent::Parts(
+                                                content_items
+                                                    .iter()
+                                                    .filter_map(|c| match c {
+                                                        InputContent::InputText { text } => {
+                                                            Some(crate::apis::openai::ContentPart::Text {
+                                                                text: text.clone(),
+                                                            })
+                                                        }
+                                                        InputContent::InputImage { image_url, .. } => {
+                                                            Some(crate::apis::openai::ContentPart::ImageUrl {
+                                                                image_url: crate::apis::openai::ImageUrl {
+                                                                    url: image_url.clone(),
+                                                                    detail: None,
+                                                                },
+                                                            })
+                                                        }
+                                                        InputContent::InputFile { .. } => None, // Skip files for now
+                                                        InputContent::InputAudio { .. } => None, // Skip audio for now
+                                                    })
+                                                    .collect(),
+                                            )
+                                        }
                                     } else {
-                                        // Single non-text item - use parts format
+                                        // Multiple content items - convert to parts
                                         MessageContent::Parts(
-                                            content_items.iter()
+                                            content_items
+                                                .iter()
                                                 .filter_map(|c| match c {
                                                     InputContent::InputText { text } => {
-                                                        Some(crate::apis::openai::ContentPart::Text { text: text.clone() })
+                                                        Some(crate::apis::openai::ContentPart::Text {
+                                                            text: text.clone(),
+                                                        })
                                                     }
                                                     InputContent::InputImage { image_url, .. } => {
                                                         Some(crate::apis::openai::ContentPart::ImageUrl {
                                                             image_url: crate::apis::openai::ImageUrl {
                                                                 url: image_url.clone(),
                                                                 detail: None,
-                                                            }
+                                                            },
                                                         })
                                                     }
                                                     InputContent::InputFile { .. } => None, // Skip files for now
                                                     InputContent::InputAudio { .. } => None, // Skip audio for now
                                                 })
-                                                .collect()
+                                                .collect(),
                                         )
                                     }
-                                } else {
-                                    // Multiple content items - convert to parts
-                                    MessageContent::Parts(
-                                        content_items
-                                            .iter()
-                                            .filter_map(|c| match c {
-                                                InputContent::InputText { text } => {
-                                                    Some(crate::apis::openai::ContentPart::Text {
-                                                        text: text.clone(),
-                                                    })
-                                                }
-                                                InputContent::InputImage { image_url, .. } => Some(
-                                                    crate::apis::openai::ContentPart::ImageUrl {
-                                                        image_url: crate::apis::openai::ImageUrl {
-                                                            url: image_url.clone(),
-                                                            detail: None,
-                                                        },
-                                                    },
-                                                ),
-                                                InputContent::InputFile { .. } => None, // Skip files for now
-                                                InputContent::InputAudio { .. } => None, // Skip audio for now
-                                            })
-                                            .collect(),
-                                    )
+                                }
+                            };
+
+                            converted_messages.push(Message {
+                                role,
+                                content: Some(content),
+                                name: None,
+                                tool_call_id: None,
+                                tool_calls: None,
+                            });
+                        }
+                        InputItem::FunctionCallOutput {
+                            item_type: _,
+                            call_id,
+                            output,
+                        } => {
+                            // Preserve tool result so upstream models do not re-issue the same tool call.
+                            let output_text = match output {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => serde_json::to_string(&other).unwrap_or_default(),
+                            };
+                            converted_messages.push(Message {
+                                role: Role::Tool,
+                                content: Some(MessageContent::Text(output_text)),
+                                name: None,
+                                tool_call_id: Some(call_id),
+                                tool_calls: None,
+                            });
+                        }
+                        InputItem::FunctionCall {
+                            item_type: _,
+                            name,
+                            arguments,
+                            call_id,
+                        } => {
+                            let tool_call = OpenAIToolCall {
+                                id: call_id,
+                                call_type: "function".to_string(),
+                                function: OpenAIFunctionCall { name, arguments },
+                            };
+
+                            // Prefer attaching tool_calls to the preceding assistant message when present.
+                            if let Some(last) = converted_messages.last_mut() {
+                                if matches!(last.role, Role::Assistant) {
+                                    if let Some(existing) = &mut last.tool_calls {
+                                        existing.push(tool_call);
+                                    } else {
+                                        last.tool_calls = Some(vec![tool_call]);
+                                    }
+                                    continue;
                                 }
                             }
-                        };
 
-                        converted_messages.push(Message {
-                            role,
-                            content: Some(content),
-                            name: None,
-                            tool_call_id: None,
-                            tool_calls: None,
-                        });
+                            converted_messages.push(Message {
+                                role: Role::Assistant,
+                                content: None,
+                                name: None,
+                                tool_call_id: None,
+                                tool_calls: Some(vec![tool_call]),
+                            });
+                        }
+                        InputItem::ItemReference { .. } => {
+                            // Item references/unknown entries are metadata-like and can be skipped
+                            // for chat-completions conversion.
+                        }
                     }
                 }
 
@@ -397,6 +469,170 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
     type Error = TransformError;
 
     fn try_from(req: ResponsesAPIRequest) -> Result<Self, Self::Error> {
+        fn normalize_function_parameters(
+            parameters: Option<serde_json::Value>,
+            fallback_extra: Option<serde_json::Value>,
+        ) -> serde_json::Value {
+            // ChatCompletions function tools require JSON Schema with top-level type=object.
+            let mut base = serde_json::json!({
+                "type": "object",
+                "properties": {},
+            });
+
+            if let Some(serde_json::Value::Object(mut obj)) = parameters {
+                // Enforce a valid object schema shape regardless of upstream tool format.
+                obj.insert(
+                    "type".to_string(),
+                    serde_json::Value::String("object".to_string()),
+                );
+                if !obj.contains_key("properties") {
+                    obj.insert(
+                        "properties".to_string(),
+                        serde_json::Value::Object(serde_json::Map::new()),
+                    );
+                }
+                base = serde_json::Value::Object(obj);
+            }
+
+            if let Some(extra) = fallback_extra {
+                if let serde_json::Value::Object(ref mut map) = base {
+                    map.insert("x-custom-format".to_string(), extra);
+                }
+            }
+
+            base
+        }
+
+        let mut converted_chat_tools: Vec<Tool> = Vec::new();
+        let mut web_search_options: Option<serde_json::Value> = None;
+
+        if let Some(tools) = req.tools.clone() {
+            for (idx, tool) in tools.into_iter().enumerate() {
+                match tool {
+                    ResponsesTool::Function {
+                        name,
+                        description,
+                        parameters,
+                        strict,
+                    } => converted_chat_tools.push(Tool {
+                        tool_type: "function".to_string(),
+                        function: crate::apis::openai::Function {
+                            name,
+                            description,
+                            parameters: normalize_function_parameters(parameters, None),
+                            strict,
+                        },
+                    }),
+                    ResponsesTool::WebSearchPreview {
+                        search_context_size,
+                        user_location,
+                        ..
+                    } => {
+                        if web_search_options.is_none() {
+                            let user_location_value = user_location.map(|loc| {
+                                let mut approx = serde_json::Map::new();
+                                if let Some(city) = loc.city {
+                                    approx.insert(
+                                        "city".to_string(),
+                                        serde_json::Value::String(city),
+                                    );
+                                }
+                                if let Some(country) = loc.country {
+                                    approx.insert(
+                                        "country".to_string(),
+                                        serde_json::Value::String(country),
+                                    );
+                                }
+                                if let Some(region) = loc.region {
+                                    approx.insert(
+                                        "region".to_string(),
+                                        serde_json::Value::String(region),
+                                    );
+                                }
+                                if let Some(timezone) = loc.timezone {
+                                    approx.insert(
+                                        "timezone".to_string(),
+                                        serde_json::Value::String(timezone),
+                                    );
+                                }
+
+                                serde_json::json!({
+                                    "type": loc.location_type,
+                                    "approximate": serde_json::Value::Object(approx),
+                                })
+                            });
+
+                            let mut web_search = serde_json::Map::new();
+                            if let Some(size) = search_context_size {
+                                web_search.insert(
+                                    "search_context_size".to_string(),
+                                    serde_json::Value::String(size),
+                                );
+                            }
+                            if let Some(location) = user_location_value {
+                                web_search.insert("user_location".to_string(), location);
+                            }
+                            web_search_options = Some(serde_json::Value::Object(web_search));
+                        }
+                    }
+                    ResponsesTool::Custom {
+                        name,
+                        description,
+                        format,
+                    } => {
+                        // Custom tools do not have a strict ChatCompletions equivalent for all
+                        // providers. Map them to a permissive function tool for compatibility.
+                        let tool_name = name.unwrap_or_else(|| format!("custom_tool_{}", idx + 1));
+                        let parameters = normalize_function_parameters(
+                            Some(serde_json::json!({
+                                "type": "object",
+                                "properties": {
+                                    "input": { "type": "string" }
+                                },
+                                "required": ["input"],
+                                "additionalProperties": true,
+                            })),
+                            format,
+                        );
+
+                        converted_chat_tools.push(Tool {
+                            tool_type: "function".to_string(),
+                            function: crate::apis::openai::Function {
+                                name: tool_name,
+                                description,
+                                parameters,
+                                strict: Some(false),
+                            },
+                        });
+                    }
+                    ResponsesTool::FileSearch { .. } => {
+                        return Err(TransformError::UnsupportedConversion(
+                            "FileSearch tool is not supported in ChatCompletions API. Only function/custom/web search tools are supported in this conversion."
+                                .to_string(),
+                        ));
+                    }
+                    ResponsesTool::CodeInterpreter => {
+                        return Err(TransformError::UnsupportedConversion(
+                            "CodeInterpreter tool is not supported in ChatCompletions API conversion."
+                                .to_string(),
+                        ));
+                    }
+                    ResponsesTool::Computer { .. } => {
+                        return Err(TransformError::UnsupportedConversion(
+                            "Computer tool is not supported in ChatCompletions API conversion."
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        let tools = if converted_chat_tools.is_empty() {
+            None
+        } else {
+            Some(converted_chat_tools)
+        };
+
         // Convert input to messages using the shared converter
         let converter = ResponsesInputConverter {
             input: req.input,
@@ -418,57 +654,24 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
             service_tier: req.service_tier,
             top_logprobs: req.top_logprobs.map(|t| t as u32),
             modalities: req.modalities.map(|mods| {
-                mods.into_iter().map(|m| {
-                    match m {
+                mods.into_iter()
+                    .map(|m| match m {
                         Modality::Text => "text".to_string(),
                         Modality::Audio => "audio".to_string(),
-                    }
-                }).collect()
+                    })
+                    .collect()
             }),
-            stream_options: req.stream_options.map(|opts| {
-                crate::apis::openai::StreamOptions {
+            stream_options: req
+                .stream_options
+                .map(|opts| crate::apis::openai::StreamOptions {
                     include_usage: opts.include_usage,
-                }
+                }),
+            reasoning_effort: req.reasoning_effort.map(|effort| match effort {
+                ReasoningEffort::Low => "low".to_string(),
+                ReasoningEffort::Medium => "medium".to_string(),
+                ReasoningEffort::High => "high".to_string(),
             }),
-            reasoning_effort: req.reasoning_effort.map(|effort| {
-                match effort {
-                    ReasoningEffort::Low => "low".to_string(),
-                    ReasoningEffort::Medium => "medium".to_string(),
-                    ReasoningEffort::High => "high".to_string(),
-                }
-            }),
-            tools: req.tools.map(|tools| {
-                tools.into_iter().map(|tool| {
-
-                    // Only convert Function tools - other types are not supported in ChatCompletions
-                    match tool {
-                        ResponsesTool::Function { name, description, parameters, strict } => Ok(Tool {
-                            tool_type: "function".to_string(),
-                            function: crate::apis::openai::Function {
-                                name,
-                                description,
-                                parameters: parameters.unwrap_or_else(|| serde_json::json!({
-                                    "type": "object",
-                                    "properties": {}
-                                })),
-                                strict,
-                            }
-                        }),
-                        ResponsesTool::FileSearch { .. } => Err(TransformError::UnsupportedConversion(
-                            "FileSearch tool is not supported in ChatCompletions API. Only function tools are supported.".to_string()
-                        )),
-                        ResponsesTool::WebSearchPreview { .. } => Err(TransformError::UnsupportedConversion(
-                            "WebSearchPreview tool is not supported in ChatCompletions API. Only function tools are supported.".to_string()
-                        )),
-                        ResponsesTool::CodeInterpreter => Err(TransformError::UnsupportedConversion(
-                            "CodeInterpreter tool is not supported in ChatCompletions API. Only function tools are supported.".to_string()
-                        )),
-                        ResponsesTool::Computer { .. } => Err(TransformError::UnsupportedConversion(
-                            "Computer tool is not supported in ChatCompletions API. Only function tools are supported.".to_string()
-                        )),
-                    }
-                }).collect::<Result<Vec<_>, _>>()
-            }).transpose()?,
+            tools,
             tool_choice: req.tool_choice.map(|choice| {
                 match choice {
                     ResponsesToolChoice::String(s) => {
@@ -481,11 +684,14 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
                     }
                     ResponsesToolChoice::Named { function, .. } => ToolChoice::Function {
                         choice_type: "function".to_string(),
-                        function: crate::apis::openai::FunctionChoice { name: function.name }
-                    }
+                        function: crate::apis::openai::FunctionChoice {
+                            name: function.name,
+                        },
+                    },
                 }
             }),
             parallel_tool_calls: req.parallel_tool_calls,
+            web_search_options,
             ..Default::default()
         })
     }
@@ -1026,5 +1232,236 @@ mod tests {
         } else {
             panic!("Expected text content block");
         }
+    }
+
+    #[test]
+    fn test_responses_custom_tool_maps_to_function_tool_for_chat_completions() {
+        use crate::apis::openai_responses::{
+            InputParam, ResponsesAPIRequest, Tool as ResponsesTool,
+        };
+
+        let req = ResponsesAPIRequest {
+            model: "gpt-5.3-codex".to_string(),
+            input: InputParam::Text("use custom tool".to_string()),
+            tools: Some(vec![ResponsesTool::Custom {
+                name: Some("run_patch".to_string()),
+                description: Some("Apply structured patch".to_string()),
+                format: Some(serde_json::json!({
+                    "kind": "patch",
+                    "version": "v1"
+                })),
+            }]),
+            include: None,
+            parallel_tool_calls: None,
+            store: None,
+            instructions: None,
+            stream: None,
+            stream_options: None,
+            conversation: None,
+            tool_choice: None,
+            max_output_tokens: None,
+            temperature: None,
+            top_p: None,
+            metadata: None,
+            previous_response_id: None,
+            modalities: None,
+            audio: None,
+            text: None,
+            reasoning_effort: None,
+            truncation: None,
+            user: None,
+            max_tool_calls: None,
+            service_tier: None,
+            background: None,
+            top_logprobs: None,
+        };
+
+        let converted = ChatCompletionsRequest::try_from(req).expect("conversion should succeed");
+        let tools = converted.tools.expect("tools should be present");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].tool_type, "function");
+        assert_eq!(tools[0].function.name, "run_patch");
+        assert_eq!(
+            tools[0].function.description.as_deref(),
+            Some("Apply structured patch")
+        );
+    }
+
+    #[test]
+    fn test_responses_web_search_maps_to_chat_web_search_options() {
+        use crate::apis::openai_responses::{
+            InputParam, ResponsesAPIRequest, Tool as ResponsesTool, UserLocation,
+        };
+
+        let req = ResponsesAPIRequest {
+            model: "gpt-5.3-codex".to_string(),
+            input: InputParam::Text("find project docs".to_string()),
+            tools: Some(vec![ResponsesTool::WebSearchPreview {
+                domains: Some(vec!["docs.planoai.dev".to_string()]),
+                search_context_size: Some("medium".to_string()),
+                user_location: Some(UserLocation {
+                    location_type: "approximate".to_string(),
+                    city: Some("San Francisco".to_string()),
+                    country: Some("US".to_string()),
+                    region: Some("CA".to_string()),
+                    timezone: Some("America/Los_Angeles".to_string()),
+                }),
+            }]),
+            include: None,
+            parallel_tool_calls: None,
+            store: None,
+            instructions: None,
+            stream: None,
+            stream_options: None,
+            conversation: None,
+            tool_choice: None,
+            max_output_tokens: None,
+            temperature: None,
+            top_p: None,
+            metadata: None,
+            previous_response_id: None,
+            modalities: None,
+            audio: None,
+            text: None,
+            reasoning_effort: None,
+            truncation: None,
+            user: None,
+            max_tool_calls: None,
+            service_tier: None,
+            background: None,
+            top_logprobs: None,
+        };
+
+        let converted = ChatCompletionsRequest::try_from(req).expect("conversion should succeed");
+        assert!(converted.web_search_options.is_some());
+    }
+
+    #[test]
+    fn test_responses_function_call_output_maps_to_tool_message() {
+        use crate::apis::openai_responses::{
+            InputItem, InputParam, ResponsesAPIRequest, Tool as ResponsesTool,
+        };
+
+        let req = ResponsesAPIRequest {
+            model: "gpt-5.3-codex".to_string(),
+            input: InputParam::Items(vec![InputItem::FunctionCallOutput {
+                item_type: "function_call_output".to_string(),
+                call_id: "call_123".to_string(),
+                output: serde_json::json!({"status":"ok","stdout":"hello"}),
+            }]),
+            tools: Some(vec![ResponsesTool::Function {
+                name: "exec_command".to_string(),
+                description: Some("Execute a shell command".to_string()),
+                parameters: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "cmd": { "type": "string" }
+                    },
+                    "required": ["cmd"]
+                })),
+                strict: Some(false),
+            }]),
+            include: None,
+            parallel_tool_calls: None,
+            store: None,
+            instructions: None,
+            stream: None,
+            stream_options: None,
+            conversation: None,
+            tool_choice: None,
+            max_output_tokens: None,
+            temperature: None,
+            top_p: None,
+            metadata: None,
+            previous_response_id: None,
+            modalities: None,
+            audio: None,
+            text: None,
+            reasoning_effort: None,
+            truncation: None,
+            user: None,
+            max_tool_calls: None,
+            service_tier: None,
+            background: None,
+            top_logprobs: None,
+        };
+
+        let converted = ChatCompletionsRequest::try_from(req).expect("conversion should succeed");
+        assert_eq!(converted.messages.len(), 1);
+        assert!(matches!(converted.messages[0].role, Role::Tool));
+        assert_eq!(
+            converted.messages[0].tool_call_id.as_deref(),
+            Some("call_123")
+        );
+    }
+
+    #[test]
+    fn test_responses_function_call_and_output_preserve_call_id_link() {
+        use crate::apis::openai_responses::{
+            InputItem, InputMessage, MessageContent as ResponsesMessageContent, MessageRole,
+            ResponsesAPIRequest,
+        };
+
+        let req = ResponsesAPIRequest {
+            model: "gpt-5.3-codex".to_string(),
+            input: InputParam::Items(vec![
+                InputItem::Message(InputMessage {
+                    role: MessageRole::Assistant,
+                    content: ResponsesMessageContent::Items(vec![]),
+                }),
+                InputItem::FunctionCall {
+                    item_type: "function_call".to_string(),
+                    name: "exec_command".to_string(),
+                    arguments: "{\"cmd\":\"pwd\"}".to_string(),
+                    call_id: "toolu_abc123".to_string(),
+                },
+                InputItem::FunctionCallOutput {
+                    item_type: "function_call_output".to_string(),
+                    call_id: "toolu_abc123".to_string(),
+                    output: serde_json::Value::String("ok".to_string()),
+                },
+            ]),
+            tools: None,
+            include: None,
+            parallel_tool_calls: None,
+            store: None,
+            instructions: None,
+            stream: None,
+            stream_options: None,
+            conversation: None,
+            tool_choice: None,
+            max_output_tokens: None,
+            temperature: None,
+            top_p: None,
+            metadata: None,
+            previous_response_id: None,
+            modalities: None,
+            audio: None,
+            text: None,
+            reasoning_effort: None,
+            truncation: None,
+            user: None,
+            max_tool_calls: None,
+            service_tier: None,
+            background: None,
+            top_logprobs: None,
+        };
+
+        let converted = ChatCompletionsRequest::try_from(req).expect("conversion should succeed");
+        assert_eq!(converted.messages.len(), 2);
+
+        assert!(matches!(converted.messages[0].role, Role::Assistant));
+        let tool_calls = converted.messages[0]
+            .tool_calls
+            .as_ref()
+            .expect("assistant tool_calls should be present");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "toolu_abc123");
+
+        assert!(matches!(converted.messages[1].role, Role::Tool));
+        assert_eq!(
+            converted.messages[1].tool_call_id.as_deref(),
+            Some("toolu_abc123")
+        );
     }
 }

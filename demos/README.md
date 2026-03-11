@@ -16,6 +16,7 @@ This directory contains demos showcasing Plano's capabilities as an AI-native pr
 | [Preference-Based Routing](llm_routing/preference_based_routing/) | Routes prompts to LLMs based on user-defined preferences and task type (e.g. code generation vs. understanding) |
 | [Model Alias Routing](llm_routing/model_alias_routing/) | Maps semantic aliases (`arch.summarize.v1`) to provider-specific models for centralized governance |
 | [Claude Code Router](llm_routing/claude_code_router/) | Extends Claude Code with multi-provider access and preference-aligned routing for coding tasks |
+| [Codex Router](llm_routing/codex_router/) | Extends Codex CLI with multi-provider access and preference-aligned routing for coding tasks |
 
 ## Agent Orchestration
 

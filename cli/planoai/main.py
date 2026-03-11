@@ -1,3 +1,4 @@
+import json
 import os
 import multiprocessing
 import subprocess
@@ -31,6 +32,7 @@ from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_backgroun
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
+    NATIVE_PID_FILE,
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
@@ -38,6 +40,30 @@ from planoai.rich_click_config import configure_rich_click
 from planoai.versioning import check_version_status, get_latest_version, get_version
 
 log = getLogger(__name__)
+
+
+def _is_native_plano_running() -> bool:
+    if not os.path.exists(NATIVE_PID_FILE):
+        return False
+    try:
+        with open(NATIVE_PID_FILE, "r") as f:
+            pids = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    envoy_pid = pids.get("envoy_pid")
+    brightstaff_pid = pids.get("brightstaff_pid")
+    if not isinstance(envoy_pid, int) or not isinstance(brightstaff_pid, int):
+        return False
+
+    for pid in (envoy_pid, brightstaff_pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            continue
+    return True
 
 
 def _is_port_in_use(port: int) -> bool:
@@ -523,7 +549,7 @@ def logs(debug, follow, docker):
 
 
 @click.command()
-@click.argument("type", type=click.Choice(["claude"]), required=True)
+@click.argument("type", type=click.Choice(["claude", "codex"]), required=True)
 @click.argument("file", required=False)  # Optional file argument
 @click.option(
     "--path", default=".", help="Path to the directory containing plano_config.yaml"
@@ -536,14 +562,19 @@ def logs(debug, follow, docker):
 def cli_agent(type, file, path, settings):
     """Start a CLI agent connected to Plano.
 
-    CLI_AGENT: The type of CLI agent to start (currently only 'claude' is supported)
+    CLI_AGENT: The type of CLI agent to start ('claude' or 'codex')
     """
 
-    # Check if plano docker container is running
-    plano_status = docker_container_status(PLANO_DOCKER_NAME)
-    if plano_status != "running":
-        log.error(f"plano docker container is not running (status: {plano_status})")
-        log.error("Please start plano using the 'planoai up' command.")
+    native_running = _is_native_plano_running()
+    docker_running = False
+    if not native_running:
+        docker_running = docker_container_status(PLANO_DOCKER_NAME) == "running"
+
+    if not (native_running or docker_running):
+        log.error("Plano is not running.")
+        log.error(
+            "Start Plano first using 'planoai up <config.yaml>' (native or --docker mode)."
+        )
         sys.exit(1)
 
     # Determine plano_config.yaml path
@@ -553,7 +584,7 @@ def cli_agent(type, file, path, settings):
         sys.exit(1)
 
     try:
-        start_cli_agent(plano_config_file, settings)
+        start_cli_agent(plano_config_file, type, settings)
     except SystemExit:
         # Re-raise SystemExit to preserve exit codes
         raise

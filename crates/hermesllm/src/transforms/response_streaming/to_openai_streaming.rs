@@ -512,19 +512,12 @@ impl TryFrom<ChatCompletionsStreamResponse> for ResponsesAPIStreamEvent {
                 }
             }
 
-            // Handle finish_reason - this is a completion signal
-            // Return an empty delta that the buffer can use to detect completion
+            // Handle finish_reason - this is a completion signal.
+            // Emit an explicit Done marker so the buffering layer can finalize
+            // even if an upstream [DONE] marker is missing/delayed.
             if choice.finish_reason.is_some() {
-                // Return a minimal text delta to signal completion
-                // The buffer will handle the finish_reason and generate response.completed
-                return Ok(ResponsesAPIStreamEvent::ResponseOutputTextDelta {
-                    item_id: "".to_string(), // Buffer will fill this
-                    output_index: choice.index as i32,
-                    content_index: 0,
-                    delta: "".to_string(), // Empty delta signals completion
-                    logprobs: vec![],
-                    obfuscation: None,
-                    sequence_number: 0, // Buffer will fill this
+                return Ok(ResponsesAPIStreamEvent::Done {
+                    sequence_number: 0, // Buffer will assign final sequence
                 });
             }
 
