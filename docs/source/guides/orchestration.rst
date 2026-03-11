@@ -401,13 +401,11 @@ Using vLLM
 
    .. code-block:: yaml
 
-       orchestration:
-         model: Plano-Orchestrator
-         llm_provider: plano-orchestrator
+       overrides:
+         orchestrator_model: arch/Plano-Orchestrator
 
        model_providers:
-         - name: plano-orchestrator
-           model: Plano-Orchestrator
+         - model: arch/Plano-Orchestrator
            base_url: http://<your-server-ip>:8000
 
 5. **Verify the server is running**

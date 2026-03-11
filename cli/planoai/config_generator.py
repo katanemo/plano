@@ -8,13 +8,13 @@ from urllib.parse import urlparse
 from copy import deepcopy
 from planoai.consts import DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
 
-
 SUPPORTED_PROVIDERS_WITH_BASE_URL = [
     "azure_openai",
     "ollama",
     "qwen",
     "amazon_bedrock",
     "arch",
+    "plano",
 ]
 
 SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
@@ -368,29 +368,25 @@ def validate_and_render_schema():
                     llms_with_endpoint.append(model_provider)
                     llms_with_endpoint_cluster_names.add(cluster_name)
 
-    if len(model_usage_name_keys) > 0:
-        routing_model_provider = config_yaml.get("routing", {}).get(
-            "model_provider", None
+    overrides_config = config_yaml.get("overrides", {})
+    # Build lookup of model names (already prefix-stripped by config processing)
+    model_name_set = {mp.get("model") for mp in updated_model_providers}
+
+    # Auto-add arch-router provider if routing preferences exist and no provider matches the router model
+    router_model = overrides_config.get("router_model", "Arch-Router")
+    # Strip provider prefix for comparison since config processing strips prefixes from model names
+    router_model_id = (
+        router_model.split("/", 1)[1] if "/" in router_model else router_model
+    )
+    if len(model_usage_name_keys) > 0 and router_model_id not in model_name_set:
+        updated_model_providers.append(
+            {
+                "name": "arch-router",
+                "provider_interface": "arch",
+                "model": router_model_id,
+                "internal": True,
+            }
         )
-        if (
-            routing_model_provider
-            and routing_model_provider not in model_provider_name_set
-        ):
-            raise Exception(
-                f"Routing model_provider {routing_model_provider} is not defined in model_providers"
-            )
-        if (
-            routing_model_provider is None
-            and "arch-router" not in model_provider_name_set
-        ):
-            updated_model_providers.append(
-                {
-                    "name": "arch-router",
-                    "provider_interface": "arch",
-                    "model": config_yaml.get("routing", {}).get("model", "Arch-Router"),
-                    "internal": True,
-                }
-            )
 
     # Always add arch-function model provider if not already defined
     if "arch-function" not in model_provider_name_set:
@@ -403,26 +399,21 @@ def validate_and_render_schema():
             }
         )
 
-    orchestration_config = config_yaml.get("orchestration", {})
-    orchestration_model_provider = orchestration_config.get("llm_provider", None)
-
-    if (
-        orchestration_model_provider
-        and orchestration_model_provider not in model_provider_name_set
-    ):
-        raise Exception(
-            f"Orchestration llm_provider {orchestration_model_provider} is not defined in model_providers"
-        )
-
-    if (
-        orchestration_model_provider is None
-        and "plano-orchestrator" not in model_provider_name_set
-    ):
+    # Auto-add plano-orchestrator provider if no provider matches the orchestrator model
+    orchestrator_model = overrides_config.get(
+        "orchestrator_model", "Plano-Orchestrator"
+    )
+    orchestrator_model_id = (
+        orchestrator_model.split("/", 1)[1]
+        if "/" in orchestrator_model
+        else orchestrator_model
+    )
+    if orchestrator_model_id not in model_name_set:
         updated_model_providers.append(
             {
                 "name": "plano-orchestrator",
                 "provider_interface": "arch",
-                "model": orchestration_config.get("model", "Plano-Orchestrator"),
+                "model": orchestrator_model_id,
                 "internal": True,
             }
         )

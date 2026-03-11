@@ -1,8 +1,7 @@
 version: v0.1.0
 
-routing:
-  model: Arch-Router
-  llm_provider: arch-router
+overrides:
+  router_model: Arch-Router
 
 listeners:
   egress_traffic:

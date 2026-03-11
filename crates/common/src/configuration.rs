@@ -8,18 +8,6 @@ use crate::api::open_ai::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Routing {
-    pub model_provider: Option<String>,
-    pub model: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Orchestration {
-    pub model_provider: Option<String>,
-    pub model: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelAlias {
     pub target: String,
 }
@@ -78,8 +66,6 @@ pub struct Configuration {
     pub ratelimits: Option<Vec<Ratelimit>>,
     pub tracing: Option<Tracing>,
     pub mode: Option<GatewayMode>,
-    pub routing: Option<Routing>,
-    pub orchestration: Option<Orchestration>,
     pub agents: Option<Vec<Agent>>,
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,
@@ -91,6 +77,8 @@ pub struct Overrides {
     pub prompt_target_intent_matching_threshold: Option<f64>,
     pub optimize_context_window: Option<bool>,
     pub use_agent_orchestrator: Option<bool>,
+    pub router_model: Option<String>,
+    pub orchestrator_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -244,6 +232,8 @@ pub enum LlmProviderType {
     Qwen,
     #[serde(rename = "amazon_bedrock")]
     AmazonBedrock,
+    #[serde(rename = "plano")]
+    Plano,
 }
 
 impl Display for LlmProviderType {
@@ -264,6 +254,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Zhipu => write!(f, "zhipu"),
             LlmProviderType::Qwen => write!(f, "qwen"),
             LlmProviderType::AmazonBedrock => write!(f, "amazon_bedrock"),
+            LlmProviderType::Plano => write!(f, "plano"),
         }
     }
 }
@@ -272,7 +263,15 @@ impl LlmProviderType {
     /// Get the ProviderId for this LlmProviderType
     /// Used with the new function-based hermesllm API
     pub fn to_provider_id(&self) -> hermesllm::ProviderId {
-        hermesllm::ProviderId::try_from(self.to_string().as_str())
+        // Plano provider uses the same interface as Arch
+        let provider_str = match self {
+            LlmProviderType::Plano => "arch",
+            other => {
+                return hermesllm::ProviderId::try_from(other.to_string().as_str())
+                    .expect("LlmProviderType should always map to a valid ProviderId")
+            }
+        };
+        hermesllm::ProviderId::try_from(provider_str)
             .expect("LlmProviderType should always map to a valid ProviderId")
     }
 }
