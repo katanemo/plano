@@ -343,10 +343,12 @@ By default, Plano uses a hosted Plano-Orchestrator endpoint. To self-host the or
 .. note::
    vLLM requires a Linux server with an NVIDIA GPU (CUDA). For local development on macOS, a GGUF version for Ollama is coming soon.
 
-Two model variants are available on HuggingFace:
+The following model variants are available on HuggingFace:
 
 * `Plano-Orchestrator-4B <https://huggingface.co/katanemo/Plano-Orchestrator-4B>`_ — lighter model, suitable for development and testing
-* `Plano-Orchestrator-30B-A3B <https://huggingface.co/katanemo/Plano-Orchestrator-30B-A3B>`_ — full-size model for production (FP8 quantized variant also available)
+* `Plano-Orchestrator-4B-FP8 <https://huggingface.co/katanemo/Plano-Orchestrator-4B-FP8>`_ — FP8 quantized 4B model, lower memory usage
+* `Plano-Orchestrator-30B-A3B <https://huggingface.co/katanemo/Plano-Orchestrator-30B-A3B>`_ — full-size model for production
+* `Plano-Orchestrator-30B-A3B-FP8 <https://huggingface.co/katanemo/Plano-Orchestrator-30B-A3B-FP8>`_ — FP8 quantized 30B model, recommended for production deployments
 
 Using vLLM
 ~~~~~~~~~~
