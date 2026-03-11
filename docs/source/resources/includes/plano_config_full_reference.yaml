@@ -47,6 +47,18 @@ model_aliases:
   smart-llm:
     target: gpt-4o
 
+# Optional routing policy provider for multitenant preference-based routing.
+# If policy_id is included in the request and inline routing_policy is absent,
+# Plano fetches routing preferences from this endpoint and caches by policy_id.
+routing:
+  model_provider: arch-router
+  model: Arch-Router
+  policy_provider:
+    url: https://my-service.internal/v1/routing-policy
+    headers:
+      Authorization: Bearer $POLICY_API_KEY
+    ttl_seconds: 300
+
 # HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access
 listeners:
   # Agent listener for routing requests to multiple agents

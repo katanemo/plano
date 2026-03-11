@@ -193,6 +193,65 @@ Clients can let the router decide or still specify aliases:
         # No model specified - router will analyze and choose claude-sonnet-4-5
     )
 
+External Policy Provider (policy_id)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For multitenant deployments, Plano can fetch routing preferences from an external HTTP endpoint using a ``policy_id`` provided by the caller.
+
+Resolution order is:
+
+1. Inline ``routing_policy`` in request payload
+2. ``policy_id`` lookup via ``routing.policy_provider``
+3. Metadata ``plano_preference_config``
+4. Config-file ``routing_preferences``
+
+.. code-block:: yaml
+    :caption: External Policy Provider Configuration
+
+    routing:
+      model_provider: arch-router
+      model: Arch-Router
+      policy_provider:
+        url: https://my-service.internal/v1/routing-policy
+        headers:
+          Authorization: Bearer $POLICY_API_KEY
+        ttl_seconds: 300
+
+When ``policy_id`` is provided and no inline ``routing_policy`` is present, Plano fetches:
+
+.. code-block:: text
+
+    GET https://my-service.internal/v1/routing-policy?policy_id=customer-abc-123
+
+.. code-block:: json
+    :caption: Routing request with policy_id
+
+    {
+      "messages": [{"role": "user", "content": "Help me summarize this"}],
+      "policy_id": "customer-abc-123"
+    }
+
+.. code-block:: json
+    :caption: Expected response from external policy endpoint
+
+    {
+      "policy_id": "customer-abc-123",
+      "routing_preferences": [
+        {
+          "model": "openai/gpt-4o",
+          "routing_preferences": [
+            {"name": "quick response", "description": "fast lightweight responses"}
+          ]
+        },
+        {
+          "model": "anthropic/claude-sonnet-4-0",
+          "routing_preferences": [
+            {"name": "deep analysis", "description": "comprehensive detailed analysis"}
+          ]
+        }
+      ]
+    }
+
 
 Arch-Router
 -----------
