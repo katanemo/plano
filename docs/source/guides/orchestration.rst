@@ -379,7 +379,7 @@ Using vLLM
            --gpu-memory-utilization 0.3 \
            --tokenizer katanemo/Plano-Orchestrator-4B \
            --chat-template chat_template.jinja \
-           --served-model-name Plano-Orchestrator \
+           --served-model-name katanemo/Plano-Orchestrator-4B \
            --enable-prefix-caching
 
    For the 30B-A3B-FP8 model (production):
@@ -394,18 +394,20 @@ Using vLLM
            --tokenizer katanemo/Plano-Orchestrator-30B-A3B-FP8 \
            --chat-template chat_template.jinja \
            --max-model-len 32768 \
-           --served-model-name Plano-Orchestrator \
+           --served-model-name katanemo/Plano-Orchestrator-30B-A3B-FP8 \
            --enable-prefix-caching
 
 4. **Configure Plano to use the local orchestrator**
 
+   Use the model name matching your ``--served-model-name``:
+
    .. code-block:: yaml
 
        overrides:
-         orchestrator_model: plano/Plano-Orchestrator
+         orchestrator_model: plano/katanemo/Plano-Orchestrator-4B
 
        model_providers:
-         - model: plano/Plano-Orchestrator
+         - model: plano/katanemo/Plano-Orchestrator-4B
            base_url: http://<your-server-ip>:8000
 
 5. **Verify the server is running**

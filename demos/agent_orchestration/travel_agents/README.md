@@ -141,7 +141,7 @@ vllm serve katanemo/Plano-Orchestrator-4B \
     --gpu-memory-utilization 0.3 \
     --tokenizer katanemo/Plano-Orchestrator-4B \
     --chat-template chat_template.jinja \
-    --served-model-name Plano-Orchestrator \
+    --served-model-name katanemo/Plano-Orchestrator-4B \
     --enable-prefix-caching
 ```
 

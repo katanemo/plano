@@ -1,7 +1,7 @@
 version: v0.3.0
 
 overrides:
-  orchestrator_model: plano/Plano-Orchestrator
+  orchestrator_model: plano/katanemo/Plano-Orchestrator-4B
 
 agents:
   - id: weather_agent
@@ -10,7 +10,7 @@ agents:
     url: http://localhost:10520
 
 model_providers:
-  - model: plano/Plano-Orchestrator
+  - model: plano/katanemo/Plano-Orchestrator-4B
     base_url: http://localhost:8000
 
   - model: openai/gpt-5.2
