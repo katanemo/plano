@@ -72,19 +72,20 @@ start_demo() {
     exit 1
   fi
 
-  # Step 4: Start Plano
-  echo "Starting Plano with config.yaml..."
-  planoai up config.yaml
-
-  # Step 5: Start agents natively
-  echo "Starting agents..."
-  bash start_agents.sh &
-
-  # Step 6: Optionally start UI services (AnythingLLM, Jaeger, etc.)
+  # Step 4: Optionally start UI services (AnythingLLM, Jaeger, etc.)
+  # Jaeger must start before Plano so it can bind the OTEL port (4317)
   if [ "$1" == "--with-ui" ] || [ "$2" == "--with-ui" ]; then
     echo "Starting UI services with $COMPOSE_FILE..."
     docker compose -f "$COMPOSE_FILE" up -d
   fi
+
+  # Step 5: Start Plano
+  echo "Starting Plano with config.yaml..."
+  planoai up config.yaml
+
+  # Step 6: Start agents natively
+  echo "Starting agents..."
+  bash start_agents.sh &
 }
 
 # Function to stop the demo

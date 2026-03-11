@@ -23,19 +23,20 @@ start_demo() {
     echo ".env file created with API keys."
   fi
 
-  # Step 3: Start Plano
-  echo "Starting Plano with config.yaml..."
-  planoai up config.yaml
-
-  # Step 4: Start agents natively
-  echo "Starting agents..."
-  bash start_agents.sh &
-
-  # Step 5: Optionally start UI services (Open WebUI, Jaeger)
+  # Step 3: Optionally start UI services (Open WebUI, Jaeger)
+  # Jaeger must start before Plano so it can bind the OTEL port (4317)
   if [ "$1" == "--with-ui" ]; then
     echo "Starting UI services (Open WebUI, Jaeger)..."
     docker compose up -d
   fi
+
+  # Step 4: Start Plano
+  echo "Starting Plano with config.yaml..."
+  planoai up config.yaml
+
+  # Step 5: Start agents natively
+  echo "Starting agents..."
+  bash start_agents.sh &
 }
 
 # Function to stop the demo

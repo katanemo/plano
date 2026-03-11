@@ -24,15 +24,16 @@ start_demo() {
     echo ".env file created with API keys."
   fi
 
-  # Step 3: Start Plano
-  echo "Starting Plano with arch_config_with_aliases.yaml..."
-  planoai up arch_config_with_aliases.yaml
-
-  # Step 4: Optionally start UI services (AnythingLLM, Jaeger)
+  # Step 3: Optionally start UI services (AnythingLLM, Jaeger)
+  # Jaeger must start before Plano so it can bind the OTEL port (4317)
   if [ "$1" == "--with-ui" ]; then
     echo "Starting UI services (AnythingLLM, Jaeger)..."
     docker compose up -d
   fi
+
+  # Step 4: Start Plano
+  echo "Starting Plano with arch_config_with_aliases.yaml..."
+  planoai up arch_config_with_aliases.yaml
 
   echo ""
   echo "Plano started successfully."
