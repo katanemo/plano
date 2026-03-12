@@ -57,6 +57,10 @@ Under the hood, Plano opens outbound HTTP(S) connections to upstream LLM provide
 smart model routing. For more details on how Plano talks to models and how providers are configured, see
 :ref:`LLM providers <llm_providers>`.
 
+Model listeners also support :ref:`Filter Chains <filter_chain>`. By adding a ``filter_chain`` to a model listener
+you can run input guardrails, content-safety checks, or other preprocessing on direct LLM requests before they reach
+the upstream provider — without requiring an agent layer.
+
 Configure Listeners
 ^^^^^^^^^^^^^^^^^^^
 
