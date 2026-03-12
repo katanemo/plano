@@ -32,10 +32,11 @@ cd -
 # Re-sync e2e deps
 uv sync
 
-# Start weather_forecast service (needed for prompt_gateway tests)
-log "building and running weather_forecast service"
+# Start weather_forecast service natively (needed for prompt_gateway tests)
+log "starting weather_forecast agent natively"
 cd ../../demos/getting_started/weather_forecast/
-docker compose up weather_forecast_service --build -d
+bash start_agents.sh &
+AGENTS_PID=$!
 cd -
 
 # Start gateway with prompt_gateway config
@@ -52,6 +53,4 @@ uv run pytest test_prompt_gateway.py
 # Cleanup
 log "shutting down"
 planoai down --docker || true
-cd ../../demos/getting_started/weather_forecast
-docker compose down
-cd -
+kill $AGENTS_PID 2>/dev/null || true

@@ -23,9 +23,10 @@ All agents use Plano's agent orchestration LLM to intelligently route user reque
 ## Prerequisites
 
 - [Plano CLI](https://docs.planoai.dev/get_started/quickstart.html#prerequisites) installed (`pip install planoai`)
-- Docker and Docker Compose (for agent services)
+- [uv](https://docs.astral.sh/uv/) installed (for running agents natively)
 - [OpenAI API key](https://platform.openai.com/api-keys)
 - [FlightAware AeroAPI key](https://www.flightaware.com/aeroapi/portal)
+- Docker and Docker Compose (optional, only needed for `--with-ui`)
 
 > **Note:** You'll need to obtain a FlightAware AeroAPI key for live flight data. Visit [https://www.flightaware.com/aeroapi/portal](https://www.flightaware.com/aeroapi/portal) to get your API key.
 
@@ -46,16 +47,34 @@ export OPENAI_API_KEY="your OpenAI api key"
 ./run_demo.sh
 ```
 
-This starts Plano natively and brings up via Docker Compose:
+This starts Plano natively and runs agents as local processes:
 - Weather Agent on port 10510
 - Flight Agent on port 10520
-- Open WebUI on port 8080
 
 Plano runs natively on the host (port 8001).
 
+To also start Open WebUI, Jaeger tracing, and other optional services, pass `--with-ui`:
+
+```bash
+./run_demo.sh --with-ui
+```
+
+This additionally starts:
+- Open WebUI on port 8080
+- Jaeger tracing UI on port 16686
+
 ### 4. Test the System
 
-Use Open WebUI at http://localhost:8080
+**Option A: Using curl**
+```bash
+curl -X POST http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-5.2", "messages": [{"role": "user", "content": "What is the weather in Istanbul?"}]}'
+```
+
+**Option B: Using Open WebUI (requires `--with-ui`)**
+
+Navigate to http://localhost:8080
 
 > **Note:** The Open WebUI may take a few minutes to start up and be fully ready. Please wait for the container to finish initializing before accessing the interface. Once ready, make sure to select the **gpt-5.2** model from the model dropdown menu in the UI.
 
@@ -102,7 +121,7 @@ Each agent:
 3. Generates response using GPT-5.2
 4. Streams response back to user
 
-Both agents run as Docker containers and communicate with Plano running natively on the host.
+Both agents run as native local processes and communicate with Plano running natively on the host.
 
 ## Observability
 
