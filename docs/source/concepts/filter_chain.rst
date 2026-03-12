@@ -31,6 +31,9 @@ Because these behaviors live in the dataplane rather than inside individual agen
 Configuration example
 ---------------------
 
+Agent listener filter chain
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 The example below shows a configuration where an agent uses a filter chain with two filters: a query rewriter,
 and a context builder that prepares retrieval context before the agent runs.
 
@@ -45,6 +48,38 @@ In this setup:
 * The ``filters`` section defines the reusable filters, each running as its own HTTP/MCP service.
 * The ``listeners`` section wires the ``rag_agent`` behind an ``agent`` listener and attaches a ``filter_chain`` with ``query_rewriter`` followed by ``context_builder``.
 * When a request arrives at ``agent_1``, Plano executes the filters in order before handing control to ``rag_agent``.
+
+Model listener filter chain
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Filter chains can also be attached directly to a **model listener**. This lets you run input guardrails on
+direct LLM proxy requests (``/v1/chat/completions``, ``/v1/responses``, etc.) without an agent layer in between.
+
+.. code-block:: yaml
+    :caption: Model listener with a content-safety filter chain
+
+    filters:
+      - id: content_guard
+        url: http://content-guard:10500
+        type: http
+
+    model_providers:
+      - model: openai/gpt-4o-mini
+        access_key: $OPENAI_API_KEY
+        default: true
+
+    listeners:
+      - type: model
+        name: llm_gateway
+        port: 12000
+        filter_chain:
+          - content_guard
+
+In this setup:
+
+* The ``filter_chain`` is declared at the listener level (not per-agent).
+* When a request arrives at the model listener, Plano executes the filters in order before forwarding the request to the upstream LLM provider.
+* If a filter rejects the request (HTTP 4xx), the error is returned to the caller and the LLM is never called.
 
 
 Filter Chain Programming Model (HTTP and MCP)
