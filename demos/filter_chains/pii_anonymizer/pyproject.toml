@@ -1,0 +1,15 @@
+[project]
+name = "pii_anonymizer"
+version = "0.1.0"
+description = "PII Anonymization filter for Plano filter chains"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.104.1",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

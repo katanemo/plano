@@ -121,6 +121,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .unwrap_or_default(),
     );
+    let model_output_filter_chain: Arc<Option<Vec<String>>> =
+        Arc::new(model_listener.and_then(|l| l.output_filter_chain.clone()));
+    let model_output_filter_agents: Arc<HashMap<String, Agent>> = Arc::new(
+        model_output_filter_chain
+            .as_ref()
+            .as_ref()
+            .map(|fc| {
+                fc.iter()
+                    .filter_map(|id| global_agent_map.get(id).map(|a| (id.clone(), a.clone())))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    );
     let listeners = Arc::new(RwLock::new(plano_config.listeners.clone()));
     let llm_provider_url =
         env::var("LLM_PROVIDER_ENDPOINT").unwrap_or_else(|_| "http://localhost:12001".to_string());
@@ -217,6 +230,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let agents_list = combined_agents_filters_list.clone();
         let model_filter_chain = model_filter_chain.clone();
         let model_filter_agents = model_filter_agents.clone();
+        let model_output_filter_chain = model_output_filter_chain.clone();
+        let model_output_filter_agents = model_output_filter_agents.clone();
         let listeners = listeners.clone();
         let span_attributes = span_attributes.clone();
         let state_storage = state_storage.clone();
@@ -230,6 +245,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let agents_list = agents_list.clone();
             let model_filter_chain = model_filter_chain.clone();
             let model_filter_agents = model_filter_agents.clone();
+            let model_output_filter_chain = model_output_filter_chain.clone();
+            let model_output_filter_agents = model_output_filter_agents.clone();
             let listeners = listeners.clone();
             let span_attributes = span_attributes.clone();
             let state_storage = state_storage.clone();
@@ -290,6 +307,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             state_storage,
                             model_filter_chain,
                             model_filter_agents,
+                            model_output_filter_chain,
+                            model_output_filter_agents,
                         )
                         .with_context(parent_cx)
                         .await

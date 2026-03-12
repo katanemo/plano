@@ -97,6 +97,10 @@ properties:
               type: array
               items:
                 type: string
+            output_filter_chain:
+              type: array
+              items:
+                type: string
           additionalProperties: false
           required:
             - type

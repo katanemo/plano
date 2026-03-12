@@ -23,7 +23,8 @@ use super::pipeline_processor::PipelineProcessor;
 
 use crate::handlers::router_chat::router_chat_get_upstream_model;
 use crate::handlers::utils::{
-    create_streaming_response, truncate_message, ObservableStreamProcessor,
+    create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
+    ObservableStreamProcessor,
 };
 use crate::router::llm_router::RouterService;
 use crate::state::response_state_processor::ResponsesStateProcessor;
@@ -47,6 +48,8 @@ pub async fn llm_chat(
     state_storage: Option<Arc<dyn StateStorage>>,
     filter_chain: Arc<Option<Vec<String>>>,
     filter_agents: Arc<HashMap<String, Agent>>,
+    output_filter_chain: Arc<Option<Vec<String>>>,
+    output_filter_agents: Arc<HashMap<String, Agent>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
@@ -88,6 +91,8 @@ pub async fn llm_chat(
         request_headers,
         filter_chain,
         filter_agents,
+        output_filter_chain,
+        output_filter_agents,
     )
     .instrument(request_span)
     .await
@@ -107,6 +112,8 @@ async fn llm_chat_inner(
     mut request_headers: hyper::HeaderMap,
     filter_chain: Arc<Option<Vec<String>>>,
     filter_agents: Arc<HashMap<String, Agent>>,
+    output_filter_chain: Arc<Option<Vec<String>>>,
+    output_filter_agents: Arc<HashMap<String, Agent>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
@@ -501,6 +508,20 @@ async fn llm_chat_inner(
         propagator.inject_context(&cx, &mut HeaderInjector(&mut request_headers));
     });
 
+    // Determine if output filter chain is configured
+    let has_output_filter = output_filter_chain
+        .as_ref()
+        .as_ref()
+        .map(|fc| !fc.is_empty())
+        .unwrap_or(false);
+
+    // Save request headers for output filter chain (before they're consumed by upstream request)
+    let output_filter_request_headers = if has_output_filter {
+        Some(request_headers.clone())
+    } else {
+        None
+    };
+
     // Capture start time right before sending request to upstream
     let request_start_time = std::time::Instant::now();
     let _request_start_system_time = std::time::SystemTime::now();
@@ -567,7 +588,31 @@ async fn llm_chat_inner(
             content_encoding,
             request_id,
         );
-        create_streaming_response(byte_stream, state_processor, 16)
+        if has_output_filter {
+            let ofc = output_filter_chain.as_ref().as_ref().unwrap().clone();
+            let ofa = (*output_filter_agents).clone();
+            create_streaming_response_with_output_filter(
+                byte_stream,
+                state_processor,
+                16,
+                ofc,
+                ofa,
+                output_filter_request_headers.unwrap(),
+            )
+        } else {
+            create_streaming_response(byte_stream, state_processor, 16)
+        }
+    } else if has_output_filter {
+        let ofc = output_filter_chain.as_ref().as_ref().unwrap().clone();
+        let ofa = (*output_filter_agents).clone();
+        create_streaming_response_with_output_filter(
+            byte_stream,
+            base_processor,
+            16,
+            ofc,
+            ofa,
+            output_filter_request_headers.unwrap(),
+        )
     } else {
         // Use base processor without state management
         create_streaming_response(byte_stream, base_processor, 16)
