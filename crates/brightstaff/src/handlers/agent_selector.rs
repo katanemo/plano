@@ -197,6 +197,7 @@ mod tests {
             filter_chain: None,
             port: 8080,
             router: None,
+            filter_agents: None,
         }
     }
 

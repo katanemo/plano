@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{Agent, AgentFilterChain, Listener, ModelAlias, SpanAttributes};
+use common::configuration::{AgentFilterChain, Listener, ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -46,7 +46,6 @@ pub async fn llm_chat(
     span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
     listeners: Arc<RwLock<Vec<Listener>>>,
-    agents_list: Arc<RwLock<Option<Vec<Agent>>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
@@ -87,7 +86,6 @@ pub async fn llm_chat(
         request_path,
         request_headers,
         listeners,
-        agents_list,
     )
     .instrument(request_span)
     .await
@@ -106,7 +104,6 @@ async fn llm_chat_inner(
     request_path: String,
     mut request_headers: hyper::HeaderMap,
     listeners: Arc<RwLock<Vec<Listener>>>,
-    agents_list: Arc<RwLock<Option<Vec<Agent>>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
@@ -264,21 +261,18 @@ async fn llm_chat_inner(
     // Check if any model listener (no agents) has a filter_chain configured
     {
         let listeners_guard = listeners.read().await;
-        let filter_chain: Option<Vec<String>> = listeners_guard
+        let model_listener = listeners_guard
             .iter()
-            .find(|l| l.agents.is_none() && l.filter_chain.is_some())
-            .and_then(|l| l.filter_chain.clone());
+            .find(|l| l.agents.is_none() && l.filter_chain.is_some());
+
+        let filter_chain = model_listener.and_then(|l| l.filter_chain.clone());
+        let agent_map = model_listener
+            .and_then(|l| l.filter_agents.clone())
+            .unwrap_or_default();
 
         if let Some(ref fc) = filter_chain {
             if !fc.is_empty() {
                 debug!(filter_chain = ?fc, "processing model listener filter chain");
-
-                // Build agent map from agents_list
-                let agents_guard = agents_list.read().await;
-                let agent_map: HashMap<String, Agent> = agents_guard
-                    .as_ref()
-                    .map(|agents| agents.iter().map(|a| (a.id.clone(), a.clone())).collect())
-                    .unwrap_or_default();
 
                 // Create a temporary AgentFilterChain to reuse PipelineProcessor
                 let temp_filter_chain = AgentFilterChain {

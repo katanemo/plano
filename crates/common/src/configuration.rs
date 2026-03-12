@@ -43,6 +43,8 @@ pub struct Listener {
     pub agents: Option<Vec<AgentFilterChain>>,
     pub filter_chain: Option<Vec<String>>,
     pub port: u16,
+    #[serde(skip)]
+    pub filter_agents: Option<HashMap<String, Agent>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

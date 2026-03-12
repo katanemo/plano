@@ -24,6 +24,7 @@ use hyper_util::rt::TokioIo;
 use opentelemetry::trace::FutureExt;
 use opentelemetry::{global, Context};
 use opentelemetry_http::HeaderExtractor;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{env, fs};
 use tokio::net::TcpListener;
@@ -80,12 +81,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .cloned()
         .collect();
 
+    // Build global agent map for resolving filter chain references
+    let global_agent_map: HashMap<String, Agent> = all_agents
+        .iter()
+        .map(|a| (a.id.clone(), a.clone()))
+        .collect();
+
+    // Resolve filter_agents on each listener at startup
+    let mut listeners_resolved = plano_config.listeners.clone();
+    for listener in &mut listeners_resolved {
+        if let Some(ref fc) = listener.filter_chain {
+            let filter_agents: HashMap<String, Agent> = fc
+                .iter()
+                .filter_map(|id| global_agent_map.get(id).map(|a| (id.clone(), a.clone())))
+                .collect();
+            if !filter_agents.is_empty() {
+                listener.filter_agents = Some(filter_agents);
+            }
+        }
+    }
+
     // Create expanded provider list for /v1/models endpoint
     let llm_providers = LlmProviders::try_from(plano_config.model_providers.clone())
         .expect("Failed to create LlmProviders");
     let llm_providers = Arc::new(RwLock::new(llm_providers));
     let combined_agents_filters_list = Arc::new(RwLock::new(Some(all_agents)));
-    let listeners = Arc::new(RwLock::new(plano_config.listeners.clone()));
+    let listeners = Arc::new(RwLock::new(listeners_resolved));
     let llm_provider_url =
         env::var("LLM_PROVIDER_ENDPOINT").unwrap_or_else(|_| "http://localhost:12001".to_string());
 
@@ -249,7 +270,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             span_attributes,
                             state_storage,
                             listeners,
-                            agents_list,
                         )
                         .with_context(parent_cx)
                         .await
