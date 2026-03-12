@@ -10,7 +10,7 @@ use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
 use brightstaff::utils::tracing::init_tracer;
 use bytes::Bytes;
-use common::configuration::{Agent, Configuration};
+use common::configuration::{Agent, Configuration, ListenerType};
 use common::consts::{
     CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
 };
@@ -87,26 +87,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .map(|a| (a.id.clone(), a.clone()))
         .collect();
 
-    // Resolve filter_agents on each listener at startup
-    let mut listeners_resolved = plano_config.listeners.clone();
-    for listener in &mut listeners_resolved {
-        if let Some(ref fc) = listener.filter_chain {
-            let filter_agents: HashMap<String, Agent> = fc
-                .iter()
-                .filter_map(|id| global_agent_map.get(id).map(|a| (id.clone(), a.clone())))
-                .collect();
-            if !filter_agents.is_empty() {
-                listener.filter_agents = Some(filter_agents);
-            }
-        }
-    }
-
     // Create expanded provider list for /v1/models endpoint
     let llm_providers = LlmProviders::try_from(plano_config.model_providers.clone())
         .expect("Failed to create LlmProviders");
     let llm_providers = Arc::new(RwLock::new(llm_providers));
     let combined_agents_filters_list = Arc::new(RwLock::new(Some(all_agents)));
-    let listeners = Arc::new(RwLock::new(listeners_resolved));
+
+    // Resolve model listener filter chain and agents at startup
+    let model_listener_count = plano_config
+        .listeners
+        .iter()
+        .filter(|l| l.listener_type == ListenerType::Model)
+        .count();
+    assert!(
+        model_listener_count <= 1,
+        "only one model listener is allowed, found {}",
+        model_listener_count
+    );
+    let model_listener = plano_config
+        .listeners
+        .iter()
+        .find(|l| l.listener_type == ListenerType::Model);
+    let model_filter_chain: Arc<Option<Vec<String>>> =
+        Arc::new(model_listener.and_then(|l| l.filter_chain.clone()));
+    let model_filter_agents: Arc<HashMap<String, Agent>> = Arc::new(
+        model_filter_chain
+            .as_ref()
+            .as_ref()
+            .map(|fc| {
+                fc.iter()
+                    .filter_map(|id| global_agent_map.get(id).map(|a| (id.clone(), a.clone())))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    );
+    let listeners = Arc::new(RwLock::new(plano_config.listeners.clone()));
     let llm_provider_url =
         env::var("LLM_PROVIDER_ENDPOINT").unwrap_or_else(|_| "http://localhost:12001".to_string());
 
@@ -200,6 +215,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
+        let model_filter_chain = model_filter_chain.clone();
+        let model_filter_agents = model_filter_agents.clone();
         let listeners = listeners.clone();
         let span_attributes = span_attributes.clone();
         let state_storage = state_storage.clone();
@@ -211,6 +228,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let llm_providers = llm_providers.clone();
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
+            let model_filter_chain = model_filter_chain.clone();
+            let model_filter_agents = model_filter_agents.clone();
             let listeners = listeners.clone();
             let span_attributes = span_attributes.clone();
             let state_storage = state_storage.clone();
@@ -269,7 +288,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             llm_providers,
                             span_attributes,
                             state_storage,
-                            listeners,
+                            model_filter_chain,
+                            model_filter_agents,
                         )
                         .with_context(parent_cx)
                         .await

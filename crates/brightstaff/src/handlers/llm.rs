@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{AgentFilterChain, Listener, ModelAlias, SpanAttributes};
+use common::configuration::{Agent, AgentFilterChain, ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -45,7 +45,8 @@ pub async fn llm_chat(
     llm_providers: Arc<RwLock<LlmProviders>>,
     span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
-    listeners: Arc<RwLock<Vec<Listener>>>,
+    filter_chain: Arc<Option<Vec<String>>>,
+    filter_agents: Arc<HashMap<String, Agent>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
@@ -85,7 +86,8 @@ pub async fn llm_chat(
         request_id,
         request_path,
         request_headers,
-        listeners,
+        filter_chain,
+        filter_agents,
     )
     .instrument(request_span)
     .await
@@ -103,7 +105,8 @@ async fn llm_chat_inner(
     request_id: String,
     request_path: String,
     mut request_headers: hyper::HeaderMap,
-    listeners: Arc<RwLock<Vec<Listener>>>,
+    filter_chain: Arc<Option<Vec<String>>>,
+    filter_agents: Arc<HashMap<String, Agent>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
@@ -257,20 +260,9 @@ async fn llm_chat_inner(
         debug!("removed plano_preference_config from metadata");
     }
 
-    // === Filter chain processing for model listeners ===
-    // Check if any model listener (no agents) has a filter_chain configured
+    // === Filter chain processing for model listener ===
     {
-        let listeners_guard = listeners.read().await;
-        let model_listener = listeners_guard
-            .iter()
-            .find(|l| l.agents.is_none() && l.filter_chain.is_some());
-
-        let filter_chain = model_listener.and_then(|l| l.filter_chain.clone());
-        let agent_map = model_listener
-            .and_then(|l| l.filter_agents.clone())
-            .unwrap_or_default();
-
-        if let Some(ref fc) = filter_chain {
+        if let Some(ref fc) = *filter_chain {
             if !fc.is_empty() {
                 debug!(filter_chain = ?fc, "processing model listener filter chain");
 
@@ -288,7 +280,7 @@ async fn llm_chat_inner(
                     .process_filter_chain(
                         &messages,
                         &temp_filter_chain,
-                        &agent_map,
+                        &filter_agents,
                         &request_headers,
                     )
                     .await

@@ -17,7 +17,7 @@ use hyper::StatusCode;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::configuration::{Agent, AgentFilterChain, Listener};
+    use common::configuration::{Agent, AgentFilterChain, Listener, ListenerType};
 
     fn create_test_orchestrator_service() -> Arc<OrchestratorService> {
         Arc::new(OrchestratorService::new(
@@ -72,12 +72,12 @@ mod tests {
         };
 
         let listener = Listener {
+            listener_type: ListenerType::Agent,
             name: "test-listener".to_string(),
             agents: Some(vec![agent_pipeline.clone()]),
             filter_chain: None,
             port: 8080,
             router: None,
-            filter_agents: None,
         };
 
         let listeners = vec![listener];

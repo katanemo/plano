@@ -36,15 +36,23 @@ pub struct AgentFilterChain {
     pub filter_chain: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ListenerType {
+    Model,
+    Agent,
+    Prompt,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Listener {
+    #[serde(rename = "type")]
+    pub listener_type: ListenerType,
     pub name: String,
     pub router: Option<String>,
     pub agents: Option<Vec<AgentFilterChain>>,
     pub filter_chain: Option<Vec<String>>,
     pub port: u16,
-    #[serde(skip)]
-    pub filter_agents: Option<HashMap<String, Agent>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
