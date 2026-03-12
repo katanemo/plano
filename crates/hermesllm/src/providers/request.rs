@@ -1,5 +1,7 @@
 use crate::apis::anthropic::MessagesRequest;
+use crate::apis::gemini::GenerateContentRequest;
 use crate::apis::openai::ChatCompletionsRequest;
+use crate::apis::ApiDefinition;
 
 use crate::apis::amazon_bedrock::{ConverseRequest, ConverseStreamRequest};
 use crate::apis::openai_responses::ResponsesAPIRequest;
@@ -19,7 +21,8 @@ pub enum ProviderRequestType {
     BedrockConverse(ConverseRequest),
     BedrockConverseStream(ConverseStreamRequest),
     ResponsesAPIRequest(ResponsesAPIRequest),
-    //add more request types here
+    GeminiGenerateContent(GenerateContentRequest),
+    GeminiStreamGenerateContent(GenerateContentRequest),
 }
 pub trait ProviderRequest: Send + Sync {
     /// Extract the model name from the request
@@ -69,6 +72,9 @@ impl ProviderRequestType {
             Self::BedrockConverse(r) => r.set_messages(messages),
             Self::BedrockConverseStream(r) => r.set_messages(messages),
             Self::ResponsesAPIRequest(r) => r.set_messages(messages),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.set_messages(messages)
+            }
         }
     }
 
@@ -100,6 +106,7 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.model(),
             Self::BedrockConverseStream(r) => r.model(),
             Self::ResponsesAPIRequest(r) => r.model(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => r.model(),
         }
     }
 
@@ -110,6 +117,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.set_model(model),
             Self::BedrockConverseStream(r) => r.set_model(model),
             Self::ResponsesAPIRequest(r) => r.set_model(model),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.set_model(model)
+            }
         }
     }
 
@@ -120,6 +130,8 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(_) => false,
             Self::BedrockConverseStream(_) => true,
             Self::ResponsesAPIRequest(r) => r.is_streaming(),
+            Self::GeminiGenerateContent(_) => false,
+            Self::GeminiStreamGenerateContent(_) => true,
         }
     }
 
@@ -130,6 +142,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.extract_messages_text(),
             Self::BedrockConverseStream(r) => r.extract_messages_text(),
             Self::ResponsesAPIRequest(r) => r.extract_messages_text(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.extract_messages_text()
+            }
         }
     }
 
@@ -140,6 +155,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.get_recent_user_message(),
             Self::BedrockConverseStream(r) => r.get_recent_user_message(),
             Self::ResponsesAPIRequest(r) => r.get_recent_user_message(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.get_recent_user_message()
+            }
         }
     }
 
@@ -150,6 +168,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.get_tool_names(),
             Self::BedrockConverseStream(r) => r.get_tool_names(),
             Self::ResponsesAPIRequest(r) => r.get_tool_names(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.get_tool_names()
+            }
         }
     }
 
@@ -160,6 +181,7 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.to_bytes(),
             Self::BedrockConverseStream(r) => r.to_bytes(),
             Self::ResponsesAPIRequest(r) => r.to_bytes(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => r.to_bytes(),
         }
     }
 
@@ -170,6 +192,7 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.metadata(),
             Self::BedrockConverseStream(r) => r.metadata(),
             Self::ResponsesAPIRequest(r) => r.metadata(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => r.metadata(),
         }
     }
 
@@ -180,6 +203,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.remove_metadata_key(key),
             Self::BedrockConverseStream(r) => r.remove_metadata_key(key),
             Self::ResponsesAPIRequest(r) => r.remove_metadata_key(key),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.remove_metadata_key(key)
+            }
         }
     }
 
@@ -190,6 +216,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.get_temperature(),
             Self::BedrockConverseStream(r) => r.get_temperature(),
             Self::ResponsesAPIRequest(r) => r.get_temperature(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.get_temperature()
+            }
         }
     }
 
@@ -200,6 +229,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.get_messages(),
             Self::BedrockConverseStream(r) => r.get_messages(),
             Self::ResponsesAPIRequest(r) => r.get_messages(),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.get_messages()
+            }
         }
     }
 
@@ -210,6 +242,9 @@ impl ProviderRequest for ProviderRequestType {
             Self::BedrockConverse(r) => r.set_messages(messages),
             Self::BedrockConverseStream(r) => r.set_messages(messages),
             Self::ResponsesAPIRequest(r) => r.set_messages(messages),
+            Self::GeminiGenerateContent(r) | Self::GeminiStreamGenerateContent(r) => {
+                r.set_messages(messages)
+            }
         }
     }
 }
@@ -244,6 +279,18 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient)> for ProviderRequestType {
                 Ok(ProviderRequestType::ResponsesAPIRequest(
                     responses_apirequest,
                 ))
+            }
+            SupportedAPIsFromClient::GeminiGenerateContentAPI(gemini_api) => {
+                let gemini_request: GenerateContentRequest =
+                    GenerateContentRequest::try_from(bytes)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                if gemini_api.supports_streaming() {
+                    Ok(ProviderRequestType::GeminiStreamGenerateContent(
+                        gemini_request,
+                    ))
+                } else {
+                    Ok(ProviderRequestType::GeminiGenerateContent(gemini_request))
+                }
             }
         }
     }
@@ -309,6 +356,37 @@ impl TryFrom<(ProviderRequestType, &SupportedUpstreamAPIs)> for ProviderRequestT
                     source: None,
                 })
             }
+            // ChatCompletions -> Gemini
+            (
+                ProviderRequestType::ChatCompletionsRequest(chat_req),
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+            ) => {
+                let gemini_req = GenerateContentRequest::try_from(chat_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ChatCompletionsRequest to GenerateContentRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::GeminiGenerateContent(gemini_req))
+            }
+            (
+                ProviderRequestType::ChatCompletionsRequest(chat_req),
+                SupportedUpstreamAPIs::GeminiStreamGenerateContent(_),
+            ) => {
+                let gemini_req = GenerateContentRequest::try_from(chat_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ChatCompletionsRequest to GenerateContentRequest (stream): {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::GeminiStreamGenerateContent(gemini_req))
+            }
 
             // ============================================================================
             // MessagesRequest conversions
@@ -369,6 +447,37 @@ impl TryFrom<(ProviderRequestType, &SupportedUpstreamAPIs)> for ProviderRequestT
                     message: "Conversion from MessagesRequest to ResponsesAPIRequest is not supported. ResponsesAPI can only be used as a client API, not as an upstream API.".to_string(),
                     source: None,
                 })
+            }
+            // Messages -> Gemini (chain: Anthropic -> OpenAI -> Gemini)
+            (
+                ProviderRequestType::MessagesRequest(messages_req),
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+            ) => {
+                let gemini_req = GenerateContentRequest::try_from(messages_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert MessagesRequest to GenerateContentRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::GeminiGenerateContent(gemini_req))
+            }
+            (
+                ProviderRequestType::MessagesRequest(messages_req),
+                SupportedUpstreamAPIs::GeminiStreamGenerateContent(_),
+            ) => {
+                let gemini_req = GenerateContentRequest::try_from(messages_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert MessagesRequest to GenerateContentRequest (stream): {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::GeminiStreamGenerateContent(gemini_req))
             }
 
             // ============================================================================
@@ -478,6 +587,171 @@ impl TryFrom<(ProviderRequestType, &SupportedUpstreamAPIs)> for ProviderRequestT
                     }
                 })?;
                 Ok(ProviderRequestType::BedrockConverseStream(bedrock_req))
+            }
+
+            // ResponsesAPI -> Gemini (via ChatCompletions)
+            (
+                ProviderRequestType::ResponsesAPIRequest(responses_req),
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+            ) => {
+                let chat_req = ChatCompletionsRequest::try_from(responses_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ResponsesAPIRequest to ChatCompletionsRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                let gemini_req = GenerateContentRequest::try_from(chat_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ChatCompletionsRequest to GenerateContentRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::GeminiGenerateContent(gemini_req))
+            }
+            (
+                ProviderRequestType::ResponsesAPIRequest(responses_req),
+                SupportedUpstreamAPIs::GeminiStreamGenerateContent(_),
+            ) => {
+                let chat_req = ChatCompletionsRequest::try_from(responses_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ResponsesAPIRequest to ChatCompletionsRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                let gemini_req = GenerateContentRequest::try_from(chat_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ChatCompletionsRequest to GenerateContentRequest (stream): {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::GeminiStreamGenerateContent(gemini_req))
+            }
+
+            // ============================================================================
+            // GeminiGenerateContent conversions (client sends Gemini format)
+            // ============================================================================
+            (
+                ProviderRequestType::GeminiGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+            ) => Ok(ProviderRequestType::GeminiGenerateContent(gemini_req)),
+            (
+                ProviderRequestType::GeminiStreamGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::GeminiStreamGenerateContent(_),
+            ) => Ok(ProviderRequestType::GeminiStreamGenerateContent(gemini_req)),
+            // Cross-streaming mode: non-streaming -> streaming and vice versa
+            (
+                ProviderRequestType::GeminiGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::GeminiStreamGenerateContent(_),
+            ) => Ok(ProviderRequestType::GeminiStreamGenerateContent(gemini_req)),
+            (
+                ProviderRequestType::GeminiStreamGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+            ) => Ok(ProviderRequestType::GeminiGenerateContent(gemini_req)),
+            (
+                ProviderRequestType::GeminiGenerateContent(gemini_req)
+                | ProviderRequestType::GeminiStreamGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::OpenAIChatCompletions(_),
+            ) => {
+                let chat_req = ChatCompletionsRequest::try_from(gemini_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert GenerateContentRequest to ChatCompletionsRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::ChatCompletionsRequest(chat_req))
+            }
+            (
+                ProviderRequestType::GeminiGenerateContent(gemini_req)
+                | ProviderRequestType::GeminiStreamGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
+            ) => {
+                let messages_req = MessagesRequest::try_from(gemini_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert GenerateContentRequest to MessagesRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::MessagesRequest(messages_req))
+            }
+            (
+                ProviderRequestType::GeminiGenerateContent(gemini_req)
+                | ProviderRequestType::GeminiStreamGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::AmazonBedrockConverse(_),
+            ) => {
+                // Chain: Gemini -> OpenAI -> Bedrock
+                let chat_req = ChatCompletionsRequest::try_from(gemini_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert GenerateContentRequest to ChatCompletionsRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                let bedrock_req = ConverseRequest::try_from(chat_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ChatCompletionsRequest to ConverseRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::BedrockConverse(bedrock_req))
+            }
+            (
+                ProviderRequestType::GeminiGenerateContent(gemini_req)
+                | ProviderRequestType::GeminiStreamGenerateContent(gemini_req),
+                SupportedUpstreamAPIs::AmazonBedrockConverseStream(_),
+            ) => {
+                // Chain: Gemini -> OpenAI -> Bedrock Stream
+                let chat_req = ChatCompletionsRequest::try_from(gemini_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert GenerateContentRequest to ChatCompletionsRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                let bedrock_req = ConverseStreamRequest::try_from(chat_req).map_err(|e| {
+                    ProviderRequestError {
+                        message: format!(
+                            "Failed to convert ChatCompletionsRequest to ConverseStreamRequest: {}",
+                            e
+                        ),
+                        source: Some(Box::new(e)),
+                    }
+                })?;
+                Ok(ProviderRequestType::BedrockConverseStream(bedrock_req))
+            }
+            (
+                ProviderRequestType::GeminiGenerateContent(_)
+                | ProviderRequestType::GeminiStreamGenerateContent(_),
+                SupportedUpstreamAPIs::OpenAIResponsesAPI(_),
+            ) => {
+                Err(ProviderRequestError {
+                    message: "Conversion from GenerateContentRequest to ResponsesAPIRequest is not supported.".to_string(),
+                    source: None,
+                })
             }
 
             // ============================================================================

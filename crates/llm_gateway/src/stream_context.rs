@@ -217,7 +217,9 @@ impl StreamContext {
                 SupportedUpstreamAPIs::OpenAIChatCompletions(_)
                 | SupportedUpstreamAPIs::AmazonBedrockConverse(_)
                 | SupportedUpstreamAPIs::AmazonBedrockConverseStream(_)
-                | SupportedUpstreamAPIs::OpenAIResponsesAPI(_),
+                | SupportedUpstreamAPIs::OpenAIResponsesAPI(_)
+                | SupportedUpstreamAPIs::GeminiGenerateContent(_)
+                | SupportedUpstreamAPIs::GeminiStreamGenerateContent(_),
             )
             | None => {
                 // OpenAI and default: use Authorization Bearer token

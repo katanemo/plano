@@ -1,4 +1,4 @@
-use crate::apis::{AmazonBedrockApi, AnthropicApi, OpenAIApi};
+use crate::apis::{AmazonBedrockApi, AnthropicApi, GeminiApi, OpenAIApi};
 use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -116,7 +116,68 @@ impl ProviderId {
         is_streaming: bool,
     ) -> SupportedUpstreamAPIs {
         match (self, client_api) {
+            // ============================================================================
+            // Gemini provider — use native Gemini APIs
+            // ============================================================================
+            (ProviderId::Gemini, SupportedAPIsFromClient::GeminiGenerateContentAPI(_)) => {
+                if is_streaming {
+                    SupportedUpstreamAPIs::GeminiStreamGenerateContent(
+                        GeminiApi::StreamGenerateContent,
+                    )
+                } else {
+                    SupportedUpstreamAPIs::GeminiGenerateContent(GeminiApi::GenerateContent)
+                }
+            }
+            (ProviderId::Gemini, SupportedAPIsFromClient::OpenAIChatCompletions(_)) => {
+                if is_streaming {
+                    SupportedUpstreamAPIs::GeminiStreamGenerateContent(
+                        GeminiApi::StreamGenerateContent,
+                    )
+                } else {
+                    SupportedUpstreamAPIs::GeminiGenerateContent(GeminiApi::GenerateContent)
+                }
+            }
+            (ProviderId::Gemini, SupportedAPIsFromClient::AnthropicMessagesAPI(_)) => {
+                if is_streaming {
+                    SupportedUpstreamAPIs::GeminiStreamGenerateContent(
+                        GeminiApi::StreamGenerateContent,
+                    )
+                } else {
+                    SupportedUpstreamAPIs::GeminiGenerateContent(GeminiApi::GenerateContent)
+                }
+            }
+            (ProviderId::Gemini, SupportedAPIsFromClient::OpenAIResponsesAPI(_)) => {
+                if is_streaming {
+                    SupportedUpstreamAPIs::GeminiStreamGenerateContent(
+                        GeminiApi::StreamGenerateContent,
+                    )
+                } else {
+                    SupportedUpstreamAPIs::GeminiGenerateContent(GeminiApi::GenerateContent)
+                }
+            }
+
+            // ============================================================================
+            // Non-Gemini providers receiving Gemini-format requests
+            // ============================================================================
+            (ProviderId::Anthropic, SupportedAPIsFromClient::GeminiGenerateContentAPI(_)) => {
+                SupportedUpstreamAPIs::AnthropicMessagesAPI(AnthropicApi::Messages)
+            }
+            (ProviderId::AmazonBedrock, SupportedAPIsFromClient::GeminiGenerateContentAPI(_)) => {
+                if is_streaming {
+                    SupportedUpstreamAPIs::AmazonBedrockConverseStream(
+                        AmazonBedrockApi::ConverseStream,
+                    )
+                } else {
+                    SupportedUpstreamAPIs::AmazonBedrockConverse(AmazonBedrockApi::Converse)
+                }
+            }
+            (_, SupportedAPIsFromClient::GeminiGenerateContentAPI(_)) => {
+                SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
+            }
+
+            // ============================================================================
             // Claude/Anthropic providers natively support Anthropic APIs
+            // ============================================================================
             (ProviderId::Anthropic, SupportedAPIsFromClient::AnthropicMessagesAPI(_)) => {
                 SupportedUpstreamAPIs::AnthropicMessagesAPI(AnthropicApi::Messages)
             }
@@ -136,7 +197,6 @@ impl ProviderId {
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
                 | ProviderId::Arch
-                | ProviderId::Gemini
                 | ProviderId::GitHub
                 | ProviderId::AzureOpenAI
                 | ProviderId::XAI
@@ -154,7 +214,6 @@ impl ProviderId {
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
                 | ProviderId::Arch
-                | ProviderId::Gemini
                 | ProviderId::GitHub
                 | ProviderId::AzureOpenAI
                 | ProviderId::XAI

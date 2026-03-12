@@ -15,6 +15,7 @@ pub mod response_streaming;
 
 // Re-export commonly used items for convenience
 pub use lib::*;
+#[allow(ambiguous_glob_reexports)]
 pub use request::*;
 pub use response::*;
 pub use response_streaming::*;

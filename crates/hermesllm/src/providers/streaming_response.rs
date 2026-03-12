@@ -83,6 +83,11 @@ impl TryFrom<(&SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for SseStreamBu
             SupportedAPIsFromClient::OpenAIResponsesAPI(_) => {
                 Ok(SseStreamBuffer::OpenAIResponses(Box::default()))
             }
+            SupportedAPIsFromClient::GeminiGenerateContentAPI(_) => {
+                // Gemini client with a different upstream - use passthrough
+                // since Gemini streaming uses SSE and doesn't need special buffering
+                Ok(SseStreamBuffer::Passthrough(PassthroughStreamBuffer::new()))
+            }
         }
     }
 }

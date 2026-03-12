@@ -1,5 +1,6 @@
 use crate::apis::amazon_bedrock::ConverseResponse;
 use crate::apis::anthropic::MessagesResponse;
+use crate::apis::gemini::GenerateContentResponse;
 use crate::apis::openai::ChatCompletionsResponse;
 use crate::apis::openai_responses::ResponsesAPIResponse;
 use crate::clients::endpoints::SupportedAPIsFromClient;
@@ -16,6 +17,7 @@ pub enum ProviderResponseType {
     ChatCompletionsResponse(ChatCompletionsResponse),
     MessagesResponse(MessagesResponse),
     ResponsesAPIResponse(Box<ResponsesAPIResponse>),
+    GenerateContentResponse(GenerateContentResponse),
 }
 
 /// Trait for token usage information
@@ -44,6 +46,9 @@ impl ProviderResponse for ProviderResponseType {
             ProviderResponseType::ResponsesAPIResponse(resp) => {
                 resp.usage.as_ref().map(|u| u as &dyn TokenUsage)
             }
+            ProviderResponseType::GenerateContentResponse(resp) => {
+                resp.usage_metadata.as_ref().map(|u| u as &dyn TokenUsage)
+            }
         }
     }
 
@@ -58,6 +63,15 @@ impl ProviderResponse for ProviderResponseType {
                     u.total_tokens as usize,
                 )
             }),
+            ProviderResponseType::GenerateContentResponse(resp) => {
+                resp.usage_metadata.as_ref().map(|u| {
+                    (
+                        u.prompt_token_count.unwrap_or(0) as usize,
+                        u.candidates_token_count.unwrap_or(0) as usize,
+                        u.total_token_count.unwrap_or(0) as usize,
+                    )
+                })
+            }
         }
     }
 }
@@ -238,6 +252,140 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient, &ProviderId)> for ProviderRespons
                     response_api,
                 )))
             }
+            // ============================================================================
+            // Gemini upstream transformations
+            // ============================================================================
+            (
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+                SupportedAPIsFromClient::GeminiGenerateContentAPI(_),
+            ) => {
+                // Passthrough: Gemini upstream -> Gemini client
+                let resp: GenerateContentResponse = serde_json::from_slice(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                Ok(ProviderResponseType::GenerateContentResponse(resp))
+            }
+            (
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+                SupportedAPIsFromClient::OpenAIChatCompletions(_),
+            ) => {
+                // Gemini upstream -> OpenAI client
+                let gemini_resp: GenerateContentResponse = serde_json::from_slice(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let chat_resp: ChatCompletionsResponse = gemini_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                Ok(ProviderResponseType::ChatCompletionsResponse(chat_resp))
+            }
+            (
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+                SupportedAPIsFromClient::AnthropicMessagesAPI(_),
+            ) => {
+                // Chain: Gemini -> OpenAI -> Anthropic
+                let gemini_resp: GenerateContentResponse = serde_json::from_slice(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let chat_resp: ChatCompletionsResponse = gemini_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                let messages_resp: MessagesResponse = chat_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                Ok(ProviderResponseType::MessagesResponse(messages_resp))
+            }
+            (
+                SupportedUpstreamAPIs::GeminiGenerateContent(_),
+                SupportedAPIsFromClient::OpenAIResponsesAPI(_),
+            ) => {
+                // Chain: Gemini -> OpenAI -> ResponsesAPI
+                let gemini_resp: GenerateContentResponse = serde_json::from_slice(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let chat_resp: ChatCompletionsResponse = gemini_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                let responses_resp: ResponsesAPIResponse = chat_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                Ok(ProviderResponseType::ResponsesAPIResponse(Box::new(
+                    responses_resp,
+                )))
+            }
+
+            // ============================================================================
+            // Non-Gemini upstream -> Gemini client
+            // ============================================================================
+            (
+                SupportedUpstreamAPIs::OpenAIChatCompletions(_),
+                SupportedAPIsFromClient::GeminiGenerateContentAPI(_),
+            ) => {
+                // OpenAI upstream -> Gemini client
+                let openai_resp: ChatCompletionsResponse = ChatCompletionsResponse::try_from(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let gemini_resp: GenerateContentResponse = openai_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                Ok(ProviderResponseType::GenerateContentResponse(gemini_resp))
+            }
+            (
+                SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
+                SupportedAPIsFromClient::GeminiGenerateContentAPI(_),
+            ) => {
+                // Chain: Anthropic -> OpenAI -> Gemini
+                let anthropic_resp: MessagesResponse = serde_json::from_slice(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let chat_resp: ChatCompletionsResponse =
+                    anthropic_resp.try_into().map_err(|e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Transformation error: {}", e),
+                        )
+                    })?;
+                let gemini_resp: GenerateContentResponse = chat_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                Ok(ProviderResponseType::GenerateContentResponse(gemini_resp))
+            }
+            (
+                SupportedUpstreamAPIs::AmazonBedrockConverse(_),
+                SupportedAPIsFromClient::GeminiGenerateContentAPI(_),
+            ) => {
+                // Chain: Bedrock -> OpenAI -> Gemini
+                let bedrock_resp: ConverseResponse = serde_json::from_slice(bytes)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let chat_resp: ChatCompletionsResponse = bedrock_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                let gemini_resp: GenerateContentResponse = chat_resp.try_into().map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Transformation error: {}", e),
+                    )
+                })?;
+                Ok(ProviderResponseType::GenerateContentResponse(gemini_resp))
+            }
+
             _ => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Unsupported API combination for response transformation",

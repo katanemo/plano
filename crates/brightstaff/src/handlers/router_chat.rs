@@ -53,7 +53,9 @@ pub async fn router_chat_get_upstream_model(
             ProviderRequestType::MessagesRequest(_)
             | ProviderRequestType::BedrockConverse(_)
             | ProviderRequestType::BedrockConverseStream(_)
-            | ProviderRequestType::ResponsesAPIRequest(_),
+            | ProviderRequestType::ResponsesAPIRequest(_)
+            | ProviderRequestType::GeminiGenerateContent(_)
+            | ProviderRequestType::GeminiStreamGenerateContent(_),
         ) => {
             warn!("unexpected: got non-ChatCompletions request after converting to OpenAI format");
             return Err(RoutingError::internal_error(

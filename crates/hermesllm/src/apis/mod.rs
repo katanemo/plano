@@ -1,5 +1,6 @@
 pub mod amazon_bedrock;
 pub mod anthropic;
+pub mod gemini;
 pub mod openai;
 pub mod openai_responses;
 pub mod streaming_shapes;
@@ -10,6 +11,7 @@ pub use amazon_bedrock::{
     Message as BedrockMessage, Tool as BedrockTool, ToolChoice as BedrockToolChoice,
 };
 pub use anthropic::{AnthropicApi, MessagesRequest, MessagesResponse, MessagesStreamEvent};
+pub use gemini::{GeminiApi, GenerateContentRequest, GenerateContentResponse};
 pub use openai::{
     ChatCompletionsRequest, ChatCompletionsResponse, ChatCompletionsStreamResponse, OpenAIApi,
 };
