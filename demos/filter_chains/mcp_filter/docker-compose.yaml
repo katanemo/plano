@@ -1,16 +1,4 @@
 services:
-  rag-agents:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "10500:10500"
-      - "10501:10501"
-      - "10502:10502"
-      - "10505:10505"
-    environment:
-      - LLM_GATEWAY_ENDPOINT=${LLM_GATEWAY_ENDPOINT:-http://host.docker.internal:12000/v1}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
   jaeger:
     build:
       context: ../../shared/jaeger
@@ -32,3 +20,5 @@ services:
       - GENERIC_OPEN_AI_MODEL_PREF=gpt-4o-mini
       - GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT=128000
       - GENERIC_OPEN_AI_API_KEY=sk-placeholder
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

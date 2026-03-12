@@ -7,7 +7,14 @@ This demo shows how you can use Plano gateway to manage keys and route to upstre
    ```sh
    sh run_demo.sh
    ```
-1. Navigate to http://localhost:3001/
+1. Test with curl (see example below)
+
+To also start the AnythingLLM chat UI and Jaeger tracing, pass `--with-ui`:
+```sh
+sh run_demo.sh --with-ui
+```
+
+Then navigate to http://localhost:3001/ for AnythingLLM.
 
 Following screen shows an example of interaction with Plano gateway showing dynamic routing. You can select between different LLMs using "override model" option in the chat UI.
 
@@ -47,7 +54,7 @@ $ curl --header 'Content-Type: application/json' \
 ```
 
 # Observability
-For tracing you can head over to http://localhost:16686/ to view recent traces.
+For tracing, start with `--with-ui` and head over to http://localhost:16686/ to view recent traces.
 
 Following is a screenshot of tracing UI showing call received by Plano gateway and making upstream call to LLM,
 

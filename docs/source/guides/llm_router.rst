@@ -228,6 +228,129 @@ In summary, Arch-Router demonstrates:
 - **Production-Ready Performance**: Optimized for low-latency, high-throughput applications in multi-model environments.
 
 
+Self-hosting Arch-Router
+------------------------
+
+By default, Plano uses a hosted Arch-Router endpoint. To run Arch-Router locally, you can serve the model yourself using either **Ollama** or **vLLM**.
+
+Using Ollama (recommended for local development)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. **Install Ollama**
+
+   Download and install from `ollama.ai <https://ollama.ai>`_.
+
+2. **Pull and serve Arch-Router**
+
+   .. code-block:: bash
+
+       ollama pull hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+       ollama serve
+
+   This downloads the quantized GGUF model from HuggingFace and starts serving on ``http://localhost:11434``.
+
+3. **Configure Plano to use local Arch-Router**
+
+   .. code-block:: yaml
+
+       routing:
+         model: Arch-Router
+         llm_provider: arch-router
+
+       model_providers:
+         - name: arch-router
+           model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+           base_url: http://localhost:11434
+
+         - model: openai/gpt-5.2
+           access_key: $OPENAI_API_KEY
+           default: true
+
+         - model: anthropic/claude-sonnet-4-5
+           access_key: $ANTHROPIC_API_KEY
+           routing_preferences:
+             - name: creative writing
+               description: creative content generation, storytelling, and writing assistance
+
+4. **Verify the model is running**
+
+   .. code-block:: bash
+
+       curl http://localhost:11434/v1/models
+
+   You should see ``Arch-Router-1.5B`` listed in the response.
+
+Using vLLM (recommended for production / EC2)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+vLLM provides higher throughput and GPU optimizations suitable for production deployments.
+
+1. **Install vLLM**
+
+   .. code-block:: bash
+
+       pip install vllm
+
+2. **Download the model weights**
+
+   The GGUF weights are downloaded automatically from HuggingFace on first use. To pre-download:
+
+   .. code-block:: bash
+
+       pip install huggingface_hub
+       huggingface-cli download katanemo/Arch-Router-1.5B.gguf
+
+3. **Start the vLLM server**
+
+   After downloading, find the GGUF file and Jinja template in the HuggingFace cache:
+
+   .. code-block:: bash
+
+       # Find the downloaded files
+       SNAPSHOT_DIR=$(ls -d ~/.cache/huggingface/hub/models--katanemo--Arch-Router-1.5B.gguf/snapshots/*/ | head -1)
+
+       vllm serve ${SNAPSHOT_DIR}Arch-Router-1.5B-Q4_K_M.gguf \
+           --host 0.0.0.0 \
+           --port 10000 \
+           --load-format gguf \
+           --chat-template ${SNAPSHOT_DIR}template.jinja \
+           --tokenizer katanemo/Arch-Router-1.5B \
+           --served-model-name Arch-Router \
+           --gpu-memory-utilization 0.3 \
+           --tensor-parallel-size 1 \
+           --enable-prefix-caching
+
+4. **Configure Plano to use the vLLM endpoint**
+
+   .. code-block:: yaml
+
+       routing:
+         model: Arch-Router
+         llm_provider: arch-router
+
+       model_providers:
+         - name: arch-router
+           model: Arch-Router
+           base_url: http://<your-server-ip>:10000
+
+         - model: openai/gpt-5.2
+           access_key: $OPENAI_API_KEY
+           default: true
+
+         - model: anthropic/claude-sonnet-4-5
+           access_key: $ANTHROPIC_API_KEY
+           routing_preferences:
+             - name: creative writing
+               description: creative content generation, storytelling, and writing assistance
+
+5. **Verify the server is running**
+
+   .. code-block:: bash
+
+       curl http://localhost:10000/health
+       curl http://localhost:10000/v1/models
+
+
 Combining Routing Methods
 -------------------------
 
