@@ -429,9 +429,7 @@ def native_validate_config(plano_config_file):
             # validate_and_render_schema calls exit(1) on failure after
             # printing to stdout; re-raise so the caller gets a useful message.
             output = captured.getvalue().strip()
-            raise Exception(output) if output else Exception(
-                "Config validation failed"
-            )
+            raise Exception(output) if output else Exception("Config validation failed")
 
 
 def native_logs(debug=False, follow=False):

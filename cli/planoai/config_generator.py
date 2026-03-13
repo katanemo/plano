@@ -8,7 +8,6 @@ from urllib.parse import urlparse
 from copy import deepcopy
 from planoai.consts import DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
 
-
 SUPPORTED_PROVIDERS_WITH_BASE_URL = [
     "azure_openai",
     "ollama",
@@ -504,7 +503,9 @@ def validate_prompt_config(plano_config_file, plano_config_schema_file):
     try:
         validate(config_yaml, config_schema_yaml)
     except ValidationError as e:
-        path = " → ".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
+        path = (
+            " → ".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
+        )
         raise ValidationError(
             f"{e.message}\n  Location: {path}\n  Value: {e.instance}"
         ) from None
