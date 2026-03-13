@@ -21,10 +21,11 @@ trap 'print_debug' INT TERM ERR
 
 log starting > ../build.log
 
-log building and running function_calling demo
+log starting weather_forecast agent natively
 log ===========================================
 cd ../../demos/getting_started/weather_forecast/
-docker compose up weather_forecast_service --build -d
+bash start_agents.sh &
+AGENTS_PID=$!
 cd -
 
 log building and installing plano cli
@@ -78,8 +79,6 @@ log running e2e tests for openai responses api client
 log ========================================
 uv run pytest test_openai_responses_api_client_with_state.py
 
-log shutting down the weather_forecast demo
+log shutting down the weather_forecast agent
 log =======================================
-cd ../../demos/getting_started/weather_forecast
-docker compose down
-cd -
+kill $AGENTS_PID 2>/dev/null || true

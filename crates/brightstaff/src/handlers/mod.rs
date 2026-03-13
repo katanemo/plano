@@ -7,6 +7,7 @@ pub mod models;
 pub mod pipeline_processor;
 pub mod response_handler;
 pub mod router_chat;
+pub mod routing_service;
 pub mod utils;
 
 #[cfg(test)]

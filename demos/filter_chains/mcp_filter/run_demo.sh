@@ -18,22 +18,32 @@ start_demo() {
     echo ".env file created with OPENAI_API_KEY."
   fi
 
-  # Step 3: Start Plano
+  # Step 3: Optionally start UI services (AnythingLLM, Jaeger)
+  # Jaeger must start before Plano so it can bind the OTEL port (4317)
+  if [ "$1" == "--with-ui" ]; then
+    echo "Starting UI services (AnythingLLM, Jaeger)..."
+    docker compose up -d
+  fi
+
+  # Step 4: Start Plano
   echo "Starting Plano with config.yaml..."
   planoai up config.yaml
 
-  # Step 4: Start services
-  echo "Starting services using Docker Compose..."
-  docker compose up -d
+  # Step 5: Start agents natively
+  echo "Starting agents..."
+  bash start_agents.sh &
 }
 
 # Function to stop the demo
 stop_demo() {
-  # Step 1: Stop Docker Compose services
-  echo "Stopping Docker Compose services..."
-  docker compose down
+  # Stop agents
+  echo "Stopping agents..."
+  pkill -f start_agents.sh 2>/dev/null || true
 
-  # Step 2: Stop Plano
+  # Stop Docker Compose services if running
+  docker compose down 2>/dev/null || true
+
+  # Stop Plano
   echo "Stopping Plano..."
   planoai down
 }
@@ -42,5 +52,5 @@ stop_demo() {
 if [ "$1" == "down" ]; then
   stop_demo
 else
-  start_demo
+  start_demo "$1"
 fi

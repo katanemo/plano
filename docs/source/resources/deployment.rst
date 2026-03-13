@@ -100,6 +100,194 @@ You can also use the CLI with Docker mode:
    planoai up plano_config.yaml --docker
    planoai down --docker
 
+Kubernetes Deployment
+---------------------
+
+Plano runs as a single container in Kubernetes. The container bundles Envoy, WASM plugins, and brightstaff, managed by supervisord internally. Deploy it as a standard Kubernetes Deployment with your ``plano_config.yaml`` mounted via a ConfigMap and API keys injected via a Secret.
+
+.. note::
+   All environment variables referenced in your ``plano_config.yaml`` (e.g. ``$OPENAI_API_KEY``) must be set in the container environment. Use Kubernetes Secrets for API keys.
+
+Step 1: Create the Config
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Store your ``plano_config.yaml`` in a ConfigMap:
+
+.. code-block:: bash
+
+   kubectl create configmap plano-config --from-file=plano_config.yaml=./plano_config.yaml
+
+Step 2: Create API Key Secrets
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Store your LLM provider API keys in a Secret:
+
+.. code-block:: bash
+
+   kubectl create secret generic plano-secrets \
+     --from-literal=OPENAI_API_KEY=sk-... \
+     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+
+Step 3: Deploy Plano
+~~~~~~~~~~~~~~~~~~~~
+
+Create a ``plano-deployment.yaml``:
+
+.. code-block:: yaml
+
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: plano
+     labels:
+       app: plano
+   spec:
+     replicas: 1
+     selector:
+       matchLabels:
+         app: plano
+     template:
+       metadata:
+         labels:
+           app: plano
+       spec:
+         containers:
+           - name: plano
+             image: katanemo/plano:0.4.11
+             ports:
+               - containerPort: 12000  # LLM gateway (chat completions, model routing)
+                 name: llm-gateway
+             envFrom:
+               - secretRef:
+                   name: plano-secrets
+             env:
+               - name: LOG_LEVEL
+                 value: "info"
+             volumeMounts:
+               - name: plano-config
+                 mountPath: /app/plano_config.yaml
+                 subPath: plano_config.yaml
+                 readOnly: true
+             readinessProbe:
+               httpGet:
+                 path: /healthz
+                 port: 12000
+               initialDelaySeconds: 5
+               periodSeconds: 10
+             livenessProbe:
+               httpGet:
+                 path: /healthz
+                 port: 12000
+               initialDelaySeconds: 10
+               periodSeconds: 30
+             resources:
+               requests:
+                 memory: "256Mi"
+                 cpu: "250m"
+               limits:
+                 memory: "512Mi"
+                 cpu: "1000m"
+         volumes:
+           - name: plano-config
+             configMap:
+               name: plano-config
+   ---
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: plano
+   spec:
+     selector:
+       app: plano
+     ports:
+       - name: llm-gateway
+         port: 12000
+         targetPort: 12000
+
+Apply it:
+
+.. code-block:: bash
+
+   kubectl apply -f plano-deployment.yaml
+
+Step 4: Verify
+~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+   # Check pod status
+   kubectl get pods -l app=plano
+
+   # Check logs
+   kubectl logs -l app=plano -f
+
+   # Test routing (port-forward for local testing)
+   kubectl port-forward svc/plano 12000:12000
+
+   curl -s -H "Content-Type: application/json" \
+     -d '{"messages":[{"role":"user","content":"tell me a joke"}], "model":"none"}' \
+     http://localhost:12000/v1/chat/completions | jq .model
+
+Updating Configuration
+~~~~~~~~~~~~~~~~~~~~~~
+
+To update ``plano_config.yaml``, replace the ConfigMap and restart the pod:
+
+.. code-block:: bash
+
+   kubectl create configmap plano-config \
+     --from-file=plano_config.yaml=./plano_config.yaml \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl rollout restart deployment/plano
+
+Enabling OTEL Tracing
+~~~~~~~~~~~~~~~~~~~~~
+
+Plano emits OpenTelemetry traces for every request — including routing decisions, model selection, and upstream latency. To export traces to an OTEL collector in your cluster, add the ``tracing`` section to your ``plano_config.yaml``:
+
+.. code-block:: yaml
+
+   tracing:
+     opentracing_grpc_endpoint: "http://otel-collector.monitoring:4317"
+     random_sampling: 100       # percentage of requests to trace (1-100)
+     trace_arch_internal: true  # include internal Plano spans
+     span_attributes:
+       header_prefixes:         # capture request headers as span attributes
+         - "x-"
+       static:                  # add static attributes to all spans
+         environment: "production"
+         service: "plano"
+
+Set the ``OTEL_TRACING_GRPC_ENDPOINT`` environment variable or configure it directly in the config. Plano propagates the ``traceparent`` header end-to-end, so traces correlate across your upstream and downstream services.
+
+Environment Variables Reference
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following environment variables can be set on the container:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 50 20
+
+   * - Variable
+     - Description
+     - Default
+   * - ``LOG_LEVEL``
+     - Log verbosity (``debug``, ``info``, ``warn``, ``error``)
+     - ``info``
+   * - ``OPENAI_API_KEY``
+     - OpenAI API key (if referenced in config)
+     -
+   * - ``ANTHROPIC_API_KEY``
+     - Anthropic API key (if referenced in config)
+     -
+   * - ``OTEL_TRACING_GRPC_ENDPOINT``
+     - OTEL collector endpoint for trace export
+     - ``http://localhost:4317``
+
+Any environment variable referenced in ``plano_config.yaml`` with ``$VAR_NAME`` syntax will be substituted at startup. Use Kubernetes Secrets for sensitive values and ConfigMaps or ``env`` entries for non-sensitive configuration.
+
 Runtime Tests
 -------------
 

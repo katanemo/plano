@@ -108,7 +108,7 @@ pub struct ChatCompletionsRequest {
     pub top_p: Option<f32>,
     pub top_logprobs: Option<u32>,
     pub user: Option<String>,
-    // pub web_search: Option<bool>, // GOOD FIRST ISSUE: Future support for web search
+    pub web_search_options: Option<Value>,
 
     // VLLM-specific parameters (used by Arch-Function)
     pub top_k: Option<u32>,

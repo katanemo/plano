@@ -10,19 +10,58 @@ cd demos/llm_routing/preference_based_routing
 ./run_demo.sh
 ```
 
-Or manually:
+To also start AnythingLLM (chat UI) and Jaeger (tracing):
 
-1. Start Plano
 ```bash
-planoai up config.yaml
+./run_demo.sh --with-ui
 ```
 
-2. Start AnythingLLM
+Then open AnythingLLM at http://localhost:3001/
+
+Or start manually:
+
+1. (Optional) Start AnythingLLM and Jaeger
 ```bash
 docker compose up -d
 ```
 
-3. open AnythingLLM http://localhost:3001/
+2. Start Plano
+```bash
+planoai up config.yaml
+```
+
+3. Test with curl or open AnythingLLM http://localhost:3001/
+
+## Running with local Arch-Router (via Ollama)
+
+By default, Plano uses a hosted Arch-Router endpoint. To self-host Arch-Router locally using Ollama:
+
+1. Install [Ollama](https://ollama.ai) and pull the model:
+```bash
+ollama pull hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+```
+
+2. Make sure Ollama is running (`ollama serve` or the macOS app).
+
+3. Start Plano with the local config:
+```bash
+planoai up plano_config_local.yaml
+```
+
+4. Test routing:
+```bash
+curl -s "http://localhost:12000/routing/v1/messages" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Create a REST API endpoint in Rust using actix-web"}
+    ]
+  }'
+```
+
+You should see the router select the appropriate model based on the routing preferences defined in `plano_config_local.yaml`.
 
 # Testing out preference based routing
 
