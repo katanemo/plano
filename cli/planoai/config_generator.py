@@ -426,6 +426,13 @@ def validate_and_render_schema():
                     "Please provide model_providers either under listeners or at root level, not both. Currently we don't support multiple listeners with model_providers"
                 )
 
+    # Validate at most one model listener
+    model_listeners = [l for l in listeners if l.get("type") == "model"]
+    if len(model_listeners) > 1:
+        raise Exception(
+            f"Only one model listener is allowed, found {len(model_listeners)}"
+        )
+
     # Validate filter_chain IDs on listeners reference valid agent/filter IDs
     for listener in listeners:
         listener_filter_chain = listener.get("filter_chain", [])

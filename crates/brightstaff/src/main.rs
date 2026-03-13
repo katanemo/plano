@@ -10,7 +10,7 @@ use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
 use brightstaff::utils::tracing::init_tracer;
 use bytes::Bytes;
-use common::configuration::{Agent, Configuration, ListenerType};
+use common::configuration::{Agent, Configuration, ListenerType, ModelFilterChain};
 use common::consts::{
     CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
 };
@@ -94,32 +94,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let combined_agents_filters_list = Arc::new(RwLock::new(Some(all_agents)));
 
     // Resolve model listener filter chain and agents at startup
-    let model_listener_count = plano_config
-        .listeners
-        .iter()
-        .filter(|l| l.listener_type == ListenerType::Model)
-        .count();
-    assert!(
-        model_listener_count <= 1,
-        "only one model listener is allowed, found {}",
-        model_listener_count
-    );
     let model_listener = plano_config
         .listeners
         .iter()
         .find(|l| l.listener_type == ListenerType::Model);
-    let model_filter_chain: Arc<Option<Vec<String>>> =
-        Arc::new(model_listener.and_then(|l| l.filter_chain.clone()));
-    let model_filter_agents: Arc<HashMap<String, Agent>> = Arc::new(
-        model_filter_chain
-            .as_ref()
-            .as_ref()
+    let model_filter_chain: Arc<Option<ModelFilterChain>> = Arc::new(
+        model_listener
+            .and_then(|l| l.filter_chain.clone())
+            .filter(|fc| !fc.is_empty())
             .map(|fc| {
-                fc.iter()
-                    .filter_map(|id| global_agent_map.get(id).map(|a| (id.clone(), a.clone())))
-                    .collect()
-            })
-            .unwrap_or_default(),
+                let agents = fc
+                    .iter()
+                    .filter_map(|id| {
+                        global_agent_map.get(id).map(|a| (id.clone(), a.clone()))
+                    })
+                    .collect();
+                ModelFilterChain {
+                    filter_ids: fc,
+                    agents,
+                }
+            }),
     );
     let listeners = Arc::new(RwLock::new(plano_config.listeners.clone()));
     let llm_provider_url =
@@ -216,7 +210,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
         let model_filter_chain = model_filter_chain.clone();
-        let model_filter_agents = model_filter_agents.clone();
         let listeners = listeners.clone();
         let span_attributes = span_attributes.clone();
         let state_storage = state_storage.clone();
@@ -229,7 +222,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
             let model_filter_chain = model_filter_chain.clone();
-            let model_filter_agents = model_filter_agents.clone();
             let listeners = listeners.clone();
             let span_attributes = span_attributes.clone();
             let state_storage = state_storage.clone();
@@ -289,7 +281,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             span_attributes,
                             state_storage,
                             model_filter_chain,
-                            model_filter_agents,
                         )
                         .with_context(parent_cx)
                         .await

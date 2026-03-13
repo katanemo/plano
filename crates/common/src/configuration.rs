@@ -36,6 +36,14 @@ pub struct AgentFilterChain {
     pub filter_chain: Option<Vec<String>>,
 }
 
+/// Resolved filter chain for a model listener: the ordered filter IDs
+/// together with the agent definitions they reference.
+#[derive(Debug, Clone)]
+pub struct ModelFilterChain {
+    pub filter_ids: Vec<String>,
+    pub agents: HashMap<String, Agent>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ListenerType {

@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{Agent, AgentFilterChain, ModelAlias, SpanAttributes};
+use common::configuration::{AgentFilterChain, ModelAlias, ModelFilterChain, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -45,8 +45,7 @@ pub async fn llm_chat(
     llm_providers: Arc<RwLock<LlmProviders>>,
     span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
-    filter_chain: Arc<Option<Vec<String>>>,
-    filter_agents: Arc<HashMap<String, Agent>>,
+    model_filter_chain: Arc<Option<ModelFilterChain>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
@@ -86,8 +85,7 @@ pub async fn llm_chat(
         request_id,
         request_path,
         request_headers,
-        filter_chain,
-        filter_agents,
+        model_filter_chain,
     )
     .instrument(request_span)
     .await
@@ -105,8 +103,7 @@ async fn llm_chat_inner(
     request_id: String,
     request_path: String,
     mut request_headers: hyper::HeaderMap,
-    filter_chain: Arc<Option<Vec<String>>>,
-    filter_agents: Arc<HashMap<String, Agent>>,
+    model_filter_chain: Arc<Option<ModelFilterChain>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
@@ -261,29 +258,27 @@ async fn llm_chat_inner(
     }
 
     // === Filter chain processing for model listener ===
-    {
-        if let Some(ref fc) = *filter_chain {
-            if !fc.is_empty() {
-                debug!(filter_chain = ?fc, "processing model listener filter chain");
+    if let Some(ref mfc) = *model_filter_chain {
+        {
+            debug!(filter_ids = ?mfc.filter_ids, "processing model listener filter chain");
 
-                // Create a temporary AgentFilterChain to reuse PipelineProcessor
-                let temp_filter_chain = AgentFilterChain {
-                    id: "model_listener".to_string(),
-                    default: None,
-                    description: None,
-                    filter_chain: Some(fc.clone()),
-                };
+            let temp_filter_chain = AgentFilterChain {
+                id: "model_listener".to_string(),
+                default: None,
+                description: None,
+                filter_chain: Some(mfc.filter_ids.clone()),
+            };
 
-                let mut pipeline_processor = PipelineProcessor::default();
-                let messages = client_request.get_messages();
-                match pipeline_processor
-                    .process_filter_chain(
-                        &messages,
-                        &temp_filter_chain,
-                        &filter_agents,
-                        &request_headers,
-                    )
-                    .await
+            let mut pipeline_processor = PipelineProcessor::default();
+            let messages = client_request.get_messages();
+            match pipeline_processor
+                .process_filter_chain(
+                    &messages,
+                    &temp_filter_chain,
+                    &mfc.agents,
+                    &request_headers,
+                )
+                .await
                 {
                     Ok(filtered_messages) => {
                         client_request.set_messages(&filtered_messages);
@@ -326,7 +321,6 @@ async fn llm_chat_inner(
                         *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         return Ok(internal_error);
                     }
-                }
             }
         }
     }
