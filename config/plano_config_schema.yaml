@@ -172,14 +172,7 @@ properties:
           type: string
         provider_interface:
           type: string
-          enum:
-            - arch
-            - claude
-            - deepseek
-            - groq
-            - mistral
-            - openai
-            - gemini
+          description: "The provider interface/name. For supported providers (openai, anthropic, gemini, etc.), specify as part of model name (e.g., 'openai/gpt-4'). For custom providers, provide the interface name here."
         routing_preferences:
           type: array
           items:
@@ -219,14 +212,7 @@ properties:
           type: string
         provider_interface:
           type: string
-          enum:
-            - arch
-            - claude
-            - deepseek
-            - groq
-            - mistral
-            - openai
-            - gemini
+          description: "The provider interface/name. For supported providers (openai, anthropic, gemini, etc.), specify as part of model name (e.g., 'openai/gpt-4'). For custom providers, provide the interface name here."
         routing_preferences:
           type: array
           items:
