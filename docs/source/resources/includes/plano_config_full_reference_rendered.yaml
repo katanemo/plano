@@ -110,7 +110,7 @@ model_providers:
   provider_interface: plano
 - internal: true
   model: Plano-Orchestrator
-  name: plano-orchestrator
+  name: plano/orchestrator
   provider_interface: plano
 prompt_targets:
 - description: Get current weather at a location.
