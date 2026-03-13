@@ -272,55 +272,50 @@ async fn llm_chat_inner(
             let mut pipeline_processor = PipelineProcessor::default();
             let messages = client_request.get_messages();
             match pipeline_processor
-                .process_filter_chain(
-                    &messages,
-                    &temp_filter_chain,
-                    &mfc.agents,
-                    &request_headers,
-                )
+                .process_filter_chain(&messages, &temp_filter_chain, &mfc.agents, &request_headers)
                 .await
-                {
-                    Ok(filtered_messages) => {
-                        client_request.set_messages(&filtered_messages);
-                        info!(
-                            original_count = messages.len(),
-                            filtered_count = filtered_messages.len(),
-                            "filter chain processed successfully"
-                        );
-                    }
-                    Err(super::pipeline_processor::PipelineError::ClientError {
-                        agent,
-                        status,
-                        body,
-                    }) => {
-                        warn!(
-                            agent = %agent,
-                            status = %status,
-                            body = %body,
-                            "client error from filter chain"
-                        );
-                        let error_json = serde_json::json!({
-                            "error": "FilterChainError",
-                            "agent": agent,
-                            "status": status,
-                            "agent_response": body
-                        });
-                        let mut error_response = Response::new(full(error_json.to_string()));
-                        *error_response.status_mut() =
-                            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
-                        error_response.headers_mut().insert(
-                            hyper::header::CONTENT_TYPE,
-                            "application/json".parse().unwrap(),
-                        );
-                        return Ok(error_response);
-                    }
-                    Err(err) => {
-                        warn!(error = %err, "filter chain processing failed");
-                        let err_msg = format!("Filter chain processing failed: {}", err);
-                        let mut internal_error = Response::new(full(err_msg));
-                        *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return Ok(internal_error);
-                    }
+            {
+                Ok(filtered_messages) => {
+                    client_request.set_messages(&filtered_messages);
+                    info!(
+                        original_count = messages.len(),
+                        filtered_count = filtered_messages.len(),
+                        "filter chain processed successfully"
+                    );
+                }
+                Err(super::pipeline_processor::PipelineError::ClientError {
+                    agent,
+                    status,
+                    body,
+                }) => {
+                    warn!(
+                        agent = %agent,
+                        status = %status,
+                        body = %body,
+                        "client error from filter chain"
+                    );
+                    let error_json = serde_json::json!({
+                        "error": "FilterChainError",
+                        "agent": agent,
+                        "status": status,
+                        "agent_response": body
+                    });
+                    let mut error_response = Response::new(full(error_json.to_string()));
+                    *error_response.status_mut() =
+                        StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
+                    error_response.headers_mut().insert(
+                        hyper::header::CONTENT_TYPE,
+                        "application/json".parse().unwrap(),
+                    );
+                    return Ok(error_response);
+                }
+                Err(err) => {
+                    warn!(error = %err, "filter chain processing failed");
+                    let err_msg = format!("Filter chain processing failed: {}", err);
+                    let mut internal_error = Response::new(full(err_msg));
+                    *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(internal_error);
+                }
             }
         }
     }

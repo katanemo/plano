@@ -105,9 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .map(|fc| {
                 let agents = fc
                     .iter()
-                    .filter_map(|id| {
-                        global_agent_map.get(id).map(|a| (id.clone(), a.clone()))
-                    })
+                    .filter_map(|id| global_agent_map.get(id).map(|a| (id.clone(), a.clone())))
                     .collect();
                 ModelFilterChain {
                     filter_ids: fc,
