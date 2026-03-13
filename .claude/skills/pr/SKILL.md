@@ -13,4 +13,4 @@ Create a pull request for the current changes:
 4. Commit all changes with a short, concise commit message (one line, no Co-Authored-By)
 5. Push the branch and create a PR targeting `main`
 
-Keep the PR title short (under 70 chars). Include a summary and test plan in the body. Never include any "Generated with Claude Code" attribution.
+Keep the PR title short (under 70 chars). Include a brief summary in the body. Never include a "Test plan" section or any "Generated with Claude Code" attribution.
