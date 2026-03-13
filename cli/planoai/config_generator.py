@@ -3,7 +3,7 @@ import os
 from planoai.utils import convert_legacy_listeners
 from jinja2 import Environment, FileSystemLoader
 import yaml
-from jsonschema import validate
+from jsonschema import validate, ValidationError
 from urllib.parse import urlparse
 from copy import deepcopy
 from planoai.consts import DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
@@ -503,11 +503,13 @@ def validate_prompt_config(plano_config_file, plano_config_schema_file):
 
     try:
         validate(config_yaml, config_schema_yaml)
+    except ValidationError as e:
+        path = " → ".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
+        raise ValidationError(
+            f"{e.message}\n  Location: {path}\n  Value: {e.instance}"
+        ) from None
     except Exception as e:
-        print(
-            f"Error validating plano_config file: {plano_config_file}, schema file: {plano_config_schema_file}, error: {e}"
-        )
-        raise e
+        raise
 
 
 if __name__ == "__main__":

@@ -420,9 +420,18 @@ def native_validate_config(plano_config_file):
     with _temporary_env(overrides):
         from planoai.config_generator import validate_and_render_schema
 
-        # Suppress verbose print output from config_generator
-        with contextlib.redirect_stdout(io.StringIO()):
-            validate_and_render_schema()
+        # Suppress verbose print output from config_generator but capture errors
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                validate_and_render_schema()
+        except SystemExit:
+            # validate_and_render_schema calls exit(1) on failure after
+            # printing to stdout; re-raise so the caller gets a useful message.
+            output = captured.getvalue().strip()
+            raise Exception(output) if output else Exception(
+                "Config validation failed"
+            )
 
 
 def native_logs(debug=False, follow=False):
