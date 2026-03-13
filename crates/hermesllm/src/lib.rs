@@ -20,6 +20,7 @@ pub use providers::streaming_response::{ProviderStreamResponse, ProviderStreamRe
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 pub const OPENAI_RESPONSES_API_PATH: &str = "/v1/responses";
 pub const MESSAGES_PATH: &str = "/v1/messages";
+pub const GENERATE_CONTENT_PATH_SUFFIX: &str = ":generateContent";
 
 #[cfg(test)]
 mod tests {

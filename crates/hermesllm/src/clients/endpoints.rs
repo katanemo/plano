@@ -1,4 +1,4 @@
-use crate::apis::{AmazonBedrockApi, AnthropicApi, ApiDefinition, OpenAIApi};
+use crate::apis::{AmazonBedrockApi, AnthropicApi, ApiDefinition, GeminiApi, OpenAIApi};
 use crate::ProviderId;
 use std::fmt;
 
@@ -8,6 +8,7 @@ pub enum SupportedAPIsFromClient {
     OpenAIChatCompletions(OpenAIApi),
     AnthropicMessagesAPI(AnthropicApi),
     OpenAIResponsesAPI(OpenAIApi),
+    GeminiGenerateContentAPI(GeminiApi),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +18,8 @@ pub enum SupportedUpstreamAPIs {
     AmazonBedrockConverse(AmazonBedrockApi),
     AmazonBedrockConverseStream(AmazonBedrockApi),
     OpenAIResponsesAPI(OpenAIApi),
+    GeminiGenerateContent(GeminiApi),
+    GeminiStreamGenerateContent(GeminiApi),
 }
 
 impl fmt::Display for SupportedAPIsFromClient {
@@ -30,6 +33,9 @@ impl fmt::Display for SupportedAPIsFromClient {
             }
             SupportedAPIsFromClient::OpenAIResponsesAPI(api) => {
                 write!(f, "OpenAI Responses ({})", api.endpoint())
+            }
+            SupportedAPIsFromClient::GeminiGenerateContentAPI(api) => {
+                write!(f, "Gemini ({})", api.endpoint())
             }
         }
     }
@@ -53,6 +59,12 @@ impl fmt::Display for SupportedUpstreamAPIs {
             SupportedUpstreamAPIs::OpenAIResponsesAPI(api) => {
                 write!(f, "OpenAI Responses ({})", api.endpoint())
             }
+            SupportedUpstreamAPIs::GeminiGenerateContent(api) => {
+                write!(f, "Gemini ({})", api.endpoint())
+            }
+            SupportedUpstreamAPIs::GeminiStreamGenerateContent(api) => {
+                write!(f, "Gemini Stream ({})", api.endpoint())
+            }
         }
     }
 }
@@ -60,6 +72,13 @@ impl fmt::Display for SupportedUpstreamAPIs {
 impl SupportedAPIsFromClient {
     /// Create a SupportedApi from an endpoint path
     pub fn from_endpoint(endpoint: &str) -> Option<Self> {
+        // Check Gemini first since it uses suffix matching (`:generateContent`)
+        if let Some(gemini_api) = GeminiApi::from_endpoint(endpoint) {
+            return Some(SupportedAPIsFromClient::GeminiGenerateContentAPI(
+                gemini_api,
+            ));
+        }
+
         if let Some(openai_api) = OpenAIApi::from_endpoint(endpoint) {
             // Check if this is the Responses API endpoint
             if openai_api == OpenAIApi::Responses {
@@ -82,6 +101,7 @@ impl SupportedAPIsFromClient {
             SupportedAPIsFromClient::OpenAIChatCompletions(api) => api.endpoint(),
             SupportedAPIsFromClient::AnthropicMessagesAPI(api) => api.endpoint(),
             SupportedAPIsFromClient::OpenAIResponsesAPI(api) => api.endpoint(),
+            SupportedAPIsFromClient::GeminiGenerateContentAPI(api) => api.endpoint(),
         }
     }
 
@@ -145,7 +165,18 @@ impl SupportedAPIsFromClient {
                 }
                 ProviderId::Gemini => {
                     if request_path.starts_with("/v1/") {
-                        build_endpoint("/v1beta/openai", endpoint_suffix)
+                        // Use native Gemini endpoint
+                        if !is_streaming {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:generateContent", model_id),
+                            )
+                        } else {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:streamGenerateContent?alt=sse", model_id),
+                            )
+                        }
                     } else {
                         build_endpoint("/v1", endpoint_suffix)
                     }
@@ -178,6 +209,20 @@ impl SupportedAPIsFromClient {
                             build_endpoint("/v1", "/chat/completions")
                         }
                     }
+                    ProviderId::Gemini => {
+                        // Translate Anthropic → Gemini native
+                        if !is_streaming {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:generateContent", model_id),
+                            )
+                        } else {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:streamGenerateContent?alt=sse", model_id),
+                            )
+                        }
+                    }
                     _ => build_endpoint("/v1", "/chat/completions"),
                 }
             }
@@ -186,6 +231,20 @@ impl SupportedAPIsFromClient {
                 match provider_id {
                     // Providers that support /v1/responses natively
                     ProviderId::OpenAI | ProviderId::XAI => route_by_provider("/responses"),
+                    ProviderId::Gemini => {
+                        // Translate Responses → Gemini native
+                        if !is_streaming {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:generateContent", model_id),
+                            )
+                        } else {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:streamGenerateContent?alt=sse", model_id),
+                            )
+                        }
+                    }
                     // All other providers: translate to /chat/completions
                     _ => route_by_provider("/chat/completions"),
                 }
@@ -194,6 +253,33 @@ impl SupportedAPIsFromClient {
                 // For Chat Completions API, use the standard chat/completions path
                 route_by_provider("/chat/completions")
             }
+            SupportedAPIsFromClient::GeminiGenerateContentAPI(_) => {
+                match provider_id {
+                    ProviderId::Gemini => {
+                        // Native Gemini endpoint
+                        if !is_streaming {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:generateContent", model_id),
+                            )
+                        } else {
+                            build_endpoint(
+                                "/v1beta",
+                                &format!("/models/{}:streamGenerateContent?alt=sse", model_id),
+                            )
+                        }
+                    }
+                    ProviderId::Anthropic => build_endpoint("/v1", "/messages"),
+                    ProviderId::AmazonBedrock => {
+                        if !is_streaming {
+                            build_endpoint("", &format!("/model/{}/converse", model_id))
+                        } else {
+                            build_endpoint("", &format!("/model/{}/converse-stream", model_id))
+                        }
+                    }
+                    _ => build_endpoint("/v1", "/chat/completions"),
+                }
+            }
         }
     }
 }
@@ -201,6 +287,18 @@ impl SupportedAPIsFromClient {
 impl SupportedUpstreamAPIs {
     /// Create a SupportedUpstreamApi from an endpoint path
     pub fn from_endpoint(endpoint: &str) -> Option<Self> {
+        // Check Gemini first since it uses suffix matching
+        if let Some(gemini_api) = GeminiApi::from_endpoint(endpoint) {
+            return match gemini_api {
+                GeminiApi::GenerateContent => {
+                    Some(SupportedUpstreamAPIs::GeminiGenerateContent(gemini_api))
+                }
+                GeminiApi::StreamGenerateContent => Some(
+                    SupportedUpstreamAPIs::GeminiStreamGenerateContent(gemini_api),
+                ),
+            };
+        }
+
         if let Some(openai_api) = OpenAIApi::from_endpoint(endpoint) {
             // Check if this is the Responses API endpoint
             if openai_api == OpenAIApi::Responses {
@@ -396,7 +494,7 @@ mod tests {
             "/openai/deployments/gpt-4/chat/completions?api-version=2025-01-01-preview"
         );
 
-        // Test Gemini provider
+        // Test Gemini provider (uses native Gemini API with transforms)
         assert_eq!(
             api.target_endpoint_for_provider(
                 &ProviderId::Gemini,
@@ -405,7 +503,7 @@ mod tests {
                 false,
                 None
             ),
-            "/v1beta/openai/chat/completions"
+            "/v1beta/models/gemini-pro:generateContent"
         );
     }
 
