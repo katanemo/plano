@@ -1,15 +1,4 @@
 services:
-  rag_energy_source_agent:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "18083:80"
-    healthcheck:
-        test: ["CMD", "curl" ,"http://localhost:80/healthz"]
-        interval: 5s
-        retries: 20
-
   anythingllm:
     image: mintplexlabs/anythingllm
     restart: always

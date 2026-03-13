@@ -18,22 +18,24 @@ start_demo() {
     echo ".env file created with OPENAI_API_KEY."
   fi
 
-  # Step 3: Start Plano
+  # Step 3: Optionally start UI services (AnythingLLM, Jaeger)
+  # Jaeger must start before Plano so it can bind the OTEL port (4317)
+  if [ "$1" == "--with-ui" ]; then
+    echo "Starting UI services (AnythingLLM, Jaeger)..."
+    docker compose up -d
+  fi
+
+  # Step 4: Start Plano
   echo "Starting Plano with config.yaml..."
   planoai up config.yaml
-
-  # Step 4: Start LLM Routing
-  echo "Starting LLM Routing using Docker Compose..."
-  docker compose up -d  # Run in detached mode
 }
 
 # Function to stop the demo
 stop_demo() {
-  # Step 1: Stop Docker Compose services
-  echo "Stopping LLM Routing using Docker Compose..."
-  docker compose down
+  # Stop Docker Compose services if running
+  docker compose down 2>/dev/null || true
 
-  # Step 2: Stop Plano
+  # Stop Plano
   echo "Stopping Plano..."
   planoai down
 }
@@ -42,6 +44,5 @@ stop_demo() {
 if [ "$1" == "down" ]; then
   stop_demo
 else
-  # Default action is to bring the demo up
-  start_demo
+  start_demo "$1"
 fi

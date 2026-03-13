@@ -41,21 +41,36 @@ cd demos/agent_orchestration/multi_agent_crewai_langchain
 ./run_demo.sh
 ```
 
-This starts Plano natively and brings up via Docker Compose:
+This starts Plano natively and runs agents as local processes:
 - **CrewAI Flight Agent** (port 10520) - flight search
 - **LangChain Weather Agent** (port 10510) - weather forecasts
-- **AnythingLLM** (port 3001) - chat interface
-- **Jaeger** (port 16686) - distributed tracing
 
 Plano runs natively on the host (ports 12000, 8001).
 
+To also start AnythingLLM (chat UI), Jaeger (tracing), and other optional services:
+
+```bash
+./run_demo.sh --with-ui
+```
+
+This additionally starts:
+- **AnythingLLM** (port 3001) - chat interface
+- **Jaeger** (port 16686) - distributed tracing
+
 ### Try It Out
 
-1. **Open the Chat Interface**
+1. **Using curl**
+   ```bash
+   curl -X POST http://localhost:8001/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "What is the weather in San Francisco?"}]}'
+   ```
+
+2. **Using AnythingLLM (requires `--with-ui`)**
    - Navigate to [http://localhost:3001](http://localhost:3001)
    - Create an account (stored locally)
 
-2. **Ask Multi-Agent Questions**
+3. **Ask Multi-Agent Questions**
    ```
    "What's the weather in San Francisco and can you find flights from Seattle to San Francisco?"
    ```
@@ -65,7 +80,7 @@ Plano runs natively on the host (ports 12000, 8001).
    - Routes the flight part to the CrewAI agent
    - Combines responses seamlessly
 
-3. **View Distributed Traces**
+4. **View Distributed Traces (requires `--with-ui`)**
    - Open [http://localhost:16686](http://localhost:16686) (Jaeger UI)
    - See how requests flow through both agents
 
