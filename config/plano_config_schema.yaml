@@ -173,7 +173,6 @@ properties:
         provider_interface:
           type: string
           enum:
-            - arch
             - plano
             - claude
             - deepseek
@@ -221,7 +220,6 @@ properties:
         provider_interface:
           type: string
           enum:
-            - arch
             - plano
             - claude
             - deepseek
@@ -273,10 +271,10 @@ properties:
       upstream_tls_ca_path:
         type: string
         description: "Path to the trusted CA bundle for upstream TLS verification. Default is '/etc/ssl/certs/ca-certificates.crt'."
-      router_model:
+      llm_routing_model:
         type: string
         description: "Model name for the LLM router (e.g., 'Arch-Router'). Must match a model in model_providers."
-      orchestrator_model:
+      agent_orchestration_model:
         type: string
         description: "Model name for the agent orchestrator (e.g., 'Plano-Orchestrator'). Must match a model in model_providers."
   system_prompt:

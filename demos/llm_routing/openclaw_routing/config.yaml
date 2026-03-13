@@ -1,7 +1,7 @@
 version: v0.1.0
 
 overrides:
-  router_model: Arch-Router
+  llm_routing_model: Arch-Router
 
 listeners:
   egress_traffic:

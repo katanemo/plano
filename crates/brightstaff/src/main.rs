@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Strip provider prefix (e.g. "arch/") to get the model ID used in upstream requests
     let routing_model_name: String = overrides
-        .router_model
+        .llm_routing_model
         .as_deref()
         .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
         .unwrap_or(DEFAULT_ROUTING_MODEL_NAME)
@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Strip provider prefix (e.g. "arch/") to get the model ID used in upstream requests
     let orchestrator_model_name: String = overrides
-        .orchestrator_model
+        .agent_orchestration_model
         .as_deref()
         .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
         .unwrap_or(DEFAULT_ORCHESTRATOR_MODEL_NAME)

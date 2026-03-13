@@ -13,7 +13,6 @@ SUPPORTED_PROVIDERS_WITH_BASE_URL = [
     "ollama",
     "qwen",
     "amazon_bedrock",
-    "arch",
     "plano",
 ]
 
@@ -373,7 +372,7 @@ def validate_and_render_schema():
     model_name_set = {mp.get("model") for mp in updated_model_providers}
 
     # Auto-add arch-router provider if routing preferences exist and no provider matches the router model
-    router_model = overrides_config.get("router_model", "Arch-Router")
+    router_model = overrides_config.get("llm_routing_model", "Arch-Router")
     # Strip provider prefix for comparison since config processing strips prefixes from model names
     router_model_id = (
         router_model.split("/", 1)[1] if "/" in router_model else router_model
@@ -382,7 +381,7 @@ def validate_and_render_schema():
         updated_model_providers.append(
             {
                 "name": "arch-router",
-                "provider_interface": "arch",
+                "provider_interface": "plano",
                 "model": router_model_id,
                 "internal": True,
             }
@@ -393,7 +392,7 @@ def validate_and_render_schema():
         updated_model_providers.append(
             {
                 "name": "arch-function",
-                "provider_interface": "arch",
+                "provider_interface": "plano",
                 "model": "Arch-Function",
                 "internal": True,
             }
@@ -401,7 +400,7 @@ def validate_and_render_schema():
 
     # Auto-add plano-orchestrator provider if no provider matches the orchestrator model
     orchestrator_model = overrides_config.get(
-        "orchestrator_model", "Plano-Orchestrator"
+        "agent_orchestration_model", "Plano-Orchestrator"
     )
     orchestrator_model_id = (
         orchestrator_model.split("/", 1)[1]
@@ -411,8 +410,8 @@ def validate_and_render_schema():
     if orchestrator_model_id not in model_name_set:
         updated_model_providers.append(
             {
-                "name": "plano-orchestrator",
-                "provider_interface": "arch",
+                "name": "plano/orchestrator",
+                "provider_interface": "plano",
                 "model": orchestrator_model_id,
                 "internal": True,
             }

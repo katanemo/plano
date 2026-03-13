@@ -254,7 +254,7 @@ Using Ollama (recommended for local development)
    .. code-block:: yaml
 
        overrides:
-         router_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+         llm_routing_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
 
        model_providers:
          - model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
@@ -323,7 +323,7 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
    .. code-block:: yaml
 
        overrides:
-         router_model: plano/Arch-Router
+         llm_routing_model: plano/Arch-Router
 
        model_providers:
          - model: plano/Arch-Router

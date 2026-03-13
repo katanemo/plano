@@ -34,7 +34,7 @@ pub enum ProviderId {
     Gemini,
     Anthropic,
     GitHub,
-    Arch,
+    Plano,
     AzureOpenAI,
     XAI,
     TogetherAI,
@@ -58,7 +58,7 @@ impl TryFrom<&str> for ProviderId {
             "google" => Ok(ProviderId::Gemini), // alias
             "anthropic" => Ok(ProviderId::Anthropic),
             "github" => Ok(ProviderId::GitHub),
-            "arch" => Ok(ProviderId::Arch),
+            "plano" => Ok(ProviderId::Plano),
             "azure_openai" => Ok(ProviderId::AzureOpenAI),
             "xai" => Ok(ProviderId::XAI),
             "together_ai" => Ok(ProviderId::TogetherAI),
@@ -135,7 +135,7 @@ impl ProviderId {
                 | ProviderId::Groq
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
-                | ProviderId::Arch
+                | ProviderId::Plano
                 | ProviderId::Gemini
                 | ProviderId::GitHub
                 | ProviderId::AzureOpenAI
@@ -153,7 +153,7 @@ impl ProviderId {
                 | ProviderId::Groq
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
-                | ProviderId::Arch
+                | ProviderId::Plano
                 | ProviderId::Gemini
                 | ProviderId::GitHub
                 | ProviderId::AzureOpenAI
@@ -219,7 +219,7 @@ impl Display for ProviderId {
             ProviderId::Gemini => write!(f, "Gemini"),
             ProviderId::Anthropic => write!(f, "Anthropic"),
             ProviderId::GitHub => write!(f, "GitHub"),
-            ProviderId::Arch => write!(f, "Arch"),
+            ProviderId::Plano => write!(f, "Plano"),
             ProviderId::AzureOpenAI => write!(f, "azure_openai"),
             ProviderId::XAI => write!(f, "xai"),
             ProviderId::TogetherAI => write!(f, "together_ai"),

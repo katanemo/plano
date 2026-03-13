@@ -404,10 +404,11 @@ Using vLLM
    .. code-block:: yaml
 
        overrides:
-         orchestrator_model: plano/katanemo/Plano-Orchestrator-4B
+         agent_orchestration_model: plano/katanemo/Plano-Orchestrator-4B
 
        model_providers:
-         - model: plano/katanemo/Plano-Orchestrator-4B
+         - model: katanemo/Plano-Orchestrator-4B
+           provider_interface: plano
            base_url: http://<your-server-ip>:8000
 
 5. **Verify the server is running**

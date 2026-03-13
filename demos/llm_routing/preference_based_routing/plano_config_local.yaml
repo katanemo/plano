@@ -1,7 +1,7 @@
 version: v0.3.0
 
 overrides:
-  router_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+  llm_routing_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
 
 listeners:
   - type: model

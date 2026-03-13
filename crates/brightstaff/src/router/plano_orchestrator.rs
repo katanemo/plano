@@ -81,12 +81,12 @@ impl OrchestratorService {
         debug!(
             model = %self.orchestrator_model.get_model_name(),
             endpoint = %self.orchestrator_url,
-            "sending request to arch-orchestrator"
+            "sending request to plano-orchestrator"
         );
 
         debug!(
             body = %serde_json::to_string(&orchestrator_request).unwrap(),
-            "arch orchestrator request"
+            "plano orchestrator request"
         );
 
         let mut orchestration_request_headers = header::HeaderMap::new();

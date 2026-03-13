@@ -77,8 +77,8 @@ pub struct Overrides {
     pub prompt_target_intent_matching_threshold: Option<f64>,
     pub optimize_context_window: Option<bool>,
     pub use_agent_orchestrator: Option<bool>,
-    pub router_model: Option<String>,
-    pub orchestrator_model: Option<String>,
+    pub llm_routing_model: Option<String>,
+    pub agent_orchestration_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -202,8 +202,6 @@ pub struct EmbeddingProviver {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum LlmProviderType {
-    #[serde(rename = "arch")]
-    Arch,
     #[serde(rename = "anthropic")]
     Anthropic,
     #[serde(rename = "deepseek")]
@@ -239,7 +237,6 @@ pub enum LlmProviderType {
 impl Display for LlmProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LlmProviderType::Arch => write!(f, "arch"),
             LlmProviderType::Anthropic => write!(f, "anthropic"),
             LlmProviderType::Deepseek => write!(f, "deepseek"),
             LlmProviderType::Groq => write!(f, "groq"),
@@ -263,15 +260,7 @@ impl LlmProviderType {
     /// Get the ProviderId for this LlmProviderType
     /// Used with the new function-based hermesllm API
     pub fn to_provider_id(&self) -> hermesllm::ProviderId {
-        // Plano provider uses the same interface as Arch
-        let provider_str = match self {
-            LlmProviderType::Plano => "arch",
-            other => {
-                return hermesllm::ProviderId::try_from(other.to_string().as_str())
-                    .expect("LlmProviderType should always map to a valid ProviderId")
-            }
-        };
-        hermesllm::ProviderId::try_from(provider_str)
+        hermesllm::ProviderId::try_from(self.to_string().as_str())
             .expect("LlmProviderType should always map to a valid ProviderId")
     }
 }
@@ -597,14 +586,14 @@ mod test {
             },
             LlmProvider {
                 name: "arch-router".to_string(),
-                provider_interface: LlmProviderType::Arch,
+                provider_interface: LlmProviderType::Plano,
                 model: Some("Arch-Router".to_string()),
                 internal: Some(true),
                 ..Default::default()
             },
             LlmProvider {
                 name: "plano-orchestrator".to_string(),
-                provider_interface: LlmProviderType::Arch,
+                provider_interface: LlmProviderType::Plano,
                 model: Some("Plano-Orchestrator".to_string()),
                 internal: Some(true),
                 ..Default::default()
