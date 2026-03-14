@@ -5,6 +5,7 @@ pub mod jsonrpc;
 pub mod llm;
 pub mod models;
 pub mod pipeline_processor;
+pub mod policy_provider;
 pub mod response_handler;
 pub mod router_chat;
 pub mod routing_service;

@@ -9,8 +9,17 @@ use crate::api::open_ai::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Routing {
+    #[serde(alias = "llm_provider")]
     pub model_provider: Option<String>,
     pub model: Option<String>,
+    pub policy_provider: Option<RoutingPolicyProvider>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingPolicyProvider {
+    pub url: String,
+    pub headers: Option<HashMap<String, String>>,
+    pub ttl_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,7 +279,7 @@ impl LlmProviderType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelUsagePreference {
     pub model: String,
     pub routing_preferences: Vec<RoutingPreference>,

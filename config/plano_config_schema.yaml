@@ -411,10 +411,27 @@ properties:
   routing:
     type: object
     properties:
+      model_provider:
+        type: string
       llm_provider:
         type: string
       model:
         type: string
+      policy_provider:
+        type: object
+        properties:
+          url:
+            type: string
+          headers:
+            type: object
+            additionalProperties:
+              type: string
+          ttl_seconds:
+            type: integer
+            minimum: 1
+        additionalProperties: false
+        required:
+          - url
     additionalProperties: false
   state_storage:
     type: object

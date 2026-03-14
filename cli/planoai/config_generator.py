@@ -185,6 +185,41 @@ def validate_and_render_schema():
                 f"Invalid opentracing_grpc_endpoint {opentracing_grpc_endpoint}, path must be empty"
             )
 
+    routing = config_yaml.get("routing", {})
+    policy_provider = routing.get("policy_provider")
+    if policy_provider:
+        policy_url = policy_provider.get("url")
+        if not policy_url:
+            raise Exception(
+                "routing.policy_provider.url is required when policy_provider is set"
+            )
+        if "$" in policy_url:
+            policy_url = os.path.expandvars(policy_url)
+        policy_url_result = urlparse(policy_url)
+        if (
+            policy_url_result.scheme not in ["http", "https"]
+            or not policy_url_result.hostname
+        ):
+            raise Exception(
+                f"Invalid routing.policy_provider.url {policy_provider.get('url')}, must be a valid http/https URL"
+            )
+
+        ttl_seconds = policy_provider.get("ttl_seconds")
+        if ttl_seconds is not None and ttl_seconds <= 0:
+            raise Exception(
+                "routing.policy_provider.ttl_seconds must be greater than 0"
+            )
+
+        headers = policy_provider.get("headers")
+        if headers is not None:
+            if not isinstance(headers, dict):
+                raise Exception("routing.policy_provider.headers must be an object")
+            for key, value in headers.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    raise Exception(
+                        "routing.policy_provider.headers must contain string keys and string values"
+                    )
+
     llms_with_endpoint = []
     llms_with_endpoint_cluster_names = set()
     updated_model_providers = []
