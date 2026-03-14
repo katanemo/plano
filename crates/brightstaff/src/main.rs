@@ -102,12 +102,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .and_then(|r| r.model_provider.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
+    let session_ttl_seconds = plano_config
+        .routing
+        .as_ref()
+        .and_then(|r| r.session_ttl_seconds);
+
+    let session_max_entries = plano_config
+        .routing
+        .as_ref()
+        .and_then(|r| r.session_max_entries);
+
     let router_service: Arc<RouterService> = Arc::new(RouterService::new(
         plano_config.model_providers.clone(),
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         routing_model_name,
         routing_llm_provider,
+        session_ttl_seconds,
+        session_max_entries,
     ));
+
+    // Spawn background task to clean up expired session cache entries every 5 minutes
+    {
+        let router_service = Arc::clone(&router_service);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop {
+                interval.tick().await;
+                router_service.cleanup_expired_sessions().await;
+            }
+        });
+    }
 
     let orchestrator_service: Arc<OrchestratorService> = Arc::new(OrchestratorService::new(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
