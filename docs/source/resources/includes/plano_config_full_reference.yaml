@@ -66,8 +66,8 @@ listeners:
     name: model_1
     address: 0.0.0.0
     port: 12000
-    # Optional: attach a filter chain for input guardrails on direct LLM requests
-    # filter_chain:
+    # Optional: attach input filters for guardrails on direct LLM requests
+    # input_filters:
     #   - input_guards
 
   # Prompt listener for function calling (for prompt_targets)

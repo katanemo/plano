@@ -426,13 +426,13 @@ def validate_and_render_schema():
                     "Please provide model_providers either under listeners or at root level, not both. Currently we don't support multiple listeners with model_providers"
                 )
 
-    # Validate filter_chain IDs on listeners reference valid agent/filter IDs
+    # Validate input_filters IDs on listeners reference valid agent/filter IDs
     for listener in listeners:
-        listener_filter_chain = listener.get("filter_chain", [])
-        for fc_id in listener_filter_chain:
+        listener_input_filters = listener.get("input_filters", [])
+        for fc_id in listener_input_filters:
             if fc_id not in agent_id_keys:
                 raise Exception(
-                    f"Listener '{listener.get('name', 'unknown')}' references filter_chain id '{fc_id}' "
+                    f"Listener '{listener.get('name', 'unknown')}' references input_filters id '{fc_id}' "
                     f"which is not defined in agents or filters. Available ids: {', '.join(sorted(agent_id_keys))}"
                 )
 

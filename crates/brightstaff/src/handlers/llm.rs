@@ -46,9 +46,9 @@ pub async fn llm_chat(
     llm_providers: Arc<RwLock<LlmProviders>>,
     span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
-    filter_chain: Arc<Option<Vec<String>>>,
-    filter_agents: Arc<HashMap<String, Agent>>,
-    output_filter_chain: Arc<Option<Vec<String>>>,
+    input_filters: Arc<Option<Vec<String>>>,
+    input_filter_agents: Arc<HashMap<String, Agent>>,
+    output_filters: Arc<Option<Vec<String>>>,
     output_filter_agents: Arc<HashMap<String, Agent>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
@@ -89,9 +89,9 @@ pub async fn llm_chat(
         request_id,
         request_path,
         request_headers,
-        filter_chain,
-        filter_agents,
-        output_filter_chain,
+        input_filters,
+        input_filter_agents,
+        output_filters,
         output_filter_agents,
     )
     .instrument(request_span)
@@ -110,9 +110,9 @@ async fn llm_chat_inner(
     request_id: String,
     request_path: String,
     mut request_headers: hyper::HeaderMap,
-    filter_chain: Arc<Option<Vec<String>>>,
-    filter_agents: Arc<HashMap<String, Agent>>,
-    output_filter_chain: Arc<Option<Vec<String>>>,
+    input_filters: Arc<Option<Vec<String>>>,
+    input_filter_agents: Arc<HashMap<String, Agent>>,
+    output_filters: Arc<Option<Vec<String>>>,
     output_filter_agents: Arc<HashMap<String, Agent>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
@@ -267,11 +267,11 @@ async fn llm_chat_inner(
         debug!("removed plano_preference_config from metadata");
     }
 
-    // === Filter chain processing for model listener ===
+    // === Input filters processing for model listener ===
     {
-        if let Some(ref fc) = *filter_chain {
+        if let Some(ref fc) = *input_filters {
             if !fc.is_empty() {
-                debug!(filter_chain = ?fc, "processing model listener filter chain");
+                debug!(input_filters = ?fc, "processing model listener input filters");
 
                 // Create a temporary AgentFilterChain to reuse PipelineProcessor
                 let temp_filter_chain = AgentFilterChain {
@@ -287,7 +287,7 @@ async fn llm_chat_inner(
                     .process_filter_chain(
                         &messages,
                         &temp_filter_chain,
-                        &filter_agents,
+                        &input_filter_agents,
                         &request_headers,
                     )
                     .await
@@ -508,14 +508,23 @@ async fn llm_chat_inner(
         propagator.inject_context(&cx, &mut HeaderInjector(&mut request_headers));
     });
 
-    // Determine if output filter chain is configured
-    let has_output_filter = output_filter_chain
+    // Output filters are only supported for /v1/chat/completions — the SSE content
+    // extraction logic is specific to that API shape (choices[].delta.content).
+    let output_filters_configured = output_filters
         .as_ref()
         .as_ref()
         .map(|fc| !fc.is_empty())
         .unwrap_or(false);
+    let has_output_filter = output_filters_configured
+        && request_path == common::consts::CHAT_COMPLETIONS_PATH;
+    if output_filters_configured && !has_output_filter {
+        warn!(
+            path = %request_path,
+            "output filters are configured but only supported for /v1/chat/completions, skipping"
+        );
+    }
 
-    // Save request headers for output filter chain (before they're consumed by upstream request)
+    // Save request headers for output filters (before they're consumed by upstream request)
     let output_filter_request_headers = if has_output_filter {
         Some(request_headers.clone())
     } else {
@@ -589,7 +598,7 @@ async fn llm_chat_inner(
             request_id,
         );
         if has_output_filter {
-            let ofc = output_filter_chain.as_ref().as_ref().unwrap().clone();
+            let ofc = output_filters.as_ref().as_ref().unwrap().clone();
             let ofa = (*output_filter_agents).clone();
             create_streaming_response_with_output_filter(
                 byte_stream,
@@ -603,7 +612,7 @@ async fn llm_chat_inner(
             create_streaming_response(byte_stream, state_processor, 16)
         }
     } else if has_output_filter {
-        let ofc = output_filter_chain.as_ref().as_ref().unwrap().clone();
+        let ofc = output_filters.as_ref().as_ref().unwrap().clone();
         let ofa = (*output_filter_agents).clone();
         create_streaming_response_with_output_filter(
             byte_stream,

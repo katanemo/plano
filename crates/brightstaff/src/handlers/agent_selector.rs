@@ -195,8 +195,8 @@ mod tests {
             listener_type: ListenerType::Agent,
             name: name.to_string(),
             agents: Some(agents),
-            filter_chain: None,
-            output_filter_chain: None,
+            input_filters: None,
+            output_filters: None,
             port: 8080,
             router: None,
         }

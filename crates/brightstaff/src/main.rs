@@ -108,10 +108,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .listeners
         .iter()
         .find(|l| l.listener_type == ListenerType::Model);
-    let model_filter_chain: Arc<Option<Vec<String>>> =
-        Arc::new(model_listener.and_then(|l| l.filter_chain.clone()));
-    let model_filter_agents: Arc<HashMap<String, Agent>> = Arc::new(
-        model_filter_chain
+    let model_input_filters: Arc<Option<Vec<String>>> =
+        Arc::new(model_listener.and_then(|l| l.input_filters.clone()));
+    let model_input_filter_agents: Arc<HashMap<String, Agent>> = Arc::new(
+        model_input_filters
             .as_ref()
             .as_ref()
             .map(|fc| {
@@ -121,10 +121,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .unwrap_or_default(),
     );
-    let model_output_filter_chain: Arc<Option<Vec<String>>> =
-        Arc::new(model_listener.and_then(|l| l.output_filter_chain.clone()));
+    let model_output_filters: Arc<Option<Vec<String>>> =
+        Arc::new(model_listener.and_then(|l| l.output_filters.clone()));
     let model_output_filter_agents: Arc<HashMap<String, Agent>> = Arc::new(
-        model_output_filter_chain
+        model_output_filters
             .as_ref()
             .as_ref()
             .map(|fc| {
@@ -228,9 +228,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let llm_providers = llm_providers.clone();
         let agents_list = combined_agents_filters_list.clone();
-        let model_filter_chain = model_filter_chain.clone();
-        let model_filter_agents = model_filter_agents.clone();
-        let model_output_filter_chain = model_output_filter_chain.clone();
+        let model_input_filters = model_input_filters.clone();
+        let model_input_filter_agents = model_input_filter_agents.clone();
+        let model_output_filters = model_output_filters.clone();
         let model_output_filter_agents = model_output_filter_agents.clone();
         let listeners = listeners.clone();
         let span_attributes = span_attributes.clone();
@@ -243,9 +243,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let llm_providers = llm_providers.clone();
             let model_aliases = Arc::clone(&model_aliases);
             let agents_list = agents_list.clone();
-            let model_filter_chain = model_filter_chain.clone();
-            let model_filter_agents = model_filter_agents.clone();
-            let model_output_filter_chain = model_output_filter_chain.clone();
+            let model_input_filters = model_input_filters.clone();
+            let model_input_filter_agents = model_input_filter_agents.clone();
+            let model_output_filters = model_output_filters.clone();
             let model_output_filter_agents = model_output_filter_agents.clone();
             let listeners = listeners.clone();
             let span_attributes = span_attributes.clone();
@@ -305,9 +305,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             llm_providers,
                             span_attributes,
                             state_storage,
-                            model_filter_chain,
-                            model_filter_agents,
-                            model_output_filter_chain,
+                            model_input_filters,
+                            model_input_filter_agents,
+                            model_output_filters,
                             model_output_filter_agents,
                         )
                         .with_context(parent_cx)

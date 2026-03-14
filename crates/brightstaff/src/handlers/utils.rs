@@ -457,13 +457,13 @@ pub async fn filter_non_streaming_response(
     Bytes::from(serde_json::to_string(&value).unwrap_or_else(|_| response_str.to_string()))
 }
 
-/// Creates a streaming response that processes each chunk through an output filter chain.
+/// Creates a streaming response that processes each chunk through output filters.
 /// The output filter is called asynchronously for each SSE chunk's content.
 pub fn create_streaming_response_with_output_filter<S, P>(
     mut byte_stream: S,
     mut inner_processor: P,
     buffer_size: usize,
-    output_filter_chain: Vec<String>,
+    output_filters: Vec<String>,
     output_filter_agents: HashMap<String, Agent>,
     request_headers: HeaderMap,
 ) -> StreamingResponse
@@ -482,7 +482,7 @@ where
                 id: "output_filter".to_string(),
                 default: None,
                 description: None,
-                filter_chain: Some(output_filter_chain),
+                filter_chain: Some(output_filters),
             };
 
             while let Some(item) = byte_stream.next().await {

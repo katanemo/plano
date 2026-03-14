@@ -14,7 +14,7 @@ listeners:
   - type: model
     name: llm_gateway
     port: 12000
-    filter_chain:
+    input_filters:
       - content_guard
 
 tracing:

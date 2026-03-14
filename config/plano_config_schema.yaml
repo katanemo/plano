@@ -93,11 +93,11 @@ properties:
                 required:
                   - id
                   - description
-            filter_chain:
+            input_filters:
               type: array
               items:
                 type: string
-            output_filter_chain:
+            output_filters:
               type: array
               items:
                 type: string

@@ -17,9 +17,9 @@ listeners:
   - type: model
     name: llm_gateway
     port: 12000
-    filter_chain:
+    input_filters:
       - pii_anonymizer
-    output_filter_chain:
+    output_filters:
       - pii_deanonymizer
 
 tracing:

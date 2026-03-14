@@ -75,8 +75,8 @@ mod tests {
             listener_type: ListenerType::Agent,
             name: "test-listener".to_string(),
             agents: Some(vec![agent_pipeline.clone()]),
-            filter_chain: None,
-            output_filter_chain: None,
+            input_filters: None,
+            output_filters: None,
             port: 8080,
             router: None,
         };

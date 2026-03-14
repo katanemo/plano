@@ -2,20 +2,20 @@
 
 Automatically redact PII from LLM requests and restore it in responses — inspired by [Uber's GenAI Gateway PII Redactor](https://www.uber.com/blog/genai-gateway/).
 
-This demo uses both `filter_chain` (input) and `output_filter_chain` (output) on a **model-type listener** to anonymize PII before it reaches the LLM provider, then de-anonymize the response before returning it to the client.
+This demo uses both `input_filters` and `output_filters` on a **model-type listener** to anonymize PII before it reaches the LLM provider, then de-anonymize the response before returning it to the client.
 
 ## Architecture
 
 ```
 Client ──► Plano (model listener :12000)
                │
-               ├─ filter_chain: pii_anonymizer
+               ├─ input_filters: pii_anonymizer
                │     └─ Replace PII with [EMAIL_0], [SSN_0], etc.
                │
                ├─ model_provider: openai/gpt-4o-mini
                │     └─ LLM only sees anonymized data
                │
-               └─ output_filter_chain: pii_deanonymizer
+               └─ output_filters: pii_deanonymizer
                      └─ Restore [EMAIL_0] → original email (per-chunk for streaming)
 ```
 
@@ -82,7 +82,7 @@ Check the PII filter service logs in the terminal running `start_agents.sh`. You
 
 ## How Streaming De-anonymization Works
 
-For streaming responses, each SSE chunk is sent through the output filter chain as it arrives from the LLM:
+For streaming responses, each SSE chunk is sent through the output filters as it arrives from the LLM:
 
 1. Plano receives a chunk with content like `"The email [EMAIL_0] belongs to..."`
 2. The chunk content is sent to the `/deanonymize` endpoint

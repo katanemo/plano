@@ -2,7 +2,7 @@
 
 Run content-safety filters on direct LLM requests — no agent layer required.
 
-This demo uses the `filter_chain` feature on a **model-type listener** to intercept
+This demo uses the `input_filters` feature on a **model-type listener** to intercept
 `/v1/chat/completions` requests and block unsafe content before they reach the LLM provider.
 
 ## Architecture
@@ -10,7 +10,7 @@ This demo uses the `filter_chain` feature on a **model-type listener** to interc
 ```
 Client ──► Plano (model listener :12000)
                │
-               ├─ filter_chain: content_guard ──► Block / Allow
+               ├─ input_filters: content_guard ──► Block / Allow
                │
                └─ model_provider: openai/gpt-4o-mini
 ```
