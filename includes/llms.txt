@@ -1,6 +1,6 @@
 Plano Docs v0.4.11
 llms.txt (auto-generated)
-Generated (UTC): 2026-03-13T07:29:03.348741+00:00
+Generated (UTC): 2026-03-15T16:36:47.522404+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -3775,13 +3775,11 @@ This downloads the quantized GGUF model from HuggingFace and starts serving on h
 
 Configure Plano to use local Arch-Router
 
-routing:
-  model: Arch-Router
-  llm_provider: arch-router
+overrides:
+  llm_routing_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
 
 model_providers:
-  - name: arch-router
-    model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+  - model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
     base_url: http://localhost:11434
 
   - model: openai/gpt-5.2
@@ -3835,13 +3833,11 @@ vllm serve ${SNAPSHOT_DIR}Arch-Router-1.5B-Q4_K_M.gguf \
 
 Configure Plano to use the vLLM endpoint
 
-routing:
-  model: Arch-Router
-  llm_provider: arch-router
+overrides:
+  llm_routing_model: plano/Arch-Router
 
 model_providers:
-  - name: arch-router
-    model: Arch-Router
+  - model: plano/Arch-Router
     base_url: http://<your-server-ip>:10000
 
   - model: openai/gpt-5.2
@@ -5419,6 +5415,75 @@ agents:
       - context_builder
   - id: troubleshoot_agent
     description: Diagnoses and resolves technical issues step by step
+
+Self-hosting Plano-Orchestrator
+
+By default, Plano uses a hosted Plano-Orchestrator endpoint. To self-host the orchestrator model, you can serve it using vLLM on a server with an NVIDIA GPU.
+
+vLLM requires a Linux server with an NVIDIA GPU (CUDA). For local development on macOS, a GGUF version for Ollama is coming soon.
+
+The following model variants are available on HuggingFace:
+
+Plano-Orchestrator-4B — lighter model, suitable for development and testing
+
+Plano-Orchestrator-4B-FP8 — FP8 quantized 4B model, lower memory usage
+
+Plano-Orchestrator-30B-A3B — full-size model for production
+
+Plano-Orchestrator-30B-A3B-FP8 — FP8 quantized 30B model, recommended for production deployments
+
+Install vLLM
+
+pip install vllm
+
+Download the model and chat template
+
+pip install huggingface_hub
+huggingface-cli download katanemo/Plano-Orchestrator-4B
+
+Start the vLLM server
+
+For the 4B model (development):
+
+vllm serve katanemo/Plano-Orchestrator-4B \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization 0.3 \
+    --tokenizer katanemo/Plano-Orchestrator-4B \
+    --chat-template chat_template.jinja \
+    --served-model-name katanemo/Plano-Orchestrator-4B \
+    --enable-prefix-caching
+
+For the 30B-A3B-FP8 model (production):
+
+vllm serve katanemo/Plano-Orchestrator-30B-A3B-FP8 \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization 0.9 \
+    --tokenizer katanemo/Plano-Orchestrator-30B-A3B-FP8 \
+    --chat-template chat_template.jinja \
+    --max-model-len 32768 \
+    --served-model-name katanemo/Plano-Orchestrator-30B-A3B-FP8 \
+    --enable-prefix-caching
+
+Configure Plano to use the local orchestrator
+
+Use the model name matching your --served-model-name:
+
+overrides:
+  agent_orchestration_model: plano/katanemo/Plano-Orchestrator-4B
+
+model_providers:
+  - model: katanemo/Plano-Orchestrator-4B
+    provider_interface: plano
+    base_url: http://<your-server-ip>:8000
+
+Verify the server is running
+
+curl http://localhost:8000/health
+curl http://localhost:8000/v1/models
 
 Next Steps
 
