@@ -11,9 +11,11 @@ def cleanup_env(monkeypatch):
     monkeypatch.undo()
 
 
-@pytest.mark.parametrize("plano_config", [
-    # Case 1: LLM provider config
-    """
+@pytest.mark.parametrize(
+    "plano_config",
+    [
+        # Case 1: LLM provider config
+        """
 version: v0.1.0
 
 listeners:
@@ -44,8 +46,8 @@ llm_providers:
 tracing:
   random_sampling: 100
 """,
-    # Case 2: Agent config
-    """
+        # Case 2: Agent config
+        """
 version: v0.3.0
 
 agents:
@@ -86,7 +88,9 @@ model_providers:
   - access_key: ${OPENAI_API_KEY}
     model: openai/gpt-4o
 """,
-], ids=["llm_provider_config", "agent_config"])
+    ],
+    ids=["llm_provider_config", "agent_config"],
+)
 def test_validate_and_render_happy_path(monkeypatch, plano_config):
     monkeypatch.setenv("PLANO_CONFIG_FILE", "fake_plano_config.yaml")
     monkeypatch.setenv("PLANO_CONFIG_SCHEMA_FILE", "fake_plano_config_schema.yaml")
@@ -310,49 +314,95 @@ def test_validate_and_render_schema_tests(monkeypatch, plano_config_test_case):
                 validate_and_render_schema()
 
 
-@pytest.mark.parametrize("listeners,expected_providers,expected_llm_gateway,expected_prompt_gateway", [
-    # Case 1: With prompt gateway (ingress + egress)
-    (
-        {
-            "ingress_traffic": {"address": "0.0.0.0", "port": 10000, "timeout": "30s"},
-            "egress_traffic": {"address": "0.0.0.0", "port": 12000, "timeout": "30s"},
-        },
-        [
+@pytest.mark.parametrize(
+    "listeners,expected_providers,expected_llm_gateway,expected_prompt_gateway",
+    [
+        # Case 1: With prompt gateway (ingress + egress)
+        (
             {
-                "name": "egress_traffic", "type": "model_listener", "port": 12000,
-                "address": "0.0.0.0", "timeout": "30s",
-                "model_providers": [{"model": "openai/gpt-4o", "access_key": "test_key"}],
+                "ingress_traffic": {
+                    "address": "0.0.0.0",
+                    "port": 10000,
+                    "timeout": "30s",
+                },
+                "egress_traffic": {
+                    "address": "0.0.0.0",
+                    "port": 12000,
+                    "timeout": "30s",
+                },
             },
-            {
-                "name": "ingress_traffic", "type": "prompt_listener", "port": 10000,
-                "address": "0.0.0.0", "timeout": "30s",
-            },
-        ],
-        {
-            "address": "0.0.0.0", "model_providers": [{"access_key": "test_key", "model": "openai/gpt-4o"}],
-            "name": "egress_traffic", "type": "model_listener", "port": 12000, "timeout": "30s",
-        },
-        {"address": "0.0.0.0", "name": "ingress_traffic", "port": 10000, "timeout": "30s", "type": "prompt_listener"},
-    ),
-    # Case 2: Without prompt gateway (egress only)
-    (
-        {"egress_traffic": {"address": "0.0.0.0", "port": 12000, "timeout": "30s"}},
-        [
+            [
+                {
+                    "name": "egress_traffic",
+                    "type": "model_listener",
+                    "port": 12000,
+                    "address": "0.0.0.0",
+                    "timeout": "30s",
+                    "model_providers": [
+                        {"model": "openai/gpt-4o", "access_key": "test_key"}
+                    ],
+                },
+                {
+                    "name": "ingress_traffic",
+                    "type": "prompt_listener",
+                    "port": 10000,
+                    "address": "0.0.0.0",
+                    "timeout": "30s",
+                },
+            ],
             {
                 "address": "0.0.0.0",
-                "model_providers": [{"access_key": "test_key", "model": "openai/gpt-4o"}],
-                "name": "egress_traffic", "port": 12000, "timeout": "30s", "type": "model_listener",
-            }
-        ],
-        {
-            "address": "0.0.0.0", "model_providers": [{"access_key": "test_key", "model": "openai/gpt-4o"}],
-            "name": "egress_traffic", "type": "model_listener", "port": 12000, "timeout": "30s",
-        },
-        None,
-    ),
-], ids=["with_prompt_gateway", "without_prompt_gateway"])
-def test_convert_legacy_llm_providers(listeners, expected_providers, expected_llm_gateway, expected_prompt_gateway):
+                "model_providers": [
+                    {"access_key": "test_key", "model": "openai/gpt-4o"}
+                ],
+                "name": "egress_traffic",
+                "type": "model_listener",
+                "port": 12000,
+                "timeout": "30s",
+            },
+            {
+                "address": "0.0.0.0",
+                "name": "ingress_traffic",
+                "port": 10000,
+                "timeout": "30s",
+                "type": "prompt_listener",
+            },
+        ),
+        # Case 2: Without prompt gateway (egress only)
+        (
+            {"egress_traffic": {"address": "0.0.0.0", "port": 12000, "timeout": "30s"}},
+            [
+                {
+                    "address": "0.0.0.0",
+                    "model_providers": [
+                        {"access_key": "test_key", "model": "openai/gpt-4o"}
+                    ],
+                    "name": "egress_traffic",
+                    "port": 12000,
+                    "timeout": "30s",
+                    "type": "model_listener",
+                }
+            ],
+            {
+                "address": "0.0.0.0",
+                "model_providers": [
+                    {"access_key": "test_key", "model": "openai/gpt-4o"}
+                ],
+                "name": "egress_traffic",
+                "type": "model_listener",
+                "port": 12000,
+                "timeout": "30s",
+            },
+            None,
+        ),
+    ],
+    ids=["with_prompt_gateway", "without_prompt_gateway"],
+)
+def test_convert_legacy_llm_providers(
+    listeners, expected_providers, expected_llm_gateway, expected_prompt_gateway
+):
     from planoai.utils import convert_legacy_listeners
+
     llm_providers = [{"model": "openai/gpt-4o", "access_key": "test_key"}]
     updated_providers, llm_gateway, prompt_gateway = convert_legacy_listeners(
         listeners, llm_providers

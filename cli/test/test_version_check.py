@@ -52,11 +52,15 @@ class TestCheckVersionStatus:
         assert status["is_outdated"] is False
         assert status["message"] is None
 
-    @pytest.mark.parametrize("current,latest", [
-        ("0.4.1", "1.0.0"),  # major
-        ("0.4.1", "0.5.0"),  # minor
-        ("0.4.1", "0.4.2"),  # patch
-    ], ids=["major", "minor", "patch"])
+    @pytest.mark.parametrize(
+        "current,latest",
+        [
+            ("0.4.1", "1.0.0"),  # major
+            ("0.4.1", "0.5.0"),  # minor
+            ("0.4.1", "0.4.2"),  # patch
+        ],
+        ids=["major", "minor", "patch"],
+    )
     def test_version_outdated(self, current, latest):
         status = check_version_status(current, latest)
         assert status["is_outdated"] is True
@@ -150,4 +154,3 @@ class TestVersionCheckIntegration:
             status = check_version_status(current_version, latest)
 
         assert status["is_outdated"] is False
-
