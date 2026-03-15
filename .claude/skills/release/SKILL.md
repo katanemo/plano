@@ -25,4 +25,6 @@ Update the version string in ALL of these files:
 
 Do NOT change version strings in `*.lock` files or `Cargo.lock`.
 
+After updating all version strings, run `cd cli && uv lock` to update the lock file with the new version.
+
 After making changes, show a summary of all files modified and the old → new version.
