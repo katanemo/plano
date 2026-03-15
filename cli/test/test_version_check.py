@@ -52,16 +52,13 @@ class TestCheckVersionStatus:
         assert status["is_outdated"] is False
         assert status["message"] is None
 
-    def test_major_version_outdated(self):
-        status = check_version_status("0.4.1", "1.0.0")
-        assert status["is_outdated"] is True
-
-    def test_minor_version_outdated(self):
-        status = check_version_status("0.4.1", "0.5.0")
-        assert status["is_outdated"] is True
-
-    def test_patch_version_outdated(self):
-        status = check_version_status("0.4.1", "0.4.2")
+    @pytest.mark.parametrize("current,latest", [
+        ("0.4.1", "1.0.0"),  # major
+        ("0.4.1", "0.5.0"),  # minor
+        ("0.4.1", "0.4.2"),  # patch
+    ], ids=["major", "minor", "patch"])
+    def test_version_outdated(self, current, latest):
+        status = check_version_status(current, latest)
         assert status["is_outdated"] is True
 
     def test_latest_is_none(self):
@@ -154,10 +151,3 @@ class TestVersionCheckIntegration:
 
         assert status["is_outdated"] is False
 
-    def test_skip_version_check_env_var(self, monkeypatch):
-        """Test that PLANO_SKIP_VERSION_CHECK skips the check."""
-        monkeypatch.setenv("PLANO_SKIP_VERSION_CHECK", "1")
-
-        import os
-
-        assert os.environ.get("PLANO_SKIP_VERSION_CHECK") == "1"

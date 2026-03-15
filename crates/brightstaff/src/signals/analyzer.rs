@@ -1959,145 +1959,109 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_char_ngram_similarity_exact_match() {
-        let msg = NormalizedMessage::from_text("thank you very much");
-        let similarity = msg.char_ngram_similarity("thank you very much");
-        assert!(
-            similarity > 0.95,
-            "Exact match should have very high similarity"
-        );
+    fn test_char_ngram_similarity() {
+        let cases = [
+            (
+                "thank you very much",
+                "thank you very much",
+                0.95,
+                "exact match",
+            ),
+            ("thank you very much", "thnks you very much", 0.50, "typo"),
+            ("this doesn't work", "this doesnt work", 0.70, "small edit"),
+            (
+                "i don't understand",
+                "i really don't understand",
+                0.40,
+                "word insertion",
+            ),
+        ];
+        for (msg_text, pattern, threshold, label) in cases {
+            let msg = NormalizedMessage::from_text(msg_text);
+            let similarity = msg.char_ngram_similarity(pattern);
+            assert!(
+                similarity > threshold,
+                "{}: expected > {}, got {}",
+                label,
+                threshold,
+                similarity
+            );
+        }
     }
 
     #[test]
-    fn test_char_ngram_similarity_typo() {
-        let msg = NormalizedMessage::from_text("thank you very much");
-        // Common typo: "thnks" instead of "thanks"
-        let similarity = msg.char_ngram_similarity("thnks you very much");
-        assert!(
-            similarity > 0.50,
-            "Should handle single-character typo with decent similarity: {}",
-            similarity
-        );
+    fn test_token_cosine_similarity() {
+        let cases: Vec<(&str, &str, f64, f64, &str)> = vec![
+            (
+                "this is not helpful",
+                "this is not helpful",
+                0.99,
+                1.01,
+                "exact match",
+            ),
+            (
+                "not helpful at all",
+                "helpful not at all",
+                0.95,
+                2.0,
+                "word order",
+            ),
+            (
+                "help help help please",
+                "help please",
+                0.7,
+                1.0,
+                "frequency",
+            ),
+            (
+                "I've been trying to set up my account for the past hour \
+                 and the verification email never arrived. I checked my spam folder \
+                 and still nothing. This is really frustrating and not helpful at all.",
+                "not helpful",
+                0.15,
+                0.7,
+                "long message with context",
+            ),
+        ];
+        for (msg_text, pattern, min, max, label) in cases {
+            let msg = NormalizedMessage::from_text(msg_text);
+            let similarity = msg.token_cosine_similarity(pattern);
+            assert!(
+                similarity > min && similarity < max,
+                "{}: expected ({}, {}), got {}",
+                label,
+                min,
+                max,
+                similarity
+            );
+        }
     }
 
     #[test]
-    fn test_char_ngram_similarity_small_edit() {
-        let msg = NormalizedMessage::from_text("this doesn't work");
-        let similarity = msg.char_ngram_similarity("this doesnt work");
-        assert!(
-            similarity > 0.70,
-            "Should handle punctuation removal gracefully: {}",
-            similarity
-        );
-    }
-
-    #[test]
-    fn test_char_ngram_similarity_word_insertion() {
-        let msg = NormalizedMessage::from_text("i don't understand");
-        let similarity = msg.char_ngram_similarity("i really don't understand");
-        assert!(
-            similarity > 0.40,
-            "Should be robust to word insertions: {}",
-            similarity
-        );
-    }
-
-    #[test]
-    fn test_token_cosine_similarity_exact_match() {
-        let msg = NormalizedMessage::from_text("this is not helpful");
-        let similarity = msg.token_cosine_similarity("this is not helpful");
-        assert!(
-            (similarity - 1.0).abs() < 0.01,
-            "Exact match should have cosine similarity of 1.0"
-        );
-    }
-
-    #[test]
-    fn test_token_cosine_similarity_word_order() {
-        let msg = NormalizedMessage::from_text("not helpful at all");
-        let similarity = msg.token_cosine_similarity("helpful not at all");
-        assert!(
-            similarity > 0.95,
-            "Should be robust to word order changes: {}",
-            similarity
-        );
-    }
-
-    #[test]
-    fn test_token_cosine_similarity_frequency() {
-        let msg = NormalizedMessage::from_text("help help help please");
-        let similarity = msg.token_cosine_similarity("help please");
-        assert!(
-            similarity > 0.7 && similarity < 1.0,
-            "Should account for frequency differences: {}",
-            similarity
-        );
-    }
-
-    #[test]
-    fn test_token_cosine_similarity_long_message_with_context() {
-        let msg = NormalizedMessage::from_text(
-            "I've been trying to set up my account for the past hour \
-             and the verification email never arrived. I checked my spam folder \
-             and still nothing. This is really frustrating and not helpful at all.",
-        );
-        let similarity = msg.token_cosine_similarity("not helpful");
-        assert!(
-            similarity > 0.15 && similarity < 0.7,
-            "Should detect pattern in long message with lower but non-zero similarity: {}",
-            similarity
-        );
-    }
-
-    #[test]
-    fn test_layered_matching_exact_hit() {
-        let msg = NormalizedMessage::from_text("thank you so much");
-        assert!(
-            msg.layered_contains_phrase("thank you", 0.50, 0.60),
-            "Should match exact phrase in Layer 0"
-        );
-    }
-
-    #[test]
-    fn test_layered_matching_typo_hit() {
-        // Test that shows layered matching is more robust than exact matching alone
-        let msg = NormalizedMessage::from_text("it doesnt work for me");
-
-        // "doesnt work" should match "doesn't work" via character ngrams (high overlap)
-        assert!(
-            msg.layered_contains_phrase("doesn't work", 0.50, 0.60),
-            "Should match 'doesnt work' to 'doesn't work' via character ngrams"
-        );
-    }
-
-    #[test]
-    fn test_layered_matching_word_order_hit() {
-        let msg = NormalizedMessage::from_text("helpful not very");
-        assert!(
-            msg.layered_contains_phrase("not helpful", 0.50, 0.60),
-            "Should match reordered words via token cosine in Layer 2"
-        );
-    }
-
-    #[test]
-    fn test_layered_matching_long_message_with_pattern() {
-        let msg = NormalizedMessage::from_text(
-            "I've tried everything and followed all the instructions \
-             but this is not helpful at all and I'm getting frustrated",
-        );
-        assert!(
-            msg.layered_contains_phrase("not helpful", 0.50, 0.60),
-            "Should detect pattern buried in long message"
-        );
-    }
-
-    #[test]
-    fn test_layered_matching_no_match() {
-        let msg = NormalizedMessage::from_text("everything is working perfectly");
-        assert!(
-            !msg.layered_contains_phrase("not helpful", 0.50, 0.60),
-            "Should not match completely different content"
-        );
+    fn test_layered_matching() {
+        let cases = [
+            ("thank you so much", "thank you", true, "exact hit"),
+            ("it doesnt work for me", "doesn't work", true, "typo hit"),
+            ("helpful not very", "not helpful", true, "word order hit"),
+            (
+                "I've tried everything and followed all the instructions \
+                 but this is not helpful at all and I'm getting frustrated",
+                "not helpful",
+                true,
+                "long message with pattern",
+            ),
+            (
+                "everything is working perfectly",
+                "not helpful",
+                false,
+                "no match",
+            ),
+        ];
+        for (msg_text, pattern, expected, label) in cases {
+            let msg = NormalizedMessage::from_text(msg_text);
+            let result = msg.layered_contains_phrase(pattern, 0.50, 0.60);
+            assert_eq!(result, expected, "{}: expected {}", label, expected);
+        }
     }
 
     #[test]
@@ -2139,7 +2103,6 @@ mod tests {
 
     #[test]
     fn test_turn_count_efficient() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "Hello"),
@@ -2154,12 +2117,10 @@ mod tests {
         assert!(!signal.is_concerning);
         assert!(!signal.is_excessive);
         assert!(signal.efficiency_score > 0.9);
-        println!("test_turn_count_efficient took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_turn_count_excessive() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let mut messages = Vec::new();
         for i in 0..15 {
@@ -2178,12 +2139,10 @@ mod tests {
         assert!(signal.is_concerning);
         assert!(signal.is_excessive);
         assert!(signal.efficiency_score < 0.5);
-        println!("test_turn_count_excessive took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_follow_up_detection() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "Show me restaurants"),
@@ -2196,12 +2155,10 @@ mod tests {
         let signal = analyzer.analyze_follow_up(&normalized_messages);
         assert_eq!(signal.repair_count, 1);
         assert!(signal.repair_ratio > 0.0);
-        println!("test_follow_up_detection took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_frustration_detection() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "THIS IS RIDICULOUS!!!"),
@@ -2214,12 +2171,10 @@ mod tests {
         assert!(signal.has_frustration);
         assert!(signal.frustration_count >= 2);
         assert!(signal.severity > 0);
-        println!("test_frustration_detection took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_positive_feedback_detection() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "Can you help me?"),
@@ -2232,15 +2187,10 @@ mod tests {
         assert!(signal.has_positive_feedback);
         assert!(signal.positive_count >= 1);
         assert!(signal.confidence > 0.5);
-        println!(
-            "test_positive_feedback_detection took: {:?}",
-            start.elapsed()
-        );
     }
 
     #[test]
     fn test_escalation_detection() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "This isn't working"),
@@ -2252,12 +2202,10 @@ mod tests {
         let signal = analyzer.analyze_escalation(&normalized_messages);
         assert!(signal.escalation_requested);
         assert_eq!(signal.escalation_count, 1);
-        println!("test_escalation_detection took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_repetition_detection() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "What's the weather?"),
@@ -2273,22 +2221,13 @@ mod tests {
         let normalized_messages = preprocess_messages(&messages);
         let signal = analyzer.analyze_repetition(&normalized_messages);
 
-        for rep in &signal.repetitions {
-            println!(
-                "  - Messages {:?}, similarity: {:.3}, type: {:?}",
-                rep.message_indices, rep.similarity, rep.repetition_type
-            );
-        }
-
         assert!(signal.repetition_count > 0,
                 "Should detect the subtle repetition between 'I can help you with the weather information' \
                  and 'Sure, I can help you with the forecast'");
-        println!("test_repetition_detection took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_full_analysis_excellent() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "I need to book a flight"),
@@ -2305,12 +2244,10 @@ mod tests {
         ));
         assert!(report.positive_feedback.has_positive_feedback);
         assert!(!report.frustration.has_frustration);
-        println!("test_full_analysis_excellent took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_full_analysis_poor() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![
             create_message(Role::User, "Help me"),
@@ -2329,86 +2266,64 @@ mod tests {
         ));
         assert!(report.frustration.has_frustration);
         assert!(report.escalation.escalation_requested);
-        println!("test_full_analysis_poor took: {:?}", start.elapsed());
     }
 
     #[test]
-    fn test_fuzzy_matching_gratitude() {
-        let start = Instant::now();
+    fn test_fuzzy_matching() {
         let analyzer = TextBasedSignalAnalyzer::new();
+
+        // Gratitude with typo
         let messages = vec![
             create_message(Role::User, "Can you help me?"),
             create_message(Role::Assistant, "Sure!"),
             create_message(Role::User, "thnaks! that's exactly what i needed."),
         ];
-
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_positive_feedback(&normalized_messages);
-        assert!(signal.has_positive_feedback);
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_positive_feedback(&normalized);
+        assert!(
+            signal.has_positive_feedback,
+            "fuzzy gratitude should be detected"
+        );
         assert!(signal.positive_count >= 1);
-        println!("test_fuzzy_matching_gratitude took: {:?}", start.elapsed());
-    }
 
-    #[test]
-    fn test_fuzzy_matching_escalation() {
-        let start = Instant::now();
-        let analyzer = TextBasedSignalAnalyzer::new();
+        // Escalation with typo
         let messages = vec![
             create_message(Role::User, "This isn't working"),
             create_message(Role::Assistant, "Let me help"),
             create_message(Role::User, "i need to speek to a human agnet"),
         ];
-
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_escalation(&normalized_messages);
-        assert!(signal.escalation_requested);
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_escalation(&normalized);
+        assert!(
+            signal.escalation_requested,
+            "fuzzy escalation should be detected"
+        );
         assert_eq!(signal.escalation_count, 1);
-        println!("test_fuzzy_matching_escalation took: {:?}", start.elapsed());
-    }
 
-    #[test]
-    fn test_fuzzy_matching_repair() {
-        let start = Instant::now();
-        let analyzer = TextBasedSignalAnalyzer::new();
+        // Repair with typo
         let messages = vec![
             create_message(Role::User, "Show me restaurants"),
             create_message(Role::Assistant, "Here are some options"),
             create_message(Role::User, "no i ment Italian restaurants"),
             create_message(Role::Assistant, "Here are Italian restaurants"),
         ];
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_follow_up(&normalized);
+        assert!(signal.repair_count >= 1, "fuzzy repair should be detected");
 
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_follow_up(&normalized_messages);
-        assert!(signal.repair_count >= 1);
-        println!("test_fuzzy_matching_repair took: {:?}", start.elapsed());
-    }
-
-    #[test]
-    fn test_fuzzy_matching_complaint() {
-        let start = Instant::now();
-        let analyzer = TextBasedSignalAnalyzer::new();
-        // Use a complaint that should match - "doesnt work" is close enough to "doesn't work"
+        // Complaint with typo
         let messages = vec![
-            create_message(Role::User, "this doesnt work at all"), // Common typo: missing apostrophe
+            create_message(Role::User, "this doesnt work at all"),
             create_message(Role::Assistant, "I apologize"),
         ];
-
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized_messages);
-
-        // The layered matching should catch this via character ngrams or token cosine
-        // "doesnt work" has high character-level similarity to "doesn't work"
-        assert!(
-            signal.has_frustration,
-            "Should detect frustration from complaint pattern"
-        );
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_frustration(&normalized);
+        assert!(signal.has_frustration, "fuzzy complaint should be detected");
         assert!(signal.frustration_count >= 1);
-        println!("test_fuzzy_matching_complaint took: {:?}", start.elapsed());
     }
 
     #[test]
     fn test_exact_match_priority() {
-        let start = Instant::now();
         let analyzer = TextBasedSignalAnalyzer::new();
         let messages = vec![create_message(Role::User, "thank you so much")];
 
@@ -2418,7 +2333,6 @@ mod tests {
         // Should detect exact match, not fuzzy
         assert!(signal.indicators[0].snippet.contains("thank you"));
         assert!(!signal.indicators[0].snippet.contains("fuzzy"));
-        println!("test_exact_match_priority took: {:?}", start.elapsed());
     }
 
     // ========================================================================
@@ -2426,31 +2340,54 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_hello_not_profanity() {
+    fn test_false_positive_guards() {
         let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![create_message(Role::User, "hello there")];
 
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized_messages);
+        // "hello" should not trigger profanity
+        let messages = vec![create_message(Role::User, "hello there")];
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_frustration(&normalized);
         assert!(
             !signal.has_frustration,
-            "\"hello\" should not trigger profanity detection"
+            "\"hello\" should not trigger profanity"
         );
-    }
 
-    #[test]
-    fn test_prepare_not_escalation() {
-        let analyzer = TextBasedSignalAnalyzer::new();
+        // "prepare" should not trigger escalation
         let messages = vec![create_message(
             Role::User,
             "Can you help me prepare for the meeting?",
         )];
-
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_escalation(&normalized_messages);
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_escalation(&normalized);
         assert!(
             !signal.escalation_requested,
-            "\"prepare\" should not trigger escalation (rep pattern removed)"
+            "\"prepare\" should not trigger escalation"
+        );
+
+        // "absolute" should not trigger 'bs' match
+        let messages = vec![create_message(Role::User, "That's absolute nonsense")];
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_frustration(&normalized);
+        let has_bs_match = signal
+            .indicators
+            .iter()
+            .any(|ind| ind.snippet.contains("bs"));
+        assert!(
+            !has_bs_match,
+            "\"absolute\" should not trigger 'bs' profanity match"
+        );
+
+        // Stopwords-only overlap should not be rephrase
+        let messages = vec![
+            create_message(Role::User, "Help me with X"),
+            create_message(Role::Assistant, "Sure"),
+            create_message(Role::User, "Help me with Y"),
+        ];
+        let normalized = preprocess_messages(&messages);
+        let signal = analyzer.analyze_follow_up(&normalized);
+        assert_eq!(
+            signal.repair_count, 0,
+            "Messages with only stopword overlap should not be rephrases"
         );
     }
 
@@ -2482,42 +2419,6 @@ mod tests {
         assert!(
             signal.has_frustration,
             "Unicode quotes should be normalized and match patterns"
-        );
-    }
-
-    #[test]
-    fn test_absolute_not_profanity() {
-        let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![create_message(Role::User, "That's absolute nonsense")];
-
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized_messages);
-        // Should match on "nonsense" logic, not on "bs" substring
-        let has_bs_match = signal
-            .indicators
-            .iter()
-            .any(|ind| ind.snippet.contains("bs"));
-        assert!(
-            !has_bs_match,
-            "\"absolute\" should not trigger 'bs' profanity match"
-        );
-    }
-
-    #[test]
-    fn test_stopwords_not_rephrase() {
-        let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "Help me with X"),
-            create_message(Role::Assistant, "Sure"),
-            create_message(Role::User, "Help me with Y"),
-        ];
-
-        let normalized_messages = preprocess_messages(&messages);
-        let signal = analyzer.analyze_follow_up(&normalized_messages);
-        // Should not detect as rephrase since only stopwords overlap
-        assert_eq!(
-            signal.repair_count, 0,
-            "Messages with only stopword overlap should not be rephrases"
         );
     }
 
@@ -2794,23 +2695,44 @@ mod tests {
 
     // false negative tests
     #[test]
-    fn test_dissatisfaction_polite_not_working_for_me() {
+    fn test_dissatisfaction_and_low_mood() {
         let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![
-            create_message(Role::User, "Thanks, but this still isn't working for me."), // Polite dissatisfaction, e.g., I appreciate it, but this isn't what I was looking for.
-            create_message(Role::Assistant, "Sorry—what error do you see?"),
-        ];
-        let normalized = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized);
-        assert!(
-            signal.has_frustration,
-            "Polite dissatisfaction should be detected"
-        );
-    }
 
-    #[test]
-    fn test_dissatisfaction_giving_up_without_escalation() {
-        let analyzer = TextBasedSignalAnalyzer::new();
+        // Cases that should trigger frustration
+        let frustration_cases = [
+            (
+                "Thanks, but this still isn't working for me.",
+                "polite not working",
+            ),
+            (
+                "I'm running into the same issue again.",
+                "same problem again",
+            ),
+            ("This feels incomplete.", "incomplete"),
+            (
+                "This is overwhelming and I'm not sure what to do.",
+                "overwhelming",
+            ),
+            (
+                "I'm exhausted trying to get this working.",
+                "exhausted trying",
+            ),
+        ];
+        for (msg, label) in frustration_cases {
+            let messages = vec![
+                create_message(Role::User, msg),
+                create_message(Role::Assistant, "Sorry about that."),
+            ];
+            let normalized = preprocess_messages(&messages);
+            let signal = analyzer.analyze_frustration(&normalized);
+            assert!(
+                signal.has_frustration,
+                "{}: should detect frustration",
+                label
+            );
+        }
+
+        // Case that should trigger escalation (giving up)
         let messages = vec![create_message(
             Role::User,
             "Never mind, I'll figure it out myself.",
@@ -2819,61 +2741,7 @@ mod tests {
         let signal = analyzer.analyze_escalation(&normalized);
         assert!(
             signal.escalation_requested,
-            "Giving up should count as escalation/quit intent"
-        );
-    }
-
-    #[test]
-    fn test_dissatisfaction_same_problem_again() {
-        let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![create_message(
-            Role::User,
-            "I'm running into the same issue again.",
-        )];
-        let normalized = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized);
-        assert!(
-            signal.has_frustration,
-            "'same issue again' should be detected"
-        );
-    }
-
-    #[test]
-    fn test_unsatisfied_incomplete() {
-        let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![create_message(Role::User, "This feels incomplete.")];
-        let normalized = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized);
-        assert!(
-            signal.has_frustration,
-            "Should detect 'incomplete' dissatisfaction"
-        );
-    }
-
-    #[test]
-    fn test_low_mood_overwhelming() {
-        let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![create_message(
-            Role::User,
-            "This is overwhelming and I'm not sure what to do.",
-        )];
-        let normalized = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized);
-        assert!(signal.has_frustration, "Should detect overwhelmed language");
-    }
-
-    #[test]
-    fn test_low_mood_exhausted_trying() {
-        let analyzer = TextBasedSignalAnalyzer::new();
-        let messages = vec![create_message(
-            Role::User,
-            "I'm exhausted trying to get this working.",
-        )];
-        let normalized = preprocess_messages(&messages);
-        let signal = analyzer.analyze_frustration(&normalized);
-        assert!(
-            signal.has_frustration,
-            "Should detect exhaustion/struggle language"
+            "giving up should count as escalation"
         );
     }
 

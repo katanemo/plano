@@ -229,6 +229,7 @@ Run that SQL file against your database before using this storage backend.
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::generate_storage_tests;
     use hermesllm::apis::openai_responses::{
         InputContent, InputItem, InputMessage, MessageContent, MessageRole,
     };
@@ -267,140 +268,13 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_supabase_put_and_get_success() {
+    // Generate the standard CRUD tests via macro
+    generate_storage_tests!({
         let Some(storage) = get_test_storage().await else {
             return;
         };
-
-        let state = create_test_state("test_resp_001");
-        storage.put(state.clone()).await.unwrap();
-
-        let retrieved = storage.get("test_resp_001").await.unwrap();
-        assert_eq!(retrieved.response_id, "test_resp_001");
-        assert_eq!(retrieved.input_items.len(), 1);
-        assert_eq!(retrieved.model, "gpt-4");
-        assert_eq!(retrieved.provider, "openai");
-
-        // Cleanup
-        let _ = storage.delete("test_resp_001").await;
-    }
-
-    #[tokio::test]
-    async fn test_supabase_put_overwrites_existing() {
-        let Some(storage) = get_test_storage().await else {
-            return;
-        };
-
-        let state1 = create_test_state("test_resp_002");
-        storage.put(state1).await.unwrap();
-
-        let mut state2 = create_test_state("test_resp_002");
-        state2.model = "gpt-4-turbo".to_string();
-        state2.input_items.push(InputItem::Message(InputMessage {
-            role: MessageRole::Assistant,
-            content: MessageContent::Items(vec![InputContent::InputText {
-                text: "Response".to_string(),
-            }]),
-        }));
-        storage.put(state2).await.unwrap();
-
-        let retrieved = storage.get("test_resp_002").await.unwrap();
-        assert_eq!(retrieved.model, "gpt-4-turbo");
-        assert_eq!(retrieved.input_items.len(), 2);
-
-        // Cleanup
-        let _ = storage.delete("test_resp_002").await;
-    }
-
-    #[tokio::test]
-    async fn test_supabase_get_not_found() {
-        let Some(storage) = get_test_storage().await else {
-            return;
-        };
-
-        let result = storage.get("nonexistent_id").await;
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            StateStorageError::NotFound(_)
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_supabase_exists_returns_false() {
-        let Some(storage) = get_test_storage().await else {
-            return;
-        };
-
-        let exists = storage.exists("nonexistent_id").await.unwrap();
-        assert!(!exists);
-    }
-
-    #[tokio::test]
-    async fn test_supabase_exists_returns_true_after_put() {
-        let Some(storage) = get_test_storage().await else {
-            return;
-        };
-
-        let state = create_test_state("test_resp_003");
-        storage.put(state).await.unwrap();
-
-        let exists = storage.exists("test_resp_003").await.unwrap();
-        assert!(exists);
-
-        // Cleanup
-        let _ = storage.delete("test_resp_003").await;
-    }
-
-    #[tokio::test]
-    async fn test_supabase_delete_success() {
-        let Some(storage) = get_test_storage().await else {
-            return;
-        };
-
-        let state = create_test_state("test_resp_004");
-        storage.put(state).await.unwrap();
-
-        storage.delete("test_resp_004").await.unwrap();
-
-        let exists = storage.exists("test_resp_004").await.unwrap();
-        assert!(!exists);
-    }
-
-    #[tokio::test]
-    async fn test_supabase_delete_not_found() {
-        let Some(storage) = get_test_storage().await else {
-            return;
-        };
-
-        let result = storage.delete("nonexistent_id").await;
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            StateStorageError::NotFound(_)
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_supabase_merge_works() {
-        let Some(storage) = get_test_storage().await else {
-            return;
-        };
-
-        let prev_state = create_test_state("test_resp_005");
-        let current_input = vec![InputItem::Message(InputMessage {
-            role: MessageRole::User,
-            content: MessageContent::Items(vec![InputContent::InputText {
-                text: "New message".to_string(),
-            }]),
-        })];
-
-        let merged = storage.merge(&prev_state, current_input);
-
-        // Should have 2 messages (1 from prev + 1 current)
-        assert_eq!(merged.len(), 2);
-    }
+        storage
+    });
 
     #[tokio::test]
     async fn test_supabase_table_verification() {
@@ -428,7 +302,7 @@ mod tests {
         let state = create_test_state("manual_test_verification");
         storage.put(state).await.unwrap();
 
-        println!("✅ Data written to Supabase!");
+        println!("Data written to Supabase!");
         println!("Check your Supabase dashboard:");
         println!(
             "  SELECT * FROM conversation_states WHERE response_id = 'manual_test_verification';"

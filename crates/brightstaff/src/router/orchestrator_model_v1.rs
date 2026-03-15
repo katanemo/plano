@@ -415,6 +415,17 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    fn default_orchestrations() -> HashMap<String, Vec<OrchestrationPreference>> {
+        serde_json::from_str(
+            r#"{"gpt-4o": [{"name": "Image generation", "description": "generating image"}]}"#,
+        )
+        .unwrap()
+    }
+
+    fn default_conversation() -> Vec<Message> {
+        serde_json::from_str(r#"[{"role": "user", "content": "hi"},{"role": "assistant", "content": "Hello! How can I assist you today?"},{"role": "user", "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"}]"#).unwrap()
+    }
+
     #[test]
     fn test_spaced_json_formatter() {
         // Test basic object
@@ -509,41 +520,12 @@ Return your answer strictly in JSON as follows:
 {{"route": ["route_name_1", "route_name_2", "..."]}}
 If no routes are needed, return an empty list for `route`.
 "#;
-        let orchestrations_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let agent_orchestrations = serde_json::from_str::<
-            HashMap<String, Vec<OrchestrationPreference>>,
-        >(orchestrations_str)
-        .unwrap();
-        let orchestration_model = "test-model".to_string();
         let orchestrator = OrchestratorModelV1::new(
-            agent_orchestrations,
-            orchestration_model.clone(),
+            default_orchestrations(),
+            "test-model".to_string(),
             usize::MAX,
         );
-
-        let conversation_str = r#"
-                    [
-                        {
-                            "role": "user",
-                            "content": "hi"
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "Hello! How can I assist you today?"
-                        },
-                        {
-                            "role": "user",
-                            "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"
-                        }
-                    ]
-        "#;
-        let conversation: Vec<Message> = serde_json::from_str(conversation_str).unwrap();
+        let conversation = default_conversation();
 
         let req = orchestrator.generate_request(&conversation, &None);
 
@@ -591,31 +573,9 @@ Return your answer strictly in JSON as follows:
 If no routes are needed, return an empty list for `route`.
 "#;
         // Empty orchestrations map - not used when usage_preferences are provided
-        let agent_orchestrations: HashMap<String, Vec<OrchestrationPreference>> = HashMap::new();
-        let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(
-            agent_orchestrations,
-            orchestration_model.clone(),
-            usize::MAX,
-        );
-
-        let conversation_str = r#"
-                    [
-                        {
-                            "role": "user",
-                            "content": "hi"
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "Hello! How can I assist you today?"
-                        },
-                        {
-                            "role": "user",
-                            "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"
-                        }
-                    ]
-        "#;
-        let conversation: Vec<Message> = serde_json::from_str(conversation_str).unwrap();
+        let orchestrator =
+            OrchestratorModelV1::new(HashMap::new(), "test-model".to_string(), usize::MAX);
+        let conversation = default_conversation();
 
         let usage_preferences = Some(vec![AgentUsagePreference {
             model: "claude/claude-3-7-sonnet".to_string(),
@@ -662,38 +622,9 @@ Return your answer strictly in JSON as follows:
 If no routes are needed, return an empty list for `route`.
 "#;
 
-        let orchestrations_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let agent_orchestrations = serde_json::from_str::<
-            HashMap<String, Vec<OrchestrationPreference>>,
-        >(orchestrations_str)
-        .unwrap();
-        let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model, 235);
-
-        let conversation_str = r#"
-                    [
-                        {
-                            "role": "user",
-                            "content": "hi"
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "Hello! How can I assist you today?"
-                        },
-                        {
-                            "role": "user",
-                            "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"
-                        }
-                    ]
-        "#;
-
-        let conversation: Vec<Message> = serde_json::from_str(conversation_str).unwrap();
+        let orchestrator =
+            OrchestratorModelV1::new(default_orchestrations(), "test-model".to_string(), 235);
+        let conversation = default_conversation();
 
         let req = orchestrator.generate_request(&conversation, &None);
 
@@ -733,20 +664,8 @@ Return your answer strictly in JSON as follows:
 If no routes are needed, return an empty list for `route`.
 "#;
 
-        let orchestrations_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let agent_orchestrations = serde_json::from_str::<
-            HashMap<String, Vec<OrchestrationPreference>>,
-        >(orchestrations_str)
-        .unwrap();
-
-        let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model, 200);
+        let orchestrator =
+            OrchestratorModelV1::new(default_orchestrations(), "test-model".to_string(), 200);
 
         let conversation_str = r#"
                     [
@@ -813,19 +732,8 @@ Return your answer strictly in JSON as follows:
 If no routes are needed, return an empty list for `route`.
 "#;
 
-        let orchestrations_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let agent_orchestrations = serde_json::from_str::<
-            HashMap<String, Vec<OrchestrationPreference>>,
-        >(orchestrations_str)
-        .unwrap();
-        let orchestration_model = "test-model".to_string();
-        let orchestrator = OrchestratorModelV1::new(agent_orchestrations, orchestration_model, 230);
+        let orchestrator =
+            OrchestratorModelV1::new(default_orchestrations(), "test-model".to_string(), 230);
 
         let conversation_str = r#"
                     [
@@ -899,21 +807,9 @@ Return your answer strictly in JSON as follows:
 {{"route": ["route_name_1", "route_name_2", "..."]}}
 If no routes are needed, return an empty list for `route`.
 "#;
-        let orchestrations_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let agent_orchestrations = serde_json::from_str::<
-            HashMap<String, Vec<OrchestrationPreference>>,
-        >(orchestrations_str)
-        .unwrap();
-        let orchestration_model = "test-model".to_string();
         let orchestrator = OrchestratorModelV1::new(
-            agent_orchestrations,
-            orchestration_model.clone(),
+            default_orchestrations(),
+            "test-model".to_string(),
             usize::MAX,
         );
 
@@ -991,21 +887,9 @@ Return your answer strictly in JSON as follows:
 {{"route": ["route_name_1", "route_name_2", "..."]}}
 If no routes are needed, return an empty list for `route`.
 "#;
-        let orchestrations_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let agent_orchestrations = serde_json::from_str::<
-            HashMap<String, Vec<OrchestrationPreference>>,
-        >(orchestrations_str)
-        .unwrap();
-        let orchestration_model = "test-model".to_string();
         let orchestrator = OrchestratorModelV1::new(
-            agent_orchestrations,
-            orchestration_model.clone(),
+            default_orchestrations(),
+            "test-model".to_string(),
             usize::MAX,
         );
 

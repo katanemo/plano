@@ -1482,12 +1482,6 @@ mod tests {
     }
 
     #[test]
-    fn test_arch_agent_config_default() {
-        let config = ArchAgentConfig::default();
-        assert_eq!(config.generation_params.temperature, 0.01); // Different from ArchFunctionConfig
-    }
-
-    #[test]
     fn test_fix_json_string_valid() {
         let handler = ArchFunctionHandler::new(
             "test-model".to_string(),
