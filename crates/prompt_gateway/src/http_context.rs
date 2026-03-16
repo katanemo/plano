@@ -205,8 +205,7 @@ impl HttpContext for StreamContext {
         info!("on_http_request_body: sending request to model server");
         debug!("request body: {}", json_data);
 
-        let timeout_ms = MODEL_SERVER_REQUEST_TIMEOUT_MS;
-        let timeout_str = timeout_ms.to_string();
+        let timeout_str = MODEL_SERVER_REQUEST_TIMEOUT_MS.to_string();
 
         let mut headers = vec![
             (ARCH_UPSTREAM_HOST_HEADER, MODEL_SERVER_NAME),
@@ -231,7 +230,7 @@ impl HttpContext for StreamContext {
             headers,
             Some(json_data.as_bytes()),
             vec![],
-            Duration::from_millis(timeout_ms),
+            Duration::from_secs(5),
         );
 
         if let Some(content) = self.user_prompt.as_ref().unwrap().content.as_ref() {

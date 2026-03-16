@@ -171,8 +171,7 @@ impl StreamContext {
                     callout_context.request_body.messages.clone(),
                 );
                 let arch_messages_json = serde_json::to_string(&params).unwrap();
-                let timeout_ms = DEFAULT_TARGET_REQUEST_TIMEOUT_MS;
-                let timeout_str = timeout_ms.to_string();
+                let timeout_str = DEFAULT_TARGET_REQUEST_TIMEOUT_MS.to_string();
 
                 let mut headers = vec![
                     (":method", "POST"),
@@ -194,7 +193,7 @@ impl StreamContext {
                     headers,
                     Some(arch_messages_json.as_bytes()),
                     vec![],
-                    Duration::from_millis(timeout_ms),
+                    Duration::from_secs(5),
                 );
                 callout_context.response_handler_type = ResponseHandlerType::DefaultTarget;
                 callout_context.prompt_target_name = Some(default_prompt_target.name.clone());
@@ -423,8 +422,7 @@ impl StreamContext {
 
         debug!("on_http_call_response: api call body {:?}", api_call_body);
 
-        let timeout_ms = API_REQUEST_TIMEOUT_MS;
-        let timeout_str = timeout_ms.to_string();
+        let timeout_str = API_REQUEST_TIMEOUT_MS.to_string();
 
         let http_method_str = http_method.to_string();
         let mut headers: HashMap<_, _> = [
@@ -459,7 +457,7 @@ impl StreamContext {
             headers.into_iter().collect(),
             api_call_body.as_deref().map(|s| s.as_bytes()),
             vec![],
-            Duration::from_millis(timeout_ms),
+            Duration::from_secs(5),
         );
 
         info!(
