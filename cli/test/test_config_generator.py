@@ -11,15 +11,11 @@ def cleanup_env(monkeypatch):
     monkeypatch.undo()
 
 
-def test_validate_and_render_happy_path(monkeypatch):
-    monkeypatch.setenv("PLANO_CONFIG_FILE", "fake_plano_config.yaml")
-    monkeypatch.setenv("PLANO_CONFIG_SCHEMA_FILE", "fake_plano_config_schema.yaml")
-    monkeypatch.setenv("ENVOY_CONFIG_TEMPLATE_FILE", "./envoy.template.yaml")
-    monkeypatch.setenv("PLANO_CONFIG_FILE_RENDERED", "fake_plano_config_rendered.yaml")
-    monkeypatch.setenv("ENVOY_CONFIG_FILE_RENDERED", "fake_envoy.yaml")
-    monkeypatch.setenv("TEMPLATE_ROOT", "../")
-
-    plano_config = """
+@pytest.mark.parametrize(
+    "plano_config",
+    [
+        # Case 1: LLM provider config
+        """
 version: v0.1.0
 
 listeners:
@@ -49,40 +45,9 @@ llm_providers:
 
 tracing:
   random_sampling: 100
-"""
-    plano_config_schema = ""
-    with open("../config/plano_config_schema.yaml", "r") as file:
-        plano_config_schema = file.read()
-
-    m_open = mock.mock_open()
-    # Provide enough file handles for all open() calls in validate_and_render_schema
-    m_open.side_effect = [
-        # Removed empty read - was causing validation failures
-        mock.mock_open(read_data=plano_config).return_value,  # PLANO_CONFIG_FILE
-        mock.mock_open(
-            read_data=plano_config_schema
-        ).return_value,  # PLANO_CONFIG_SCHEMA_FILE
-        mock.mock_open(read_data=plano_config).return_value,  # PLANO_CONFIG_FILE
-        mock.mock_open(
-            read_data=plano_config_schema
-        ).return_value,  # PLANO_CONFIG_SCHEMA_FILE
-        mock.mock_open().return_value,  # ENVOY_CONFIG_FILE_RENDERED (write)
-        mock.mock_open().return_value,  # PLANO_CONFIG_FILE_RENDERED (write)
-    ]
-    with mock.patch("builtins.open", m_open):
-        with mock.patch("planoai.config_generator.Environment"):
-            validate_and_render_schema()
-
-
-def test_validate_and_render_happy_path_agent_config(monkeypatch):
-    monkeypatch.setenv("PLANO_CONFIG_FILE", "fake_plano_config.yaml")
-    monkeypatch.setenv("PLANO_CONFIG_SCHEMA_FILE", "fake_plano_config_schema.yaml")
-    monkeypatch.setenv("ENVOY_CONFIG_TEMPLATE_FILE", "./envoy.template.yaml")
-    monkeypatch.setenv("PLANO_CONFIG_FILE_RENDERED", "fake_plano_config_rendered.yaml")
-    monkeypatch.setenv("ENVOY_CONFIG_FILE_RENDERED", "fake_envoy.yaml")
-    monkeypatch.setenv("TEMPLATE_ROOT", "../")
-
-    plano_config = """
+""",
+        # Case 2: Agent config
+        """
 version: v0.3.0
 
 agents:
@@ -122,25 +87,30 @@ listeners:
 model_providers:
   - access_key: ${OPENAI_API_KEY}
     model: openai/gpt-4o
-"""
+""",
+    ],
+    ids=["llm_provider_config", "agent_config"],
+)
+def test_validate_and_render_happy_path(monkeypatch, plano_config):
+    monkeypatch.setenv("PLANO_CONFIG_FILE", "fake_plano_config.yaml")
+    monkeypatch.setenv("PLANO_CONFIG_SCHEMA_FILE", "fake_plano_config_schema.yaml")
+    monkeypatch.setenv("ENVOY_CONFIG_TEMPLATE_FILE", "./envoy.template.yaml")
+    monkeypatch.setenv("PLANO_CONFIG_FILE_RENDERED", "fake_plano_config_rendered.yaml")
+    monkeypatch.setenv("ENVOY_CONFIG_FILE_RENDERED", "fake_envoy.yaml")
+    monkeypatch.setenv("TEMPLATE_ROOT", "../")
+
     plano_config_schema = ""
     with open("../config/plano_config_schema.yaml", "r") as file:
         plano_config_schema = file.read()
 
     m_open = mock.mock_open()
-    # Provide enough file handles for all open() calls in validate_and_render_schema
     m_open.side_effect = [
-        # Removed empty read - was causing validation failures
-        mock.mock_open(read_data=plano_config).return_value,  # PLANO_CONFIG_FILE
-        mock.mock_open(
-            read_data=plano_config_schema
-        ).return_value,  # PLANO_CONFIG_SCHEMA_FILE
-        mock.mock_open(read_data=plano_config).return_value,  # PLANO_CONFIG_FILE
-        mock.mock_open(
-            read_data=plano_config_schema
-        ).return_value,  # PLANO_CONFIG_SCHEMA_FILE
-        mock.mock_open().return_value,  # ENVOY_CONFIG_FILE_RENDERED (write)
-        mock.mock_open().return_value,  # PLANO_CONFIG_FILE_RENDERED (write)
+        mock.mock_open(read_data=plano_config).return_value,
+        mock.mock_open(read_data=plano_config_schema).return_value,
+        mock.mock_open(read_data=plano_config).return_value,
+        mock.mock_open(read_data=plano_config_schema).return_value,
+        mock.mock_open().return_value,
+        mock.mock_open().return_value,
     ]
     with mock.patch("builtins.open", m_open):
         with mock.patch("planoai.config_generator.Environment"):
@@ -344,124 +314,103 @@ def test_validate_and_render_schema_tests(monkeypatch, plano_config_test_case):
                 validate_and_render_schema()
 
 
-def test_convert_legacy_llm_providers():
-    from planoai.utils import convert_legacy_listeners
-
-    listeners = {
-        "ingress_traffic": {
-            "address": "0.0.0.0",
-            "port": 10000,
-            "timeout": "30s",
-        },
-        "egress_traffic": {
-            "address": "0.0.0.0",
-            "port": 12000,
-            "timeout": "30s",
-        },
-    }
-    llm_providers = [
-        {
-            "model": "openai/gpt-4o",
-            "access_key": "test_key",
-        }
-    ]
-
-    updated_providers, llm_gateway, prompt_gateway = convert_legacy_listeners(
-        listeners, llm_providers
-    )
-    assert isinstance(updated_providers, list)
-    assert llm_gateway is not None
-    assert prompt_gateway is not None
-    print(json.dumps(updated_providers))
-    assert updated_providers == [
-        {
-            "name": "egress_traffic",
-            "type": "model_listener",
-            "port": 12000,
-            "address": "0.0.0.0",
-            "timeout": "30s",
-            "model_providers": [{"model": "openai/gpt-4o", "access_key": "test_key"}],
-        },
-        {
-            "name": "ingress_traffic",
-            "type": "prompt_listener",
-            "port": 10000,
-            "address": "0.0.0.0",
-            "timeout": "30s",
-        },
-    ]
-
-    assert llm_gateway == {
-        "address": "0.0.0.0",
-        "model_providers": [
+@pytest.mark.parametrize(
+    "listeners,expected_providers,expected_llm_gateway,expected_prompt_gateway",
+    [
+        # Case 1: With prompt gateway (ingress + egress)
+        (
             {
-                "access_key": "test_key",
-                "model": "openai/gpt-4o",
+                "ingress_traffic": {
+                    "address": "0.0.0.0",
+                    "port": 10000,
+                    "timeout": "30s",
+                },
+                "egress_traffic": {
+                    "address": "0.0.0.0",
+                    "port": 12000,
+                    "timeout": "30s",
+                },
             },
-        ],
-        "name": "egress_traffic",
-        "type": "model_listener",
-        "port": 12000,
-        "timeout": "30s",
-    }
-
-    assert prompt_gateway == {
-        "address": "0.0.0.0",
-        "name": "ingress_traffic",
-        "port": 10000,
-        "timeout": "30s",
-        "type": "prompt_listener",
-    }
-
-
-def test_convert_legacy_llm_providers_no_prompt_gateway():
-    from planoai.utils import convert_legacy_listeners
-
-    listeners = {
-        "egress_traffic": {
-            "address": "0.0.0.0",
-            "port": 12000,
-            "timeout": "30s",
-        }
-    }
-    llm_providers = [
-        {
-            "model": "openai/gpt-4o",
-            "access_key": "test_key",
-        }
-    ]
-
-    updated_providers, llm_gateway, prompt_gateway = convert_legacy_listeners(
-        listeners, llm_providers
-    )
-    assert isinstance(updated_providers, list)
-    assert llm_gateway is not None
-    assert prompt_gateway is not None
-    assert updated_providers == [
-        {
-            "address": "0.0.0.0",
-            "model_providers": [
+            [
                 {
-                    "access_key": "test_key",
-                    "model": "openai/gpt-4o",
+                    "name": "egress_traffic",
+                    "type": "model_listener",
+                    "port": 12000,
+                    "address": "0.0.0.0",
+                    "timeout": "30s",
+                    "model_providers": [
+                        {"model": "openai/gpt-4o", "access_key": "test_key"}
+                    ],
+                },
+                {
+                    "name": "ingress_traffic",
+                    "type": "prompt_listener",
+                    "port": 10000,
+                    "address": "0.0.0.0",
+                    "timeout": "30s",
                 },
             ],
-            "name": "egress_traffic",
-            "port": 12000,
-            "timeout": "30s",
-            "type": "model_listener",
-        }
-    ]
-    assert llm_gateway == {
-        "address": "0.0.0.0",
-        "model_providers": [
             {
-                "access_key": "test_key",
-                "model": "openai/gpt-4o",
+                "address": "0.0.0.0",
+                "model_providers": [
+                    {"access_key": "test_key", "model": "openai/gpt-4o"}
+                ],
+                "name": "egress_traffic",
+                "type": "model_listener",
+                "port": 12000,
+                "timeout": "30s",
             },
-        ],
-        "name": "egress_traffic",
-        "type": "model_listener",
-        "port": 12000,
-        "timeout": "30s",
-    }
+            {
+                "address": "0.0.0.0",
+                "name": "ingress_traffic",
+                "port": 10000,
+                "timeout": "30s",
+                "type": "prompt_listener",
+            },
+        ),
+        # Case 2: Without prompt gateway (egress only)
+        (
+            {"egress_traffic": {"address": "0.0.0.0", "port": 12000, "timeout": "30s"}},
+            [
+                {
+                    "address": "0.0.0.0",
+                    "model_providers": [
+                        {"access_key": "test_key", "model": "openai/gpt-4o"}
+                    ],
+                    "name": "egress_traffic",
+                    "port": 12000,
+                    "timeout": "30s",
+                    "type": "model_listener",
+                }
+            ],
+            {
+                "address": "0.0.0.0",
+                "model_providers": [
+                    {"access_key": "test_key", "model": "openai/gpt-4o"}
+                ],
+                "name": "egress_traffic",
+                "type": "model_listener",
+                "port": 12000,
+                "timeout": "30s",
+            },
+            None,
+        ),
+    ],
+    ids=["with_prompt_gateway", "without_prompt_gateway"],
+)
+def test_convert_legacy_llm_providers(
+    listeners, expected_providers, expected_llm_gateway, expected_prompt_gateway
+):
+    from planoai.utils import convert_legacy_listeners
+
+    llm_providers = [{"model": "openai/gpt-4o", "access_key": "test_key"}]
+    updated_providers, llm_gateway, prompt_gateway = convert_legacy_listeners(
+        listeners, llm_providers
+    )
+    assert isinstance(updated_providers, list)
+    assert llm_gateway is not None
+    assert prompt_gateway is not None
+    assert updated_providers == expected_providers
+    assert llm_gateway == expected_llm_gateway
+    if expected_prompt_gateway is not None:
+        assert prompt_gateway == expected_prompt_gateway

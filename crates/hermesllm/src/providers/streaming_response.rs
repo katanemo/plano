@@ -472,6 +472,37 @@ mod tests {
     use crate::clients::endpoints::SupportedAPIsFromClient;
     use serde_json::json;
 
+    /// Helper to build an SseEvent from optional JSON data and optional event type.
+    fn make_sse_event(data: Option<serde_json::Value>, event: Option<&str>) -> SseEvent {
+        match data {
+            Some(ref json_val) => SseEvent {
+                data: Some(json_val.to_string()),
+                event: event.map(|s| s.to_string()),
+                raw_line: format!("data: {}", json_val),
+                sse_transformed_lines: format!("data: {}", json_val),
+                provider_stream_response: None,
+            },
+            None => SseEvent {
+                data: None,
+                event: event.map(|s| s.to_string()),
+                raw_line: event.map(|e| format!("event: {}", e)).unwrap_or_default(),
+                sse_transformed_lines: event.map(|e| format!("event: {}", e)).unwrap_or_default(),
+                provider_stream_response: None,
+            },
+        }
+    }
+
+    /// Helper to build a standard OpenAI content chunk with the given content text.
+    fn openai_content_chunk(content: &str) -> serde_json::Value {
+        json!({
+            "id": "chatcmpl-123",
+            "object": "chat.completion.chunk",
+            "created": 1234567890,
+            "model": "gpt-4",
+            "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": null}]
+        })
+    }
+
     #[test]
     fn test_sse_event_parsing() {
         // Test valid SSE data line
@@ -1099,14 +1130,7 @@ mod tests {
             }
         });
 
-        // Create SSE event with this data
-        let sse_event = SseEvent {
-            data: Some(openai_stream_chunk.to_string()),
-            event: None,
-            raw_line: format!("data: {}", openai_stream_chunk),
-            sse_transformed_lines: format!("data: {}", openai_stream_chunk),
-            provider_stream_response: None,
-        };
+        let sse_event = make_sse_event(Some(openai_stream_chunk), None);
 
         let client_api = SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
         let upstream_api = SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
@@ -1143,26 +1167,7 @@ mod tests {
         use crate::apis::openai::OpenAIApi;
 
         // Create an OpenAI stream response with content (which becomes content_block_delta in Anthropic)
-        let openai_stream_chunk = json!({
-            "id": "chatcmpl-123",
-            "object": "chat.completion.chunk",
-            "created": 1234567890,
-            "model": "gpt-4",
-            "choices": [{
-                "index": 0,
-                "delta": {"content": "Hello"},
-                "finish_reason": null
-            }]
-        });
-
-        // Create SSE event with this data
-        let sse_event = SseEvent {
-            data: Some(openai_stream_chunk.to_string()),
-            event: None,
-            raw_line: format!("data: {}", openai_stream_chunk),
-            sse_transformed_lines: format!("data: {}", openai_stream_chunk),
-            provider_stream_response: None,
-        };
+        let sse_event = make_sse_event(Some(openai_content_chunk("Hello")), None);
 
         let client_api = SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
         let upstream_api = SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
@@ -1198,13 +1203,7 @@ mod tests {
         use crate::apis::openai::OpenAIApi;
 
         // Create an Anthropic event-only SSE line (no data)
-        let sse_event = SseEvent {
-            data: None,
-            event: Some("message_start".to_string()),
-            raw_line: "event: message_start".to_string(),
-            sse_transformed_lines: "event: message_start".to_string(),
-            provider_stream_response: None,
-        };
+        let sse_event = make_sse_event(None, Some("message_start"));
 
         let client_api = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
         let upstream_api = SupportedUpstreamAPIs::AnthropicMessagesAPI(AnthropicApi::Messages);
@@ -1245,13 +1244,7 @@ mod tests {
             }
         });
 
-        let sse_event = SseEvent {
-            data: Some(anthropic_event.to_string()),
-            event: None,
-            raw_line: format!("data: {}", anthropic_event),
-            sse_transformed_lines: format!("data: {}", anthropic_event),
-            provider_stream_response: None,
-        };
+        let sse_event = make_sse_event(Some(anthropic_event), None);
 
         let client_api = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
         let upstream_api = SupportedUpstreamAPIs::AnthropicMessagesAPI(AnthropicApi::Messages);
@@ -1279,26 +1272,9 @@ mod tests {
         use crate::apis::openai::OpenAIApi;
 
         // Create an OpenAI stream response
-        let openai_stream_chunk = json!({
-            "id": "chatcmpl-123",
-            "object": "chat.completion.chunk",
-            "created": 1234567890,
-            "model": "gpt-4",
-            "choices": [{
-                "index": 0,
-                "delta": {"content": "Hello"},
-                "finish_reason": null
-            }]
-        });
-
-        let original_data = openai_stream_chunk.to_string();
-        let sse_event = SseEvent {
-            data: Some(original_data.clone()),
-            event: None,
-            raw_line: format!("data: {}", original_data),
-            sse_transformed_lines: format!("data: {}\n\n", original_data),
-            provider_stream_response: None,
-        };
+        let mut sse_event = make_sse_event(Some(openai_content_chunk("Hello")), None);
+        // This test requires trailing \n\n in sse_transformed_lines
+        sse_event.sse_transformed_lines = format!("data: {}\n\n", openai_content_chunk("Hello"));
 
         let client_api = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
         let upstream_api = SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
@@ -1324,25 +1300,7 @@ mod tests {
         use crate::apis::openai::OpenAIApi;
 
         // Create an OpenAI stream response
-        let openai_stream_chunk = json!({
-            "id": "chatcmpl-123",
-            "object": "chat.completion.chunk",
-            "created": 1234567890,
-            "model": "gpt-4",
-            "choices": [{
-                "index": 0,
-                "delta": {"content": "Test"},
-                "finish_reason": null
-            }]
-        });
-
-        let sse_event = SseEvent {
-            data: Some(openai_stream_chunk.to_string()),
-            event: None,
-            raw_line: format!("data: {}", openai_stream_chunk),
-            sse_transformed_lines: format!("data: {}", openai_stream_chunk),
-            provider_stream_response: None,
-        };
+        let sse_event = make_sse_event(Some(openai_content_chunk("Test")), None);
 
         let client_api = SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
         let upstream_api = SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);

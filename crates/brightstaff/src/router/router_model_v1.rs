@@ -299,6 +299,17 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    fn default_routes() -> HashMap<String, Vec<RoutingPreference>> {
+        serde_json::from_str(
+            r#"{"gpt-4o": [{"name": "Image generation", "description": "generating image"}]}"#,
+        )
+        .unwrap()
+    }
+
+    fn default_conversation() -> Vec<Message> {
+        serde_json::from_str(r#"[{"role": "user", "content": "hi"},{"role": "assistant", "content": "Hello! How can I assist you today?"},{"role": "user", "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"}]"#).unwrap()
+    }
+
     #[test]
     fn test_system_prompt_format() {
         let expected_prompt = r#"
@@ -320,35 +331,8 @@ Your task is to decide which route is best suit with user intent on the conversa
 Based on your analysis, provide your response in the following JSON formats if you decide to match any route:
 {"route": "route_name"}
 "#;
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-        let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
-
-        let conversation_str = r#"
-                    [
-                        {
-                            "role": "user",
-                            "content": "hi"
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "Hello! How can I assist you today?"
-                        },
-                        {
-                            "role": "user",
-                            "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"
-                        }
-                    ]
-        "#;
-        let conversation: Vec<Message> = serde_json::from_str(conversation_str).unwrap();
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), usize::MAX);
+        let conversation = default_conversation();
 
         let req = router.generate_request(&conversation, &None);
 
@@ -378,35 +362,8 @@ Your task is to decide which route is best suit with user intent on the conversa
 Based on your analysis, provide your response in the following JSON formats if you decide to match any route:
 {"route": "route_name"}
 "#;
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-        let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
-
-        let conversation_str = r#"
-                    [
-                        {
-                            "role": "user",
-                            "content": "hi"
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "Hello! How can I assist you today?"
-                        },
-                        {
-                            "role": "user",
-                            "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"
-                        }
-                    ]
-        "#;
-        let conversation: Vec<Message> = serde_json::from_str(conversation_str).unwrap();
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), usize::MAX);
+        let conversation = default_conversation();
 
         let usage_preferences = Some(vec![ModelUsagePreference {
             model: "claude/claude-3-7-sonnet".to_string(),
@@ -444,36 +401,8 @@ Based on your analysis, provide your response in the following JSON formats if y
 {"route": "route_name"}
 "#;
 
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-        let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model, 235);
-
-        let conversation_str = r#"
-                    [
-                        {
-                            "role": "user",
-                            "content": "hi"
-                        },
-                        {
-                            "role": "assistant",
-                            "content": "Hello! How can I assist you today?"
-                        },
-                        {
-                            "role": "user",
-                            "content": "given the image In style of Andy Warhol, portrait of Bart and Lisa Simpson"
-                        }
-                    ]
-        "#;
-
-        let conversation: Vec<Message> = serde_json::from_str(conversation_str).unwrap();
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), 235);
+        let conversation = default_conversation();
 
         let req = router.generate_request(&conversation, &None);
 
@@ -504,18 +433,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 {"route": "route_name"}
 "#;
 
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-
-        let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model, 200);
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), 200);
 
         let conversation_str = r#"
                     [
@@ -565,17 +483,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 {"route": "route_name"}
 "#;
 
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-        let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model, 230);
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), 230);
 
         let conversation_str = r#"
                     [
@@ -632,17 +540,7 @@ Your task is to decide which route is best suit with user intent on the conversa
 Based on your analysis, provide your response in the following JSON formats if you decide to match any route:
 {"route": "route_name"}
 "#;
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-        let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), usize::MAX);
 
         let conversation_str = r#"
                     [
@@ -701,17 +599,7 @@ Your task is to decide which route is best suit with user intent on the conversa
 Based on your analysis, provide your response in the following JSON formats if you decide to match any route:
 {"route": "route_name"}
 "#;
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-        let routing_model = "test-model".to_string();
-        let router = RouterModelV1::new(llm_routes, routing_model, usize::MAX);
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), usize::MAX);
 
         let conversation_str = r#"
                                                 [
@@ -777,17 +665,7 @@ Based on your analysis, provide your response in the following JSON formats if y
 
     #[test]
     fn test_parse_response() {
-        let routes_str = r#"
-          {
-            "gpt-4o": [
-              {"name": "Image generation", "description": "generating image"}
-            ]
-        }
-        "#;
-        let llm_routes =
-            serde_json::from_str::<HashMap<String, Vec<RoutingPreference>>>(routes_str).unwrap();
-
-        let router = RouterModelV1::new(llm_routes, "test-model".to_string(), 2000);
+        let router = RouterModelV1::new(default_routes(), "test-model".to_string(), 2000);
 
         // Case 1: Valid JSON with non-empty route
         let input = r#"{"route": "Image generation"}"#;
