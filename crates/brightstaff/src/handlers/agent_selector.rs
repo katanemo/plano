@@ -178,6 +178,7 @@ mod tests {
         Arc::new(OrchestratorService::new(
             "http://localhost:8080".to_string(),
             "test-model".to_string(),
+            "plano-orchestrator".to_string(),
         ))
     }
 

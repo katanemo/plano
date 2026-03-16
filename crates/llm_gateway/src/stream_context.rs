@@ -873,7 +873,7 @@ impl HttpContext for StreamContext {
                 // ensure that the provider has an endpoint if the access key is missing else return a bad request
                 if self.llm_provider.as_ref().unwrap().endpoint.is_none()
                     && self.llm_provider.as_ref().unwrap().provider_interface
-                        != LlmProviderType::Arch
+                        != LlmProviderType::Plano
                 {
                     self.send_server_error(error, Some(StatusCode::BAD_REQUEST));
                 }

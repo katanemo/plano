@@ -1,8 +1,7 @@
 version: v0.3.0
 
-routing:
-  model: Arch-Router
-  llm_provider: arch-router
+overrides:
+  llm_routing_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
 
 listeners:
   - type: model
@@ -11,8 +10,7 @@ listeners:
 
 model_providers:
 
-  - name: arch-router
-    model: arch/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
+  - model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
     base_url: http://localhost:11434
 
   - model: openai/gpt-4o-mini

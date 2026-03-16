@@ -11,9 +11,7 @@ use brightstaff::state::StateStorage;
 use brightstaff::utils::tracing::init_tracer;
 use bytes::Bytes;
 use common::configuration::{Agent, Configuration, ListenerType};
-use common::consts::{
-    CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
-};
+use common::consts::{CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH};
 use common::llm_providers::LlmProviders;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
@@ -36,6 +34,8 @@ pub mod router;
 const BIND_ADDRESS: &str = "0.0.0.0:9091";
 const DEFAULT_ROUTING_LLM_PROVIDER: &str = "arch-router";
 const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
+const DEFAULT_ORCHESTRATOR_LLM_PROVIDER: &str = "plano-orchestrator";
+const DEFAULT_ORCHESTRATOR_MODEL_NAME: &str = "Plano-Orchestrator";
 
 // Utility function to extract the context from the incoming request headers
 fn extract_context_from_request(req: &Request<Incoming>) -> Context {
@@ -139,16 +139,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         env::var("LLM_PROVIDER_ENDPOINT").unwrap_or_else(|_| "http://localhost:12001".to_string());
 
     let listener = TcpListener::bind(bind_address).await?;
-    let routing_model_name: String = plano_config
-        .routing
-        .as_ref()
-        .and_then(|r| r.model.clone())
-        .unwrap_or_else(|| DEFAULT_ROUTING_MODEL_NAME.to_string());
+    let overrides = plano_config.overrides.clone().unwrap_or_default();
+
+    // Strip provider prefix (e.g. "arch/") to get the model ID used in upstream requests
+    let routing_model_name: String = overrides
+        .llm_routing_model
+        .as_deref()
+        .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
+        .unwrap_or(DEFAULT_ROUTING_MODEL_NAME)
+        .to_string();
 
     let routing_llm_provider = plano_config
-        .routing
-        .as_ref()
-        .and_then(|r| r.model_provider.clone())
+        .model_providers
+        .iter()
+        .find(|p| p.model.as_deref() == Some(routing_model_name.as_str()))
+        .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
     let router_service: Arc<RouterService> = Arc::new(RouterService::new(
@@ -158,9 +163,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         routing_llm_provider,
     ));
 
+    // Strip provider prefix (e.g. "arch/") to get the model ID used in upstream requests
+    let orchestrator_model_name: String = overrides
+        .agent_orchestration_model
+        .as_deref()
+        .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
+        .unwrap_or(DEFAULT_ORCHESTRATOR_MODEL_NAME)
+        .to_string();
+
+    let orchestrator_llm_provider: String = plano_config
+        .model_providers
+        .iter()
+        .find(|p| p.model.as_deref() == Some(orchestrator_model_name.as_str()))
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_LLM_PROVIDER.to_string());
+
     let orchestrator_service: Arc<OrchestratorService> = Arc::new(OrchestratorService::new(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
-        PLANO_ORCHESTRATOR_MODEL_NAME.to_string(),
+        orchestrator_model_name,
+        orchestrator_llm_provider,
     ));
 
     let model_aliases = Arc::new(plano_config.model_aliases.clone());

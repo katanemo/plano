@@ -31,8 +31,13 @@ start_demo() {
   fi
 
   # Step 4: Start Plano
-  echo "Starting Plano with config.yaml..."
-  planoai up config.yaml
+  PLANO_CONFIG="config.yaml"
+  if [ "$1" == "--local-orchestrator" ]; then
+    PLANO_CONFIG="config_local_orchestrator.yaml"
+    echo "Using local orchestrator config..."
+  fi
+  echo "Starting Plano with $PLANO_CONFIG..."
+  planoai up "$PLANO_CONFIG"
 
   # Step 5: Start agents natively
   echo "Starting agents..."

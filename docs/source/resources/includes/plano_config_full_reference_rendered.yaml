@@ -107,11 +107,11 @@ model_providers:
 - internal: true
   model: Arch-Function
   name: arch-function
-  provider_interface: arch
+  provider_interface: plano
 - internal: true
   model: Plano-Orchestrator
-  name: plano-orchestrator
-  provider_interface: arch
+  name: plano/orchestrator
+  provider_interface: plano
 prompt_targets:
 - description: Get current weather at a location.
   endpoint:

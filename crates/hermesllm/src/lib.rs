@@ -35,7 +35,7 @@ mod tests {
             ProviderId::Mistral
         );
         assert_eq!(ProviderId::try_from("groq").unwrap(), ProviderId::Groq);
-        assert_eq!(ProviderId::try_from("arch").unwrap(), ProviderId::Arch);
+        assert_eq!(ProviderId::try_from("plano").unwrap(), ProviderId::Plano);
 
         // Test aliases
         assert_eq!(ProviderId::try_from("google").unwrap(), ProviderId::Gemini);
