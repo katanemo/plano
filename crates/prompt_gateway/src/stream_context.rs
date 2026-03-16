@@ -171,13 +171,7 @@ impl StreamContext {
                     callout_context.request_body.messages.clone(),
                 );
                 let arch_messages_json = serde_json::to_string(&params).unwrap();
-                let timeout_ms = if let Some(overrides) = self.overrides.as_ref() {
-                    overrides
-                        .upstream_timeout_ms
-                        .unwrap_or(DEFAULT_TARGET_REQUEST_TIMEOUT_MS)
-                } else {
-                    DEFAULT_TARGET_REQUEST_TIMEOUT_MS
-                };
+                let timeout_ms = DEFAULT_TARGET_REQUEST_TIMEOUT_MS;
                 let timeout_str = timeout_ms.to_string();
 
                 let mut headers = vec![
@@ -429,11 +423,7 @@ impl StreamContext {
 
         debug!("on_http_call_response: api call body {:?}", api_call_body);
 
-        let timeout_ms = if let Some(overrides) = self.overrides.as_ref() {
-            overrides.upstream_timeout_ms.unwrap_or(API_REQUEST_TIMEOUT_MS)
-        } else {
-            API_REQUEST_TIMEOUT_MS
-        };
+        let timeout_ms = API_REQUEST_TIMEOUT_MS;
         let timeout_str = timeout_ms.to_string();
 
         let http_method_str = http_method.to_string();

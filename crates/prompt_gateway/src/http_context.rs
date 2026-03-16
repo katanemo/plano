@@ -205,11 +205,7 @@ impl HttpContext for StreamContext {
         info!("on_http_request_body: sending request to model server");
         debug!("request body: {}", json_data);
 
-        let timeout_ms = if let Some(overrides) = self.overrides.as_ref() {
-            overrides.upstream_timeout_ms.unwrap_or(MODEL_SERVER_REQUEST_TIMEOUT_MS)
-        } else {
-            MODEL_SERVER_REQUEST_TIMEOUT_MS
-        };
+        let timeout_ms = MODEL_SERVER_REQUEST_TIMEOUT_MS;
         let timeout_str = timeout_ms.to_string();
 
         let mut headers = vec![
