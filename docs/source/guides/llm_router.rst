@@ -372,7 +372,8 @@ Key things to know before deploying:
   ``subPath`` in the Deployment — omitting ``subPath`` causes Kubernetes to mount a directory
   instead of a file.
 
-For full step-by-step commands, see the
+For the canonical Plano Kubernetes deployment (ConfigMap, Secrets, Deployment YAML), see
+:ref:`deployment`. For full step-by-step commands specific to this demo, see the
 `demo README <https://github.com/katanemo/plano/tree/main/demos/llm_routing/model_routing_service/README.md>`_.
 
 
