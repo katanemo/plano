@@ -1,9 +1,12 @@
 use bytes::Bytes;
-use common::configuration::{ModelAlias, SpanAttributes};
+use common::configuration::{LlmProvider, ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
 use common::llm_providers::LlmProviders;
+use common::retry::error_response::build_error_response;
+use common::retry::orchestrator::RetryOrchestrator;
+use common::retry::{rebuild_request_for_provider, RequestContext, RequestSignature};
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
@@ -424,81 +427,376 @@ async fn llm_chat_inner(
     let request_start_time = std::time::Instant::now();
     let _request_start_system_time = std::time::SystemTime::now();
 
-    let llm_response = match reqwest::Client::new()
-        .post(&full_qualified_llm_provider_url)
-        .headers(request_headers)
-        .body(client_request_bytes_for_upstream)
-        .send()
-        .await
-    {
-        Ok(res) => res,
-        Err(err) => {
-            return Ok(BrightStaffError::InternalServerError(format!(
-                "Failed to send request: {}",
+    // === Retry orchestrator integration ===
+    // Check if the resolved provider has a retry_policy configured.
+    // If so, use the RetryOrchestrator to wrap the upstream call with retry logic.
+    // Otherwise, preserve the existing direct-call behavior unchanged.
+    let resolved_provider: Option<Arc<LlmProvider>> =
+        llm_providers.read().await.get(&resolved_model);
+
+    let has_retry_policy = resolved_provider
+        .as_ref()
+        .and_then(|p| p.retry_policy.as_ref())
+        .is_some();
+
+    if has_retry_policy {
+        let provider = resolved_provider.as_ref().unwrap();
+        let retry_policy = provider.retry_policy.as_ref().unwrap();
+
+        // Build the list of all providers for the retry orchestrator
+        let all_providers: Vec<LlmProvider> = llm_providers
+            .read()
+            .await
+            .iter()
+            .map(|(_, p)| (**p).clone())
+            .collect();
+
+        // Create RequestSignature from the original request bytes (computes body hash, does not clone body)
+        let request_signature = RequestSignature::new(
+            &chat_request_bytes,
+            &request_headers,
+            is_streaming_request,
+            alias_resolved_model.clone(),
+        );
+
+        // Create RequestContext with the handler's request_id
+        let mut request_context = RequestContext {
+            request_id: request_id.clone(),
+            attempted_providers: std::collections::HashSet::new(),
+            retry_start_time: None,
+            attempt_number: 0,
+            request_retry_after_state: HashMap::new(),
+            request_latency_block_state: HashMap::new(),
+            request_signature: request_signature.clone(),
+            errors: vec![],
+        };
+
+        // Create the retry orchestrator with default state managers (P0)
+        let orchestrator = RetryOrchestrator::new_default();
+
+        debug!(
+            model = %alias_resolved_model,
+            fallback_models = ?retry_policy.fallback_models,
+            default_strategy = ?retry_policy.default_strategy,
+            default_max_attempts = retry_policy.default_max_attempts,
+            "Retry orchestrator initialized for request"
+        );
+
+        // Capture references needed by the forward_fn closure
+        let base_url = full_qualified_llm_provider_url.clone();
+        let original_headers = request_headers.clone();
+        let request_path_clone = request_path.clone();
+
+        // The forward_fn closure handles the actual HTTP call to upstream.
+        // For each attempt, it rebuilds the request for the target provider
+        // (updating model field and auth credentials), then sends the request.
+        let forward_fn = |body: &Bytes, target_provider: &LlmProvider| {
+            let body = body.clone();
+            let target_provider = target_provider.clone();
+            let base_url = base_url.clone();
+            let original_headers = original_headers.clone();
+            let request_path_clone = request_path_clone.clone();
+            let primary_model = alias_resolved_model.clone();
+
+            async move {
+                // Determine if we're retrying to a different provider or the same one
+                let target_model = target_provider
+                    .model
+                    .as_deref()
+                    .unwrap_or(&target_provider.name);
+
+                let (request_body, mut headers) = if target_model == primary_model {
+                    // Same provider: use original request bytes and headers
+                    (body.clone(), original_headers.clone())
+                } else {
+                    // Different provider: rebuild request with updated model and auth
+                    match rebuild_request_for_provider(&body, &target_provider, &original_headers) {
+                        Ok((new_body, new_headers)) => (new_body, new_headers),
+                        Err(e) => {
+                            warn!(error = %e, "Failed to rebuild request for provider");
+                            return Err(common::retry::error_detector::TimeoutError {
+                                duration_ms: 0,
+                            });
+                        }
+                    }
+                };
+
+                // Resolve the upstream URL for the target provider
+                let upstream_url = {
+                    let provider_id = target_provider.provider_interface.to_provider_id();
+                    let prefix = target_provider.base_url_path_prefix.clone();
+                    let target_model_name = target_model
+                        .split_once('/')
+                        .map(|(_, m)| m)
+                        .unwrap_or(target_model);
+
+                    let client_api =
+                        SupportedAPIsFromClient::from_endpoint(request_path_clone.as_str());
+                    if let Some(api) = client_api {
+                        let upstream_path = api.target_endpoint_for_provider(
+                            &provider_id,
+                            &request_path_clone,
+                            target_model_name,
+                            target_provider.stream == Some(true),
+                            prefix.as_deref(),
+                        );
+                        // Build the full URL from the target provider's endpoint
+                        if let (Some(endpoint), Some(port)) =
+                            (&target_provider.endpoint, target_provider.port)
+                        {
+                            format!("{}:{}{}", endpoint, port, upstream_path)
+                        } else if let Some(endpoint) = &target_provider.endpoint {
+                            format!("{}{}", endpoint, upstream_path)
+                        } else {
+                            // Fallback: use the original base URL (same host)
+                            base_url.clone()
+                        }
+                    } else {
+                        base_url.clone()
+                    }
+                };
+
+                // Set provider hint header for the target
+                headers.insert(
+                    ARCH_PROVIDER_HINT_HEADER,
+                    header::HeaderValue::from_str(target_model).unwrap_or_else(|_| {
+                        header::HeaderValue::from_static("unknown")
+                    }),
+                );
+
+                // Respect passthrough_auth per provider
+                if target_provider.passthrough_auth != Some(true) {
+                    // Auth headers are already set by rebuild_request_for_provider
+                    // For same-provider retries, ensure the original auth is used
+                }
+
+                // Remove content-length as body may have changed
+                headers.remove(header::CONTENT_LENGTH);
+
+                // Send the request
+                let result = reqwest::Client::new()
+                    .post(&upstream_url)
+                    .headers(headers)
+                    .body(request_body.to_vec())
+                    .send()
+                    .await;
+
+                match result {
+                    Ok(res) => {
+                        // Convert reqwest::Response to HttpResponse (hyper Response<BoxBody>)
+                        let status = res.status().as_u16();
+                        let resp_headers = res.headers().clone();
+                        let body_bytes = res.bytes().await.unwrap_or_default();
+
+                        let full_body = http_body_util::Full::new(body_bytes)
+                            .map_err(|never| match never {})
+                            .boxed();
+
+                        let mut builder = Response::builder().status(status);
+                        if let Some(hdrs) = builder.headers_mut() {
+                            for (name, value) in resp_headers.iter() {
+                                if let Ok(hyper_name) =
+                                    hyper::header::HeaderName::from_bytes(name.as_str().as_bytes())
+                                {
+                                    if let Ok(hyper_value) =
+                                        hyper::header::HeaderValue::from_bytes(value.as_bytes())
+                                    {
+                                        hdrs.insert(hyper_name, hyper_value);
+                                    }
+                                }
+                            }
+                        }
+
+                        Ok(builder.body(full_body).unwrap())
+                    }
+                    Err(err) => {
+                        warn!(error = %err, "Upstream request failed");
+                        Err(common::retry::error_detector::TimeoutError {
+                            duration_ms: 0,
+                        })
+                    }
+                }
+            }
+        };
+
+        // Execute the retry orchestrator
+        let retry_result = orchestrator
+            .execute(
+                &chat_request_bytes,
+                &request_signature,
+                provider,
+                retry_policy,
+                &all_providers,
+                &mut request_context,
+                forward_fn,
+            )
+            .await;
+
+        match retry_result {
+            Ok(http_response) => {
+                // Success (possibly after retries) — convert HttpResponse back to client response.
+                // The retry orchestrator collected the full response body for classification,
+                // so we reconstruct the response for the client.
+                let upstream_status = http_response.status();
+                let response_headers = http_response.headers().clone();
+
+                let mut response = Response::builder().status(upstream_status);
+                let headers = response.headers_mut().unwrap();
+                for (header_name, header_value) in response_headers.iter() {
+                    headers.insert(header_name, header_value.clone());
+                }
+
+                // Collect the body from the HttpResponse
+                let body_bytes = http_response
+                    .into_body()
+                    .collect()
+                    .await
+                    .map(|collected| collected.to_bytes())
+                    .unwrap_or_default();
+
+                // Convert to a reqwest-compatible byte stream for create_streaming_response
+                let byte_stream = futures::stream::iter(
+                    vec![Ok::<Bytes, reqwest::Error>(body_bytes)]
+                );
+
+                // Create base processor for metrics and tracing
+                let base_processor = ObservableStreamProcessor::new(
+                    operation_component::LLM,
+                    span_name,
+                    request_start_time,
+                    messages_for_signals,
+                );
+
+                // === v1/responses state management ===
+                let streaming_response = if let (true, false, Some(state_store)) = (
+                    should_manage_state,
+                    original_input_items.is_empty(),
+                    &state_storage,
+                ) {
+                    let content_encoding = response_headers
+                        .get("content-encoding")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string());
+
+                    let state_processor = ResponsesStateProcessor::new(
+                        base_processor,
+                        state_store.clone(),
+                        original_input_items,
+                        alias_resolved_model.clone(),
+                        resolved_model.clone(),
+                        is_streaming_request,
+                        false,
+                        content_encoding,
+                        request_id,
+                    );
+                    create_streaming_response(byte_stream, state_processor, 16)
+                } else {
+                    create_streaming_response(byte_stream, base_processor, 16)
+                };
+
+                match response.body(streaming_response.body) {
+                    Ok(response) => Ok(response),
+                    Err(err) => Ok(BrightStaffError::InternalServerError(format!(
+                        "Failed to create response: {}",
+                        err
+                    ))
+                    .into_response()),
+                }
+            }
+            Err(retry_exhausted_error) => {
+                // All retries exhausted — build error response using the error_response module
+                info!(
+                    request_id = %request_id,
+                    total_attempts = retry_exhausted_error.attempts.len(),
+                    budget_exhausted = retry_exhausted_error.retry_budget_exhausted,
+                    "All retries exhausted"
+                );
+
+                let error_resp = build_error_response(&retry_exhausted_error, &request_id);
+
+                // Convert Full<Bytes> body to BoxBody<Bytes, hyper::Error>
+                let (parts, full_body) = error_resp.into_parts();
+                let boxed_body = full_body
+                    .map_err(|never| match never {})
+                    .boxed();
+
+                Ok(Response::from_parts(parts, boxed_body))
+            }
+        }
+    } else {
+        // === No retry_policy: preserve existing direct-call behavior unchanged ===
+        let llm_response = match reqwest::Client::new()
+            .post(&full_qualified_llm_provider_url)
+            .headers(request_headers)
+            .body(client_request_bytes_for_upstream)
+            .send()
+            .await
+        {
+            Ok(res) => res,
+            Err(err) => {
+                return Ok(BrightStaffError::InternalServerError(format!(
+                    "Failed to send request: {}",
+                    err
+                ))
+                .into_response());
+            }
+        };
+
+        // copy over the headers and status code from the original response
+        let response_headers = llm_response.headers().clone();
+        let upstream_status = llm_response.status();
+        let mut response = Response::builder().status(upstream_status);
+        let headers = response.headers_mut().unwrap();
+        for (header_name, header_value) in response_headers.iter() {
+            headers.insert(header_name, header_value.clone());
+        }
+
+        // Build LLM span with actual status code using constants
+        let byte_stream = llm_response.bytes_stream();
+
+        // Create base processor for metrics and tracing
+        let base_processor = ObservableStreamProcessor::new(
+            operation_component::LLM,
+            span_name,
+            request_start_time,
+            messages_for_signals,
+        );
+
+        // === v1/responses state management: Wrap with ResponsesStateProcessor ===
+        let streaming_response = if let (true, false, Some(state_store)) = (
+            should_manage_state,
+            original_input_items.is_empty(),
+            state_storage,
+        ) {
+            let content_encoding = response_headers
+                .get("content-encoding")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            let state_processor = ResponsesStateProcessor::new(
+                base_processor,
+                state_store,
+                original_input_items,
+                alias_resolved_model.clone(),
+                resolved_model.clone(),
+                is_streaming_request,
+                false,
+                content_encoding,
+                request_id,
+            );
+            create_streaming_response(byte_stream, state_processor, 16)
+        } else {
+            create_streaming_response(byte_stream, base_processor, 16)
+        };
+
+        match response.body(streaming_response.body) {
+            Ok(response) => Ok(response),
+            Err(err) => Ok(BrightStaffError::InternalServerError(format!(
+                "Failed to create response: {}",
                 err
             ))
-            .into_response());
+            .into_response()),
         }
-    };
-
-    // copy over the headers and status code from the original response
-    let response_headers = llm_response.headers().clone();
-    let upstream_status = llm_response.status();
-    let mut response = Response::builder().status(upstream_status);
-    let headers = response.headers_mut().unwrap();
-    for (header_name, header_value) in response_headers.iter() {
-        headers.insert(header_name, header_value.clone());
-    }
-
-    // Build LLM span with actual status code using constants
-    let byte_stream = llm_response.bytes_stream();
-
-    // Create base processor for metrics and tracing
-    let base_processor = ObservableStreamProcessor::new(
-        operation_component::LLM,
-        span_name,
-        request_start_time,
-        messages_for_signals,
-    );
-
-    // === v1/responses state management: Wrap with ResponsesStateProcessor ===
-    // Only wrap if we need to manage state (client is ResponsesAPI AND upstream is NOT ResponsesAPI AND state_storage is configured)
-    let streaming_response = if let (true, false, Some(state_store)) = (
-        should_manage_state,
-        original_input_items.is_empty(),
-        state_storage,
-    ) {
-        // Extract Content-Encoding header to handle decompression for state parsing
-        let content_encoding = response_headers
-            .get("content-encoding")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-
-        // Wrap with state management processor to store state after response completes
-        let state_processor = ResponsesStateProcessor::new(
-            base_processor,
-            state_store,
-            original_input_items,
-            alias_resolved_model.clone(),
-            resolved_model.clone(),
-            is_streaming_request,
-            false, // Not OpenAI upstream since should_manage_state is true
-            content_encoding,
-            request_id,
-        );
-        create_streaming_response(byte_stream, state_processor, 16)
-    } else {
-        // Use base processor without state management
-        create_streaming_response(byte_stream, base_processor, 16)
-    };
-
-    match response.body(streaming_response.body) {
-        Ok(response) => Ok(response),
-        Err(err) => Ok(BrightStaffError::InternalServerError(format!(
-            "Failed to create response: {}",
-            err
-        ))
-        .into_response()),
     }
 }
 /// Resolves model aliases by looking up the requested model in the model_aliases map.
