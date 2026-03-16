@@ -1,0 +1,36 @@
+### Code generation query (OpenAI format) — expects anthropic/claude-sonnet
+POST http://localhost:12000/routing/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "gpt-4o-mini",
+  "messages": [{"role": "user", "content": "Write a Python function for binary search"}]
+}
+
+### Complex reasoning query (OpenAI format) — expects openai/gpt-4o
+POST http://localhost:12000/routing/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "gpt-4o-mini",
+  "messages": [{"role": "user", "content": "Analyze the trade-offs between microservices and monolithic architecture"}]
+}
+
+### Simple query — no routing match, expects default model
+POST http://localhost:12000/routing/v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "gpt-4o-mini",
+  "messages": [{"role": "user", "content": "Hello"}]
+}
+
+### Code generation query (Anthropic format)
+POST http://localhost:12000/routing/v1/messages
+Content-Type: application/json
+
+{
+  "model": "claude-sonnet-4-20250514",
+  "max_tokens": 1024,
+  "messages": [{"role": "user", "content": "Write a REST API in Go using Gin"}]
+}

@@ -347,6 +347,35 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
        curl http://localhost:10000/v1/models
 
 
+Using vLLM on Kubernetes (GPU nodes)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For teams running Kubernetes, Arch-Router and Plano can be deployed as in-cluster services.
+The ``demos/llm_routing/model_routing_service/`` directory includes ready-to-use manifests:
+
+- ``vllm-deployment.yaml`` — Arch-Router served by vLLM, with an init container to download
+  the model from HuggingFace
+- ``plano-deployment.yaml`` — Plano proxy configured to use the in-cluster Arch-Router
+- ``config_k8s.yaml`` — Plano config with ``llm_routing_model`` pointing at
+  ``http://arch-router:10000`` instead of the default hosted endpoint
+
+Key things to know before deploying:
+
+- GPU nodes commonly have a ``nvidia.com/gpu:NoSchedule`` taint — the ``vllm-deployment.yaml``
+  includes a matching toleration. Update the ``nodeSelector`` to match your cluster's GPU node
+  labels (GKE, EKS, AKS each use different label keys).
+- The ``nvidia.com/gpu: "1"`` resource request alone is sufficient for scheduling, but a
+  ``nodeSelector`` is recommended when you have mixed node pools.
+- Model download takes ~1 minute; vLLM loads the model in ~1-2 minutes after that. The
+  ``livenessProbe`` has a 180-second ``initialDelaySeconds`` to avoid premature restarts.
+- The Plano config ConfigMap must use ``--from-file=plano_config.yaml=config_k8s.yaml`` with
+  ``subPath`` in the Deployment — omitting ``subPath`` causes Kubernetes to mount a directory
+  instead of a file.
+
+For full step-by-step commands, see the
+`demo README <https://github.com/katanemo/plano/tree/main/demos/llm_routing/model_routing_service/README.md>`_.
+
+
 Combining Routing Methods
 -------------------------
 
