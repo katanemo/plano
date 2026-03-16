@@ -469,6 +469,33 @@ Provides a practical mechanism to encode user preferences through domain-action 
 </li>
 </ol>
 </section>
+<section id="using-vllm-on-kubernetes-gpu-nodes">
+<h3>Using vLLM on Kubernetes (GPU nodes)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#using-vllm-on-kubernetes-gpu-nodes" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#using-vllm-on-kubernetes-gpu-nodes'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>For teams running Kubernetes, Arch-Router and Plano can be deployed as in-cluster services.
+The <code class="docutils literal notranslate"><span class="pre">demos/llm_routing/model_routing_service/</span></code> directory includes ready-to-use manifests:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">vllm-deployment.yaml</span></code> — Arch-Router served by vLLM, with an init container to download
+the model from HuggingFace</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plano-deployment.yaml</span></code> — Plano proxy configured to use the in-cluster Arch-Router</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">config_k8s.yaml</span></code> — Plano config with <code class="docutils literal notranslate"><span class="pre">llm_routing_model</span></code> pointing at
+<code class="docutils literal notranslate"><span class="pre">http://arch-router:10000</span></code> instead of the default hosted endpoint</p></li>
+</ul>
+<p>Key things to know before deploying:</p>
+<ul class="simple">
+<li><p>GPU nodes commonly have a <code class="docutils literal notranslate"><span class="pre">nvidia.com/gpu:NoSchedule</span></code> taint — the <code class="docutils literal notranslate"><span class="pre">vllm-deployment.yaml</span></code>
+includes a matching toleration. The <code class="docutils literal notranslate"><span class="pre">nvidia.com/gpu:</span> <span class="pre">"1"</span></code> resource request is sufficient
+for scheduling in most clusters; a <code class="docutils literal notranslate"><span class="pre">nodeSelector</span></code> is optional and commented out in the
+manifest for cases where you need to pin to a specific GPU node pool.</p></li>
+<li><p>Model download takes ~1 minute; vLLM loads the model in ~1-2 minutes after that. The
+<code class="docutils literal notranslate"><span class="pre">livenessProbe</span></code> has a 180-second <code class="docutils literal notranslate"><span class="pre">initialDelaySeconds</span></code> to avoid premature restarts.</p></li>
+<li><p>The Plano config ConfigMap must use <code class="docutils literal notranslate"><span class="pre">--from-file=plano_config.yaml=config_k8s.yaml</span></code> with
+<code class="docutils literal notranslate"><span class="pre">subPath</span></code> in the Deployment — omitting <code class="docutils literal notranslate"><span class="pre">subPath</span></code> causes Kubernetes to mount a directory
+instead of a file.</p></li>
+</ul>
+<p>For the canonical Plano Kubernetes deployment (ConfigMap, Secrets, Deployment YAML), see
+<a class="reference internal" href="../resources/deployment.html#deployment"><span class="std std-ref">Deployment</span></a>. For full step-by-step commands specific to this demo, see the
+<a class="reference external" href="https://github.com/katanemo/plano/tree/main/demos/llm_routing/model_routing_service/README.md" rel="nofollow noopener">demo README<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>.</p>
+</section>
 </section>
 <section id="combining-routing-methods">
 <h2>Combining Routing Methods<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#combining-routing-methods" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#combining-routing-methods'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -605,6 +632,7 @@ Provides a practical mechanism to encode user preferences through domain-action 
 <li><a :data-current="activeSection === '#self-hosting-arch-router'" class="reference internal" href="#self-hosting-arch-router">Self-hosting Arch-Router</a><ul>
 <li><a :data-current="activeSection === '#using-ollama-recommended-for-local-development'" class="reference internal" href="#using-ollama-recommended-for-local-development">Using Ollama (recommended for local development)</a></li>
 <li><a :data-current="activeSection === '#using-vllm-recommended-for-production-ec2'" class="reference internal" href="#using-vllm-recommended-for-production-ec2">Using vLLM (recommended for production / EC2)</a></li>
+<li><a :data-current="activeSection === '#using-vllm-on-kubernetes-gpu-nodes'" class="reference internal" href="#using-vllm-on-kubernetes-gpu-nodes">Using vLLM on Kubernetes (GPU nodes)</a></li>
 </ul>
 </li>
 <li><a :data-current="activeSection === '#combining-routing-methods'" class="reference internal" href="#combining-routing-methods">Combining Routing Methods</a></li>
@@ -619,7 +647,7 @@ Provides a practical mechanism to encode user preferences through domain-action 
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 15, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2025, Katanemo Labs, Inc Last updated: Mar 16, 2026. </p>
 </div>
 </div>
 </footer>
