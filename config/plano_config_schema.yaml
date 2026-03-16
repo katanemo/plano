@@ -265,10 +265,6 @@ properties:
         type: boolean
       use_agent_orchestrator:
         type: boolean
-      upstream_timeout_ms:
-        type: integer
-        minimum: 1000
-        description: "Timeout in milliseconds for outbound upstream calls from WASM filters (tool endpoints, function calling, default prompt targets). Default is 300000 (300s)."
       upstream_connect_timeout:
         type: string
         description: "Connect timeout for upstream provider clusters (e.g., '5s', '10s'). Default is '5s'."
