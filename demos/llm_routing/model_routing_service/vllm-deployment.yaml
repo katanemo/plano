@@ -18,13 +18,13 @@ spec:
         - key: nvidia.com/gpu
           operator: Exists
           effect: NoSchedule
-      nodeSelector:
-        # Replace with the label that identifies GPU nodes in your cluster
-        # Examples:
-        #   GKE: cloud.google.com/gke-accelerator: nvidia-l4
-        #   EKS: eks.amazonaws.com/nodegroup: gpu-nodes
-        #   AKS: kubernetes.azure.com/agentpool: gpupool
-        node.kubernetes.io/instance-type: gpu-node
+      # Optional: add a nodeSelector to pin to a specific GPU node pool.
+      # The nvidia.com/gpu resource request below is sufficient for most clusters.
+      # nodeSelector:
+      #   DigitalOcean: doks.digitalocean.com/gpu-model: l40s
+      #   GKE:          cloud.google.com/gke-accelerator: nvidia-l4
+      #   EKS:          eks.amazonaws.com/nodegroup: gpu-nodes
+      #   AKS:          kubernetes.azure.com/agentpool: gpupool
       initContainers:
         - name: download-model
           image: python:3.11-slim

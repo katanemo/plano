@@ -362,10 +362,9 @@ The ``demos/llm_routing/model_routing_service/`` directory includes ready-to-use
 Key things to know before deploying:
 
 - GPU nodes commonly have a ``nvidia.com/gpu:NoSchedule`` taint — the ``vllm-deployment.yaml``
-  includes a matching toleration. Update the ``nodeSelector`` to match your cluster's GPU node
-  labels (GKE, EKS, AKS each use different label keys).
-- The ``nvidia.com/gpu: "1"`` resource request alone is sufficient for scheduling, but a
-  ``nodeSelector`` is recommended when you have mixed node pools.
+  includes a matching toleration. The ``nvidia.com/gpu: "1"`` resource request is sufficient
+  for scheduling in most clusters; a ``nodeSelector`` is optional and commented out in the
+  manifest for cases where you need to pin to a specific GPU node pool.
 - Model download takes ~1 minute; vLLM loads the model in ~1-2 minutes after that. The
   ``livenessProbe`` has a 180-second ``initialDelaySeconds`` to avoid premature restarts.
 - The Plano config ConfigMap must use ``--from-file=plano_config.yaml=config_k8s.yaml`` with

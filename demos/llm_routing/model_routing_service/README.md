@@ -107,22 +107,23 @@ The response tells you which model would handle this request and which route was
 
 To run Arch-Router in-cluster using vLLM instead of the default hosted endpoint:
 
-**1. Update `vllm-deployment.yaml`** — set `nodeSelector` to match your GPU node's labels:
-
-```yaml
-# Examples:
-#   GKE: cloud.google.com/gke-accelerator: nvidia-l4
-#   EKS: eks.amazonaws.com/nodegroup: gpu-nodes
-#   AKS: kubernetes.azure.com/agentpool: gpupool
-nodeSelector:
-  node.kubernetes.io/instance-type: gpu-node
-```
-
-**2. Deploy Arch-Router and Plano:**
+**0. Check your GPU node labels and taints**
 
 ```bash
+kubectl get nodes --show-labels | grep -i gpu
+kubectl get node <gpu-node-name> -o jsonpath='{.spec.taints}'
+```
+
+GPU nodes commonly have a `nvidia.com/gpu:NoSchedule` taint — `vllm-deployment.yaml` includes a matching toleration. If you have multiple GPU node pools and need to pin to a specific one, uncomment and set the `nodeSelector` in `vllm-deployment.yaml` using the label for your cloud provider.
+
+**1. Deploy Arch-Router and Plano:**
+
+```bash
+
+# arch-router deployment
 kubectl apply -f vllm-deployment.yaml
 
+# plano deployment
 kubectl create secret generic plano-secrets \
   --from-literal=OPENAI_API_KEY=$OPENAI_API_KEY \
   --from-literal=ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
