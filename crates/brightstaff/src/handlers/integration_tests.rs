@@ -116,17 +116,20 @@ mod tests {
         };
 
         let headers = HeaderMap::new();
+        let request_bytes = serde_json::to_vec(&request).expect("failed to serialize request");
         let result = pipeline_processor
-            .process_filter_chain(&request.messages, &test_pipeline, &agent_map, &headers)
+            .process_raw_filter_chain(&request_bytes, &test_pipeline, &agent_map, &headers, "/v1/chat/completions")
             .await;
 
         println!("Pipeline processing result: {:?}", result);
 
         assert!(result.is_ok());
-        let processed_messages = result.unwrap();
-        // With empty filter chain, should return the original messages unchanged
-        assert_eq!(processed_messages.len(), 1);
-        if let Some(MessageContent::Text(content)) = &processed_messages[0].content {
+        let processed_bytes = result.unwrap();
+        // With empty filter chain, should return the original bytes unchanged
+        let processed_request: ChatCompletionsRequest =
+            serde_json::from_slice(&processed_bytes).expect("failed to deserialize response");
+        assert_eq!(processed_request.messages.len(), 1);
+        if let Some(MessageContent::Text(content)) = &processed_request.messages[0].content {
             assert_eq!(content, "Hello world!");
         } else {
             panic!("Expected text content");
