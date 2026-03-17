@@ -257,7 +257,7 @@ static_resources:
                           route:
                             auto_host_rewrite: true
                             cluster: bright_staff
-                            timeout: {{ listener.timeout | default('300s') }}
+                            timeout: {{ prompt_gateway_listener.timeout | default('300s') }}
                         {% for cluster_name, cluster in plano_clusters.items() %}
                         - match:
                             prefix: "/"
@@ -268,7 +268,7 @@ static_resources:
                           route:
                             auto_host_rewrite: true
                             cluster: {{ cluster_name }}
-                            timeout: {{ listener.timeout | default('300s') }}
+                            timeout: {{ prompt_gateway_listener.timeout | default('300s') }}
                         {% endfor %}
                 http_filters:
                   - name: envoy.filters.http.router
