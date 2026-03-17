@@ -42,7 +42,7 @@ listeners:
     agents:
       - id: rag_agent
         description: virtual assistant for retrieval augmented generation tasks
-        filter_chain:
+        input_filters:
           - input_guards
           - query_rewriter
           - context_builder

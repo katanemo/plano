@@ -27,7 +27,7 @@ pub struct AgentFilterChain {
     pub id: String,
     pub default: Option<bool>,
     pub description: Option<String>,
-    pub filter_chain: Option<Vec<String>>,
+    pub input_filters: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

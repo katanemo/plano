@@ -308,7 +308,7 @@ where
                 id: "output_filter".to_string(),
                 default: None,
                 description: None,
-                filter_chain: Some(output_filters),
+                input_filters: Some(output_filters),
             };
 
             while let Some(item) = byte_stream.next().await {

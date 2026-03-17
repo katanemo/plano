@@ -187,7 +187,7 @@ mod tests {
             id: name.to_string(),
             description: Some(description.to_string()),
             default: Some(is_default),
-            filter_chain: Some(vec![name.to_string()]),
+            input_filters: Some(vec![name.to_string()]),
         }
     }
 

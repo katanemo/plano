@@ -332,15 +332,38 @@ async fn handle_agent_chat_inner(
             "processing agent"
         );
 
-        // Process the filter chain
-        let chat_history = pipeline_processor
-            .process_filter_chain(
-                &current_messages,
-                selected_agent,
-                &agent_map,
-                &request_headers,
-            )
-            .await?;
+        // Process input filters — serialize current request as OpenAI chat completions body,
+        // pass raw bytes through each filter, then extract updated messages from the result.
+        let chat_history = if selected_agent
+            .input_filters
+            .as_ref()
+            .map(|f| !f.is_empty())
+            .unwrap_or(false)
+        {
+            let filter_body = serde_json::json!({
+                "model": client_request.model(),
+                "messages": current_messages,
+            });
+            let filter_bytes =
+                serde_json::to_vec(&filter_body).map_err(PipelineError::ParseError)?;
+
+            let filtered_bytes = pipeline_processor
+                .process_raw_filter_chain(
+                    &filter_bytes,
+                    selected_agent,
+                    &agent_map,
+                    &request_headers,
+                    "/v1/chat/completions",
+                )
+                .await?;
+
+            let filtered_body: serde_json::Value =
+                serde_json::from_slice(&filtered_bytes).map_err(PipelineError::ParseError)?;
+            serde_json::from_value(filtered_body["messages"].clone())
+                .map_err(PipelineError::ParseError)?
+        } else {
+            current_messages.clone()
+        };
 
         // Get agent details and invoke
         let agent = agent_map.get(&agent_name).unwrap();

@@ -64,7 +64,7 @@ mod tests {
 
         let agent_pipeline = AgentFilterChain {
             id: "terminal-agent".to_string(),
-            filter_chain: Some(vec![
+            input_filters: Some(vec![
                 "filter-agent".to_string(),
                 "terminal-agent".to_string(),
             ]),
@@ -110,7 +110,7 @@ mod tests {
         // Create a pipeline with empty filter chain to avoid network calls
         let test_pipeline = AgentFilterChain {
             id: "terminal-agent".to_string(),
-            filter_chain: Some(vec![]), // Empty filter chain - no network calls needed
+            input_filters: Some(vec![]), // Empty filter chain - no network calls needed
             description: None,
             default: None,
         };

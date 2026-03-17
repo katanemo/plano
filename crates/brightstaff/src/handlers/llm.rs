@@ -279,7 +279,7 @@ async fn llm_chat_inner(
                     id: "model_listener".to_string(),
                     default: None,
                     description: None,
-                    filter_chain: Some(fc.clone()),
+                    input_filters: Some(fc.clone()),
                 };
 
                 let mut pipeline_processor = PipelineProcessor::default();

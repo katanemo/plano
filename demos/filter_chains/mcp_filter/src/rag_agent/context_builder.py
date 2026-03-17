@@ -195,9 +195,14 @@ async def augment_query_with_context(
 load_knowledge_base()
 
 
-async def context_builder(messages: List[ChatMessage]) -> List[ChatMessage]:
-    """MCP tool that augments user queries with relevant context from the knowledge base."""
-    logger.info(f"Received chat completion request with {len(messages)} messages")
+async def context_builder(body: dict, path: str) -> dict:
+    """MCP tool that augments user queries with relevant context from the knowledge base.
+
+    Receives the full request body dict and the API path hint (e.g. /v1/chat/completions).
+    Returns the body with the last user message augmented with retrieved context.
+    """
+    messages = [ChatMessage(**m) for m in body.get("messages", [])]
+    logger.info(f"Received request with {len(messages)} messages at path {path}")
 
     # Get traceparent header from MCP request
     headers = get_http_headers()
@@ -215,8 +220,7 @@ async def context_builder(messages: List[ChatMessage]) -> List[ChatMessage]:
         messages, traceparent_header, request_id
     )
 
-    # Return as dict to minimize text serialization
-    return [{"role": msg.role, "content": msg.content} for msg in updated_messages]
+    return {**body, "messages": [{"role": msg.role, "content": msg.content} for msg in updated_messages]}
 
 
 # Register MCP tool only if mcp is available

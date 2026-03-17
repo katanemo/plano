@@ -3,12 +3,11 @@ import json
 import time
 from typing import List, Optional, Dict, Any
 import uuid
-from fastapi import FastAPI, Depends, Request
 from openai import AsyncOpenAI
 import os
 import logging
 
-from .api import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
+from .api import ChatMessage
 from . import mcp
 from fastmcp.server.dependencies import get_http_headers
 
@@ -28,9 +27,6 @@ plano_client = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
     api_key="EMPTY",  # Plano doesn't require a real API key
 )
-
-app = FastAPI()
-
 
 async def rewrite_query_with_plano(
     messages: List[ChatMessage],
@@ -87,12 +83,14 @@ async def rewrite_query_with_plano(
     return ""
 
 
-async def query_rewriter(messages: List[ChatMessage]) -> List[ChatMessage]:
-    """Chat completions endpoint that rewrites the last user query using Plano.
+async def query_rewriter(body: dict, path: str) -> dict:
+    """Rewrites the last user query in the request body using Plano.
 
-    Returns a dict with a 'messages' key containing the updated message list.
+    Receives the full request body dict and the API path hint (e.g. /v1/chat/completions).
+    Returns the body with the last user message rewritten for better retrieval.
     """
-    logger.info(f"Received chat completion request with {len(messages)} messages")
+    messages = [ChatMessage(**m) for m in body.get("messages", [])]
+    logger.info(f"Received request with {len(messages)} messages at path {path}")
 
     # Get traceparent header from HTTP request using FastMCP's dependency function
     headers = get_http_headers()
@@ -109,57 +107,20 @@ async def query_rewriter(messages: List[ChatMessage]) -> List[ChatMessage]:
         messages, traceparent_header, request_id
     )
 
-    # Create updated messages with the rewritten query
-    updated_messages = messages.copy()
-
     # Find and update the last user message with the rewritten query
+    updated_messages = [m.model_dump() for m in messages]
     for i in range(len(updated_messages) - 1, -1, -1):
-        if updated_messages[i].role == "user":
-            original_query = updated_messages[i].content
-            updated_messages[i] = ChatMessage(role="user", content=rewritten_query)
+        if updated_messages[i]["role"] == "user":
             logger.info(
-                f"Updated user query from '{original_query}' to '{rewritten_query}'"
+                f"Updated user query from '{updated_messages[i]['content']}' to '{rewritten_query}'"
             )
+            updated_messages[i]["content"] = rewritten_query
             break
 
-    # Return as dict to minimize text serialization
-    return [{"role": msg.role, "content": msg.content} for msg in updated_messages]
+    logger.info("Returning rewritten chat completion response")
+    return {**body, "messages": updated_messages}
 
 
 # Register MCP tool only if mcp is available
 if mcp is not None:
     mcp.tool()(query_rewriter)
-
-
-@app.post("/")
-async def chat_completions_endpoint(
-    request_messages: List[ChatMessage], request: Request
-) -> List[ChatMessage]:
-    """FastAPI endpoint for chat completions with query rewriting."""
-    logger.info(
-        f"Received /v1/chat/completions request with {len(request_messages)} messages"
-    )
-
-    # Extract traceparent header
-    traceparent_header = request.headers.get("traceparent")
-    if traceparent_header:
-        logger.info(f"Received traceparent header: {traceparent_header}")
-    else:
-        logger.info("No traceparent header found")
-
-    # Call the query rewriter tool
-    updated_messages_data = await query_rewriter(request_messages)
-
-    # Convert back to ChatMessage objects
-    updated_messages = [ChatMessage(**msg) for msg in updated_messages_data]
-
-    logger.info("Returning rewritten chat completion response")
-    return updated_messages
-
-
-def start_server(host: str = "0.0.0.0", port: int = 10501):
-    """Start the FastAPI server for query rewriter."""
-    import uvicorn
-
-    logger.info(f"Starting Query Rewriter REST server on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
