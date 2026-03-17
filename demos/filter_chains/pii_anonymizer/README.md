@@ -80,14 +80,26 @@ Check the PII filter service logs in the terminal running `start_agents.sh`. You
 | Email | standard email format | `user@example.com` | `[EMAIL_0]` |
 | Phone | US phone formats | `555-123-4567` | `[PHONE_0]` |
 
+## Filter Contract
+
+**Input filter (`/anonymize`)** receives the **full raw request body** and returns the modified body:
+```json
+{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Contact john@example.com"}], "stream": true}
+```
+→ returns the same structure with PII replaced in the `messages` array.
+
+**Output filter (`/deanonymize`)** receives the **raw LLM response bytes** and returns modified bytes:
+- *Streaming*: raw SSE chunk, e.g. `data: {"choices":[{"delta":{"content":"Contact [EMAIL_0]"}}]}`
+- *Non-streaming*: full JSON response body
+
 ## How Streaming De-anonymization Works
 
-For streaming responses, each SSE chunk is sent through the output filters as it arrives from the LLM:
+For streaming responses, each raw SSE chunk is sent through the output filter as it arrives from the LLM:
 
-1. Plano receives a chunk with content like `"The email [EMAIL_0] belongs to..."`
-2. The chunk content is sent to the `/deanonymize` endpoint
-3. The filter looks up the PII mapping (stored during anonymization) and replaces placeholders
-4. The restored chunk `"The email john@example.com belongs to..."` is streamed to the client
+1. Plano receives a raw SSE chunk like `data: {"choices":[{"delta":{"content":"The email [EMAIL_0] belongs to..."}}]}`
+2. The raw chunk bytes are sent to the `/deanonymize` endpoint
+3. The filter parses the SSE, looks up the PII mapping (stored during anonymization), and replaces placeholders in the delta content
+4. The restored chunk is returned and streamed to the client
 
 Partial placeholders split across chunks (e.g., `[EMA` in one chunk, `IL_0]` in the next) are handled via internal buffering in the filter service.
 

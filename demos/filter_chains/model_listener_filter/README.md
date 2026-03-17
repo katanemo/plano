@@ -3,7 +3,11 @@
 Run content-safety filters on direct LLM requests — no agent layer required.
 
 This demo uses the `input_filters` feature on a **model-type listener** to intercept
-`/v1/chat/completions` requests and block unsafe content before they reach the LLM provider.
+requests and block unsafe content before they reach the LLM provider. Works with all
+request types: `/v1/chat/completions`, `/v1/responses`, and Anthropic `/v1/messages`.
+
+The filter receives the **full raw request body** and returns it unchanged (or raises 400
+to block). No message extraction — the complete JSON payload flows through as-is.
 
 ## Architecture
 

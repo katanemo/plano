@@ -12,6 +12,8 @@ model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
 
 listeners:
   - type: model

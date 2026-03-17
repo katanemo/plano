@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use common::configuration::{Agent, AgentFilterChain};
 use common::consts::{
     ARCH_UPSTREAM_HOST_HEADER, BRIGHT_STAFF_SERVICE_NAME, ENVOY_RETRY_HEADER, TRACE_PARENT_HEADER,
@@ -603,6 +604,139 @@ impl PipelineProcessor {
             serde_json::from_slice(&response_bytes).map_err(PipelineError::ParseError)?;
 
         Ok(messages)
+    }
+
+    /// Execute a raw bytes filter — POST bytes to agent.url, receive bytes back.
+    /// Used for input and output filters where the full raw request/response is passed through.
+    /// No MCP protocol wrapping; agent_type is ignored.
+    #[instrument(
+        skip(self, raw_bytes, agent, request_headers),
+        fields(
+            agent_id = %agent.id,
+            agent_url = %agent.url,
+            filter_name = %agent.id,
+            bytes_len = raw_bytes.len()
+        )
+    )]
+    async fn execute_raw_filter(
+        &mut self,
+        raw_bytes: &[u8],
+        agent: &Agent,
+        request_headers: &HeaderMap,
+        request_path: &str,
+    ) -> Result<Bytes, PipelineError> {
+        set_service_name(operation_component::AGENT_FILTER);
+        use opentelemetry::trace::get_active_span;
+        get_active_span(|span| {
+            span.update_name(format!("execute_raw_filter ({})", agent.id));
+        });
+
+        let mut agent_headers = request_headers.clone();
+        agent_headers.remove(hyper::header::CONTENT_LENGTH);
+
+        agent_headers.remove(TRACE_PARENT_HEADER);
+        global::get_text_map_propagator(|propagator| {
+            let cx =
+                tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
+            propagator.inject_context(&cx, &mut HeaderInjector(&mut agent_headers));
+        });
+
+        agent_headers.insert(
+            ARCH_UPSTREAM_HOST_HEADER,
+            hyper::header::HeaderValue::from_str(&agent.id)
+                .map_err(|_| PipelineError::AgentNotFound(agent.id.clone()))?,
+        );
+        agent_headers.insert(
+            ENVOY_RETRY_HEADER,
+            hyper::header::HeaderValue::from_str("3").unwrap(),
+        );
+        agent_headers.insert(
+            "Accept",
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        agent_headers.insert(
+            "Content-Type",
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+
+        // Append the original request path so the filter endpoint encodes the API format.
+        // e.g. agent.url="http://host/anonymize" + request_path="/v1/chat/completions"
+        //   -> POST http://host/anonymize/v1/chat/completions
+        let url = format!("{}{}", agent.url, request_path);
+        debug!(agent = %agent.id, url = %url, "sending raw filter request");
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(agent_headers)
+            .body(raw_bytes.to_vec())
+            .send()
+            .await?;
+
+        let http_status = response.status();
+        let response_bytes = response.bytes().await?;
+
+        if !http_status.is_success() {
+            let error_body = String::from_utf8_lossy(&response_bytes).to_string();
+            return Err(if http_status.is_client_error() {
+                PipelineError::ClientError {
+                    agent: agent.id.clone(),
+                    status: http_status.as_u16(),
+                    body: error_body,
+                }
+            } else {
+                PipelineError::ServerError {
+                    agent: agent.id.clone(),
+                    status: http_status.as_u16(),
+                    body: error_body,
+                }
+            });
+        }
+
+        debug!(agent = %agent.id, bytes_len = response_bytes.len(), "raw filter response received");
+        Ok(response_bytes)
+    }
+
+    /// Process a chain of raw-bytes filters sequentially.
+    /// Input: raw request or response bytes. Output: filtered bytes.
+    /// Each agent receives the output of the previous one.
+    pub async fn process_raw_filter_chain(
+        &mut self,
+        raw_bytes: &[u8],
+        agent_filter_chain: &AgentFilterChain,
+        agent_map: &HashMap<String, Agent>,
+        request_headers: &HeaderMap,
+        request_path: &str,
+    ) -> Result<Bytes, PipelineError> {
+        let filter_chain = match agent_filter_chain.filter_chain.as_ref() {
+            Some(fc) if !fc.is_empty() => fc,
+            _ => return Ok(Bytes::copy_from_slice(raw_bytes)),
+        };
+
+        let mut current_bytes = Bytes::copy_from_slice(raw_bytes);
+
+        for agent_name in filter_chain {
+            debug!(agent = %agent_name, "processing raw filter agent");
+
+            let agent = agent_map
+                .get(agent_name)
+                .ok_or_else(|| PipelineError::AgentNotFound(agent_name.clone()))?;
+
+            info!(
+                agent = %agent_name,
+                url = %agent.url,
+                bytes_len = current_bytes.len(),
+                "executing raw filter"
+            );
+
+            current_bytes = self
+                .execute_raw_filter(&current_bytes, agent, request_headers, request_path)
+                .await?;
+
+            info!(agent = %agent_name, bytes_len = current_bytes.len(), "raw filter completed");
+        }
+
+        Ok(current_bytes)
     }
 
     /// Send request to terminal agent and return the raw response for streaming

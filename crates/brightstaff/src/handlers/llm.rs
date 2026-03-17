@@ -268,12 +268,13 @@ async fn llm_chat_inner(
     }
 
     // === Input filters processing for model listener ===
+    // Filters receive the raw request bytes and return (possibly modified) raw bytes.
+    // The returned bytes are re-parsed into a ProviderRequestType to continue the request.
     {
         if let Some(ref fc) = *input_filters {
             if !fc.is_empty() {
                 debug!(input_filters = ?fc, "processing model listener input filters");
 
-                // Create a temporary AgentFilterChain to reuse PipelineProcessor
                 let temp_filter_chain = AgentFilterChain {
                     id: "model_listener".to_string(),
                     default: None,
@@ -282,23 +283,34 @@ async fn llm_chat_inner(
                 };
 
                 let mut pipeline_processor = PipelineProcessor::default();
-                let messages = client_request.get_messages();
                 match pipeline_processor
-                    .process_filter_chain(
-                        &messages,
+                    .process_raw_filter_chain(
+                        &chat_request_bytes,
                         &temp_filter_chain,
                         &input_filter_agents,
                         &request_headers,
+                        &request_path,
                     )
                     .await
                 {
-                    Ok(filtered_messages) => {
-                        client_request.set_messages(&filtered_messages);
-                        info!(
-                            original_count = messages.len(),
-                            filtered_count = filtered_messages.len(),
-                            "filter chain processed successfully"
-                        );
+                    Ok(filtered_bytes) => {
+                        match ProviderRequestType::try_from((
+                            &filtered_bytes[..],
+                            &SupportedAPIsFromClient::from_endpoint(request_path.as_str()).unwrap(),
+                        )) {
+                            Ok(updated_request) => {
+                                client_request = updated_request;
+                                info!("input filter chain processed successfully");
+                            }
+                            Err(parse_err) => {
+                                warn!(error = %parse_err, "input filter returned invalid request JSON");
+                                return Ok(BrightStaffError::InvalidRequest(format!(
+                                    "Input filter returned invalid request: {}",
+                                    parse_err
+                                ))
+                                .into_response());
+                            }
+                        }
                     }
                     Err(super::pipeline_processor::PipelineError::ClientError {
                         agent,
@@ -508,21 +520,25 @@ async fn llm_chat_inner(
         propagator.inject_context(&cx, &mut HeaderInjector(&mut request_headers));
     });
 
-    // Output filters are only supported for /v1/chat/completions — the SSE content
-    // extraction logic is specific to that API shape (choices[].delta.content).
     let output_filters_configured = output_filters
         .as_ref()
         .as_ref()
         .map(|fc| !fc.is_empty())
         .unwrap_or(false);
-    let has_output_filter = output_filters_configured
-        && request_path == common::consts::CHAT_COMPLETIONS_PATH;
-    if output_filters_configured && !has_output_filter {
-        warn!(
-            path = %request_path,
-            "output filters are configured but only supported for /v1/chat/completions, skipping"
-        );
-    }
+    let has_output_filter = output_filters_configured;
+
+    // Extract the upstream API path (e.g. "/v1/messages" from "https://api.anthropic.com/v1/messages").
+    // Output filters are called at <agent.url><upstream_api_path> so they know the exact byte format.
+    let upstream_api_path = {
+        let after_scheme = full_qualified_llm_provider_url
+            .find("://")
+            .map(|i| &full_qualified_llm_provider_url[i + 3..])
+            .unwrap_or(&full_qualified_llm_provider_url);
+        after_scheme
+            .find('/')
+            .map(|i| after_scheme[i..].to_string())
+            .unwrap_or_else(|| "/".to_string())
+    };
 
     // Save request headers for output filters (before they're consumed by upstream request)
     let output_filter_request_headers = if has_output_filter {
@@ -607,6 +623,7 @@ async fn llm_chat_inner(
                 ofc,
                 ofa,
                 output_filter_request_headers.unwrap(),
+                upstream_api_path.clone(),
             )
         } else {
             create_streaming_response(byte_stream, state_processor, 16)
@@ -621,6 +638,7 @@ async fn llm_chat_inner(
             ofc,
             ofa,
             output_filter_request_headers.unwrap(),
+            upstream_api_path,
         )
     } else {
         // Use base processor without state management
