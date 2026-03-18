@@ -1,0 +1,31 @@
+@llm_endpoint = http://localhost:12000
+
+### free-tier-first showcase
+POST {{llm_endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "gpt-5.2",
+  "stream": false,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Reply with exactly: free-tier-first routing demo successful."
+    }
+  ]
+}
+
+### fallback showcase (run after forcing first candidate failure)
+POST {{llm_endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "gpt-5.2",
+  "stream": false,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Reply with exactly: fallback routing demo successful."
+    }
+  ]
+}

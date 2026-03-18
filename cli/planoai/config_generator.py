@@ -191,6 +191,7 @@ def validate_and_render_schema():
     llms_with_usage = []
     model_name_keys = set()
     model_usage_name_keys = set()
+    arbitrage_rank_validations = []
 
     print("listeners: ", listeners)
 
@@ -253,6 +254,30 @@ def validate_and_render_schema():
                     raise Exception(
                         f"Model {model_name} has routing_preferences but uses wildcard (*). Models with routing preferences cannot be wildcards."
                     )
+
+            arbitrage_policy = model_provider.get("arbitrage_policy")
+            if arbitrage_policy:
+                arbitrage_enabled = arbitrage_policy.get("enabled", False)
+                arbitrage_rank = arbitrage_policy.get("rank", [])
+
+                if arbitrage_enabled and len(arbitrage_rank) == 0:
+                    raise Exception(
+                        f"Model {model_name} has arbitrage_policy.enabled=true but rank is empty. Please provide at least one ranked candidate."
+                    )
+
+                if arbitrage_enabled and is_wildcard:
+                    raise Exception(
+                        f"Model {model_name} has arbitrage_policy.enabled=true but uses wildcard (*). Arbitrage policy requires deterministic model candidates."
+                    )
+
+                if len(arbitrage_rank) != len(set(arbitrage_rank)):
+                    raise Exception(
+                        f"Model {model_name} has duplicate entries in arbitrage_policy.rank. Please provide each candidate once in ranked order."
+                    )
+
+                if arbitrage_enabled:
+                    provider_label = model_provider.get("name") or model_name
+                    arbitrage_rank_validations.append((provider_label, arbitrage_rank))
 
             # Validate azure_openai and ollama provider requires base_url
             if (provider in SUPPORTED_PROVIDERS_WITH_BASE_URL) and model_provider.get(
@@ -416,6 +441,16 @@ def validate_and_render_schema():
                 "internal": True,
             }
         )
+
+    arbitrage_allowed_targets = model_name_keys.union(model_provider_name_set)
+    for provider_name, rank in arbitrage_rank_validations:
+        for ranked_candidate in rank:
+            if ranked_candidate not in arbitrage_allowed_targets:
+                raise Exception(
+                    f"Model provider '{provider_name}' has arbitrage_policy.rank candidate '{ranked_candidate}' "
+                    "that is not defined in model_providers. "
+                    "Use a configured provider name, model id, or provider/model slug."
+                )
 
     config_yaml["model_providers"] = deepcopy(updated_model_providers)
 

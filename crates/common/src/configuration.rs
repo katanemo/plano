@@ -277,6 +277,18 @@ pub struct RoutingPreference {
     pub description: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ArbitrageFailurePolicy {
+    pub fallback_to_primary: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ArbitragePolicy {
+    pub enabled: Option<bool>,
+    pub rank: Option<Vec<String>>,
+    pub on_failure: Option<ArbitrageFailurePolicy>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AgentUsagePreference {
     pub model: String,
@@ -331,6 +343,7 @@ pub struct LlmProvider {
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
+    pub arbitrage_policy: Option<ArbitragePolicy>,
 }
 
 pub trait IntoModels {
@@ -375,6 +388,7 @@ impl Default for LlmProvider {
             base_url_path_prefix: None,
             internal: None,
             passthrough_auth: None,
+            arbitrage_policy: None,
         }
     }
 }

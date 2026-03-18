@@ -430,6 +430,61 @@ Here are common scenarios where Arch-Router excels:
 
 - **Conversational Routing**: Track conversation context to identify when topics shift between domains or when the type of assistance needed changes mid-conversation.
 
+GPU Free-Tier Arbitrage
+-----------------------
+
+Plano can apply a provider-level arbitrage policy so low-stakes or bursty traffic tries free/low-cost providers first, then deterministically falls back to the primary provider when retryable failures occur.
+
+Arbitrage policy config
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Define ``arbitrage_policy`` on the primary provider:
+
+.. code-block:: yaml
+    :caption: Free-tier-first Arbitrage Configuration
+
+    model_providers:
+      - model: openai/gpt-4o-mini
+        access_key: $OPENAI_API_KEY
+        default: true
+        arbitrage_policy:
+          enabled: true
+          rank:
+            - groq/llama-3.1-8b-instant
+            - together_ai/openai/gpt-oss-20b
+          on_failure:
+            fallback_to_primary: true
+
+      - model: groq/llama-3.1-8b-instant
+        access_key: $GROQ_API_KEY
+
+      - model: together_ai/openai/gpt-oss-20b
+        access_key: $TOGETHER_API_KEY
+
+Deterministic fallback behavior
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Candidate chain is evaluated in order: ``rank`` entries, then the primary provider
+- Retryable failures trigger fallback: transport errors, HTTP ``429``, ``502``, ``503``, ``504``
+- Non-retryable failures stop the chain immediately
+- If all candidates fail, Plano returns an explicit error (no silent degradation)
+
+Trace visibility for each decision
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Every attempt emits structured decision metadata. At minimum, inspect:
+
+- ``llm.model`` and ``llm.provider`` for the selected upstream at each hop
+- ``routing.selection_reason`` (for example ``free_tier_available`` or ``fallback_on_retryable_error``)
+- ``routing.is_fallback`` to identify fallback attempts
+- ``routing.fallback_trigger`` and ``routing.next_candidate`` when a retryable failure causes fallback
+- ``routing.upstream_endpoint`` for the selected candidate in each attempt
+
+You can run a local showcase with:
+
+- ``demos/llm_routing/gpu_free_tier_arbitrage/config.yaml``
+- ``demos/llm_routing/gpu_free_tier_arbitrage/demo.rest``
+
 Best practices
 --------------
 - **💡Consistent Naming:**  Route names should align with their descriptions.

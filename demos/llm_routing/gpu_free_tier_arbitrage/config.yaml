@@ -1,0 +1,30 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+    max_retries: 1
+
+model_providers:
+  # Primary provider for the model.
+  - model: openai/gpt-5.2
+    # This is a failure key to test the arbitrage policy
+    access_key: $OPENAI_API_KEY_FAILURE
+    default: true
+    arbitrage_policy:
+      enabled: true
+      rank:
+        # Demo low-cost/free-tier candidates (ordered).
+        - ollama/qwen3:8b
+        - groq/llama-3.1-8b-instant
+
+  # Candidates referenced by arbitrage_policy.rank.
+  - model: groq/llama-3.1-8b-instant
+    access_key: $GROQ_API_KEY
+
+  - model: ollama/qwen3:8b
+    base_url: http://localhost:11434
+
+tracing:
+  random_sampling: 100

@@ -291,6 +291,107 @@ tracing:
 
 """,
     },
+    {
+        "id": "arbitrage_policy_enabled_requires_non_empty_rank",
+        "expected_error": "arbitrage_policy.enabled=true but rank is empty",
+        "plano_config": """
+version: v0.1.0
+
+listeners:
+  egress_traffic:
+    address: 0.0.0.0
+    port: 12000
+    message_format: openai
+    timeout: 30s
+
+llm_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+    arbitrage_policy:
+      enabled: true
+      rank: []
+""",
+    },
+    {
+        "id": "arbitrage_policy_rank_candidate_must_exist",
+        "expected_error": "arbitrage_policy.rank candidate 'openai/not-configured'",
+        "plano_config": """
+version: v0.1.0
+
+listeners:
+  egress_traffic:
+    address: 0.0.0.0
+    port: 12000
+    message_format: openai
+    timeout: 30s
+
+llm_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+    arbitrage_policy:
+      enabled: true
+      rank:
+        - openai/not-configured
+""",
+    },
+    {
+        "id": "arbitrage_policy_rejects_duplicate_rank_entries",
+        "expected_error": "duplicate entries in arbitrage_policy.rank",
+        "plano_config": """
+version: v0.1.0
+
+listeners:
+  egress_traffic:
+    address: 0.0.0.0
+    port: 12000
+    message_format: openai
+    timeout: 30s
+
+llm_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+    arbitrage_policy:
+      enabled: true
+      rank:
+        - openai/gpt-4o-mini
+        - openai/gpt-4o-mini
+""",
+    },
+    {
+        "id": "arbitrage_policy_valid_rank",
+        "expected_error": None,
+        "plano_config": """
+version: v0.1.0
+
+listeners:
+  egress_traffic:
+    address: 0.0.0.0
+    port: 12000
+    message_format: openai
+    timeout: 30s
+
+llm_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+
+  - model: groq/llama-3.1-8b-instant
+    access_key: $GROQ_API_KEY
+    arbitrage_policy:
+      enabled: true
+      rank:
+        - openai/gpt-4o-mini
+        - openai/gpt-4o
+      on_failure:
+        fallback_to_primary: true
+""",
+    },
 ]
 
 

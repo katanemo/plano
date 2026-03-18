@@ -278,6 +278,7 @@ mod tests {
             internal: None,
             stream: None,
             passthrough_auth: None,
+            arbitrage_policy: None,
         }
     }
 
