@@ -118,7 +118,13 @@ mod tests {
         let headers = HeaderMap::new();
         let request_bytes = serde_json::to_vec(&request).expect("failed to serialize request");
         let result = pipeline_processor
-            .process_raw_filter_chain(&request_bytes, &test_pipeline, &agent_map, &headers, "/v1/chat/completions")
+            .process_raw_filter_chain(
+                &request_bytes,
+                &test_pipeline,
+                &agent_map,
+                &headers,
+                "/v1/chat/completions",
+            )
             .await;
 
         println!("Pipeline processing result: {:?}", result);
