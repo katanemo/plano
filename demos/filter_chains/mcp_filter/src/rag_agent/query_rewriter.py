@@ -24,6 +24,7 @@ plano_client = AsyncOpenAI(
     api_key="EMPTY",  # Plano doesn't require a real API key
 )
 
+
 async def rewrite_query_with_plano(
     messages: List[ChatMessage],
     traceparent_header: str,

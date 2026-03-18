@@ -219,7 +219,12 @@ async def context_builder(path: str, request: Request) -> dict:
         messages, traceparent_header, request_id
     )
 
-    return {**body, "messages": [{"role": msg.role, "content": msg.content} for msg in updated_messages]}
+    return {
+        **body,
+        "messages": [
+            {"role": msg.role, "content": msg.content} for msg in updated_messages
+        ],
+    }
 
 
 # Register MCP tool only if mcp is available

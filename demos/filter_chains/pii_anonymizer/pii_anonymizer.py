@@ -57,18 +57,32 @@ async def anonymize(path: str, request: Request) -> dict[str, Any]:
             body = {**body, "input": anonymized}
         elif isinstance(input_val, list):
             items = [
-                {**item, "content": anonymize_message_content(item.get("content", ""), all_mappings)}
-                if isinstance(item, dict) and item.get("role") == "user"
-                else item
+                (
+                    {
+                        **item,
+                        "content": anonymize_message_content(
+                            item.get("content", ""), all_mappings
+                        ),
+                    }
+                    if isinstance(item, dict) and item.get("role") == "user"
+                    else item
+                )
                 for item in input_val
             ]
             body = {**body, "input": items}
     else:
         # /v1/chat/completions and /v1/messages both use "messages"
         messages = [
-            {**msg, "content": anonymize_message_content(msg.get("content", ""), all_mappings)}
-            if msg.get("role") == "user"
-            else msg
+            (
+                {
+                    **msg,
+                    "content": anonymize_message_content(
+                        msg.get("content", ""), all_mappings
+                    ),
+                }
+                if msg.get("role") == "user"
+                else msg
+            )
             for msg in body.get("messages", [])
         ]
         if messages:

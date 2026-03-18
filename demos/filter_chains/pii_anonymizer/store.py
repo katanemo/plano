@@ -50,7 +50,9 @@ def restore_streaming(request_id: str, content: str, mapping: Dict[str, str]) ->
         else:
             _buffers.pop(request_id, None)
     if restored != content:
-        logger.info("request_id=%s restored '%s' -> '%s'", request_id, content, restored)
+        logger.info(
+            "request_id=%s restored '%s' -> '%s'", request_id, content, restored
+        )
     return restored
 
 
@@ -70,13 +72,17 @@ def deanonymize_sse(
                 if chunk.get("type") == "content_block_delta":
                     delta = chunk.get("delta", {})
                     if delta.get("type") == "text_delta" and delta.get("text"):
-                        delta["text"] = restore_streaming(request_id, delta["text"], mapping)
+                        delta["text"] = restore_streaming(
+                            request_id, delta["text"], mapping
+                        )
             else:
                 # {"choices": [{"delta": {"content": "..."}}]}
                 for choice in chunk.get("choices", []):
                     delta = choice.get("delta", {})
                     if delta.get("content"):
-                        delta["content"] = restore_streaming(request_id, delta["content"], mapping)
+                        delta["content"] = restore_streaming(
+                            request_id, delta["content"], mapping
+                        )
             result_lines.append("data: " + json.dumps(chunk))
         except json.JSONDecodeError:
             result_lines.append(line)
@@ -95,10 +101,19 @@ def deanonymize_json(
         if is_anthropic:
             # {"content": [{"type": "text", "text": "..."}]}
             for part in body.get("content", []):
-                if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == "text"
+                    and part.get("text")
+                ):
                     restored, _ = deanonymize_text(part["text"], mapping)
                     if restored != part["text"]:
-                        logger.info("request_id=%s restored '%s' -> '%s'", request_id, part["text"], restored)
+                        logger.info(
+                            "request_id=%s restored '%s' -> '%s'",
+                            request_id,
+                            part["text"],
+                            restored,
+                        )
                     part["text"] = restored
         else:
             # {"choices": [{"message": {"content": "..."}}]}
@@ -108,7 +123,12 @@ def deanonymize_json(
                 if content and isinstance(content, str):
                     restored, _ = deanonymize_text(content, mapping)
                     if restored != content:
-                        logger.info("request_id=%s restored '%s' -> '%s'", request_id, content, restored)
+                        logger.info(
+                            "request_id=%s restored '%s' -> '%s'",
+                            request_id,
+                            content,
+                            restored,
+                        )
                     message["content"] = restored
         return Response(content=json.dumps(body), media_type="application/json")
     except json.JSONDecodeError:

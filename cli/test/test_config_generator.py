@@ -104,13 +104,13 @@ listeners:
     agents:
       - id: simple_tmobile_rag_agent
         description: t-mobile virtual assistant for device contracts.
-        filter_chain:
+        input_filters:
           - query_rewriter
           - context_builder
           - response_generator
       - id: research_agent
         description: agent to research and gather information from various sources.
-        filter_chain:
+        input_filters:
           - research_agent
           - response_generator
     port: 8000
