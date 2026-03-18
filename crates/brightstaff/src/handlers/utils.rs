@@ -282,8 +282,8 @@ where
 }
 
 /// Creates a streaming response that processes each raw chunk through output filters.
-/// Filters receive the raw LLM response bytes and return (possibly modified) bytes.
-/// On filter error mid-stream the original chunk is passed through (headers already sent).
+/// Filters receive the raw LLM response bytes and request path (any API shape; not limited to
+/// chat completions). On filter error mid-stream the original chunk is passed through (headers already sent).
 pub fn create_streaming_response_with_output_filter<S, P>(
     mut byte_stream: S,
     mut inner_processor: P,

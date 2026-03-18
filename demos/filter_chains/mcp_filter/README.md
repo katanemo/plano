@@ -18,7 +18,7 @@ This demo consists of four components:
 - Validates queries are within TechCorp's domain
 - Rejects queries about other companies or unrelated topics
 
-### Query Rewrit3r Filter (MCP)
+### Query Rewriter Filter (MCP)
 - **Port**: 10501
 - **Tool**: `query_rewriter`
 - Improves queries using LLM before retrieval

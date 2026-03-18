@@ -3,7 +3,7 @@ name = "pii_anonymizer"
 version = "0.1.0"
 description = "PII Anonymization filter for Plano filter chains"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
     "fastapi>=0.104.1",
     "uvicorn>=0.24.0",

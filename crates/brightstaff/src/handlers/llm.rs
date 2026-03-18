@@ -520,25 +520,15 @@ async fn llm_chat_inner(
         propagator.inject_context(&cx, &mut HeaderInjector(&mut request_headers));
     });
 
+    // Output filters run for any API shape that reaches this handler (e.g. /v1/chat/completions,
+    // /v1/messages, /v1/responses). Brightstaff does inbound translation and llm_gateway does
+    // outbound translation; filters receive raw response bytes and request path.
     let output_filters_configured = output_filters
         .as_ref()
         .as_ref()
         .map(|fc| !fc.is_empty())
         .unwrap_or(false);
     let has_output_filter = output_filters_configured;
-
-    // Extract the upstream API path (e.g. "/v1/messages" from "https://api.anthropic.com/v1/messages").
-    // Output filters are called at <agent.url><upstream_api_path> so they know the exact byte format.
-    let upstream_api_path = {
-        let after_scheme = full_qualified_llm_provider_url
-            .find("://")
-            .map(|i| &full_qualified_llm_provider_url[i + 3..])
-            .unwrap_or(&full_qualified_llm_provider_url);
-        after_scheme
-            .find('/')
-            .map(|i| after_scheme[i..].to_string())
-            .unwrap_or_else(|| "/".to_string())
-    };
 
     // Save request headers for output filters (before they're consumed by upstream request)
     let output_filter_request_headers = if has_output_filter {
@@ -623,7 +613,7 @@ async fn llm_chat_inner(
                 ofc,
                 ofa,
                 output_filter_request_headers.unwrap(),
-                upstream_api_path.clone(),
+                request_path.clone(),
             )
         } else {
             create_streaming_response(byte_stream, state_processor, 16)
@@ -638,7 +628,7 @@ async fn llm_chat_inner(
             ofc,
             ofa,
             output_filter_request_headers.unwrap(),
-            upstream_api_path,
+            request_path.clone(),
         )
     } else {
         // Use base processor without state management

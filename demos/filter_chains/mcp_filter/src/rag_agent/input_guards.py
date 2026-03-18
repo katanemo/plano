@@ -1,5 +1,5 @@
 import json
-from typing import Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 from fastmcp.exceptions import ToolError
 from openai import AsyncOpenAI
 import os
