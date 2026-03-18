@@ -1,12 +1,11 @@
 use bytes::Bytes;
-use common::configuration::{Agent, AgentFilterChain};
+use common::configuration::ResolvedFilterChain;
 use http_body_util::combinators::BoxBody;
 use http_body_util::StreamBody;
 use hyper::body::Frame;
 use hyper::header::HeaderMap;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::KeyValue;
-use std::collections::HashMap;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -15,6 +14,8 @@ use tracing::{debug, info, warn, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use super::pipeline_processor::{PipelineError, PipelineProcessor};
+
+const STREAM_BUFFER_SIZE: usize = 16;
 use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
 use crate::tracing::{llm, set_service_name, signals as signal_constants};
 use hermesllm::apis::openai::Message;
@@ -33,6 +34,21 @@ pub trait StreamProcessor: Send + 'static {
 
     /// Called when streaming encounters an error
     fn on_error(&mut self, _error: &str) {}
+}
+
+impl StreamProcessor for Box<dyn StreamProcessor> {
+    fn process_chunk(&mut self, chunk: Bytes) -> Result<Option<Bytes>, String> {
+        (**self).process_chunk(chunk)
+    }
+    fn on_first_bytes(&mut self) {
+        (**self).on_first_bytes()
+    }
+    fn on_complete(&mut self) {
+        (**self).on_complete()
+    }
+    fn on_error(&mut self, error: &str) {
+        (**self).on_error(error)
+    }
 }
 
 /// A processor that tracks streaming metrics
@@ -210,16 +226,12 @@ pub struct StreamingResponse {
     pub processor_handle: tokio::task::JoinHandle<()>,
 }
 
-pub fn create_streaming_response<S, P>(
-    mut byte_stream: S,
-    mut processor: P,
-    buffer_size: usize,
-) -> StreamingResponse
+pub fn create_streaming_response<S, P>(mut byte_stream: S, mut processor: P) -> StreamingResponse
 where
     S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
     P: StreamProcessor,
 {
-    let (tx, rx) = mpsc::channel::<Bytes>(buffer_size);
+    let (tx, rx) = mpsc::channel::<Bytes>(STREAM_BUFFER_SIZE);
 
     // Capture the current span so the spawned task inherits the request context
     let current_span = tracing::Span::current();
@@ -287,29 +299,22 @@ where
 pub fn create_streaming_response_with_output_filter<S, P>(
     mut byte_stream: S,
     mut inner_processor: P,
-    buffer_size: usize,
-    output_filters: Vec<String>,
-    output_filter_agents: HashMap<String, Agent>,
+    output_chain: ResolvedFilterChain,
     request_headers: HeaderMap,
-    upstream_path: String,
+    request_path: String,
 ) -> StreamingResponse
 where
     S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
     P: StreamProcessor,
 {
-    let (tx, rx) = mpsc::channel::<Bytes>(buffer_size);
+    let (tx, rx) = mpsc::channel::<Bytes>(STREAM_BUFFER_SIZE);
     let current_span = tracing::Span::current();
 
     let processor_handle = tokio::spawn(
         async move {
             let mut is_first_chunk = true;
             let mut pipeline_processor = PipelineProcessor::default();
-            let temp_filter_chain = AgentFilterChain {
-                id: "output_filter".to_string(),
-                default: None,
-                description: None,
-                input_filters: Some(output_filters),
-            };
+            let chain = output_chain.to_agent_filter_chain("output_filter");
 
             while let Some(item) = byte_stream.next().await {
                 let chunk = match item {
@@ -331,10 +336,10 @@ where
                 let processed_chunk = match pipeline_processor
                     .process_raw_filter_chain(
                         &chunk,
-                        &temp_filter_chain,
-                        &output_filter_agents,
+                        &chain,
+                        &output_chain.agents,
                         &request_headers,
-                        &upstream_path,
+                        &request_path,
                     )
                     .await
                 {

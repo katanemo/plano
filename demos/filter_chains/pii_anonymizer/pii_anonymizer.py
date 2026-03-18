@@ -118,7 +118,7 @@ async def deanonymize(path: str, request: Request) -> Response:
 
     body_str = raw_body.decode("utf-8", errors="replace")
 
-    if "data: " in body_str:
+    if "data: " in body_str or "event: " in body_str:
         return deanonymize_sse(request_id, body_str, mapping, is_anthropic)
     return deanonymize_json(request_id, raw_body, body_str, mapping, is_anthropic)
 

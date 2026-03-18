@@ -7,7 +7,7 @@ use std::io::Read;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::handlers::utils::StreamProcessor;
+use crate::handlers::streaming::StreamProcessor;
 use crate::state::{OpenAIConversationState, StateStorage};
 
 /// Processor that wraps another processor and handles v1/responses state management

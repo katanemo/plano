@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{Agent, AgentFilterChain, ModelAlias, SpanAttributes};
+use common::configuration::{FilterPipeline, ModelAlias, SpanAttributes};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
 };
@@ -22,9 +22,9 @@ use tracing::{debug, info, info_span, warn, Instrument};
 use super::pipeline_processor::PipelineProcessor;
 
 use crate::handlers::router_chat::router_chat_get_upstream_model;
-use crate::handlers::utils::{
+use crate::handlers::streaming::{
     create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
-    ObservableStreamProcessor,
+    ObservableStreamProcessor, StreamProcessor,
 };
 use crate::router::llm_router::RouterService;
 use crate::state::response_state_processor::ResponsesStateProcessor;
@@ -46,10 +46,7 @@ pub async fn llm_chat(
     llm_providers: Arc<RwLock<LlmProviders>>,
     span_attributes: Arc<Option<SpanAttributes>>,
     state_storage: Option<Arc<dyn StateStorage>>,
-    input_filters: Arc<Option<Vec<String>>>,
-    input_filter_agents: Arc<HashMap<String, Agent>>,
-    output_filters: Arc<Option<Vec<String>>>,
-    output_filter_agents: Arc<HashMap<String, Agent>>,
+    filter_pipeline: Arc<FilterPipeline>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_path = request.uri().path().to_string();
     let request_headers = request.headers().clone();
@@ -89,10 +86,7 @@ pub async fn llm_chat(
         request_id,
         request_path,
         request_headers,
-        input_filters,
-        input_filter_agents,
-        output_filters,
-        output_filter_agents,
+        filter_pipeline,
     )
     .instrument(request_span)
     .await
@@ -110,10 +104,7 @@ async fn llm_chat_inner(
     request_id: String,
     request_path: String,
     mut request_headers: hyper::HeaderMap,
-    input_filters: Arc<Option<Vec<String>>>,
-    input_filter_agents: Arc<HashMap<String, Agent>>,
-    output_filters: Arc<Option<Vec<String>>>,
-    output_filter_agents: Arc<HashMap<String, Agent>>,
+    filter_pipeline: Arc<FilterPipeline>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     // Set service name for LLM operations
     set_service_name(operation_component::LLM);
@@ -271,23 +262,18 @@ async fn llm_chat_inner(
     // Filters receive the raw request bytes and return (possibly modified) raw bytes.
     // The returned bytes are re-parsed into a ProviderRequestType to continue the request.
     {
-        if let Some(ref fc) = *input_filters {
-            if !fc.is_empty() {
-                debug!(input_filters = ?fc, "processing model listener input filters");
+        if let Some(ref input_chain) = filter_pipeline.input {
+            if !input_chain.is_empty() {
+                debug!(input_filters = ?input_chain.filter_ids, "processing model listener input filters");
 
-                let temp_filter_chain = AgentFilterChain {
-                    id: "model_listener".to_string(),
-                    default: None,
-                    description: None,
-                    input_filters: Some(fc.clone()),
-                };
+                let chain = input_chain.to_agent_filter_chain("model_listener");
 
                 let mut pipeline_processor = PipelineProcessor::default();
                 match pipeline_processor
                     .process_raw_filter_chain(
                         &chat_request_bytes,
-                        &temp_filter_chain,
-                        &input_filter_agents,
+                        &chain,
+                        &input_chain.agents,
                         &request_headers,
                         &request_path,
                     )
@@ -523,12 +509,7 @@ async fn llm_chat_inner(
     // Output filters run for any API shape that reaches this handler (e.g. /v1/chat/completions,
     // /v1/messages, /v1/responses). Brightstaff does inbound translation and llm_gateway does
     // outbound translation; filters receive raw response bytes and request path.
-    let output_filters_configured = output_filters
-        .as_ref()
-        .as_ref()
-        .map(|fc| !fc.is_empty())
-        .unwrap_or(false);
-    let has_output_filter = output_filters_configured;
+    let has_output_filter = filter_pipeline.has_output_filters();
 
     // Save request headers for output filters (before they're consumed by upstream request)
     let output_filter_request_headers = if has_output_filter {
@@ -579,20 +560,18 @@ async fn llm_chat_inner(
     );
 
     // === v1/responses state management: Wrap with ResponsesStateProcessor ===
-    // Only wrap if we need to manage state (client is ResponsesAPI AND upstream is NOT ResponsesAPI AND state_storage is configured)
-    let streaming_response = if let (true, false, Some(state_store)) = (
+    // Pick the right processor: state-aware if needed, otherwise base metrics-only.
+    let processor: Box<dyn StreamProcessor> = if let (true, false, Some(state_store)) = (
         should_manage_state,
         original_input_items.is_empty(),
         state_storage,
     ) {
-        // Extract Content-Encoding header to handle decompression for state parsing
         let content_encoding = response_headers
             .get("content-encoding")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        // Wrap with state management processor to store state after response completes
-        let state_processor = ResponsesStateProcessor::new(
+        Box::new(ResponsesStateProcessor::new(
             base_processor,
             state_store,
             original_input_items,
@@ -602,37 +581,23 @@ async fn llm_chat_inner(
             false, // Not OpenAI upstream since should_manage_state is true
             content_encoding,
             request_id,
-        );
-        if has_output_filter {
-            let ofc = output_filters.as_ref().as_ref().unwrap().clone();
-            let ofa = (*output_filter_agents).clone();
-            create_streaming_response_with_output_filter(
-                byte_stream,
-                state_processor,
-                16,
-                ofc,
-                ofa,
-                output_filter_request_headers.unwrap(),
-                request_path.clone(),
-            )
-        } else {
-            create_streaming_response(byte_stream, state_processor, 16)
-        }
-    } else if has_output_filter {
-        let ofc = output_filters.as_ref().as_ref().unwrap().clone();
-        let ofa = (*output_filter_agents).clone();
+        ))
+    } else {
+        Box::new(base_processor)
+    };
+
+    // Apply output filters if configured, then build the streaming response.
+    let streaming_response = if has_output_filter {
+        let output_chain = filter_pipeline.output.as_ref().unwrap().clone();
         create_streaming_response_with_output_filter(
             byte_stream,
-            base_processor,
-            16,
-            ofc,
-            ofa,
+            processor,
+            output_chain,
             output_filter_request_headers.unwrap(),
             request_path.clone(),
         )
     } else {
-        // Use base processor without state management
-        create_streaming_response(byte_stream, base_processor, 16)
+        create_streaming_response(byte_stream, processor)
     };
 
     match response.body(streaming_response.body) {
