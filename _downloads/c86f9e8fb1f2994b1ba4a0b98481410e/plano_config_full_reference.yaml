@@ -58,7 +58,7 @@ listeners:
     agents:
       - id: rag_agent
         description: virtual assistant for retrieval augmented generation tasks
-        filter_chain:
+        input_filters:
           - input_guards
 
   # Model listener for direct LLM access
@@ -66,6 +66,9 @@ listeners:
     name: model_1
     address: 0.0.0.0
     port: 12000
+    # Optional: attach input filters for guardrails on direct LLM requests
+    # input_filters:
+    #   - input_guards
 
   # Prompt listener for function calling (for prompt_targets)
   - type: prompt

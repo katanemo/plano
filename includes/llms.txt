@@ -1,6 +1,6 @@
 Plano Docs v0.4.12
 llms.txt (auto-generated)
-Generated (UTC): 2026-03-16T20:28:12.638297+00:00
+Generated (UTC): 2026-03-19T00:59:16.211749+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -163,6 +163,8 @@ Because these behaviors live in the dataplane rather than inside individual agen
 
 Configuration example
 
+Agent listener filter chain
+
 The example below shows a configuration where an agent uses a filter chain with two filters: a query rewriter,
 and a context builder that prepares retrieval context before the agent runs.
 
@@ -218,6 +220,38 @@ The filters section defines the reusable filters, each running as its own HTTP/M
 The listeners section wires the rag_agent behind an agent listener and attaches a filter_chain with query_rewriter followed by context_builder.
 
 When a request arrives at agent_1, Plano executes the filters in order before handing control to rag_agent.
+
+Model listener filter chain
+
+Filter chains can also be attached directly to a model listener. This lets you run input guardrails on
+direct LLM proxy requests (/v1/chat/completions, /v1/responses, etc.) without an agent layer in between.
+
+Model listener with a content-safety filter chain
+
+filters:
+  - id: content_guard
+    url: http://content-guard:10500
+    type: http
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+listeners:
+  - type: model
+    name: llm_gateway
+    port: 12000
+    filter_chain:
+      - content_guard
+
+In this setup:
+
+The filter_chain is declared at the listener level (not per-agent).
+
+When a request arrives at the model listener, Plano executes the filters in order before forwarding the request to the upstream LLM provider.
+
+If a filter rejects the request (HTTP 4xx), the error is returned to the caller and the LLM is never called.
 
 Filter Chain Programming Model (HTTP and MCP)
 
@@ -304,6 +338,10 @@ the scenes.
 Under the hood, Plano opens outbound HTTP(S) connections to upstream LLM providers using its unified API surface and
 smart model routing. For more details on how Plano talks to models and how providers are configured, see
 LLM providers.
+
+Model listeners also support Filter Chains. By adding a filter_chain to a model listener
+you can run input guardrails, content-safety checks, or other preprocessing on direct LLM requests before they reach
+the upstream provider — without requiring an agent layer.
 
 Configure Listeners
 
@@ -6316,7 +6354,7 @@ listeners:
     agents:
       - id: rag_agent
         description: virtual assistant for retrieval augmented generation tasks
-        filter_chain:
+        input_filters:
           - input_guards
 
   # Model listener for direct LLM access
@@ -6324,6 +6362,9 @@ listeners:
     name: model_1
     address: 0.0.0.0
     port: 12000
+    # Optional: attach input filters for guardrails on direct LLM requests
+    # input_filters:
+    #   - input_guards
 
   # Prompt listener for function calling (for prompt_targets)
   - type: prompt
