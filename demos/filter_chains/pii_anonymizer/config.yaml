@@ -7,6 +7,7 @@ filters:
   - id: pii_deanonymizer
     url: http://localhost:10501/deanonymize
     type: http
+    streaming: true
 
 model_providers:
   - model: openai/gpt-4o-mini

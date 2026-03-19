@@ -294,11 +294,13 @@ where
 }
 
 /// Creates a streaming response that processes each raw chunk through output filters.
-/// Filters receive the raw LLM response bytes and request path (any API shape; not limited to
-/// chat completions). On filter error mid-stream the original chunk is passed through (headers already sent).
+///
+/// If all filters in the chain have `streaming: true`, uses a single bidirectional
+/// HTTP/2 connection per filter (no per-chunk overhead). Otherwise falls back to
+/// per-chunk HTTP requests (the original behavior).
 pub fn create_streaming_response_with_output_filter<S, P>(
-    mut byte_stream: S,
-    mut inner_processor: P,
+    byte_stream: S,
+    inner_processor: P,
     output_chain: ResolvedFilterChain,
     request_headers: HeaderMap,
     request_path: String,
@@ -307,84 +309,33 @@ where
     S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
     P: StreamProcessor,
 {
+    let use_streaming = output_chain.all_support_streaming();
     let (tx, rx) = mpsc::channel::<Bytes>(STREAM_BUFFER_SIZE);
     let current_span = tracing::Span::current();
 
-    let processor_handle = tokio::spawn(
-        async move {
-            let mut is_first_chunk = true;
-            let mut pipeline_processor = PipelineProcessor::default();
-            let chain = output_chain.to_agent_filter_chain("output_filter");
-
-            while let Some(item) = byte_stream.next().await {
-                let chunk = match item {
-                    Ok(chunk) => chunk,
-                    Err(err) => {
-                        let err_msg = format!("Error receiving chunk: {:?}", err);
-                        warn!(error = %err_msg, "stream error");
-                        inner_processor.on_error(&err_msg);
-                        break;
-                    }
-                };
-
-                if is_first_chunk {
-                    inner_processor.on_first_bytes();
-                    is_first_chunk = false;
-                }
-
-                // Pass raw chunk bytes through the output filter chain
-                let processed_chunk = match pipeline_processor
-                    .process_raw_filter_chain(
-                        &chunk,
-                        &chain,
-                        &output_chain.agents,
-                        &request_headers,
-                        &request_path,
-                    )
-                    .await
-                {
-                    Ok(filtered) => filtered,
-                    Err(PipelineError::ClientError {
-                        agent,
-                        status,
-                        body,
-                    }) => {
-                        warn!(
-                            agent = %agent,
-                            status = %status,
-                            body = %body,
-                            "output filter client error, passing through original chunk"
-                        );
-                        chunk
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "output filter error, passing through original chunk");
-                        chunk
-                    }
-                };
-
-                // Pass through inner processor for metrics/observability
-                match inner_processor.process_chunk(processed_chunk) {
-                    Ok(Some(final_chunk)) => {
-                        if tx.send(final_chunk).await.is_err() {
-                            warn!("receiver dropped");
-                            break;
-                        }
-                    }
-                    Ok(None) => continue,
-                    Err(err) => {
-                        warn!("processor error: {}", err);
-                        inner_processor.on_error(&err);
-                        break;
-                    }
-                }
-            }
-
-            inner_processor.on_complete();
-            debug!("output filter streaming completed");
-        }
-        .instrument(current_span),
-    );
+    let processor_handle = if use_streaming {
+        info!("using bidirectional streaming output filter pipeline");
+        spawn_streaming_output_filter(
+            byte_stream,
+            inner_processor,
+            output_chain,
+            request_headers,
+            request_path,
+            tx,
+            current_span,
+        )
+    } else {
+        debug!("using per-chunk output filter pipeline");
+        spawn_per_chunk_output_filter(
+            byte_stream,
+            inner_processor,
+            output_chain,
+            request_headers,
+            request_path,
+            tx,
+            current_span,
+        )
+    };
 
     let stream = ReceiverStream::new(rx).map(|chunk| Ok::<_, hyper::Error>(Frame::data(chunk)));
     let stream_body = BoxBody::new(StreamBody::new(stream));
@@ -393,6 +344,216 @@ where
         body: stream_body,
         processor_handle,
     }
+}
+
+/// Bidirectional streaming path: one HTTP/2 connection per filter for the entire
+/// LLM response. Falls back to per-chunk mode if the pipeline fails to establish.
+fn spawn_streaming_output_filter<S, P>(
+    mut byte_stream: S,
+    mut inner_processor: P,
+    output_chain: ResolvedFilterChain,
+    request_headers: HeaderMap,
+    request_path: String,
+    tx: mpsc::Sender<Bytes>,
+    current_span: tracing::Span,
+) -> tokio::task::JoinHandle<()>
+where
+    S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
+    P: StreamProcessor,
+{
+    tokio::spawn(
+        async move {
+            let agents = output_chain.streaming_agents();
+            let pipeline = PipelineProcessor::start_streaming_output_pipeline(
+                &agents,
+                &request_headers,
+                &request_path,
+            )
+            .await;
+
+            let pipeline = match pipeline {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!(error = %e, "failed to establish streaming pipeline, falling back to per-chunk");
+                    run_per_chunk_loop(
+                        byte_stream,
+                        inner_processor,
+                        output_chain,
+                        request_headers,
+                        request_path,
+                        tx,
+                    )
+                    .await;
+                    return;
+                }
+            };
+
+            let input_tx = pipeline.input_tx;
+            let mut output_rx = pipeline.output_rx;
+            let _handles = pipeline.handles;
+            let mut is_first_chunk = true;
+
+            // Writer: LLM chunks → pipeline input
+            let writer = async {
+                while let Some(item) = byte_stream.next().await {
+                    match item {
+                        Ok(chunk) => {
+                            if input_tx.send(chunk).await.is_err() {
+                                debug!("streaming pipeline input closed");
+                                break;
+                            }
+                        }
+                        Err(err) => {
+                            warn!(error = %format!("{err:?}"), "LLM stream error");
+                            break;
+                        }
+                    }
+                }
+                drop(input_tx);
+            };
+
+            // Reader: pipeline output → client
+            let reader = async {
+                while let Some(processed) = output_rx.recv().await {
+                    if is_first_chunk {
+                        inner_processor.on_first_bytes();
+                        is_first_chunk = false;
+                    }
+
+                    match inner_processor.process_chunk(processed) {
+                        Ok(Some(final_chunk)) => {
+                            if tx.send(final_chunk).await.is_err() {
+                                warn!("client receiver dropped");
+                                break;
+                            }
+                        }
+                        Ok(None) => continue,
+                        Err(err) => {
+                            warn!("processor error: {}", err);
+                            inner_processor.on_error(&err);
+                            break;
+                        }
+                    }
+                }
+            };
+
+            tokio::join!(writer, reader);
+            inner_processor.on_complete();
+            debug!("streaming output filter pipeline completed");
+        }
+        .instrument(current_span),
+    )
+}
+
+/// Per-chunk path: one HTTP request per chunk per filter (original behavior).
+fn spawn_per_chunk_output_filter<S, P>(
+    byte_stream: S,
+    inner_processor: P,
+    output_chain: ResolvedFilterChain,
+    request_headers: HeaderMap,
+    request_path: String,
+    tx: mpsc::Sender<Bytes>,
+    current_span: tracing::Span,
+) -> tokio::task::JoinHandle<()>
+where
+    S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
+    P: StreamProcessor,
+{
+    tokio::spawn(
+        async move {
+            run_per_chunk_loop(
+                byte_stream,
+                inner_processor,
+                output_chain,
+                request_headers,
+                request_path,
+                tx,
+            )
+            .await;
+        }
+        .instrument(current_span),
+    )
+}
+
+async fn run_per_chunk_loop<S, P>(
+    mut byte_stream: S,
+    mut inner_processor: P,
+    output_chain: ResolvedFilterChain,
+    request_headers: HeaderMap,
+    request_path: String,
+    tx: mpsc::Sender<Bytes>,
+) where
+    S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
+    P: StreamProcessor,
+{
+    let mut is_first_chunk = true;
+    let mut pipeline_processor = PipelineProcessor::default();
+    let chain = output_chain.to_agent_filter_chain("output_filter");
+
+    while let Some(item) = byte_stream.next().await {
+        let chunk = match item {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                let err_msg = format!("Error receiving chunk: {:?}", err);
+                warn!(error = %err_msg, "stream error");
+                inner_processor.on_error(&err_msg);
+                break;
+            }
+        };
+
+        if is_first_chunk {
+            inner_processor.on_first_bytes();
+            is_first_chunk = false;
+        }
+
+        let processed_chunk = match pipeline_processor
+            .process_raw_filter_chain(
+                &chunk,
+                &chain,
+                &output_chain.agents,
+                &request_headers,
+                &request_path,
+            )
+            .await
+        {
+            Ok(filtered) => filtered,
+            Err(PipelineError::ClientError {
+                agent,
+                status,
+                body,
+            }) => {
+                warn!(
+                    agent = %agent,
+                    status = %status,
+                    body = %body,
+                    "output filter client error, passing through original chunk"
+                );
+                chunk
+            }
+            Err(e) => {
+                warn!(error = %e, "output filter error, passing through original chunk");
+                chunk
+            }
+        };
+
+        match inner_processor.process_chunk(processed_chunk) {
+            Ok(Some(final_chunk)) => {
+                if tx.send(final_chunk).await.is_err() {
+                    warn!("receiver dropped");
+                    break;
+                }
+            }
+            Ok(None) => continue,
+            Err(err) => {
+                warn!("processor error: {}", err);
+                inner_processor.on_error(&err);
+                break;
+            }
+        }
+    }
+
+    inner_processor.on_complete();
+    debug!("output filter streaming completed");
 }
 
 /// Truncates a message to the specified maximum length, adding "..." if truncated.

@@ -4,7 +4,7 @@ import json
 import logging
 import threading
 import time
-from typing import Dict, Optional, Tuple
+from typing import AsyncIterator, Dict, Optional, Tuple
 
 from fastapi.responses import Response
 
@@ -59,34 +59,69 @@ def restore_streaming(request_id: str, content: str, mapping: Dict[str, str]) ->
 def deanonymize_sse(
     request_id: str, body_str: str, mapping: Dict[str, str], is_anthropic: bool
 ) -> Response:
-    result_lines = []
-    for line in body_str.split("\n"):
-        stripped = line.strip()
-        if not (stripped.startswith("data: ") and stripped[6:] != "[DONE]"):
-            result_lines.append(line)
-            continue
-        try:
-            chunk = json.loads(stripped[6:])
-            if is_anthropic:
-                # {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "..."}}
-                if chunk.get("type") == "content_block_delta":
-                    delta = chunk.get("delta", {})
-                    if delta.get("type") == "text_delta" and delta.get("text"):
-                        delta["text"] = restore_streaming(
-                            request_id, delta["text"], mapping
-                        )
-            else:
-                # {"choices": [{"delta": {"content": "..."}}]}
-                for choice in chunk.get("choices", []):
-                    delta = choice.get("delta", {})
-                    if delta.get("content"):
-                        delta["content"] = restore_streaming(
-                            request_id, delta["content"], mapping
-                        )
-            result_lines.append("data: " + json.dumps(chunk))
-        except json.JSONDecodeError:
-            result_lines.append(line)
+    result_lines = [
+        _process_sse_line(request_id, line, mapping, is_anthropic)
+        for line in body_str.split("\n")
+    ]
     return Response(content="\n".join(result_lines), media_type="text/plain")
+
+
+def _process_sse_line(
+    request_id: str, line: str, mapping: Dict[str, str], is_anthropic: bool
+) -> str:
+    """Process a single SSE line, restoring PII in data payloads."""
+    stripped = line.strip()
+    if not (stripped.startswith("data: ") and stripped[6:] != "[DONE]"):
+        return line
+    try:
+        chunk = json.loads(stripped[6:])
+        if is_anthropic:
+            if chunk.get("type") == "content_block_delta":
+                delta = chunk.get("delta", {})
+                if delta.get("type") == "text_delta" and delta.get("text"):
+                    delta["text"] = restore_streaming(
+                        request_id, delta["text"], mapping
+                    )
+        else:
+            for choice in chunk.get("choices", []):
+                delta = choice.get("delta", {})
+                if delta.get("content"):
+                    delta["content"] = restore_streaming(
+                        request_id, delta["content"], mapping
+                    )
+        return "data: " + json.dumps(chunk)
+    except json.JSONDecodeError:
+        return line
+
+
+async def deanonymize_sse_stream(
+    request_id: str,
+    byte_stream: AsyncIterator[bytes],
+    mapping: Dict[str, str],
+    is_anthropic: bool,
+):
+    """Async generator that reads SSE events from a streaming request body,
+    de-anonymizes them, and yields processed events as they become complete.
+    Buffers partial data and splits on SSE event boundaries (blank lines).
+    """
+    buffer = ""
+    async for raw_chunk in byte_stream:
+        buffer += raw_chunk.decode("utf-8", errors="replace")
+        # Yield each complete SSE event (delimited by double newline)
+        while "\n\n" in buffer:
+            event, buffer = buffer.split("\n\n", 1)
+            processed_lines = [
+                _process_sse_line(request_id, line, mapping, is_anthropic)
+                for line in event.split("\n")
+            ]
+            yield "\n".join(processed_lines) + "\n\n"
+    # Flush any trailing data
+    if buffer.strip():
+        processed_lines = [
+            _process_sse_line(request_id, line, mapping, is_anthropic)
+            for line in buffer.split("\n")
+        ]
+        yield "\n".join(processed_lines)
 
 
 def deanonymize_json(

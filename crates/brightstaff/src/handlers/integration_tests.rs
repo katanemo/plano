@@ -52,6 +52,7 @@ mod tests {
                 url: "http://localhost:8081".to_string(),
                 tool: None,
                 transport: None,
+                streaming: None,
             },
             Agent {
                 id: "terminal-agent".to_string(),
@@ -59,6 +60,7 @@ mod tests {
                 url: "http://localhost:8082".to_string(),
                 tool: None,
                 transport: None,
+                streaming: None,
             },
         ];
 

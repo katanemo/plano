@@ -20,6 +20,7 @@ pub struct Agent {
     pub url: String,
     #[serde(rename = "type")]
     pub agent_type: Option<String>,
+    pub streaming: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +42,29 @@ pub struct ResolvedFilterChain {
 impl ResolvedFilterChain {
     pub fn is_empty(&self) -> bool {
         self.filter_ids.is_empty()
+    }
+
+    /// True when every filter in the chain is an HTTP filter with `streaming: true`.
+    /// MCP filters and filters without the streaming flag use per-chunk mode.
+    pub fn all_support_streaming(&self) -> bool {
+        !self.filter_ids.is_empty()
+            && self.filter_ids.iter().all(|id| {
+                self.agents
+                    .get(id)
+                    .map(|a| {
+                        a.streaming.unwrap_or(false)
+                            && a.agent_type.as_deref().unwrap_or("mcp") != "mcp"
+                    })
+                    .unwrap_or(false)
+            })
+    }
+
+    /// Returns references to the ordered agents for the streaming pipeline.
+    pub fn streaming_agents(&self) -> Vec<&Agent> {
+        self.filter_ids
+            .iter()
+            .filter_map(|id| self.agents.get(id))
+            .collect()
     }
 
     pub fn to_agent_filter_chain(&self, id: &str) -> AgentFilterChain {
@@ -542,7 +566,7 @@ mod test {
     use pretty_assertions::assert_eq;
     use std::fs;
 
-    use super::{IntoModels, LlmProvider, LlmProviderType};
+    use super::{Agent, IntoModels, LlmProvider, LlmProviderType, ResolvedFilterChain};
     use crate::api::open_ai::ToolType;
 
     #[test]
@@ -662,5 +686,82 @@ mod test {
         assert!(model_ids.contains(&"openai-gpt4".to_string()));
         assert!(!model_ids.contains(&"arch-router".to_string()));
         assert!(!model_ids.contains(&"plano-orchestrator".to_string()));
+    }
+
+    fn make_agent(id: &str, agent_type: Option<&str>, streaming: Option<bool>) -> Agent {
+        Agent {
+            id: id.to_string(),
+            url: format!("http://localhost:10501/{id}"),
+            agent_type: agent_type.map(String::from),
+            transport: None,
+            tool: None,
+            streaming,
+        }
+    }
+
+    #[test]
+    fn test_all_support_streaming_all_http_streaming() {
+        let chain = ResolvedFilterChain {
+            filter_ids: vec!["a".into(), "b".into()],
+            agents: [
+                ("a".into(), make_agent("a", Some("http"), Some(true))),
+                ("b".into(), make_agent("b", Some("http"), Some(true))),
+            ]
+            .into(),
+        };
+        assert!(chain.all_support_streaming());
+    }
+
+    #[test]
+    fn test_all_support_streaming_one_missing_flag() {
+        let chain = ResolvedFilterChain {
+            filter_ids: vec!["a".into(), "b".into()],
+            agents: [
+                ("a".into(), make_agent("a", Some("http"), Some(true))),
+                ("b".into(), make_agent("b", Some("http"), None)),
+            ]
+            .into(),
+        };
+        assert!(!chain.all_support_streaming());
+    }
+
+    #[test]
+    fn test_all_support_streaming_mcp_filter() {
+        let chain = ResolvedFilterChain {
+            filter_ids: vec!["a".into()],
+            agents: [("a".into(), make_agent("a", Some("mcp"), Some(true)))].into(),
+        };
+        assert!(!chain.all_support_streaming());
+    }
+
+    #[test]
+    fn test_all_support_streaming_default_type_is_mcp() {
+        let chain = ResolvedFilterChain {
+            filter_ids: vec!["a".into()],
+            agents: [("a".into(), make_agent("a", None, Some(true)))].into(),
+        };
+        assert!(!chain.all_support_streaming());
+    }
+
+    #[test]
+    fn test_all_support_streaming_empty_chain() {
+        let chain = ResolvedFilterChain::default();
+        assert!(!chain.all_support_streaming());
+    }
+
+    #[test]
+    fn test_streaming_agents_ordered() {
+        let chain = ResolvedFilterChain {
+            filter_ids: vec!["b".into(), "a".into()],
+            agents: [
+                ("a".into(), make_agent("a", Some("http"), Some(true))),
+                ("b".into(), make_agent("b", Some("http"), Some(true))),
+            ]
+            .into(),
+        };
+        let agents = chain.streaming_agents();
+        assert_eq!(agents.len(), 2);
+        assert_eq!(agents[0].id, "b");
+        assert_eq!(agents[1].id, "a");
     }
 }

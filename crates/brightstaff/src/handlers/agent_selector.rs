@@ -210,6 +210,7 @@ mod tests {
             url: "http://localhost:8080".to_string(),
             tool: None,
             transport: None,
+            streaming: None,
         }
     }
 
