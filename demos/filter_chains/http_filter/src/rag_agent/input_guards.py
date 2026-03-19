@@ -126,14 +126,14 @@ Respond in JSON format:
 
 
 # @mcp.tool
-@app.post("/")
-async def input_guards(
-    messages: List[ChatMessage], request: Request
-) -> List[ChatMessage]:
+@app.post("/{path:path}")
+async def input_guards(path: str, request: Request) -> dict:
     """Input guard that validates queries are within TechCorp's domain.
 
     If the query is out of scope, replaces the user message with a rejection notice.
     """
+    body = await request.json()
+    messages = [ChatMessage(**m) for m in body.get("messages", [])]
     logger.info(f"Received request with {len(messages)} messages")
 
     # Get traceparent header from HTTP request using FastMCP's dependency function
@@ -164,7 +164,7 @@ async def input_guards(
         )
 
     logger.info("Query validation passed - forwarding to next filter")
-    return messages
+    return body
 
 
 @app.get("/health")

@@ -6,7 +6,7 @@ pub mod models;
 pub mod request;
 pub mod response;
 pub mod routing_service;
-pub mod utils;
+pub mod streaming;
 
 #[cfg(test)]
 mod integration_tests;

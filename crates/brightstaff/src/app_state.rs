@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::configuration::{Agent, Listener, ModelAlias, SpanAttributes};
+use common::configuration::{Agent, FilterPipeline, Listener, ModelAlias, SpanAttributes};
 use common::llm_providers::LlmProviders;
 use tokio::sync::RwLock;
 
@@ -25,4 +25,5 @@ pub struct AppState {
     pub span_attributes: Arc<Option<SpanAttributes>>,
     /// Shared HTTP client for upstream LLM requests (connection pooling / keep-alive).
     pub http_client: reqwest::Client,
+    pub filter_pipeline: Arc<FilterPipeline>,
 }

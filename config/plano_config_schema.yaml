@@ -85,7 +85,7 @@ properties:
                     type: string
                   default:
                     type: boolean
-                  filter_chain:
+                  input_filters:
                     type: array
                     items:
                       type: string
@@ -93,6 +93,14 @@ properties:
                 required:
                   - id
                   - description
+            input_filters:
+              type: array
+              items:
+                type: string
+            output_filters:
+              type: array
+              items:
+                type: string
           additionalProperties: false
           required:
             - type

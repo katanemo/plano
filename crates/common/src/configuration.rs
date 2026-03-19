@@ -27,14 +27,66 @@ pub struct AgentFilterChain {
     pub id: String,
     pub default: Option<bool>,
     pub description: Option<String>,
-    pub filter_chain: Option<Vec<String>>,
+    pub input_filters: Option<Vec<String>>,
+}
+
+/// A filter chain with its agent references resolved to concrete Agent objects.
+/// Bundles the ordered filter IDs with the agent lookup map so they stay in sync.
+#[derive(Debug, Clone, Default)]
+pub struct ResolvedFilterChain {
+    pub filter_ids: Vec<String>,
+    pub agents: HashMap<String, Agent>,
+}
+
+impl ResolvedFilterChain {
+    pub fn is_empty(&self) -> bool {
+        self.filter_ids.is_empty()
+    }
+
+    pub fn to_agent_filter_chain(&self, id: &str) -> AgentFilterChain {
+        AgentFilterChain {
+            id: id.to_string(),
+            default: None,
+            description: None,
+            input_filters: Some(self.filter_ids.clone()),
+        }
+    }
+}
+
+/// Holds resolved input and output filter chains for a model listener.
+#[derive(Debug, Clone, Default)]
+pub struct FilterPipeline {
+    pub input: Option<ResolvedFilterChain>,
+    pub output: Option<ResolvedFilterChain>,
+}
+
+impl FilterPipeline {
+    pub fn has_input_filters(&self) -> bool {
+        self.input.as_ref().is_some_and(|c| !c.is_empty())
+    }
+
+    pub fn has_output_filters(&self) -> bool {
+        self.output.as_ref().is_some_and(|c| !c.is_empty())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ListenerType {
+    Model,
+    Agent,
+    Prompt,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Listener {
+    #[serde(rename = "type")]
+    pub listener_type: ListenerType,
     pub name: String,
     pub router: Option<String>,
     pub agents: Option<Vec<AgentFilterChain>>,
+    pub input_filters: Option<Vec<String>>,
+    pub output_filters: Option<Vec<String>>,
     pub port: u16,
 }
 

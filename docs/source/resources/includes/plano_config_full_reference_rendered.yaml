@@ -30,9 +30,9 @@ listeners:
 - address: 0.0.0.0
   agents:
   - description: virtual assistant for retrieval augmented generation tasks
-    filter_chain:
-    - input_guards
     id: rag_agent
+    input_filters:
+    - input_guards
   name: travel_booking_service
   port: 8001
   router: plano_orchestrator_v1

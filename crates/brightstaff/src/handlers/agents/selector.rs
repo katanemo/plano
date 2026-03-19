@@ -172,7 +172,7 @@ impl AgentSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::configuration::{AgentFilterChain, Listener};
+    use common::configuration::{AgentFilterChain, Listener, ListenerType};
 
     fn create_test_orchestrator_service() -> Arc<OrchestratorService> {
         Arc::new(OrchestratorService::new(
@@ -187,14 +187,17 @@ mod tests {
             id: name.to_string(),
             description: Some(description.to_string()),
             default: Some(is_default),
-            filter_chain: Some(vec![name.to_string()]),
+            input_filters: Some(vec![name.to_string()]),
         }
     }
 
     fn create_test_listener(name: &str, agents: Vec<AgentFilterChain>) -> Listener {
         Listener {
+            listener_type: ListenerType::Agent,
             name: name.to_string(),
             agents: Some(agents),
+            input_filters: None,
+            output_filters: None,
             port: 8080,
             router: None,
         }

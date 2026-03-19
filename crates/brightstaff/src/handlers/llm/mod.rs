@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::ModelAlias;
+use common::configuration::{FilterPipeline, ModelAlias};
 use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, TRACE_PARENT_HEADER};
 use common::llm_providers::LlmProviders;
 use hermesllm::apis::openai::Message;
@@ -21,9 +21,11 @@ use tracing::{debug, info, info_span, warn, Instrument};
 pub(crate) mod router;
 
 use crate::app_state::AppState;
+use crate::handlers::agents::pipeline::PipelineProcessor;
 use crate::handlers::request::extract_request_id;
-use crate::handlers::utils::{
-    create_streaming_response, truncate_message, ObservableStreamProcessor,
+use crate::handlers::streaming::{
+    create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
+    ObservableStreamProcessor, StreamProcessor,
 };
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
@@ -111,6 +113,7 @@ async fn llm_chat_inner(
 
     let PreparedRequest {
         mut client_request,
+        chat_request_bytes,
         model_from_request,
         alias_resolved_model,
         model_name_only,
@@ -121,6 +124,8 @@ async fn llm_chat_inner(
         tool_names,
         user_message_preview,
         inline_routing_policy,
+        client_api,
+        provider_id,
     } = parsed;
 
     // Record LLM-specific span attributes
@@ -138,6 +143,81 @@ async fn llm_chat_inner(
     }
     if let Some(preview) = &user_message_preview {
         span.record(tracing_llm::USER_MESSAGE_PREVIEW, preview.as_str());
+    }
+
+    // --- Phase 1b: Input filter processing for model listener ---
+    if let Some(ref input_chain) = state.filter_pipeline.input {
+        if !input_chain.is_empty() {
+            debug!(input_filters = ?input_chain.filter_ids, "processing model listener input filters");
+            let chain = input_chain.to_agent_filter_chain("model_listener");
+            let mut pipeline_processor = PipelineProcessor::default();
+            match pipeline_processor
+                .process_raw_filter_chain(
+                    &chat_request_bytes,
+                    &chain,
+                    &input_chain.agents,
+                    &request_headers,
+                    &request_path,
+                )
+                .await
+            {
+                Ok(filtered_bytes) => {
+                    let api_type =
+                        SupportedAPIsFromClient::from_endpoint(request_path.as_str()).unwrap();
+                    match ProviderRequestType::try_from((&filtered_bytes[..], &api_type)) {
+                        Ok(updated_request) => {
+                            client_request = updated_request;
+                            info!("input filter chain processed successfully");
+                        }
+                        Err(parse_err) => {
+                            warn!(error = %parse_err, "input filter returned invalid request JSON");
+                            return Ok(
+                                common::errors::BrightStaffError::InvalidRequest(format!(
+                                    "Input filter returned invalid request: {}",
+                                    parse_err
+                                ))
+                                .into_response(),
+                            );
+                        }
+                    }
+                }
+                Err(super::agents::pipeline::PipelineError::ClientError {
+                    agent,
+                    status,
+                    body,
+                }) => {
+                    warn!(agent = %agent, status = %status, body = %body, "client error from filter chain");
+                    let error_json = serde_json::json!({
+                        "error": "FilterChainError",
+                        "agent": agent,
+                        "status": status,
+                        "agent_response": body
+                    });
+                    let mut error_response = Response::new(full(error_json.to_string()));
+                    *error_response.status_mut() =
+                        StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
+                    error_response.headers_mut().insert(
+                        hyper::header::CONTENT_TYPE,
+                        "application/json".parse().unwrap(),
+                    );
+                    return Ok(error_response);
+                }
+                Err(err) => {
+                    warn!(error = %err, "filter chain processing failed");
+                    let mut internal_error =
+                        Response::new(full(format!("Filter chain processing failed: {}", err)));
+                    *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(internal_error);
+                }
+            }
+        }
+    }
+
+    // Normalize for upstream after input filters
+    if let Some(ref client_api_kind) = client_api {
+        let upstream_api =
+            provider_id.compatible_api_for_client(client_api_kind, is_streaming_request);
+        client_request.normalize_for_upstream(provider_id, &upstream_api);
     }
 
     // --- Phase 2: Resolve conversation state (v1/responses API) ---
@@ -227,6 +307,7 @@ async fn llm_chat_inner(
         state_ctx,
         state.state_storage.clone(),
         request_id,
+        &state.filter_pipeline,
     )
     .await
 }
@@ -238,6 +319,7 @@ async fn llm_chat_inner(
 /// All pre-validated request data extracted from the raw HTTP request.
 struct PreparedRequest {
     client_request: ProviderRequestType,
+    chat_request_bytes: Bytes,
     model_from_request: String,
     alias_resolved_model: String,
     model_name_only: String,
@@ -248,6 +330,8 @@ struct PreparedRequest {
     tool_names: Option<Vec<String>>,
     user_message_preview: Option<String>,
     inline_routing_policy: Option<Vec<common::configuration::ModelUsagePreference>>,
+    client_api: Option<SupportedAPIsFromClient>,
+    provider_id: hermesllm::ProviderId,
 }
 
 /// Parse the body, resolve the model alias, and validate the model exists.
@@ -350,14 +434,10 @@ async fn parse_and_validate_request(
     if client_request.remove_metadata_key("plano_preference_config") {
         debug!("removed plano_preference_config from metadata");
     }
-    if let Some(ref client_api_kind) = client_api {
-        let upstream_api =
-            provider_id.compatible_api_for_client(client_api_kind, is_streaming_request);
-        client_request.normalize_for_upstream(provider_id, &upstream_api);
-    }
 
     Ok(PreparedRequest {
         client_request,
+        chat_request_bytes,
         model_from_request,
         alias_resolved_model,
         model_name_only,
@@ -368,6 +448,8 @@ async fn parse_and_validate_request(
         tool_names,
         user_message_preview,
         inline_routing_policy,
+        client_api,
+        provider_id,
     })
 }
 
@@ -501,6 +583,7 @@ async fn send_upstream(
     state_ctx: ConversationStateContext,
     state_storage: Option<Arc<dyn StateStorage>>,
     request_id: String,
+    filter_pipeline: &Arc<FilterPipeline>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let span_name = if model_from_request == resolved_model {
         format!("POST {} {}", request_path, resolved_model)
@@ -578,8 +661,15 @@ async fn send_upstream(
         messages_for_signals,
     );
 
-    // Wrap with state management processor when needed
-    let streaming_response = if let (true, false, Some(state_store)) = (
+    let has_output_filter = filter_pipeline.has_output_filters();
+    let output_filter_request_headers = if has_output_filter {
+        Some(request_headers.clone())
+    } else {
+        None
+    };
+
+    // Pick the right processor: state-aware if needed, otherwise base metrics-only.
+    let processor: Box<dyn StreamProcessor> = if let (true, false, Some(state_store)) = (
         state_ctx.should_manage_state,
         state_ctx.original_input_items.is_empty(),
         state_storage,
@@ -589,7 +679,7 @@ async fn send_upstream(
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        let state_processor = ResponsesStateProcessor::new(
+        Box::new(ResponsesStateProcessor::new(
             base_processor,
             state_store,
             state_ctx.original_input_items,
@@ -599,10 +689,22 @@ async fn send_upstream(
             false,
             content_encoding,
             request_id,
-        );
-        create_streaming_response(byte_stream, state_processor, 16)
+        ))
     } else {
-        create_streaming_response(byte_stream, base_processor, 16)
+        Box::new(base_processor)
+    };
+
+    let streaming_response = if has_output_filter {
+        let output_chain = filter_pipeline.output.as_ref().unwrap().clone();
+        create_streaming_response_with_output_filter(
+            byte_stream,
+            processor,
+            output_chain,
+            output_filter_request_headers.unwrap(),
+            request_path.to_string(),
+        )
+    } else {
+        create_streaming_response(byte_stream, processor)
     };
 
     match response.body(streaming_response.body) {

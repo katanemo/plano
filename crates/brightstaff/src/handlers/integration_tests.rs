@@ -16,7 +16,7 @@ use crate::router::orchestrator::OrchestratorService;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::configuration::{Agent, AgentFilterChain, Listener};
+    use common::configuration::{Agent, AgentFilterChain, Listener, ListenerType};
 
     fn create_test_orchestrator_service() -> Arc<OrchestratorService> {
         Arc::new(OrchestratorService::new(
@@ -63,7 +63,7 @@ mod tests {
 
         let agent_pipeline = AgentFilterChain {
             id: "terminal-agent".to_string(),
-            filter_chain: Some(vec![
+            input_filters: Some(vec![
                 "filter-agent".to_string(),
                 "terminal-agent".to_string(),
             ]),
@@ -72,8 +72,11 @@ mod tests {
         };
 
         let listener = Listener {
+            listener_type: ListenerType::Agent,
             name: "test-listener".to_string(),
             agents: Some(vec![agent_pipeline.clone()]),
+            input_filters: None,
+            output_filters: None,
             port: 8080,
             router: None,
         };
@@ -106,23 +109,32 @@ mod tests {
         // Create a pipeline with empty filter chain to avoid network calls
         let test_pipeline = AgentFilterChain {
             id: "terminal-agent".to_string(),
-            filter_chain: Some(vec![]), // Empty filter chain - no network calls needed
+            input_filters: Some(vec![]), // Empty filter chain - no network calls needed
             description: None,
             default: None,
         };
 
         let headers = HeaderMap::new();
+        let request_bytes = serde_json::to_vec(&request).expect("failed to serialize request");
         let result = pipeline_processor
-            .process_filter_chain(&request.messages, &test_pipeline, &agent_map, &headers)
+            .process_raw_filter_chain(
+                &request_bytes,
+                &test_pipeline,
+                &agent_map,
+                &headers,
+                "/v1/chat/completions",
+            )
             .await;
 
         println!("Pipeline processing result: {:?}", result);
 
         assert!(result.is_ok());
-        let processed_messages = result.unwrap();
-        // With empty filter chain, should return the original messages unchanged
-        assert_eq!(processed_messages.len(), 1);
-        if let Some(MessageContent::Text(content)) = &processed_messages[0].content {
+        let processed_bytes = result.unwrap();
+        // With empty filter chain, should return the original bytes unchanged
+        let processed_request: ChatCompletionsRequest =
+            serde_json::from_slice(&processed_bytes).expect("failed to deserialize response");
+        assert_eq!(processed_request.messages.len(), 1);
+        if let Some(MessageContent::Text(content)) = &processed_request.messages[0].content {
             assert_eq!(content, "Hello world!");
         } else {
             panic!("Expected text content");

@@ -81,11 +81,11 @@ Return only the rewritten query, nothing else."""
     return ""
 
 
-@app.post("/")
-async def query_rewriter_http(
-    messages: List[ChatMessage], request: Request
-) -> List[ChatMessage]:
+@app.post("/{path:path}")
+async def query_rewriter_http(path: str, request: Request) -> dict:
     """HTTP filter endpoint used by Plano (type: http)."""
+    body = await request.json()
+    messages = [ChatMessage(**m) for m in body.get("messages", [])]
     logger.info(f"Received request with {len(messages)} messages")
 
     traceparent_header = request.headers.get("traceparent")
@@ -99,25 +99,20 @@ async def query_rewriter_http(
     rewritten_query = await rewrite_query_with_plano(
         messages, traceparent_header, request_id
     )
-    # Create updated messages with the rewritten query
-    updated_messages = messages.copy()
 
     # Find and update the last user message with the rewritten query
+    updated_messages = [m.model_dump() for m in messages]
     for i in range(len(updated_messages) - 1, -1, -1):
-        if updated_messages[i].role == "user":
-            original_query = updated_messages[i].content
-            updated_messages[i] = ChatMessage(role="user", content=rewritten_query)
+        if updated_messages[i]["role"] == "user":
+            original_query = updated_messages[i]["content"]
+            updated_messages[i]["content"] = rewritten_query
             logger.info(
                 f"Updated user query from '{original_query}' to '{rewritten_query}'"
             )
             break
-    updated_messages_data = [
-        {"role": msg.role, "content": msg.content} for msg in updated_messages
-    ]
-    updated_messages = [ChatMessage(**msg) for msg in updated_messages_data]
 
     logger.info("Returning rewritten chat completion response")
-    return updated_messages
+    return {**body, "messages": updated_messages}
 
 
 @app.get("/health")

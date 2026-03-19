@@ -3,7 +3,7 @@ name = "travel-agents"
 version = "0.1.0"
 description = "Travel Booking Agents - Weather, Flight, and Currency"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
     "click>=8.2.1",
     "pydantic>=2.11.7",

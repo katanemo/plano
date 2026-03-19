@@ -11,7 +11,9 @@ use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
 use brightstaff::tracing::init_tracer;
 use bytes::Bytes;
-use common::configuration::Configuration;
+use common::configuration::{
+    Agent, Configuration, FilterPipeline, ListenerType, ResolvedFilterChain,
+};
 use common::consts::{CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH};
 use common::llm_providers::LlmProviders;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
@@ -24,6 +26,7 @@ use hyper_util::rt::TokioIo;
 use opentelemetry::global;
 use opentelemetry::trace::FutureExt;
 use opentelemetry_http::HeaderExtractor;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{env, fs};
 use tokio::net::TcpListener;
@@ -99,7 +102,7 @@ async fn init_app_state(
         env::var("LLM_PROVIDER_ENDPOINT").unwrap_or_else(|_| "http://localhost:12001".to_string());
 
     // Combine agents and filters into a single list
-    let all_agents = config
+    let all_agents: Vec<Agent> = config
         .agents
         .as_deref()
         .unwrap_or_default()
@@ -108,8 +111,46 @@ async fn init_app_state(
         .cloned()
         .collect();
 
+    let global_agent_map: HashMap<String, Agent> = all_agents
+        .iter()
+        .map(|a| (a.id.clone(), a.clone()))
+        .collect();
+
     let llm_providers = LlmProviders::try_from(config.model_providers.clone())
         .map_err(|e| format!("failed to create LlmProviders: {e}"))?;
+
+    let model_listener_count = config
+        .listeners
+        .iter()
+        .filter(|l| l.listener_type == ListenerType::Model)
+        .count();
+    if model_listener_count > 1 {
+        return Err(format!(
+            "only one model listener is allowed, found {}",
+            model_listener_count
+        )
+        .into());
+    }
+    let model_listener = config
+        .listeners
+        .iter()
+        .find(|l| l.listener_type == ListenerType::Model);
+    let resolve_chain = |filter_ids: Option<Vec<String>>| -> Option<ResolvedFilterChain> {
+        filter_ids.map(|ids| {
+            let agents = ids
+                .iter()
+                .filter_map(|id| global_agent_map.get(id).map(|a: &Agent| (id.clone(), a.clone())))
+                .collect();
+            ResolvedFilterChain {
+                filter_ids: ids,
+                agents,
+            }
+        })
+    };
+    let filter_pipeline = Arc::new(FilterPipeline {
+        input: resolve_chain(model_listener.and_then(|l| l.input_filters.clone())),
+        output: resolve_chain(model_listener.and_then(|l| l.output_filters.clone())),
+    });
 
     let overrides = config.overrides.clone().unwrap_or_default();
 
@@ -174,6 +215,7 @@ async fn init_app_state(
         llm_provider_url,
         span_attributes,
         http_client: reqwest::Client::new(),
+        filter_pipeline,
     })
 }
 
