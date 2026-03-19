@@ -594,13 +594,13 @@ static_resources:
 
   clusters:
 
-    - name: arch
+    - name: plano
       connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
       load_assignment:
-        cluster_name: arch
+        cluster_name: plano
         endpoints:
           - lb_endpoints:
               - endpoint:

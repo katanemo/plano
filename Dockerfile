@@ -49,6 +49,7 @@ FROM python:3.14-slim AS arch
 
 RUN set -eux; \
   apt-get update; \
+  apt-get upgrade -y; \
   apt-get install -y --no-install-recommends gettext-base curl; \
   apt-get clean; rm -rf /var/lib/apt/lists/*
 

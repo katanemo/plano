@@ -12,9 +12,7 @@ use brightstaff::state::StateStorage;
 use brightstaff::tracing::init_tracer;
 use bytes::Bytes;
 use common::configuration::Configuration;
-use common::consts::{
-    CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH, PLANO_ORCHESTRATOR_MODEL_NAME,
-};
+use common::consts::{CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH};
 use common::llm_providers::LlmProviders;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty};
 use hyper::body::Incoming;
@@ -35,6 +33,8 @@ use tracing::{debug, info, warn};
 const BIND_ADDRESS: &str = "0.0.0.0:9091";
 const DEFAULT_ROUTING_LLM_PROVIDER: &str = "arch-router";
 const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
+const DEFAULT_ORCHESTRATOR_LLM_PROVIDER: &str = "plano-orchestrator";
+const DEFAULT_ORCHESTRATOR_MODEL_NAME: &str = "Plano-Orchestrator";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -111,16 +111,20 @@ async fn init_app_state(
     let llm_providers = LlmProviders::try_from(config.model_providers.clone())
         .map_err(|e| format!("failed to create LlmProviders: {e}"))?;
 
-    let routing_model_name = config
-        .routing
-        .as_ref()
-        .and_then(|r| r.model.clone())
-        .unwrap_or_else(|| DEFAULT_ROUTING_MODEL_NAME.to_string());
+    let overrides = config.overrides.clone().unwrap_or_default();
+
+    let routing_model_name: String = overrides
+        .llm_routing_model
+        .as_deref()
+        .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
+        .unwrap_or(DEFAULT_ROUTING_MODEL_NAME)
+        .to_string();
 
     let routing_llm_provider = config
-        .routing
-        .as_ref()
-        .and_then(|r| r.model_provider.clone())
+        .model_providers
+        .iter()
+        .find(|p| p.model.as_deref() == Some(routing_model_name.as_str()))
+        .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
     let router_service = Arc::new(RouterService::new(
@@ -130,9 +134,24 @@ async fn init_app_state(
         routing_llm_provider,
     ));
 
+    let orchestrator_model_name: String = overrides
+        .agent_orchestration_model
+        .as_deref()
+        .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
+        .unwrap_or(DEFAULT_ORCHESTRATOR_MODEL_NAME)
+        .to_string();
+
+    let orchestrator_llm_provider: String = config
+        .model_providers
+        .iter()
+        .find(|p| p.model.as_deref() == Some(orchestrator_model_name.as_str()))
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_LLM_PROVIDER.to_string());
+
     let orchestrator_service = Arc::new(OrchestratorService::new(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
-        PLANO_ORCHESTRATOR_MODEL_NAME.to_string(),
+        orchestrator_model_name,
+        orchestrator_llm_provider,
     ));
 
     let state_storage = init_state_storage(config).await?;

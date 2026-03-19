@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common::{
     configuration::{AgentUsagePreference, OrchestrationPreference},
-    consts::{ARCH_PROVIDER_HINT_HEADER, PLANO_ORCHESTRATOR_MODEL_NAME, REQUEST_ID_HEADER},
+    consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER},
 };
 use hermesllm::apis::openai::Message;
 use hyper::header;
@@ -20,6 +20,7 @@ pub struct OrchestratorService {
     orchestrator_url: String,
     client: reqwest::Client,
     orchestrator_model: Arc<dyn OrchestratorModel>,
+    orchestrator_provider_name: String,
 }
 
 #[derive(Debug, Error)]
@@ -34,7 +35,11 @@ pub enum OrchestrationError {
 pub type Result<T> = std::result::Result<T, OrchestrationError>;
 
 impl OrchestratorService {
-    pub fn new(orchestrator_url: String, orchestration_model_name: String) -> Self {
+    pub fn new(
+        orchestrator_url: String,
+        orchestration_model_name: String,
+        orchestrator_provider_name: String,
+    ) -> Self {
         let agent_orchestrations: HashMap<String, Vec<OrchestrationPreference>> = HashMap::new();
 
         let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::new(
@@ -47,6 +52,7 @@ impl OrchestratorService {
             orchestrator_url,
             client: reqwest::Client::new(),
             orchestrator_model,
+            orchestrator_provider_name,
         }
     }
 
@@ -88,7 +94,8 @@ impl OrchestratorService {
         );
         headers.insert(
             header::HeaderName::from_static(ARCH_PROVIDER_HINT_HEADER),
-            header::HeaderValue::from_static(PLANO_ORCHESTRATOR_MODEL_NAME),
+            header::HeaderValue::from_str(&self.orchestrator_provider_name)
+                .unwrap_or_else(|_| header::HeaderValue::from_static("plano-orchestrator")),
         );
 
         // Inject OpenTelemetry trace context from current span
@@ -106,7 +113,8 @@ impl OrchestratorService {
 
         headers.insert(
             header::HeaderName::from_static("model"),
-            header::HeaderValue::from_static(PLANO_ORCHESTRATOR_MODEL_NAME),
+            header::HeaderValue::from_str(&self.orchestrator_provider_name)
+                .unwrap_or_else(|_| header::HeaderValue::from_static("plano-orchestrator")),
         );
 
         let Some((content, elapsed)) =

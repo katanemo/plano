@@ -335,6 +335,90 @@ Combine RAG agents for documentation lookup with specialized troubleshooting age
       - id: troubleshoot_agent
         description: Diagnoses and resolves technical issues step by step
 
+Self-hosting Plano-Orchestrator
+-------------------------------
+
+By default, Plano uses a hosted Plano-Orchestrator endpoint. To self-host the orchestrator model, you can serve it using **vLLM** on a server with an NVIDIA GPU.
+
+.. note::
+   vLLM requires a Linux server with an NVIDIA GPU (CUDA). For local development on macOS, a GGUF version for Ollama is coming soon.
+
+The following model variants are available on HuggingFace:
+
+* `Plano-Orchestrator-4B <https://huggingface.co/katanemo/Plano-Orchestrator-4B>`_ — lighter model, suitable for development and testing
+* `Plano-Orchestrator-4B-FP8 <https://huggingface.co/katanemo/Plano-Orchestrator-4B-FP8>`_ — FP8 quantized 4B model, lower memory usage
+* `Plano-Orchestrator-30B-A3B <https://huggingface.co/katanemo/Plano-Orchestrator-30B-A3B>`_ — full-size model for production
+* `Plano-Orchestrator-30B-A3B-FP8 <https://huggingface.co/katanemo/Plano-Orchestrator-30B-A3B-FP8>`_ — FP8 quantized 30B model, recommended for production deployments
+
+Using vLLM
+~~~~~~~~~~
+
+1. **Install vLLM**
+
+   .. code-block:: bash
+
+       pip install vllm
+
+2. **Download the model and chat template**
+
+   .. code-block:: bash
+
+       pip install huggingface_hub
+       huggingface-cli download katanemo/Plano-Orchestrator-4B
+
+3. **Start the vLLM server**
+
+   For the 4B model (development):
+
+   .. code-block:: bash
+
+       vllm serve katanemo/Plano-Orchestrator-4B \
+           --host 0.0.0.0 \
+           --port 8000 \
+           --tensor-parallel-size 1 \
+           --gpu-memory-utilization 0.3 \
+           --tokenizer katanemo/Plano-Orchestrator-4B \
+           --chat-template chat_template.jinja \
+           --served-model-name katanemo/Plano-Orchestrator-4B \
+           --enable-prefix-caching
+
+   For the 30B-A3B-FP8 model (production):
+
+   .. code-block:: bash
+
+       vllm serve katanemo/Plano-Orchestrator-30B-A3B-FP8 \
+           --host 0.0.0.0 \
+           --port 8000 \
+           --tensor-parallel-size 1 \
+           --gpu-memory-utilization 0.9 \
+           --tokenizer katanemo/Plano-Orchestrator-30B-A3B-FP8 \
+           --chat-template chat_template.jinja \
+           --max-model-len 32768 \
+           --served-model-name katanemo/Plano-Orchestrator-30B-A3B-FP8 \
+           --enable-prefix-caching
+
+4. **Configure Plano to use the local orchestrator**
+
+   Use the model name matching your ``--served-model-name``:
+
+   .. code-block:: yaml
+
+       overrides:
+         agent_orchestration_model: plano/katanemo/Plano-Orchestrator-4B
+
+       model_providers:
+         - model: katanemo/Plano-Orchestrator-4B
+           provider_interface: plano
+           base_url: http://<your-server-ip>:8000
+
+5. **Verify the server is running**
+
+   .. code-block:: bash
+
+       curl http://localhost:8000/health
+       curl http://localhost:8000/v1/models
+
+
 Next Steps
 ----------
 

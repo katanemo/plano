@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arch-router
+  labels:
+    app: arch-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arch-router
+  template:
+    metadata:
+      labels:
+        app: arch-router
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      # Optional: add a nodeSelector to pin to a specific GPU node pool.
+      # The nvidia.com/gpu resource request below is sufficient for most clusters.
+      # nodeSelector:
+      #   DigitalOcean: doks.digitalocean.com/gpu-model: l40s
+      #   GKE:          cloud.google.com/gke-accelerator: nvidia-l4
+      #   EKS:          eks.amazonaws.com/nodegroup: gpu-nodes
+      #   AKS:          kubernetes.azure.com/agentpool: gpupool
+      initContainers:
+        - name: download-model
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install huggingface_hub[cli] && \
+              python -c "from huggingface_hub import snapshot_download; snapshot_download('katanemo/Arch-Router-1.5B.gguf', local_dir='/models/Arch-Router-1.5B.gguf')"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          command:
+            - vllm
+            - serve
+            - /models/Arch-Router-1.5B.gguf/Arch-Router-1.5B-Q4_K_M.gguf
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "10000"
+            - "--load-format"
+            - "gguf"
+            - "--tokenizer"
+            - "katanemo/Arch-Router-1.5B"
+            - "--served-model-name"
+            - "Arch-Router"
+            - "--gpu-memory-utilization"
+            - "0.3"
+            - "--tensor-parallel-size"
+            - "1"
+            - "--enable-prefix-caching"
+          ports:
+            - name: http
+              containerPort: 10000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 10000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 10000
+            initialDelaySeconds: 180
+            periodSeconds: 30
+      volumes:
+        - name: model-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arch-router
+spec:
+  selector:
+    app: arch-router
+  ports:
+    - name: http
+      port: 10000
+      targetPort: 10000

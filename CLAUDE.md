@@ -1,70 +1,37 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
-
 Plano is an AI-native proxy server and data plane for agentic applications, built on Envoy proxy. It centralizes agent orchestration, LLM routing, observability, and safety guardrails as an out-of-process dataplane.
 
 ## Build & Test Commands
 
-### Rust (crates/)
-
 ```bash
-# Build WASM plugins (must target wasm32-wasip1)
+# Rust — WASM plugins (must target wasm32-wasip1)
 cd crates && cargo build --release --target=wasm32-wasip1 -p llm_gateway -p prompt_gateway
 
-# Build brightstaff binary (native target)
+# Rust — brightstaff binary (native target)
 cd crates && cargo build --release -p brightstaff
 
-# Run unit tests
+# Rust — tests, format, lint
 cd crates && cargo test --lib
-
-# Format check
 cd crates && cargo fmt --all -- --check
-
-# Lint
 cd crates && cargo clippy --locked --all-targets --all-features -- -D warnings
-```
 
-### Python CLI (cli/)
+# Python CLI
+cd cli && uv sync && uv run pytest -v
 
-```bash
-cd cli && uv sync              # Install dependencies
-cd cli && uv run pytest -v     # Run tests
-cd cli && uv run planoai --help  # Run CLI
-```
+# JS/TS (Turbo monorepo)
+npm run build && npm run lint && npm run typecheck
 
-### JavaScript/TypeScript (apps/, packages/)
-
-```bash
-npm run build      # Build all (via Turbo)
-npm run lint       # Lint all
-npm run dev        # Dev servers
-npm run typecheck  # Type check
-```
-
-### Pre-commit (runs fmt, clippy, cargo test, black, yaml checks)
-
-```bash
+# Pre-commit (fmt, clippy, cargo test, black, yaml)
 pre-commit run --all-files
-```
 
-### Docker
-
-```bash
+# Docker
 docker build -t katanemo/plano:latest .
 ```
 
-### E2E Tests (tests/e2e/)
-
-E2E tests require a built Docker image and API keys. They run via `tests/e2e/run_e2e_tests.sh` which executes four test suites: `test_prompt_gateway.py`, `test_model_alias_routing.py`, `test_openai_responses_api_client.py`, and `test_openai_responses_api_client_with_state.py`.
+E2E tests require a Docker image and API keys: `tests/e2e/run_e2e_tests.sh`
 
 ## Architecture
-
-### Core Data Flow
-
-Requests flow through Envoy proxy with two WASM filter plugins, backed by a native Rust binary:
 
 ```
 Client → Envoy (prompt_gateway.wasm → llm_gateway.wasm) → Agents/LLM Providers
@@ -72,81 +39,68 @@ Client → Envoy (prompt_gateway.wasm → llm_gateway.wasm) → Agents/LLM Provi
                          brightstaff (native binary: state, routing, signals, tracing)
 ```
 
-### Rust Crates (crates/)
+### Crates (crates/)
 
-All crates share a Cargo workspace. Two compile to `wasm32-wasip1` for Envoy, the rest are native:
-
-- **prompt_gateway** (WASM) — Proxy-WASM filter for prompt/message processing, guardrails, and filter chains
+- **prompt_gateway** (WASM) — Proxy-WASM filter for prompt processing, guardrails, filter chains
 - **llm_gateway** (WASM) — Proxy-WASM filter for LLM request/response handling and routing
-- **brightstaff** (native binary) — Core application server: handlers, router, signals, state management, tracing
-- **common** (library) — Shared across all crates: configuration, LLM provider abstractions, HTTP utilities, routing logic, rate limiting, tokenizer, PII detection, tracing
-- **hermesllm** (library) — Translates LLM API formats between providers (OpenAI, Anthropic, Gemini, Mistral, Grok, AWS Bedrock, Azure, together.ai). Key types: `ProviderId`, `ProviderRequest`, `ProviderResponse`, `ProviderStreamResponse`
+- **brightstaff** (native) — Core server: handlers, router, signals, state, tracing
+- **common** (lib) — Shared: config, HTTP, routing, rate limiting, tokenizer, PII, tracing
+- **hermesllm** (lib) — LLM API translation between providers. Key types: `ProviderId`, `ProviderRequest`, `ProviderResponse`, `ProviderStreamResponse`
 
 ### Python CLI (cli/planoai/)
 
-The `planoai` CLI manages the Plano lifecycle. Key commands:
-- `planoai up <config.yaml>` — Validate config, check API keys, start Docker container
-- `planoai down` — Stop container
-- `planoai build` — Build Docker image from repo root
-- `planoai logs` — Stream access/debug logs
-- `planoai trace` — OTEL trace collection and analysis
-- `planoai init` — Initialize new project
-- `planoai cli_agent` — Start a CLI agent connected to Plano
-- `planoai generate_prompt_targets` — Generate prompt_targets from python methods
+Entry point: `main.py`. Built with `rich-click`. Commands: `up`, `down`, `build`, `logs`, `trace`, `init`, `cli_agent`, `generate_prompt_targets`.
 
-Entry point: `cli/planoai/main.py`. Container lifecycle in `core.py`. Docker operations in `docker_cli.py`.
+### Config (config/)
 
-### Configuration System (config/)
+- `plano_config_schema.yaml` — JSON Schema for validating user configs
+- `envoy.template.yaml` — Jinja2 template → Envoy config
+- `supervisord.conf` — Process supervisor for Envoy + brightstaff
 
-- `plano_config_schema.yaml` — JSON Schema (draft-07) for validating user config files
-- `envoy.template.yaml` — Jinja2 template rendered into Envoy proxy config
-- `supervisord.conf` — Process supervisor for Envoy + brightstaff in the container
+### JS Apps (apps/, packages/)
 
-User configs define: `agents` (id + url), `model_providers` (model + access_key), `listeners` (type: agent/model/prompt, with router strategy), `filters` (filter chains), and `tracing` settings.
+Turbo monorepo with Next.js 16 / React 19. Not part of the core proxy.
 
-### JavaScript Apps (apps/, packages/)
+## WASM Plugin Rules
 
-Turbo monorepo with Next.js 16 / React 19 applications and shared packages (UI components, Tailwind config, TypeScript config). Not part of the core proxy — these are web applications.
+Code in `prompt_gateway` and `llm_gateway` runs in Envoy's WASM sandbox:
+
+- **No std networking/filesystem** — use proxy-wasm host calls only
+- **No tokio/async** — synchronous, callback-driven. `Action::Pause` / `Action::Continue` for flow control
+- **Lifecycle**: `RootContext` → `on_configure`, `create_http_context`; `HttpContext` → `on_http_request/response_headers/body`
+- **HTTP callouts**: `dispatch_http_call()` → store context in `callouts: RefCell<HashMap<u32, CallContext>>` → match in `on_http_call_response()`
+- **Config**: `Rc`-wrapped, loaded once in `on_configure()` via `serde_yaml::from_slice()`
+- **Dependencies must be no_std compatible** (e.g., `governor` with `features = ["no_std"]`)
+- **Crate type**: `cdylib` → produces `.wasm`
+
+## Adding a New LLM Provider
+
+1. Add variant to `ProviderId` in `crates/hermesllm/src/providers/id.rs` + `TryFrom<&str>`
+2. Create request/response types in `crates/hermesllm/src/apis/` if non-OpenAI format
+3. Add variant to `ProviderRequestType`/`ProviderResponseType` enums, update all match arms
+4. Add models to `crates/hermesllm/src/providers/provider_models.yaml`
+5. Update `SupportedUpstreamAPIs` mapping if needed
 
 ## Release Process
 
-To prepare a release (e.g., bumping from `0.4.6` to `0.4.7`), update the version string in all of the following files:
+Update version (e.g., `0.4.11` → `0.4.12`) in all of these files:
 
-**CI Workflow:**
-- `.github/workflows/ci.yml` — docker build/save tags
+- `.github/workflows/ci.yml`, `build_filter_image.sh`, `config/validate_plano_config.sh`
+- `cli/planoai/__init__.py`, `cli/planoai/consts.py`, `cli/pyproject.toml`
+- `docs/source/conf.py`, `docs/source/get_started/quickstart.rst`, `docs/source/resources/deployment.rst`
+- `apps/www/src/components/Hero.tsx`, `demos/llm_routing/preference_based_routing/README.md`
 
-**CLI:**
-- `cli/planoai/__init__.py` — `__version__`
-- `cli/planoai/consts.py` — `PLANO_DOCKER_IMAGE` default
-- `cli/pyproject.toml` — `version`
-
-**Build & Config:**
-- `build_filter_image.sh` — docker build tag
-- `config/validate_plano_config.sh` — docker image tag
-
-**Docs:**
-- `docs/source/conf.py` — `release`
-- `docs/source/get_started/quickstart.rst` — install commands and example output
-- `docs/source/resources/deployment.rst` — docker image tag
-
-**Website & Demos:**
-- `apps/www/src/components/Hero.tsx` — version badge
-- `demos/llm_routing/preference_based_routing/README.md` — example output
-
-**Important:** Do NOT change `0.4.6` references in `*.lock` files or `Cargo.lock` — those refer to the `colorama` and `http-body` dependency versions, not Plano.
-
-Commit message format: `release X.Y.Z`
+Do NOT change version strings in `*.lock` files or `Cargo.lock`. Commit message: `release X.Y.Z`
 
 ## Workflow Preferences
 
-- **Git commits:** Do NOT add `Co-Authored-By` lines. Keep commit messages short and concise (one line, no verbose descriptions). NEVER commit and push directly to `main`—always use a feature branch and PR.
-- **Git branches:** Use the format `<github_username>/<feature_name>` when creating branches for PRs. Determine the username from `gh api user --jq .login`.
-- **GitHub issues:** When a GitHub issue URL is pasted, fetch all requirements and context from the issue first. The end goal is always a PR with all tests passing.
+- **Commits:** No `Co-Authored-By`. Short one-line messages. Never push directly to `main` — always feature branch + PR.
+- **Branches:** Use `adil/<feature_name>` format.
+- **Issues:** When a GitHub issue URL is pasted, fetch all context first. Goal is always a PR with passing tests.
 
 ## Key Conventions
 
-- Rust edition 2021, formatted with `cargo fmt`, linted with `cargo clippy -D warnings`
-- Python formatted with Black
-- WASM plugins must target `wasm32-wasip1` — they run inside Envoy, not as native binaries
-- The Docker image bundles Envoy + WASM plugins + brightstaff + Python CLI into a single container managed by supervisord
-- API keys come from environment variables or `.env` files, never hardcoded
+- Rust edition 2021, `cargo fmt`, `cargo clippy -D warnings`
+- Python: Black. Rust errors: `thiserror` with `#[from]`
+- API keys from env vars or `.env`, never hardcoded
+- Provider dispatch: `ProviderRequestType`/`ProviderResponseType` enums implementing `ProviderRequest`/`ProviderResponse` traits

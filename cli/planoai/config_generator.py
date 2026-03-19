@@ -3,18 +3,17 @@ import os
 from planoai.utils import convert_legacy_listeners
 from jinja2 import Environment, FileSystemLoader
 import yaml
-from jsonschema import validate
+from jsonschema import validate, ValidationError
 from urllib.parse import urlparse
 from copy import deepcopy
 from planoai.consts import DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
-
 
 SUPPORTED_PROVIDERS_WITH_BASE_URL = [
     "azure_openai",
     "ollama",
     "qwen",
     "amazon_bedrock",
-    "arch",
+    "plano",
 ]
 
 SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
@@ -368,47 +367,52 @@ def validate_and_render_schema():
                     llms_with_endpoint.append(model_provider)
                     llms_with_endpoint_cluster_names.add(cluster_name)
 
-    if len(model_usage_name_keys) > 0:
-        routing_model_provider = config_yaml.get("routing", {}).get(
-            "model_provider", None
+    overrides_config = config_yaml.get("overrides", {})
+    # Build lookup of model names (already prefix-stripped by config processing)
+    model_name_set = {mp.get("model") for mp in updated_model_providers}
+
+    # Auto-add arch-router provider if routing preferences exist and no provider matches the router model
+    router_model = overrides_config.get("llm_routing_model", "Arch-Router")
+    # Strip provider prefix for comparison since config processing strips prefixes from model names
+    router_model_id = (
+        router_model.split("/", 1)[1] if "/" in router_model else router_model
+    )
+    if len(model_usage_name_keys) > 0 and router_model_id not in model_name_set:
+        updated_model_providers.append(
+            {
+                "name": "arch-router",
+                "provider_interface": "plano",
+                "model": router_model_id,
+                "internal": True,
+            }
         )
-        if (
-            routing_model_provider
-            and routing_model_provider not in model_provider_name_set
-        ):
-            raise Exception(
-                f"Routing model_provider {routing_model_provider} is not defined in model_providers"
-            )
-        if (
-            routing_model_provider is None
-            and "arch-router" not in model_provider_name_set
-        ):
-            updated_model_providers.append(
-                {
-                    "name": "arch-router",
-                    "provider_interface": "arch",
-                    "model": config_yaml.get("routing", {}).get("model", "Arch-Router"),
-                    "internal": True,
-                }
-            )
 
     # Always add arch-function model provider if not already defined
     if "arch-function" not in model_provider_name_set:
         updated_model_providers.append(
             {
                 "name": "arch-function",
-                "provider_interface": "arch",
+                "provider_interface": "plano",
                 "model": "Arch-Function",
                 "internal": True,
             }
         )
 
-    if "plano-orchestrator" not in model_provider_name_set:
+    # Auto-add plano-orchestrator provider if no provider matches the orchestrator model
+    orchestrator_model = overrides_config.get(
+        "agent_orchestration_model", "Plano-Orchestrator"
+    )
+    orchestrator_model_id = (
+        orchestrator_model.split("/", 1)[1]
+        if "/" in orchestrator_model
+        else orchestrator_model
+    )
+    if orchestrator_model_id not in model_name_set:
         updated_model_providers.append(
             {
-                "name": "plano-orchestrator",
-                "provider_interface": "arch",
-                "model": "Plano-Orchestrator",
+                "name": "plano/orchestrator",
+                "provider_interface": "plano",
+                "model": orchestrator_model_id,
                 "internal": True,
             }
         )
@@ -503,11 +507,15 @@ def validate_prompt_config(plano_config_file, plano_config_schema_file):
 
     try:
         validate(config_yaml, config_schema_yaml)
-    except Exception as e:
-        print(
-            f"Error validating plano_config file: {plano_config_file}, schema file: {plano_config_schema_file}, error: {e}"
+    except ValidationError as e:
+        path = (
+            " → ".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
         )
-        raise e
+        raise ValidationError(
+            f"{e.message}\n  Location: {path}\n  Value: {e.instance}"
+        ) from None
+    except Exception as e:
+        raise
 
 
 if __name__ == "__main__":

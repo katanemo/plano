@@ -8,12 +8,6 @@ use crate::api::open_ai::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Routing {
-    pub model_provider: Option<String>,
-    pub model: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelAlias {
     pub target: String,
 }
@@ -72,7 +66,6 @@ pub struct Configuration {
     pub ratelimits: Option<Vec<Ratelimit>>,
     pub tracing: Option<Tracing>,
     pub mode: Option<GatewayMode>,
-    pub routing: Option<Routing>,
     pub agents: Option<Vec<Agent>>,
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,
@@ -84,6 +77,8 @@ pub struct Overrides {
     pub prompt_target_intent_matching_threshold: Option<f64>,
     pub optimize_context_window: Option<bool>,
     pub use_agent_orchestrator: Option<bool>,
+    pub llm_routing_model: Option<String>,
+    pub agent_orchestration_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -207,8 +202,6 @@ pub struct EmbeddingProviver {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum LlmProviderType {
-    #[serde(rename = "arch")]
-    Arch,
     #[serde(rename = "anthropic")]
     Anthropic,
     #[serde(rename = "deepseek")]
@@ -237,12 +230,13 @@ pub enum LlmProviderType {
     Qwen,
     #[serde(rename = "amazon_bedrock")]
     AmazonBedrock,
+    #[serde(rename = "plano")]
+    Plano,
 }
 
 impl Display for LlmProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LlmProviderType::Arch => write!(f, "arch"),
             LlmProviderType::Anthropic => write!(f, "anthropic"),
             LlmProviderType::Deepseek => write!(f, "deepseek"),
             LlmProviderType::Groq => write!(f, "groq"),
@@ -257,6 +251,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Zhipu => write!(f, "zhipu"),
             LlmProviderType::Qwen => write!(f, "qwen"),
             LlmProviderType::AmazonBedrock => write!(f, "amazon_bedrock"),
+            LlmProviderType::Plano => write!(f, "plano"),
         }
     }
 }
@@ -591,14 +586,14 @@ mod test {
             },
             LlmProvider {
                 name: "arch-router".to_string(),
-                provider_interface: LlmProviderType::Arch,
+                provider_interface: LlmProviderType::Plano,
                 model: Some("Arch-Router".to_string()),
                 internal: Some(true),
                 ..Default::default()
             },
             LlmProvider {
                 name: "plano-orchestrator".to_string(),
-                provider_interface: LlmProviderType::Arch,
+                provider_interface: LlmProviderType::Plano,
                 model: Some("Plano-Orchestrator".to_string()),
                 internal: Some(true),
                 ..Default::default()
