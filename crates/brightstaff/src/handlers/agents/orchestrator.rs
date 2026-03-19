@@ -10,7 +10,7 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::{Request, Response};
 use opentelemetry::trace::get_active_span;
-use serde::ser::Error as SerError;
+use serde::ser::Error as _;
 use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::pipeline::{PipelineError, PipelineProcessor};
@@ -128,9 +128,7 @@ async fn parse_agent_request(
     // Find the appropriate listener
     let listener: common::configuration::Listener = {
         let listeners = state.listeners.read().await;
-        agent_selector
-            .find_listener(listener_name, &listeners)
-            .await?
+        agent_selector.find_listener(listener_name, &listeners)?
     };
 
     get_active_span(|span| {
@@ -389,7 +387,9 @@ async fn execute_agent_chain(
 
         let Some(last_message) = current_messages.pop() else {
             warn!(agent = %agent_name, "no messages in conversation history");
-            break;
+            return Err(AgentFilterChainError::RequestParsing(
+                serde_json::Error::custom("No messages in conversation history after agent response"),
+            ));
         };
 
         current_messages.push(OpenAIMessage {
@@ -403,7 +403,9 @@ async fn execute_agent_chain(
         current_messages.push(last_message);
     }
 
-    unreachable!("Agent execution loop should have returned a response")
+    Err(AgentFilterChainError::RequestParsing(
+        serde_json::Error::custom("Agent chain completed without producing a response"),
+    ))
 }
 
 async fn handle_agent_chat_inner(

@@ -85,9 +85,7 @@ mod tests {
         let messages = vec![create_test_message(Role::User, "Hello world!")];
 
         // Test 1: Agent Selection
-        let selected_listener = agent_selector
-            .find_listener(Some("test-listener"), &listeners)
-            .await;
+        let selected_listener = agent_selector.find_listener(Some("test-listener"), &listeners);
 
         assert!(selected_listener.is_ok());
         let listener = selected_listener.unwrap();
@@ -153,7 +151,7 @@ mod tests {
         let agent_selector = AgentSelector::new(router_service);
 
         // Test listener not found
-        let result = agent_selector.find_listener(Some("nonexistent"), &[]).await;
+        let result = agent_selector.find_listener(Some("nonexistent"), &[]);
 
         assert!(result.is_err());
         assert!(matches!(

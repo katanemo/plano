@@ -5,6 +5,7 @@ use hyper::StatusCode;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
+use crate::handlers::streaming::truncate_message;
 use crate::router::llm::RouterService;
 use crate::tracing::routing;
 
@@ -103,16 +104,7 @@ pub async fn router_chat_get_upstream_model(
                 .map_or("None".to_string(), |c| c.to_string().replace('\n', "\\n"))
         });
 
-    const MAX_MESSAGE_LENGTH: usize = 50;
-    let latest_message_for_log = if latest_message_for_log.chars().count() > MAX_MESSAGE_LENGTH {
-        let truncated: String = latest_message_for_log
-            .chars()
-            .take(MAX_MESSAGE_LENGTH)
-            .collect();
-        format!("{}...", truncated)
-    } else {
-        latest_message_for_log
-    };
+    let latest_message_for_log = truncate_message(&latest_message_for_log, 50);
 
     info!(
         has_usage_preferences = usage_preferences.is_some(),

@@ -574,7 +574,6 @@ impl PipelineProcessor {
         terminal_agent: &Agent,
         request_headers: &HeaderMap,
     ) -> Result<reqwest::Response, PipelineError> {
-        // let mut request = original_request.clone();
         original_request.set_messages(messages);
 
         let request_url = "/v1/chat/completions";

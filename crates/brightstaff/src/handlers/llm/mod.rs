@@ -162,8 +162,10 @@ async fn llm_chat_inner(
                 .await
             {
                 Ok(filtered_bytes) => {
-                    let api_type =
-                        SupportedAPIsFromClient::from_endpoint(request_path.as_str()).unwrap();
+                    let api_type = SupportedAPIsFromClient::from_endpoint(
+                        request_path.as_str(),
+                    )
+                    .expect("endpoint validated in parse_and_validate_request");
                     match ProviderRequestType::try_from((&filtered_bytes[..], &api_type)) {
                         Ok(updated_request) => {
                             client_request = updated_request;
@@ -198,7 +200,7 @@ async fn llm_chat_inner(
                         StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
                     error_response.headers_mut().insert(
                         hyper::header::CONTENT_TYPE,
-                        "application/json".parse().unwrap(),
+                        hyper::header::HeaderValue::from_static("application/json"),
                     );
                     return Ok(error_response);
                 }
@@ -661,8 +663,7 @@ async fn send_upstream(
         messages_for_signals,
     );
 
-    let has_output_filter = filter_pipeline.has_output_filters();
-    let output_filter_request_headers = if has_output_filter {
+    let output_filter_request_headers = if filter_pipeline.has_output_filters() {
         Some(request_headers.clone())
     } else {
         None
@@ -694,18 +695,21 @@ async fn send_upstream(
         Box::new(base_processor)
     };
 
-    let streaming_response = if has_output_filter {
-        let output_chain = filter_pipeline.output.as_ref().unwrap().clone();
-        create_streaming_response_with_output_filter(
-            byte_stream,
-            processor,
-            output_chain,
-            output_filter_request_headers.unwrap(),
-            request_path.to_string(),
-        )
-    } else {
-        create_streaming_response(byte_stream, processor)
-    };
+    let streaming_response =
+        if let (Some(output_chain), Some(filter_headers)) = (
+            filter_pipeline.output.as_ref().filter(|c| !c.is_empty()),
+            output_filter_request_headers,
+        ) {
+            create_streaming_response_with_output_filter(
+                byte_stream,
+                processor,
+                output_chain.clone(),
+                filter_headers,
+                request_path.to_string(),
+            )
+        } else {
+            create_streaming_response(byte_stream, processor)
+        };
 
     match response.body(streaming_response.body) {
         Ok(response) => Ok(response),

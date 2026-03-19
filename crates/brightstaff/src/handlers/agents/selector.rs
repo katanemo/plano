@@ -37,7 +37,7 @@ impl AgentSelector {
     }
 
     /// Find listener by name from the request headers
-    pub async fn find_listener(
+    pub fn find_listener(
         &self,
         listener_name: Option<&str>,
         listeners: &[common::configuration::Listener],
@@ -222,9 +222,7 @@ mod tests {
         let listener2 = create_test_listener("other-listener", vec![]);
         let listeners = vec![listener1.clone(), listener2];
 
-        let result = selector
-            .find_listener(Some("test-listener"), &listeners)
-            .await;
+        let result = selector.find_listener(Some("test-listener"), &listeners);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap().name, "test-listener");
@@ -237,9 +235,7 @@ mod tests {
 
         let listeners = vec![create_test_listener("other-listener", vec![])];
 
-        let result = selector
-            .find_listener(Some("nonexistent"), &listeners)
-            .await;
+        let result = selector.find_listener(Some("nonexistent"), &listeners);
 
         assert!(result.is_err());
         matches!(
