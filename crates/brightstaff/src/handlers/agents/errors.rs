@@ -4,7 +4,7 @@ use hyper::Response;
 use serde_json::json;
 use tracing::{info, warn};
 
-use super::response::ResponseHandler;
+use crate::handlers::response::ResponseHandler;
 
 /// Build a JSON error response from an `AgentFilterChainError`, logging the
 /// full error chain along the way.

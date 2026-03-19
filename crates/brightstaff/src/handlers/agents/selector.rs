@@ -84,7 +84,7 @@ impl AgentSelector {
     }
 
     /// Convert agent descriptions to orchestration preferences
-    async fn convert_agent_description_to_orchestration_preferences(
+    fn convert_agent_description_to_orchestration_preferences(
         &self,
         agents: &[AgentFilterChain],
     ) -> Vec<AgentUsagePreference> {
@@ -121,9 +121,7 @@ impl AgentSelector {
             return Ok(vec![agents[0].clone()]);
         }
 
-        let usage_preferences = self
-            .convert_agent_description_to_orchestration_preferences(agents)
-            .await;
+        let usage_preferences = self.convert_agent_description_to_orchestration_preferences(agents);
         debug!(
             "Agents usage preferences for orchestration: {}",
             serde_json::to_string(&usage_preferences).unwrap_or_default()

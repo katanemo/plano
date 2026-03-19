@@ -1,5 +1,6 @@
 use brightstaff::app_state::AppState;
 use brightstaff::handlers::agents::orchestrator::agent_chat;
+use brightstaff::handlers::empty;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
@@ -16,7 +17,7 @@ use common::configuration::{
 };
 use common::consts::{CHAT_COMPLETIONS_PATH, MESSAGES_PATH, OPENAI_RESPONSES_API_PATH};
 use common::llm_providers::LlmProviders;
-use http_body_util::{combinators::BoxBody, BodyExt, Empty};
+use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 use hyper::header::HeaderValue;
 use hyper::server::conn::http1;
@@ -38,17 +39,6 @@ const DEFAULT_ROUTING_LLM_PROVIDER: &str = "arch-router";
 const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
 const DEFAULT_ORCHESTRATOR_LLM_PROVIDER: &str = "plano-orchestrator";
 const DEFAULT_ORCHESTRATOR_MODEL_NAME: &str = "Plano-Orchestrator";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// An empty HTTP body (used for 404 / OPTIONS responses).
-fn empty() -> BoxBody<Bytes, hyper::Error> {
-    Empty::<Bytes>::new()
-        .map_err(|never| match never {})
-        .boxed()
-}
 
 /// CORS pre-flight response for the models endpoint.
 fn cors_preflight() -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -139,7 +129,11 @@ async fn init_app_state(
         filter_ids.map(|ids| {
             let agents = ids
                 .iter()
-                .filter_map(|id| global_agent_map.get(id).map(|a: &Agent| (id.clone(), a.clone())))
+                .filter_map(|id| {
+                    global_agent_map
+                        .get(id)
+                        .map(|a: &Agent| (id.clone(), a.clone()))
+                })
                 .collect();
             ResolvedFilterChain {
                 filter_ids: ids,
@@ -197,20 +191,18 @@ async fn init_app_state(
 
     let state_storage = init_state_storage(config).await?;
 
-    let span_attributes = Arc::new(
-        config
-            .tracing
-            .as_ref()
-            .and_then(|tracing| tracing.span_attributes.clone()),
-    );
+    let span_attributes = config
+        .tracing
+        .as_ref()
+        .and_then(|tracing| tracing.span_attributes.clone());
 
     Ok(AppState {
         router_service,
         orchestrator_service,
-        model_aliases: Arc::new(config.model_aliases.clone()),
+        model_aliases: config.model_aliases.clone(),
         llm_providers: Arc::new(RwLock::new(llm_providers)),
-        agents_list: Arc::new(RwLock::new(Some(all_agents))),
-        listeners: Arc::new(RwLock::new(config.listeners.clone())),
+        agents_list: Some(all_agents),
+        listeners: config.listeners.clone(),
         state_storage,
         llm_provider_url,
         span_attributes,
@@ -294,7 +286,7 @@ async fn route(
                 req,
                 Arc::clone(&state.router_service),
                 stripped,
-                Arc::clone(&state.span_attributes),
+                &state.span_attributes,
             )
             .with_context(parent_cx)
             .await;

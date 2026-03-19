@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use common::configuration::{ModelUsagePreference, SpanAttributes};
-use common::consts::{REQUEST_ID_HEADER, TRACE_PARENT_HEADER};
+use common::consts::REQUEST_ID_HEADER;
 use common::errors::BrightStaffError;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::ProviderRequestType;
@@ -10,7 +10,8 @@ use hyper::{Request, Response, StatusCode};
 use std::sync::Arc;
 use tracing::{debug, info, info_span, warn, Instrument};
 
-use crate::handlers::llm::router::router_chat_get_upstream_model;
+use super::extract_or_generate_traceparent;
+use crate::handlers::llm::model_selection::router_chat_get_upstream_model;
 use crate::router::llm::RouterService;
 use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
@@ -72,7 +73,7 @@ pub async fn routing_decision(
     request: Request<hyper::body::Incoming>,
     router_service: Arc<RouterService>,
     request_path: String,
-    span_attributes: Arc<Option<SpanAttributes>>,
+    span_attributes: &Option<SpanAttributes>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_headers = request.headers().clone();
     let request_id: String = request_headers
@@ -81,8 +82,7 @@ pub async fn routing_decision(
         .map(|s| s.to_string())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    let custom_attrs =
-        collect_custom_trace_attributes(&request_headers, span_attributes.as_ref().as_ref());
+    let custom_attrs = collect_custom_trace_attributes(&request_headers, span_attributes.as_ref());
 
     let request_span = info_span!(
         "routing_decision",
@@ -119,23 +119,7 @@ async fn routing_decision_inner(
         }
     });
 
-    // Extract or generate traceparent
-    let traceparent: String = match request_headers
-        .get(TRACE_PARENT_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
-    {
-        Some(tp) => tp,
-        None => {
-            let trace_id = uuid::Uuid::new_v4().to_string().replace("-", "");
-            let generated_tp = format!("00-{}-0000000000000000-01", trace_id);
-            warn!(
-                generated_traceparent = %generated_tp,
-                "TRACE_PARENT header missing, generated new traceparent"
-            );
-            generated_tp
-        }
-    };
+    let traceparent = extract_or_generate_traceparent(&request_headers);
 
     // Extract trace_id from traceparent (format: 00-{trace_id}-{span_id}-{flags})
     let trace_id = traceparent

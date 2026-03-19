@@ -16,13 +16,13 @@ use crate::state::StateStorage;
 pub struct AppState {
     pub router_service: Arc<RouterService>,
     pub orchestrator_service: Arc<OrchestratorService>,
-    pub model_aliases: Arc<Option<HashMap<String, ModelAlias>>>,
+    pub model_aliases: Option<HashMap<String, ModelAlias>>,
     pub llm_providers: Arc<RwLock<LlmProviders>>,
-    pub agents_list: Arc<RwLock<Option<Vec<Agent>>>>,
-    pub listeners: Arc<RwLock<Vec<Listener>>>,
+    pub agents_list: Option<Vec<Agent>>,
+    pub listeners: Vec<Listener>,
     pub state_storage: Option<Arc<dyn StateStorage>>,
     pub llm_provider_url: String,
-    pub span_attributes: Arc<Option<SpanAttributes>>,
+    pub span_attributes: Option<SpanAttributes>,
     /// Shared HTTP client for upstream LLM requests (connection pooling / keep-alive).
     pub http_client: reqwest::Client,
     pub filter_pipeline: Arc<FilterPipeline>,

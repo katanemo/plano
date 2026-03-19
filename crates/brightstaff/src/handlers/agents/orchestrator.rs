@@ -10,14 +10,13 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::{Request, Response};
 use opentelemetry::trace::get_active_span;
-use serde::ser::Error as _;
 use tracing::{debug, info, info_span, warn, Instrument};
 
+use super::errors::build_error_chain_response;
 use super::pipeline::{PipelineError, PipelineProcessor};
 use super::selector::{AgentSelectionError, AgentSelector};
 use crate::app_state::AppState;
-use crate::handlers::errors::build_error_chain_response;
-use crate::handlers::request::extract_request_id;
+use crate::handlers::extract_request_id;
 use crate::handlers::response::ResponseHandler;
 use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
@@ -31,9 +30,19 @@ pub enum AgentFilterChainError {
     #[error("Response handling error: {0}")]
     Response(#[from] common::errors::BrightStaffError),
     #[error("Request parsing error: {0}")]
-    RequestParsing(#[from] serde_json::Error),
+    RequestParsing(String),
     #[error("HTTP error: {0}")]
     Http(#[from] hyper::Error),
+    #[error("Unsupported endpoint: {0}")]
+    UnsupportedEndpoint(String),
+    #[error("No agents configured")]
+    NoAgentsConfigured,
+    #[error("Agent '{0}' not found in configuration")]
+    AgentNotFound(String),
+    #[error("No messages in conversation history")]
+    EmptyHistory,
+    #[error("Agent chain completed without producing a response")]
+    IncompleteChain,
 }
 
 pub async fn agent_chat(
@@ -42,7 +51,7 @@ pub async fn agent_chat(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_id = extract_request_id(&request);
     let custom_attrs =
-        collect_custom_trace_attributes(request.headers(), state.span_attributes.as_ref().as_ref());
+        collect_custom_trace_attributes(request.headers(), state.span_attributes.as_ref());
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -126,10 +135,7 @@ async fn parse_agent_request(
         .and_then(|name| name.to_str().ok());
 
     // Find the appropriate listener
-    let listener: common::configuration::Listener = {
-        let listeners = state.listeners.read().await;
-        agent_selector.find_listener(listener_name, &listeners)?
-    };
+    let listener = agent_selector.find_listener(listener_name, &state.listeners)?;
 
     get_active_span(|span| {
         span.update_name(listener.name.to_string());
@@ -169,18 +175,14 @@ async fn parse_agent_request(
 
     let api_type =
         SupportedAPIsFromClient::from_endpoint(request_path.as_str()).ok_or_else(|| {
-            let err_msg = format!("Unsupported endpoint: {}", request_path);
-            warn!("{}", err_msg);
-            AgentFilterChainError::RequestParsing(serde_json::Error::custom(err_msg))
+            warn!(path = %request_path, "unsupported endpoint");
+            AgentFilterChainError::UnsupportedEndpoint(request_path.clone())
         })?;
 
     let client_request = ProviderRequestType::try_from((&chat_request_bytes[..], &api_type))
         .map_err(|err| {
-            warn!("failed to parse request as ProviderRequestType: {}", err);
-            AgentFilterChainError::RequestParsing(serde_json::Error::custom(format!(
-                "Failed to parse request: {}",
-                err
-            )))
+            warn!(error = %err, "failed to parse request as ProviderRequestType");
+            AgentFilterChainError::RequestParsing(format!("Failed to parse request: {}", err))
         })?;
 
     let messages: Vec<OpenAIMessage> = client_request.get_messages();
@@ -216,13 +218,11 @@ async fn select_and_build_agent_map(
     ),
     AgentFilterChainError,
 > {
-    let agent_map = {
-        let agents = state.agents_list.read().await;
-        let agents = agents.as_ref().ok_or_else(|| {
-            AgentFilterChainError::RequestParsing(serde_json::Error::custom("No agents configured"))
-        })?;
-        agent_selector.create_agent_map(agents)
-    };
+    let agents = state
+        .agents_list
+        .as_ref()
+        .ok_or(AgentFilterChainError::NoAgentsConfigured)?;
+    let agent_map = agent_selector.create_agent_map(agents);
 
     let selection_start = Instant::now();
     let selected_agents = agent_selector
@@ -318,12 +318,9 @@ async fn execute_agent_chain(
             current_messages.clone()
         };
 
-        let agent = agent_map.get(&agent_name).ok_or_else(|| {
-            AgentFilterChainError::RequestParsing(serde_json::Error::custom(format!(
-                "Selected agent '{}' not found in configuration",
-                agent_name
-            )))
-        })?;
+        let agent = agent_map
+            .get(&agent_name)
+            .ok_or_else(|| AgentFilterChainError::AgentNotFound(agent_name.clone()))?;
 
         debug!(agent = %agent_name, "invoking agent");
 
@@ -387,9 +384,7 @@ async fn execute_agent_chain(
 
         let Some(last_message) = current_messages.pop() else {
             warn!(agent = %agent_name, "no messages in conversation history");
-            return Err(AgentFilterChainError::RequestParsing(
-                serde_json::Error::custom("No messages in conversation history after agent response"),
-            ));
+            return Err(AgentFilterChainError::EmptyHistory);
         };
 
         current_messages.push(OpenAIMessage {
@@ -403,9 +398,7 @@ async fn execute_agent_chain(
         current_messages.push(last_message);
     }
 
-    Err(AgentFilterChainError::RequestParsing(
-        serde_json::Error::custom("Agent chain completed without producing a response"),
-    ))
+    Err(AgentFilterChainError::IncompleteChain)
 }
 
 async fn handle_agent_chat_inner(

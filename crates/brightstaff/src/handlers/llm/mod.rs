@@ -1,13 +1,13 @@
 use bytes::Bytes;
 use common::configuration::{FilterPipeline, ModelAlias};
-use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, TRACE_PARENT_HEADER};
+use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER};
 use common::llm_providers::LlmProviders;
 use hermesllm::apis::openai::Message;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full};
+use http_body_util::BodyExt;
 use hyper::header::{self};
 use hyper::{Request, Response, StatusCode};
 use opentelemetry::global;
@@ -18,29 +18,25 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, info_span, warn, Instrument};
 
-pub(crate) mod router;
+pub(crate) mod model_selection;
 
 use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
-use crate::handlers::request::extract_request_id;
-use crate::handlers::streaming::{
-    create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
-    ObservableStreamProcessor, StreamProcessor,
-};
+use crate::handlers::extract_or_generate_traceparent;
+use crate::handlers::extract_request_id;
+use crate::handlers::full;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
+use crate::streaming::{
+    create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
+    ObservableStreamProcessor, StreamProcessor,
+};
 use crate::tracing::{
     collect_custom_trace_attributes, llm as tracing_llm, operation_component, set_service_name,
 };
-use router::router_chat_get_upstream_model;
-
-fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-    Full::new(chunk.into())
-        .map_err(|never| match never {})
-        .boxed()
-}
+use model_selection::router_chat_get_upstream_model;
 
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
@@ -50,7 +46,7 @@ pub async fn llm_chat(
     let request_headers = request.headers().clone();
     let request_id = extract_request_id(&request);
     let custom_attrs =
-        collect_custom_trace_attributes(&request_headers, state.span_attributes.as_ref().as_ref());
+        collect_custom_trace_attributes(&request_headers, state.span_attributes.as_ref());
 
     // Create a span with request_id that will be included in all log lines
     let request_span = info_span!(
@@ -162,10 +158,8 @@ async fn llm_chat_inner(
                 .await
             {
                 Ok(filtered_bytes) => {
-                    let api_type = SupportedAPIsFromClient::from_endpoint(
-                        request_path.as_str(),
-                    )
-                    .expect("endpoint validated in parse_and_validate_request");
+                    let api_type = SupportedAPIsFromClient::from_endpoint(request_path.as_str())
+                        .expect("endpoint validated in parse_and_validate_request");
                     match ProviderRequestType::try_from((&filtered_bytes[..], &api_type)) {
                         Ok(updated_request) => {
                             client_request = updated_request;
@@ -173,13 +167,11 @@ async fn llm_chat_inner(
                         }
                         Err(parse_err) => {
                             warn!(error = %parse_err, "input filter returned invalid request JSON");
-                            return Ok(
-                                common::errors::BrightStaffError::InvalidRequest(format!(
-                                    "Input filter returned invalid request: {}",
-                                    parse_err
-                                ))
-                                .into_response(),
-                            );
+                            return Ok(common::errors::BrightStaffError::InvalidRequest(format!(
+                                "Input filter returned invalid request: {}",
+                                parse_err
+                            ))
+                            .into_response());
                         }
                     }
                 }
@@ -342,7 +334,7 @@ struct PreparedRequest {
 async fn parse_and_validate_request(
     request: Request<hyper::body::Incoming>,
     request_path: &str,
-    model_aliases: &Arc<Option<HashMap<String, ModelAlias>>>,
+    model_aliases: &Option<HashMap<String, ModelAlias>>,
     llm_providers: &Arc<RwLock<LlmProviders>>,
 ) -> Result<PreparedRequest, Response<BoxBody<Bytes, hyper::Error>>> {
     let raw_bytes = request
@@ -386,11 +378,9 @@ async fn parse_and_validate_request(
             r
         })?;
 
-    let client_api = SupportedAPIsFromClient::from_endpoint(request_path);
-    let is_responses_api_client = matches!(
-        client_api,
-        Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
-    );
+    let is_responses_api_client =
+        matches!(api_type, SupportedAPIsFromClient::OpenAIResponsesAPI(_));
+    let client_api = Some(api_type);
 
     let model_from_request = client_request.model().to_string();
     let temperature = client_request.get_temperature();
@@ -695,21 +685,20 @@ async fn send_upstream(
         Box::new(base_processor)
     };
 
-    let streaming_response =
-        if let (Some(output_chain), Some(filter_headers)) = (
-            filter_pipeline.output.as_ref().filter(|c| !c.is_empty()),
-            output_filter_request_headers,
-        ) {
-            create_streaming_response_with_output_filter(
-                byte_stream,
-                processor,
-                output_chain.clone(),
-                filter_headers,
-                request_path.to_string(),
-            )
-        } else {
-            create_streaming_response(byte_stream, processor)
-        };
+    let streaming_response = if let (Some(output_chain), Some(filter_headers)) = (
+        filter_pipeline.output.as_ref().filter(|c| !c.is_empty()),
+        output_filter_request_headers,
+    ) {
+        create_streaming_response_with_output_filter(
+            byte_stream,
+            processor,
+            output_chain.clone(),
+            filter_headers,
+            request_path.to_string(),
+        )
+    } else {
+        create_streaming_response(byte_stream, processor)
+    };
 
     match response.body(streaming_response.body) {
         Ok(response) => Ok(response),
@@ -726,28 +715,11 @@ async fn send_upstream(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Extract or generate a W3C `traceparent` header value.
-fn extract_or_generate_traceparent(headers: &hyper::HeaderMap) -> String {
-    headers
-        .get(TRACE_PARENT_HEADER)
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            let trace_id = uuid::Uuid::new_v4().to_string().replace("-", "");
-            let tp = format!("00-{}-0000000000000000-01", trace_id);
-            warn!(
-                generated_traceparent = %tp,
-                "TRACE_PARENT header missing, generated new traceparent"
-            );
-            tp
-        })
-}
-
 /// Resolves model aliases by looking up the requested model in the model_aliases map.
 /// Returns the target model if an alias is found, otherwise returns the original model.
 fn resolve_model_alias(
     model_from_request: &str,
-    model_aliases: &Arc<Option<HashMap<String, ModelAlias>>>,
+    model_aliases: &Option<HashMap<String, ModelAlias>>,
 ) -> String {
     if let Some(aliases) = model_aliases.as_ref() {
         if let Some(model_alias) = aliases.get(model_from_request) {

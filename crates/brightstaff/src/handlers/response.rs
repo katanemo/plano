@@ -4,13 +4,15 @@ use hermesllm::apis::OpenAIApi;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::SseEvent;
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full, StreamBody};
+use http_body_util::StreamBody;
 use hyper::body::Frame;
 use hyper::Response;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn, Instrument};
+
+use super::full;
 
 /// Service for handling HTTP responses and streaming
 pub struct ResponseHandler;
@@ -22,9 +24,7 @@ impl ResponseHandler {
 
     /// Create a full response body from bytes
     pub fn create_full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-        Full::new(chunk.into())
-            .map_err(|never| match never {})
-            .boxed()
+        full(chunk)
     }
 
     /// Create a JSON error response with BAD_REQUEST status

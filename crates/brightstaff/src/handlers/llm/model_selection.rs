@@ -5,8 +5,8 @@ use hyper::StatusCode;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::handlers::streaming::truncate_message;
 use crate::router::llm::RouterService;
+use crate::streaming::truncate_message;
 use crate::tracing::routing;
 
 pub struct RoutingResult {

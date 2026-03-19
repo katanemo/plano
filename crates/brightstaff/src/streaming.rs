@@ -13,7 +13,7 @@ use tokio_stream::StreamExt;
 use tracing::{debug, info, warn, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use super::agents::pipeline::{PipelineError, PipelineProcessor};
+use crate::handlers::agents::pipeline::{PipelineError, PipelineProcessor};
 
 const STREAM_BUFFER_SIZE: usize = 16;
 use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
