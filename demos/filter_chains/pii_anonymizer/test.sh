@@ -114,8 +114,7 @@ run_test "No PII" /v1/messages 200 '{
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 echo ""
-echo "To verify PII was anonymized before reaching the LLM, check filter logs:"
-echo "  docker compose logs pii-service"
+echo "To verify PII was anonymized before reaching the LLM, check the terminal running start_agents.sh"
 
 if [ "$FAIL" -gt 0 ]; then
     exit 1

@@ -1,31 +1,28 @@
 # RAG Agent Demo
 
-A multi-agent RAG system demonstrating plano's agent filter chain with MCP protocol.
+A multi-agent RAG system demonstrating plano's agent filter chain with HTTP protocol.
 
 ## Architecture
 
 This demo consists of four components:
-1. **Input Guards** (MCP filter) - Validates queries are within TechCorp's domain
-2. **Query Rewriter** (MCP filter) - Rewrites user queries for better retrieval
-3. **Context Builder** (MCP filter) - Retrieves relevant context from knowledge base
+1. **Input Guards** (HTTP filter) - Validates queries are within TechCorp's domain
+2. **Query Rewriter** (HTTP filter) - Rewrites user queries for better retrieval
+3. **Context Builder** (HTTP filter) - Retrieves relevant context from knowledge base
 4. **RAG Agent** (REST) - Generates final responses based on augmented context
 
 ## Components
 
-### Input Guards Filter (MCP)
+### Input Guards Filter (HTTP)
 - **Port**: 10500
-- **Tool**: `input_guards`
 - Validates queries are within TechCorp's domain
 - Rejects queries about other companies or unrelated topics
 
-### Query Rewrit3r Filter (MCP)
+### Query Rewriter Filter (HTTP)
 - **Port**: 10501
-- **Tool**: `query_rewriter`
 - Improves queries using LLM before retrieval
 
-### Context Builder Filter (MCP)
+### Context Builder Filter (HTTP)
 - **Port**: 10502
-- **Tool**: `context_builder`
 - Augments queries with relevant passages from knowledge base
 
 ### RAG Agent (REST/OpenAI)
@@ -93,7 +90,7 @@ filters:
 ## How It Works
 
 1. User sends request to plano listener on port 8001
-2. Request passes through MCP filter chain:
+2. Request passes through HTTP filter chain:
    - **Input Guards** validates the query is within TechCorp's domain
    - **Query Rewriter** rewrites the query for better retrieval
    - **Context Builder** augments query with relevant knowledge base passages
@@ -102,10 +99,7 @@ filters:
 
 ## Additional Configuration
 
-See `config.yaml` for the complete filter chain setup. The MCP filters use default settings:
-- `type: mcp` (default)
-- `transport: streamable-http` (default)
-- Tool name defaults to filter ID
+See `config.yaml` for the complete filter chain setup. The HTTP filters use `type: http` to indicate they communicate over plain HTTP POST rather than MCP.
 
 See `sample_queries.md` for example queries to test the RAG system.
 
@@ -123,7 +117,7 @@ curl -X POST http://localhost:8001/v1/chat/completions \
     ]
   }'
 ```
-- `LLM_GATEWAY_ENDPOINT` - lpano endpoint (default: `http://localhost:12000/v1`)
+- `LLM_GATEWAY_ENDPOINT` - Plano endpoint (default: `http://localhost:12000/v1`)
 - `OPENAI_API_KEY` - OpenAI API key for model providers
 
 ## Additional Resources

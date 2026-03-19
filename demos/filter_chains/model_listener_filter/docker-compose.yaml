@@ -12,7 +12,6 @@ services:
     ports:
       - "12000:12000"
     environment:
-      - PLANO_CONFIG_PATH=/config/config.yaml
       - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
     volumes:
       - ./config.yaml:/app/plano_config.yaml

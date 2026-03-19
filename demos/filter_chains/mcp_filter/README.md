@@ -123,7 +123,7 @@ curl -X POST http://localhost:8001/v1/chat/completions \
     ]
   }'
 ```
-- `LLM_GATEWAY_ENDPOINT` - lpano endpoint (default: `http://localhost:12000/v1`)
+- `LLM_GATEWAY_ENDPOINT` - Plano endpoint (default: `http://localhost:12000/v1`)
 - `OPENAI_API_KEY` - OpenAI API key for model providers
 
 ## Additional Resources
