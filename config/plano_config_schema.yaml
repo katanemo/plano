@@ -43,6 +43,8 @@ properties:
             - streamable-http
         tool:
           type: string
+        streaming:
+          type: boolean
       additionalProperties: false
       required:
         - id

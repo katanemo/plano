@@ -21,10 +21,16 @@ import logging
 from typing import Any, Dict
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from pii import anonymize_text, anonymize_message_content
-from store import get_mapping, store_mapping, deanonymize_sse, deanonymize_json
+from store import (
+    get_mapping,
+    store_mapping,
+    deanonymize_sse,
+    deanonymize_sse_stream,
+    deanonymize_json,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,11 +111,36 @@ async def deanonymize(path: str, request: Request) -> Response:
       /deanonymize/v1/chat/completions  — OpenAI chat completions
       /deanonymize/v1/messages          — Anthropic messages
       /deanonymize/v1/responses         — OpenAI responses API
+
+    Supports two modes:
+      - Bidirectional streaming: request body is streamed (Content-Type: application/octet-stream).
+        Reads via request.stream(), processes SSE events incrementally, returns StreamingResponse.
+      - Per-chunk / full body: reads entire body, processes, returns complete Response.
     """
     endpoint = f"/{path}"
     is_anthropic = endpoint == "/v1/messages"
     request_id = request.headers.get("x-request-id", "unknown")
     mapping = get_mapping(request_id)
+
+    content_type = request.headers.get("content-type", "")
+    is_streaming = "application/octet-stream" in content_type
+
+    if is_streaming:
+        if not mapping:
+            logger.info("request_id=%s streaming, no mapping — passthrough", request_id)
+
+            async def passthrough():
+                async for chunk in request.stream():
+                    yield chunk
+
+            return StreamingResponse(passthrough(), media_type="text/event-stream")
+
+        logger.info("request_id=%s streaming deanonymize", request_id)
+        return StreamingResponse(
+            deanonymize_sse_stream(request_id, request.stream(), mapping, is_anthropic),
+            media_type="text/event-stream",
+        )
+
     raw_body = await request.body()
 
     if not mapping:
