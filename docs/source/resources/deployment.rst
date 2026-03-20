@@ -65,7 +65,7 @@ Create a ``docker-compose.yml`` file with the following configuration:
    # docker-compose.yml
    services:
      plano:
-       image: katanemo/plano:0.4.13
+       image: katanemo/plano:0.4.14
        container_name: plano
        ports:
          - "10000:10000" # ingress (client -> plano)
@@ -153,7 +153,7 @@ Create a ``plano-deployment.yaml``:
        spec:
          containers:
            - name: plano
-             image: katanemo/plano:0.4.13
+             image: katanemo/plano:0.4.14
              ports:
                - containerPort: 12000  # LLM gateway (chat completions, model routing)
                  name: llm-gateway
