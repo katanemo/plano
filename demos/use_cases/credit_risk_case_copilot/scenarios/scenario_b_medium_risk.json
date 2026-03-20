@@ -1,0 +1,18 @@
+{
+  "applicant_name": "Hassan Khan",
+  "loan_amount": 750000,
+  "monthly_income": 120000,
+  "employment_status": "SELF_EMPLOYED",
+  "employment_duration_months": 18,
+  "credit_score": 620,
+  "existing_loans": 2,
+  "total_debt": 180000,
+  "delinquencies": 1,
+  "utilization_rate": 55.0,
+  "cnic": "54321-0987654-1",
+  "phone": "03129876543",
+  "kyc_complete": true,
+  "income_verified": false,
+  "address_verified": false,
+  "additional_info": "Self-employed consultant, thin credit file, requires income and address verification"
+}
