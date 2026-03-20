@@ -113,8 +113,7 @@ impl OrchestratorService {
 
         headers.insert(
             header::HeaderName::from_static("model"),
-            header::HeaderValue::from_str(&self.orchestrator_provider_name)
-                .unwrap_or_else(|_| header::HeaderValue::from_static("plano-orchestrator")),
+            header::HeaderValue::from_static("plano-orchestrator"),
         );
 
         let Some((content, elapsed)) =
