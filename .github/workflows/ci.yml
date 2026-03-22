@@ -133,12 +133,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
 
-      - name: Build plano CLI
-        working-directory: ./crates
-        run: cargo build --release -p plano-cli
+      - name: Install planoai
+        run: pip install -e ./cli
 
       - name: Validate plano config
         run: bash config/validate_plano_config.sh
