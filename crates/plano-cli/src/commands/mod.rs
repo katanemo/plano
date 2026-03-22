@@ -3,6 +3,7 @@ pub mod cli_agent;
 pub mod down;
 pub mod init;
 pub mod logs;
+pub mod self_update;
 pub mod up;
 
 use clap::{Parser, Subcommand};
@@ -132,6 +133,14 @@ pub enum Command {
         #[arg(long)]
         list_templates: bool,
     },
+
+    /// Update planoai to the latest version
+    #[command(name = "self-update")]
+    SelfUpdate {
+        /// Update to a specific version instead of latest
+        #[arg(long)]
+        version: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -252,6 +261,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             force,
             list_templates,
         }) => init::run(template, clean, output, force, list_templates).await,
+        Some(Command::SelfUpdate { version }) => self_update::run(version.as_deref()).await,
     }
 }
 
