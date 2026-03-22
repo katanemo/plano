@@ -12,6 +12,7 @@ COPY crates/hermesllm/Cargo.toml      hermesllm/Cargo.toml
 COPY crates/prompt_gateway/Cargo.toml prompt_gateway/Cargo.toml
 COPY crates/llm_gateway/Cargo.toml    llm_gateway/Cargo.toml
 COPY crates/brightstaff/Cargo.toml    brightstaff/Cargo.toml
+COPY crates/plano-cli/Cargo.toml      plano-cli/Cargo.toml
 
 # Dummy sources to pre-compile dependencies
 RUN mkdir -p common/src && echo "" > common/src/lib.rs && \
@@ -19,7 +20,8 @@ RUN mkdir -p common/src && echo "" > common/src/lib.rs && \
     mkdir -p hermesllm/src/bin && echo "fn main() {}" > hermesllm/src/bin/fetch_models.rs && \
     mkdir -p prompt_gateway/src && echo "#[no_mangle] pub fn _start() {}" > prompt_gateway/src/lib.rs && \
     mkdir -p llm_gateway/src && echo "#[no_mangle] pub fn _start() {}" > llm_gateway/src/lib.rs && \
-    mkdir -p brightstaff/src && echo "fn main() {}" > brightstaff/src/main.rs && echo "" > brightstaff/src/lib.rs
+    mkdir -p brightstaff/src && echo "fn main() {}" > brightstaff/src/main.rs && echo "" > brightstaff/src/lib.rs && \
+    mkdir -p plano-cli/src && echo "fn main() {}" > plano-cli/src/main.rs
 
 RUN cargo build --release --target wasm32-wasip1 -p prompt_gateway -p llm_gateway || true
 RUN cargo build --release -p brightstaff || true
