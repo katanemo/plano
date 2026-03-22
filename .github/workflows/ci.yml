@@ -146,25 +146,21 @@ jobs:
   # Validate plano config
   # ──────────────────────────────────────────────
   validate-config:
-    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Download planoai binary
-        uses: actions/download-artifact@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-          name: planoai-binary
-          path: crates/target/release/
+          python-version: "3.14"
 
-      - name: Make binary executable
-        run: chmod +x crates/target/release/planoai
+      - name: Install planoai
+        run: pip install -e ./cli
 
       - name: Validate plano config
-        run: |
-          export PATH="$PWD/crates/target/release:$PATH"
-          bash config/validate_plano_config.sh
+        run: bash config/validate_plano_config.sh
 
   # ──────────────────────────────────────────────
   # Docker security scan (Trivy)
