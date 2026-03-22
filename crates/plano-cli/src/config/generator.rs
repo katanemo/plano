@@ -266,6 +266,10 @@ pub fn validate_and_render(
     // Override inferred clusters with endpoints
     for (name, details) in &endpoints {
         let mut cluster = details.clone();
+        // Ensure protocol is always set
+        if cluster.get("protocol").is_none() {
+            cluster["protocol"] = json!("https");
+        }
         if cluster.get("port").is_none() {
             let ep = cluster
                 .get("endpoint")
@@ -278,6 +282,10 @@ pub fn validate_and_render(
             let (endpoint, port) = get_endpoint_and_port(ep, protocol);
             cluster["endpoint"] = json!(endpoint);
             cluster["port"] = json!(port);
+        }
+        // Ensure connect_timeout is set
+        if cluster.get("connect_timeout").is_none() {
+            cluster["connect_timeout"] = json!("5s");
         }
         inferred_clusters.insert(name.clone(), cluster);
     }
@@ -702,6 +710,29 @@ pub fn validate_and_render(
 
     let mut tera = tera::Tera::default();
     let template_content = std::fs::read_to_string(template_path)?;
+    // Convert Jinja2 syntax to Tera syntax
+    // indent(N) → indent(width=N)
+    let template_content = regex::Regex::new(r"indent\((\d+)\)")
+        .unwrap()
+        .replace_all(&template_content, "indent(width=$1)")
+        .to_string();
+    // var.split(":") | first → var | split(pat=":") | first
+    let template_content = regex::Regex::new(r#"(\w+)\.split\("([^"]+)"\)"#)
+        .unwrap()
+        .replace_all(&template_content, r#"$1 | split(pat="$2")"#)
+        .to_string();
+    // default('value') → default(value='value')
+    let template_content = regex::Regex::new(r"default\('([^']+)'\)")
+        .unwrap()
+        .replace_all(&template_content, "default(value='$1')")
+        .to_string();
+    // replace(" ", "_") → replace(from=" ", to="_")
+    let template_content = regex::Regex::new(r#"replace\("([^"]*)",\s*"([^"]*)"\)"#)
+        .unwrap()
+        .replace_all(&template_content, r#"replace(from="$1", to="$2")"#)
+        .to_string();
+    // dict.items() → dict (Tera iterates dicts directly)
+    let template_content = template_content.replace(".items()", "");
     tera.add_raw_template(template_filename, &template_content)?;
 
     let mut context = tera::Context::new();

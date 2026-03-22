@@ -52,37 +52,33 @@ jobs:
   # Native mode smoke test — build from source & start natively
   # ──────────────────────────────────────────────
   native-smoke-test:
+    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
 
-      - name: Install planoai CLI
-        working-directory: ./cli
-        run: |
-          uv sync
-          uv tool install .
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: crates/target/release/
+
+      - name: Make binary executable
+        run: chmod +x crates/target/release/planoai
 
       - name: Build native binaries
-        run: planoai build
+        run: crates/target/release/planoai build
 
       - name: Start plano natively
         env:
           OPENAI_API_KEY: test-key-not-used
-        run: planoai up tests/e2e/config_native_smoke.yaml
+        run: crates/target/release/planoai up tests/e2e/config_native_smoke.yaml
 
       - name: Health check
         run: |
@@ -100,7 +96,7 @@ jobs:
 
       - name: Stop plano
         if: always()
-        run: planoai down || true
+        run: crates/target/release/planoai down || true
 
   # ──────────────────────────────────────────────
   # Single Docker build — shared by all downstream jobs
@@ -147,21 +143,25 @@ jobs:
   # Validate plano config
   # ──────────────────────────────────────────────
   validate-config:
+    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
         with:
-          python-version: "3.14"
+          name: planoai-binary
+          path: crates/target/release/
 
-      - name: Install planoai
-        run: pip install -e ./cli
+      - name: Make binary executable
+        run: chmod +x crates/target/release/planoai
 
       - name: Validate plano config
-        run: bash config/validate_plano_config.sh
+        run: |
+          export PATH="$PWD/crates/target/release:$PATH"
+          bash config/validate_plano_config.sh
 
   # ──────────────────────────────────────────────
   # Docker security scan (Trivy)
