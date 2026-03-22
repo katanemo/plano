@@ -52,36 +52,37 @@ jobs:
   # Native mode smoke test — build from source & start natively
   # ──────────────────────────────────────────────
   native-smoke-test:
-    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
 
-      - name: Download planoai binary
-        uses: actions/download-artifact@v6
-        with:
-          name: planoai-binary
-          path: crates/target/release/
-
-      - name: Make binary executable
-        run: chmod +x crates/target/release/planoai
+      - name: Install planoai CLI
+        working-directory: ./cli
+        run: |
+          uv sync
+          uv tool install .
 
       - name: Build native binaries
-        working-directory: ./crates
-        run: |
-          cargo build --release -p brightstaff
-          cargo build --release --target wasm32-wasip1 -p llm_gateway -p prompt_gateway
+        run: planoai build
 
       - name: Start plano natively
         env:
           OPENAI_API_KEY: test-key-not-used
-        run: ./crates/target/release/planoai up tests/e2e/config_native_smoke.yaml
+        run: planoai up tests/e2e/config_native_smoke.yaml
 
       - name: Health check
         run: |
@@ -99,7 +100,7 @@ jobs:
 
       - name: Stop plano
         if: always()
-        run: ./crates/target/release/planoai down || true
+        run: planoai down || true
 
   # ──────────────────────────────────────────────
   # Single Docker build — shared by all downstream jobs
