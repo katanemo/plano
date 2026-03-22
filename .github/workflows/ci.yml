@@ -35,14 +35,24 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Run plano-cli tests
+      - name: Build and test plano-cli
         working-directory: ./crates
-        run: cargo test -p plano-cli
+        run: |
+          cargo test -p plano-cli
+          cargo build --release -p plano-cli
+
+      - name: Upload planoai binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: planoai-binary
+          path: crates/target/release/planoai
+          retention-days: 1
 
   # ──────────────────────────────────────────────
   # Native mode smoke test — build from source & start natively
   # ──────────────────────────────────────────────
   native-smoke-test:
+    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -53,10 +63,18 @@ jobs:
         with:
           targets: wasm32-wasip1
 
-      - name: Build plano CLI and native binaries
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: crates/target/release/
+
+      - name: Make binary executable
+        run: chmod +x crates/target/release/planoai
+
+      - name: Build native binaries
         working-directory: ./crates
         run: |
-          cargo build --release -p plano-cli
           cargo build --release -p brightstaff
           cargo build --release --target wasm32-wasip1 -p llm_gateway -p prompt_gateway
 
@@ -128,20 +146,25 @@ jobs:
   # Validate plano config
   # ──────────────────────────────────────────────
   validate-config:
+    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: crates/target/release/
 
-      - name: Build planoai CLI
-        working-directory: ./crates
-        run: cargo build --release -p plano-cli
+      - name: Make binary executable
+        run: chmod +x crates/target/release/planoai
 
       - name: Validate plano config
-        run: bash config/validate_plano_config.sh
+        run: |
+          export PATH="$PWD/crates/target/release:$PATH"
+          bash config/validate_plano_config.sh
 
   # ──────────────────────────────────────────────
   # Docker security scan (Trivy)
