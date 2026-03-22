@@ -16,8 +16,9 @@ cd crates && cargo test --lib
 cd crates && cargo fmt --all -- --check
 cd crates && cargo clippy --locked --all-targets --all-features -- -D warnings
 
-# Python CLI
-cd cli && uv sync && uv run pytest -v
+# Rust — plano CLI binary
+cd crates && cargo build --release -p plano-cli
+cd crates && cargo test -p plano-cli
 
 # JS/TS (Turbo monorepo)
 npm run build && npm run lint && npm run typecheck
@@ -47,9 +48,13 @@ Client → Envoy (prompt_gateway.wasm → llm_gateway.wasm) → Agents/LLM Provi
 - **common** (lib) — Shared: config, HTTP, routing, rate limiting, tokenizer, PII, tracing
 - **hermesllm** (lib) — LLM API translation between providers. Key types: `ProviderId`, `ProviderRequest`, `ProviderResponse`, `ProviderStreamResponse`
 
-### Python CLI (cli/planoai/)
+### Plano CLI (crates/plano-cli/)
 
-Entry point: `main.py`. Built with `rich-click`. Commands: `up`, `down`, `build`, `logs`, `trace`, `init`, `cli_agent`, `generate_prompt_targets`.
+Rust CLI binary (`planoai`). Built with `clap` v4. Commands: `up`, `down`, `build`, `logs`, `trace`, `init`, `cli-agent`.
+
+### Legacy Python CLI (cli/planoai/) — deprecated
+
+Entry point: `main.py`. Built with `rich-click`. Being replaced by the Rust CLI above.
 
 ### Config (config/)
 
@@ -86,7 +91,7 @@ Code in `prompt_gateway` and `llm_gateway` runs in Envoy's WASM sandbox:
 Update version (e.g., `0.4.11` → `0.4.12`) in all of these files:
 
 - `.github/workflows/ci.yml`, `build_filter_image.sh`, `config/validate_plano_config.sh`
-- `cli/planoai/__init__.py`, `cli/planoai/consts.py`, `cli/pyproject.toml`
+- `crates/plano-cli/Cargo.toml`
 - `docs/source/conf.py`, `docs/source/get_started/quickstart.rst`, `docs/source/resources/deployment.rst`
 - `apps/www/src/components/Hero.tsx`, `demos/llm_routing/preference_based_routing/README.md`
 

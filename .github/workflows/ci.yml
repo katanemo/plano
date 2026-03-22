@@ -25,33 +25,19 @@ jobs:
       - uses: pre-commit/action@v3.0.1
 
   # ──────────────────────────────────────────────
-  # Plano tools (CLI) tests — no Docker needed
+  # Plano CLI (Rust) tests — no Docker needed
   # ──────────────────────────────────────────────
-  plano-tools-tests:
+  plano-cli-tests:
     runs-on: ubuntu-latest-m
-    defaults:
-      run:
-        working-directory: ./cli
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Install plano tools
-        run: uv sync --extra dev
-
-      - name: Sync CLI templates to demos
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: uv run python -m planoai.template_sync
-
-      - name: Run tests
-        run: uv run pytest
+      - name: Run plano-cli tests
+        working-directory: ./crates
+        run: cargo test -p plano-cli
 
   # ──────────────────────────────────────────────
   # Native mode smoke test — build from source & start natively
@@ -62,32 +48,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
 
-      - name: Install planoai CLI
-        working-directory: ./cli
+      - name: Build plano CLI and native binaries
+        working-directory: ./crates
         run: |
-          uv sync
-          uv tool install .
-
-      - name: Build native binaries
-        run: planoai build
+          cargo build --release -p plano-cli
+          cargo build --release -p brightstaff
+          cargo build --release --target wasm32-wasip1 -p llm_gateway -p prompt_gateway
 
       - name: Start plano natively
         env:
           OPENAI_API_KEY: test-key-not-used
-        run: planoai up tests/e2e/config_native_smoke.yaml
+        run: ./crates/target/release/planoai up tests/e2e/config_native_smoke.yaml
 
       - name: Health check
         run: |
@@ -105,7 +81,7 @@ jobs:
 
       - name: Stop plano
         if: always()
-        run: planoai down || true
+        run: ./crates/target/release/planoai down || true
 
   # ──────────────────────────────────────────────
   # Single Docker build — shared by all downstream jobs
@@ -157,13 +133,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install planoai
-        run: pip install -e ./cli
+      - name: Build plano CLI
+        working-directory: ./crates
+        run: cargo build --release -p plano-cli
 
       - name: Validate plano config
         run: bash config/validate_plano_config.sh
