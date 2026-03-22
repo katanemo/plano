@@ -5,6 +5,7 @@ pub mod init;
 pub mod logs;
 pub mod self_update;
 pub mod up;
+pub mod validate;
 
 use clap::{Parser, Subcommand};
 
@@ -134,6 +135,16 @@ pub enum Command {
         list_templates: bool,
     },
 
+    /// Validate a Plano configuration file
+    Validate {
+        /// Config file path
+        file: Option<String>,
+
+        /// Path to the directory containing config.yaml
+        #[arg(long, default_value = ".")]
+        path: String,
+    },
+
     /// Update planoai to the latest version
     #[command(name = "self-update")]
     SelfUpdate {
@@ -261,6 +272,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             force,
             list_templates,
         }) => init::run(template, clean, output, force, list_templates).await,
+        Some(Command::Validate { file, path }) => validate::run(file, &path).await,
         Some(Command::SelfUpdate { version }) => self_update::run(version.as_deref()).await,
     }
 }

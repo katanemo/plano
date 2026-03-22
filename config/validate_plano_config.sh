@@ -8,13 +8,7 @@ for file in $(find . -name config.yaml -o -name plano_config_full_reference.yaml
   rendered_file="$(pwd)/${file}_rendered"
   touch "$rendered_file"
 
-  PLANO_CONFIG_FILE="$(pwd)/${file}" \
-  PLANO_CONFIG_SCHEMA_FILE="${SCRIPT_DIR}/plano_config_schema.yaml" \
-  TEMPLATE_ROOT="${SCRIPT_DIR}" \
-  ENVOY_CONFIG_TEMPLATE_FILE="envoy.template.yaml" \
-  PLANO_CONFIG_FILE_RENDERED="$rendered_file" \
-  ENVOY_CONFIG_FILE_RENDERED="/dev/null" \
-  python -m planoai.config_generator 2>&1 > /dev/null
+  planoai validate "$(pwd)/${file}" 2>&1 > /dev/null
 
   if [ $? -ne 0 ]; then
     echo "Validation failed for $file"
