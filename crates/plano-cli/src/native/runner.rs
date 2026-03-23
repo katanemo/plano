@@ -313,31 +313,82 @@ pub async fn start_native(
     Ok(())
 }
 
-/// Spawn a fully detached daemon process. Returns the child PID.
+/// Double-fork daemon: fork → setsid → fork → exec.
+/// The grandchild is fully detached from the calling process tree.
 fn daemon_exec(args: &[String], env: &HashMap<String, String>, log_path: &Path) -> Result<i32> {
-    use std::os::unix::process::CommandExt;
-    use std::process::{Command, Stdio};
+    use nix::unistd::{dup2, fork, setsid, ForkResult};
+    use std::os::unix::io::AsRawFd;
 
-    let log_file = fs::File::create(log_path)?;
+    let run_dir = plano_run_dir();
+    fs::create_dir_all(&run_dir)?;
 
-    // SAFETY: setsid() is async-signal-safe and called before exec
-    let child = unsafe {
-        Command::new(&args[0])
-            .args(&args[1..])
-            .envs(env)
-            .stdin(Stdio::null())
-            .stdout(log_file.try_clone()?)
-            .stderr(log_file)
-            .pre_exec(|| {
-                // Create a new session so the child doesn't get SIGHUP/SIGTERM
-                // when the parent shell exits
-                nix::unistd::setsid().map_err(std::io::Error::other)?;
-                Ok(())
-            })
-            .spawn()?
-    };
-
-    Ok(child.id() as i32)
+    match unsafe { fork() }? {
+        ForkResult::Parent { child } => {
+            // Parent: wait for intermediate child, then read grandchild PID
+            nix::sys::wait::waitpid(child, None)?;
+            let pid_path = run_dir.join(format!(".daemon_pid_{child}"));
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while std::time::Instant::now() < deadline {
+                if let Ok(content) = fs::read_to_string(&pid_path) {
+                    if let Ok(pid) = content.trim().parse::<i32>() {
+                        let _ = fs::remove_file(&pid_path);
+                        return Ok(pid);
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            anyhow::bail!("Timed out waiting for daemon PID from {}", args[0]);
+        }
+        ForkResult::Child => {
+            // First child: new session, then fork again
+            setsid()?;
+            match unsafe { fork() }? {
+                ForkResult::Parent { child } => {
+                    // Write grandchild PID and exit
+                    let my_pid = nix::unistd::getpid();
+                    let pid_path = run_dir.join(format!(".daemon_pid_{my_pid}"));
+                    let _ = fs::write(&pid_path, child.to_string());
+                    std::process::exit(0);
+                }
+                ForkResult::Child => {
+                    // Grandchild: the actual daemon
+                    let log_file = fs::File::create(log_path).expect("failed to create log file");
+                    let log_fd = log_file.as_raw_fd();
+                    // Redirect stdout/stderr to log file
+                    dup2(log_fd, 1).expect("dup2 stdout");
+                    dup2(log_fd, 2).expect("dup2 stderr");
+                    nix::unistd::close(log_fd).ok();
+                    // Redirect stdin to /dev/null
+                    let devnull = nix::fcntl::open(
+                        "/dev/null",
+                        nix::fcntl::OFlag::O_RDONLY,
+                        nix::sys::stat::Mode::empty(),
+                    )
+                    .expect("open /dev/null");
+                    dup2(devnull, 0).expect("dup2 stdin");
+                    nix::unistd::close(devnull).ok();
+                    // Build env for execve
+                    let env_vec: Vec<std::ffi::CString> = env
+                        .iter()
+                        .map(|(k, v)| std::ffi::CString::new(format!("{k}={v}")).unwrap())
+                        .collect();
+                    let env_ptrs: Vec<&std::ffi::CStr> =
+                        env_vec.iter().map(|s| s.as_c_str()).collect();
+                    let arg_vec: Vec<std::ffi::CString> = args
+                        .iter()
+                        .map(|a| std::ffi::CString::new(a.as_str()).unwrap())
+                        .collect();
+                    let arg_ptrs: Vec<&std::ffi::CStr> =
+                        arg_vec.iter().map(|s| s.as_c_str()).collect();
+                    nix::unistd::execve(arg_ptrs[0], &arg_ptrs, &env_ptrs).expect("execve failed");
+                    #[allow(unreachable_code)]
+                    {
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Stop natively-running Envoy and brightstaff processes.
