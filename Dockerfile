@@ -1,4 +1,4 @@
-# Envoy version — keep in sync with cli/planoai/consts.py ENVOY_VERSION
+# Envoy version — keep in sync with crates/plano-cli/src/consts.rs ENVOY_VERSION
 ARG ENVOY_VERSION=v1.37.0
 
 # --- Dependency cache ---
@@ -21,10 +21,12 @@ RUN mkdir -p common/src && echo "" > common/src/lib.rs && \
     mkdir -p prompt_gateway/src && echo "#[no_mangle] pub fn _start() {}" > prompt_gateway/src/lib.rs && \
     mkdir -p llm_gateway/src && echo "#[no_mangle] pub fn _start() {}" > llm_gateway/src/lib.rs && \
     mkdir -p brightstaff/src && echo "fn main() {}" > brightstaff/src/main.rs && echo "" > brightstaff/src/lib.rs && \
-    mkdir -p plano-cli/src && echo "fn main() {}" > plano-cli/src/main.rs
+    mkdir -p plano-cli/src && echo "fn main() {}" > plano-cli/src/main.rs && \
+    mkdir -p plano-cli/templates && touch plano-cli/templates/.keep
 
 RUN cargo build --release --target wasm32-wasip1 -p prompt_gateway -p llm_gateway || true
 RUN cargo build --release -p brightstaff || true
+RUN cargo build --release -p plano-cli || true
 
 # --- WASM plugins ---
 FROM deps AS wasm-builder
@@ -45,17 +47,26 @@ COPY crates/brightstaff/src    brightstaff/src
 RUN find common hermesllm brightstaff -name "*.rs" -exec touch {} +
 RUN cargo build --release -p brightstaff
 
+# --- Plano CLI binary ---
+FROM deps AS cli-builder
+RUN rm -rf common/src hermesllm/src plano-cli/src plano-cli/templates
+COPY crates/common/src         common/src
+COPY crates/hermesllm/src      hermesllm/src
+COPY crates/plano-cli/src      plano-cli/src
+COPY crates/plano-cli/templates plano-cli/templates
+COPY crates/plano-cli/build.rs plano-cli/build.rs
+RUN find common hermesllm plano-cli -name "*.rs" -exec touch {} +
+RUN cargo build --release -p plano-cli
+
 FROM docker.io/envoyproxy/envoy:${ENVOY_VERSION} AS envoy
 
-FROM python:3.14-slim AS arch
+FROM debian:bookworm-slim AS arch
 
 RUN set -eux; \
   apt-get update; \
   apt-get upgrade -y; \
-  apt-get install -y --no-install-recommends gettext-base curl procps; \
+  apt-get install -y --no-install-recommends gettext-base curl procps supervisor; \
   apt-get clean; rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir supervisor
 
 # Remove PAM packages (CVE-2025-6020)
 RUN set -eux; \
@@ -67,25 +78,16 @@ COPY --from=envoy /usr/local/bin/envoy /usr/local/bin/envoy
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir uv
-
-COPY cli/pyproject.toml ./
-COPY cli/uv.lock ./
-COPY cli/README.md ./
 COPY config/plano_config_schema.yaml /config/plano_config_schema.yaml
 COPY config/envoy.template.yaml /config/envoy.template.yaml
 
-RUN pip install --no-cache-dir -e .
-
-COPY cli/planoai planoai/
-COPY config/envoy.template.yaml .
-COPY config/plano_config_schema.yaml .
 RUN mkdir -p /etc/supervisor/conf.d
 COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 COPY --from=wasm-builder /arch/target/wasm32-wasip1/release/prompt_gateway.wasm /etc/envoy/proxy-wasm-plugins/prompt_gateway.wasm
 COPY --from=wasm-builder /arch/target/wasm32-wasip1/release/llm_gateway.wasm /etc/envoy/proxy-wasm-plugins/llm_gateway.wasm
 COPY --from=brightstaff-builder /arch/target/release/brightstaff /app/brightstaff
+COPY --from=cli-builder /arch/target/release/planoai /usr/local/bin/planoai
 
 RUN mkdir -p /var/log/supervisor && \
     touch /var/log/envoy.log /var/log/supervisor/supervisord.log \

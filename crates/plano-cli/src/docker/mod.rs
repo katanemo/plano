@@ -34,10 +34,9 @@ pub async fn validate_config(plano_config_path: &Path) -> Result<()> {
         "-v".to_string(),
         format!("{}:/app/plano_config.yaml:ro", abs_path.display()),
         "--entrypoint".to_string(),
-        "python".to_string(),
+        "planoai".to_string(),
         plano_docker_image(),
-        "-m".to_string(),
-        "planoai.config_generator".to_string(),
+        "render-config".to_string(),
     ];
 
     let output = Command::new(&args[0]).args(&args[1..]).output()?;

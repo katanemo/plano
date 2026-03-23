@@ -3,6 +3,7 @@ pub mod cli_agent;
 pub mod down;
 pub mod init;
 pub mod logs;
+pub mod render_config;
 pub mod self_update;
 pub mod up;
 pub mod validate;
@@ -145,6 +146,10 @@ pub enum Command {
         path: String,
     },
 
+    /// Render config files (used by Docker/supervisord)
+    #[command(name = "render-config")]
+    RenderConfig,
+
     /// Update planoai to the latest version
     #[command(name = "self-update")]
     SelfUpdate {
@@ -273,6 +278,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             list_templates,
         }) => init::run(template, clean, output, force, list_templates).await,
         Some(Command::Validate { file, path }) => validate::run(file, &path).await,
+        Some(Command::RenderConfig) => render_config::run().await,
         Some(Command::SelfUpdate { version }) => self_update::run(version.as_deref()).await,
     }
 }
