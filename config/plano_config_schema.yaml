@@ -285,6 +285,9 @@ properties:
       agent_orchestration_model:
         type: string
         description: "Model name for the agent orchestrator (e.g., 'Plano-Orchestrator'). Must match a model in model_providers."
+      enable_token_counting:
+        type: boolean
+        description: "Enable tiktoken-based input token counting for metrics and rate limiting. Default is false."
   system_prompt:
     type: string
   prompt_targets:

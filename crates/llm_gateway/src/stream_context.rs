@@ -48,7 +48,7 @@ pub struct StreamContext {
     ttft_time: Option<u128>,
     traceparent: Option<String>,
     request_body_sent_time: Option<u128>,
-    _overrides: Rc<Option<Overrides>>,
+    overrides: Rc<Option<Overrides>>,
     user_message: Option<String>,
     upstream_status_code: Option<StatusCode>,
     binary_frame_decoder: Option<BedrockBinaryFrameDecoder<bytes::BytesMut>>,
@@ -66,7 +66,7 @@ impl StreamContext {
     ) -> Self {
         StreamContext {
             metrics,
-            _overrides: overrides,
+            overrides,
             ratelimit_selector: None,
             streaming_response: false,
             response_tokens: 0,
@@ -269,22 +269,29 @@ impl StreamContext {
         model: &str,
         json_string: &str,
     ) -> Result<(), ratelimit::Error> {
-        // Tokenize and record token count.
-        let token_count = tokenizer::token_count(model, json_string).unwrap_or(0);
+        let use_tiktoken = (*self.overrides)
+            .as_ref()
+            .and_then(|o| o.enable_token_counting)
+            .unwrap_or(false);
+
+        let token_count = if use_tiktoken {
+            tokenizer::token_count(model, json_string).unwrap_or(0)
+        } else {
+            json_string.len() / 4
+        };
 
         debug!(
-            "request_id={}: token count, model='{}' input_tokens={}",
+            "request_id={}: token count, model='{}' input_tokens={} method={}",
             self.request_identifier(),
             model,
-            token_count
+            token_count,
+            if use_tiktoken { "tiktoken" } else { "estimate" }
         );
 
-        // Record the token count to metrics.
         self.metrics
             .input_sequence_length
             .record(token_count as u64);
 
-        // Check if rate limiting needs to be applied.
         if let Some(selector) = self.ratelimit_selector.take() {
             info!(
                 "request_id={}: ratelimit check, model='{}' selector='{}:{}'",

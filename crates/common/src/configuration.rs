@@ -131,6 +131,7 @@ pub struct Overrides {
     pub use_agent_orchestrator: Option<bool>,
     pub llm_routing_model: Option<String>,
     pub agent_orchestration_model: Option<String>,
+    pub enable_token_counting: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
