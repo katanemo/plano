@@ -9,6 +9,34 @@ use crate::config::validation::validate_prompt_config;
 use crate::consts::DEFAULT_OTEL_TRACING_GRPC_ENDPOINT;
 use crate::utils::expand_env_vars;
 
+/// Custom Tera filter that mimics Jinja2's indent() behavior:
+/// indents all lines except the first by the given width.
+fn jinja_indent_filter(
+    value: &tera::Value,
+    args: &HashMap<String, tera::Value>,
+) -> tera::Result<tera::Value> {
+    let s = tera::try_get_value!("indent", "value", String, value);
+    let width = match args.get("width") {
+        Some(w) => tera::try_get_value!("indent", "width", usize, w),
+        None => match args.get("0") {
+            Some(w) => tera::try_get_value!("indent", "0", usize, w),
+            None => 0,
+        },
+    };
+    let prefix = " ".repeat(width);
+    let mut result = String::new();
+    for (i, line) in s.lines().enumerate() {
+        if i > 0 {
+            result.push('\n');
+            if !line.is_empty() {
+                result.push_str(&prefix);
+            }
+        }
+        result.push_str(line);
+    }
+    Ok(tera::Value::String(result))
+}
+
 const SUPPORTED_PROVIDERS_WITH_BASE_URL: &[&str] =
     &["azure_openai", "ollama", "qwen", "amazon_bedrock", "plano"];
 
@@ -709,9 +737,12 @@ pub fn validate_and_render(
         .unwrap_or("envoy.template.yaml");
 
     let mut tera = tera::Tera::default();
+    // Register custom jinja2-compatible indent filter (skips first line)
+    tera.register_filter("indent", jinja_indent_filter);
+
     let template_content = std::fs::read_to_string(template_path)?;
     // Convert Jinja2 syntax to Tera syntax
-    // indent(N) → indent(width=N)
+    // indent(N) → indent(width=N) — our custom filter reads the width arg
     let template_content = regex::Regex::new(r"indent\((\d+)\)")
         .unwrap()
         .replace_all(&template_content, "indent(width=$1)")
