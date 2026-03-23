@@ -17,10 +17,9 @@ Follow this guide to learn how to quickly set up Plano and integrate it into you
 Prerequisites
 -------------
 
-Plano runs **natively** by default — no Docker or Rust toolchain required. Pre-compiled binaries are downloaded automatically on first run.
+Plano runs **natively** by default — no Docker or Python required. Pre-compiled binaries are downloaded automatically on first run.
 
-1. `Python <https://www.python.org/downloads/>`_ (v3.10+)
-2. Supported platforms: Linux (x86_64, aarch64), macOS (Apple Silicon)
+Supported platforms: Linux (x86_64, aarch64), macOS (Apple Silicon)
 
 **Docker mode** (optional):
 
@@ -29,29 +28,13 @@ If you prefer to run inside Docker, add ``--docker`` to ``planoai up`` / ``plano
 1. `Docker System <https://docs.docker.com/get-started/get-docker/>`_ (v24)
 2. `Docker Compose <https://docs.docker.com/compose/install/>`_ (v2.29)
 
-Plano's CLI allows you to manage and interact with the Plano efficiently. To install the CLI, simply run the following command:
-
-.. tip::
-
-   We recommend using **uv** for fast, reliable Python package management. Install uv if you haven't already:
-
-   .. code-block:: console
-
-      $ curl -LsSf https://astral.sh/uv/install.sh | sh
-
-**Option 1: Install planoai with uv (Recommended)**
+**Install the Plano CLI**
 
 .. code-block:: console
 
-   $ uv tool install planoai==0.4.14
+   $ curl -fsSL https://raw.githubusercontent.com/katanemo/plano/main/install.sh | bash
 
-**Option 2: Install with pip (Traditional)**
-
-.. code-block:: console
-
-   $ python -m venv venv
-   $ source venv/bin/activate   # On Windows, use: venv\Scripts\activate
-   $ pip install planoai==0.4.14
+This downloads the latest ``planoai`` binary and installs it to ``~/.plano/bin/``. Follow the on-screen instructions to add it to your PATH.
 
 
 .. _llm_routing_quickstart:
