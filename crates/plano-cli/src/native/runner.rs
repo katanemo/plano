@@ -313,8 +313,9 @@ pub async fn start_native(
     Ok(())
 }
 
-/// Double-fork daemon execution. Returns the grandchild PID.
+/// Spawn a detached daemon process. Returns the child PID.
 fn daemon_exec(args: &[String], env: &HashMap<String, String>, log_path: &Path) -> Result<i32> {
+    use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
     let log_file = fs::File::create(log_path)?;
@@ -325,6 +326,7 @@ fn daemon_exec(args: &[String], env: &HashMap<String, String>, log_path: &Path) 
         .stdin(Stdio::null())
         .stdout(log_file.try_clone()?)
         .stderr(log_file)
+        .process_group(0) // detach from parent's process group
         .spawn()?;
 
     Ok(child.id() as i32)
