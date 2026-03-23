@@ -313,21 +313,29 @@ pub async fn start_native(
     Ok(())
 }
 
-/// Spawn a detached daemon process. Returns the child PID.
+/// Spawn a fully detached daemon process. Returns the child PID.
 fn daemon_exec(args: &[String], env: &HashMap<String, String>, log_path: &Path) -> Result<i32> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
     let log_file = fs::File::create(log_path)?;
 
-    let child = Command::new(&args[0])
-        .args(&args[1..])
-        .envs(env)
-        .stdin(Stdio::null())
-        .stdout(log_file.try_clone()?)
-        .stderr(log_file)
-        .process_group(0) // detach from parent's process group
-        .spawn()?;
+    // SAFETY: setsid() is async-signal-safe and called before exec
+    let child = unsafe {
+        Command::new(&args[0])
+            .args(&args[1..])
+            .envs(env)
+            .stdin(Stdio::null())
+            .stdout(log_file.try_clone()?)
+            .stderr(log_file)
+            .pre_exec(|| {
+                // Create a new session so the child doesn't get SIGHUP/SIGTERM
+                // when the parent shell exits
+                nix::unistd::setsid().map_err(std::io::Error::other)?;
+                Ok(())
+            })
+            .spawn()?
+    };
 
     Ok(child.id() as i32)
 }

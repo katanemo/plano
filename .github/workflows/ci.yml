@@ -78,7 +78,9 @@ jobs:
       - name: Start plano natively
         env:
           OPENAI_API_KEY: test-key-not-used
-        run: crates/target/release/planoai up tests/e2e/config_native_smoke.yaml
+        run: |
+          crates/target/release/planoai up tests/e2e/config_native_smoke.yaml
+          sleep 2
 
       - name: Health check
         run: |
