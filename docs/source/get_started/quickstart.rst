@@ -36,6 +36,13 @@ If you prefer to run inside Docker, add ``--docker`` to ``planoai up`` / ``plano
 
 This downloads the latest ``planoai`` binary and installs it to ``~/.plano/bin/``. Follow the on-screen instructions to add it to your PATH.
 
+**Building from source** (for contributors):
+
+.. code-block:: console
+
+   $ cd crates && cargo build --release -p plano-cli
+   $ export PATH="$(pwd)/target/release:$PATH"
+
 
 .. _llm_routing_quickstart:
 

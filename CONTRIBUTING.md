@@ -61,18 +61,21 @@ The pre-commit hooks will automatically run:
 - Linting checks (Rust with `cargo clippy`)
 - Rust unit tests
 
-### 5. Setup the planoai CLI
+### 5. Build the planoai CLI
 
-The planoai CLI is used to build, run, and manage Plano locally:
+The planoai CLI is used to build, run, and manage Plano locally. Build it from source:
 
 ```bash
-cd cli
-uv sync
+cd crates && cargo build --release -p plano-cli
 ```
 
-This creates a virtual environment in `.venv` and installs all dependencies.
+Then add it to your PATH:
 
-Now you can use `planoai` commands from anywhere, or use `uv run planoai` from the `cli` directory.
+```bash
+export PATH="$(pwd)/crates/target/release:$PATH"
+```
+
+Add the export line to your `~/.bashrc` or `~/.zshrc` to make it permanent. You can now use `planoai` commands from anywhere.
 
 ### 6. Create a Branch
 
