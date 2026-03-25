@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::metrics::Metrics;
-use common::configuration::{LlmProvider, LlmProviderType, Overrides};
+use common::configuration::{LlmProvider, LlmProviderType, Overrides, TokenCountingStrategy};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, ARCH_ROUTING_HEADER, HEALTHZ_PATH,
     RATELIMIT_SELECTOR_HEADER_KEY, REQUEST_ID_HEADER, TRACE_PARENT_HEADER,
@@ -269,15 +269,25 @@ impl StreamContext {
         model: &str,
         json_string: &str,
     ) -> Result<(), ratelimit::Error> {
-        let use_tiktoken = (*self.overrides)
+        let strategy = (*self.overrides)
             .as_ref()
-            .and_then(|o| o.enable_token_counting)
-            .unwrap_or(false);
+            .and_then(|o| o.token_counting_strategy.clone())
+            .unwrap_or_default();
 
-        let token_count = if use_tiktoken {
-            tokenizer::token_count(model, json_string).unwrap_or(0)
-        } else {
-            json_string.len() / 4
+        let (token_count, method) = match strategy {
+            TokenCountingStrategy::Auto => {
+                let provider_id = self.get_provider_id();
+                match provider_id {
+                    ProviderId::OpenAI => (
+                        tokenizer::token_count(model, json_string).unwrap_or(json_string.len() / 4),
+                        "tiktoken",
+                    ),
+                    // Future: add provider-specific tokenizers here
+                    // ProviderId::Mistral => (mistral_tokenizer::count(...), "mistral"),
+                    _ => (json_string.len() / 4, "estimate"),
+                }
+            }
+            TokenCountingStrategy::Estimate => (json_string.len() / 4, "estimate"),
         };
 
         debug!(
@@ -285,7 +295,7 @@ impl StreamContext {
             self.request_identifier(),
             model,
             token_count,
-            if use_tiktoken { "tiktoken" } else { "estimate" }
+            method
         );
 
         self.metrics

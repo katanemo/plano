@@ -285,9 +285,14 @@ properties:
       agent_orchestration_model:
         type: string
         description: "Model name for the agent orchestrator (e.g., 'Plano-Orchestrator'). Must match a model in model_providers."
-      enable_token_counting:
-        type: boolean
-        description: "Enable tiktoken-based input token counting for metrics and rate limiting. Default is false."
+      token_counting_strategy:
+        type: string
+        enum: [estimate, auto]
+        description: >
+          Strategy for counting input tokens used in metrics and rate limiting.
+          "estimate" (default): fast character-based approximation (~1 token per 4 chars).
+          "auto": uses the best available tokenizer for each provider (e.g., tiktoken for
+          OpenAI models), falling back to estimate for unsupported providers.
   system_prompt:
     type: string
   prompt_targets:
