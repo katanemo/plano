@@ -75,7 +75,10 @@ pub trait Client: Context {
     fn add_call_context(&self, id: u32, call_context: Self::CallContext) {
         let callouts = self.callouts();
         if callouts.borrow_mut().insert(id, call_context).is_some() {
-            panic!("Duplicate http call with id={}", id);
+            log::warn!(
+                "Duplicate http call with id={}, previous context overwritten",
+                id
+            );
         }
         self.active_http_calls().increment(1);
     }

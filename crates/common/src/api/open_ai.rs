@@ -2,7 +2,6 @@ use crate::{
     configuration::LlmProvider,
     consts::{ARCH_FC_MODEL_NAME, ASSISTANT_ROLE},
 };
-use core::{panic, str};
 use serde::{ser::SerializeMap, Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
@@ -193,7 +192,7 @@ impl Display for ContentType {
                             // skip image URLs or their data in text representation
                             None
                         } else {
-                            panic!("Unsupported content type: {:?}", part.content_type);
+                            None
                         }
                     })
                     .collect();
