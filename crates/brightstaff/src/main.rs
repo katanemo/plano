@@ -162,15 +162,9 @@ async fn init_app_state(
         .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
-    let session_ttl_seconds = config
-        .routing
-        .as_ref()
-        .and_then(|r| r.session_ttl_seconds);
+    let session_ttl_seconds = config.routing.as_ref().and_then(|r| r.session_ttl_seconds);
 
-    let session_max_entries = config
-        .routing
-        .as_ref()
-        .and_then(|r| r.session_max_entries);
+    let session_max_entries = config.routing.as_ref().and_then(|r| r.session_max_entries);
 
     let router_service = Arc::new(RouterService::new(
         config.model_providers.clone(),

@@ -4,18 +4,18 @@
 
 ## Why Session Pinning?
 
-When an agent runs in a loop — research → plan → implement → review → refine — each iteration hits Plano's router independently. Since the prompts vary in intent, the router may select **different models** for each step, breaking consistency mid-workflow.
+When an agent runs in a loop — research → analyse → implement → evaluate → summarise — each step hits Plano's router independently. Because prompts vary in intent, the router may select **different models** for each step, fragmenting context mid-session.
 
-**Session pinning** solves this: send an `X-Session-Id` header and the first request runs routing as usual, caching the decision. Every subsequent request with the same session ID returns the **same model** instantly (`"pinned": true`), without re-running the router.
+**Session pinning** solves this: send an `X-Session-Id` header and the first request runs routing as usual, caching the decision. Every subsequent request with the same session ID returns the **same model**, without re-running the router.
 
 ```
 Without pinning                          With pinning (X-Session-Id)
-─────────────────                        ───────────────────────────
-Step 1 → Claude (code_generation)        Step 1 → Claude (code_generation) ← routed
-Step 2 → GPT-4o (complex_reasoning)      Step 2 → Claude (pinned ✓)
-Step 3 → Claude (code_generation)        Step 3 → Claude (pinned ✓)
-Step 4 → GPT-4o (complex_reasoning)      Step 4 → Claude (pinned ✓)
-Step 5 → Claude (code_generation)        Step 5 → Claude (pinned ✓)
+─────────────────                        ──────────────────────────
+Step 1 → claude-sonnet  (code_gen)       Step 1 → claude-sonnet  ← routed
+Step 2 → gpt-4o         (reasoning)      Step 2 → claude-sonnet  ← pinned ✓
+Step 3 → claude-sonnet  (code_gen)       Step 3 → claude-sonnet  ← pinned ✓
+Step 4 → gpt-4o         (reasoning)      Step 4 → claude-sonnet  ← pinned ✓
+Step 5 → claude-sonnet  (code_gen)       Step 5 → claude-sonnet  ← pinned ✓
        ↑ model switches every step                ↑ one model, start to finish
 ```
 
@@ -32,53 +32,106 @@ export ANTHROPIC_API_KEY=<your-key>
 cd demos/llm_routing/session_pinning
 planoai up config.yaml
 
-# 3. Run the demo
-./demo.sh          # or: python3 demo.py
+# 3. Run the demo (uv manages dependencies automatically)
+./demo.sh          # or: uv run demo.py
 ```
 
 ---
 
 ## What the Demo Does
 
-The script simulates an agent building a task management app in **5 iterative steps**, deliberately mixing intents:
+A **Database Research Agent** investigates whether to use PostgreSQL or MongoDB
+for an e-commerce platform. It runs 5 steps, each building on prior findings via
+accumulated message history. Steps alternate between `code_generation` and
+`complex_reasoning` intents so Plano routes to different models without pinning.
 
-| Step | Prompt | Intent |
-|:----:|--------|--------|
-| 1 | Design a REST API schema for a task management app… | code generation |
-| 2 | Analyze SQL vs NoSQL trade-offs for this system… | complex reasoning |
-| 3 | Write the SQLAlchemy database models… | code generation |
-| 4 | Review the API design for security vulnerabilities… | complex reasoning |
-| 5 | Implement JWT authentication middleware… | code generation |
+| Step | Task | Intent |
+|:----:|------|--------|
+| 1 | List technical requirements | code_generation → claude-sonnet |
+| 2 | Compare PostgreSQL vs MongoDB | complex_reasoning → gpt-4o |
+| 3 | Write schema (CREATE TABLE) | code_generation → claude-sonnet |
+| 4 | Assess scalability trade-offs | complex_reasoning → gpt-4o |
+| 5 | Write final recommendation report | code_generation → claude-sonnet |
 
-It runs this loop **twice** against the `/routing/v1/chat/completions` endpoint (routing decisions only — no actual LLM calls):
+The demo runs the loop **twice** against `/v1/chat/completions` using the
+[OpenAI SDK](https://github.com/openai/openai-python):
 
-1. **Without pinning** — no `X-Session-Id` header; models switch between steps
-2. **With pinning** — `X-Session-Id` header included; the model selected in step 1 is reused for all 5 steps
+1. **Without pinning** — no `X-Session-Id`; models alternate per step
+2. **With pinning** — `X-Session-Id` header included; model is pinned from step 1
+
+Each step makes real LLM calls. Step 5's report explicitly references findings
+from earlier steps, demonstrating why coherent context requires a consistent model.
 
 ### Expected Output
 
 ```
-══════════════════════════════════════════════════════════════════
   Run 1: WITHOUT Session Pinning
-──────────────────────────────────────────────────────────────────
-  Step 1: Design a REST API schema…        → anthropic/claude-sonnet-4-20250514
-  Step 2: Analyze SQL vs NoSQL…            → openai/gpt-4o
-  Step 3: Write SQLAlchemy models…         → anthropic/claude-sonnet-4-20250514
-  Step 4: Review API for security…         → openai/gpt-4o
-  Step 5: Implement JWT auth…              → anthropic/claude-sonnet-4-20250514
+  ─────────────────────────────────────────────────────────────────────
+  step 1  [claude-sonnet-4-20250514]  List requirements
+          "Critical requirements: 1. ACID transactions for order integrity…"
 
-  ✗ Models varied: anthropic/claude-sonnet-4-20250514, openai/gpt-4o
+  step 2  [gpt-4o                 ]  Compare databases    ← switched
+          "PostgreSQL excels at joins and ACID guarantees…"
 
-══════════════════════════════════════════════════════════════════
-  Run 2: WITH Session Pinning (X-Session-Id: a1b2c3d4-…)
-──────────────────────────────────────────────────────────────────
-  Step 1: Design a REST API schema…        → anthropic/claude-sonnet-4-20250514  (pinned=false)
-  Step 2: Analyze SQL vs NoSQL…            → anthropic/claude-sonnet-4-20250514  (pinned=true)
-  Step 3: Write SQLAlchemy models…         → anthropic/claude-sonnet-4-20250514  (pinned=true)
-  Step 4: Review API for security…         → anthropic/claude-sonnet-4-20250514  (pinned=true)
-  Step 5: Implement JWT auth…              → anthropic/claude-sonnet-4-20250514  (pinned=true)
+  step 3  [claude-sonnet-4-20250514]  Write schema        ← switched
+          "CREATE TABLE orders (\n  id SERIAL PRIMARY KEY…"
 
-  ✓ All 5 steps routed to anthropic/claude-sonnet-4-20250514
+  step 4  [gpt-4o                 ]  Assess scalability   ← switched
+          "At high write volume, PostgreSQL row-level locking…"
+
+  step 5  [claude-sonnet-4-20250514]  Write report        ← switched
+          "RECOMMENDATION: PostgreSQL is the right choice…"
+
+  ✗  Without pinning: model switched 4 time(s) — gpt-4o, claude-sonnet-4-20250514
+
+
+  Run 2: WITH Session Pinning  (X-Session-Id: a1b2c3d4…)
+  ─────────────────────────────────────────────────────────────────────
+  step 1  [claude-sonnet-4-20250514]  List requirements
+          "Critical requirements: 1. ACID transactions for order integrity…"
+
+  step 2  [claude-sonnet-4-20250514]  Compare databases
+          "Building on the requirements I just outlined: PostgreSQL…"
+
+  step 3  [claude-sonnet-4-20250514]  Write schema
+          "Following the comparison above, here is the PostgreSQL schema…"
+
+  step 4  [claude-sonnet-4-20250514]  Assess scalability
+          "Given the schema I designed, PostgreSQL's row-level locking…"
+
+  step 5  [claude-sonnet-4-20250514]  Write report
+          "RECOMMENDATION: Based on my analysis of requirements, comparison…"
+
+  ✓  With pinning: claude-sonnet-4-20250514 held for all 5 steps
+
+  ══ Final Report (pinned session) ═════════════════════════════════════
+  RECOMMENDATION: Based on my analysis of requirements, the head-to-head
+  comparison, the schema I designed, and the scalability trade-offs…
+  ══════════════════════════════════════════════════════════════════════
+```
+
+### How It Works
+
+Session pinning is implemented in brightstaff. When `X-Session-Id` is present:
+
+1. **First request** — routing runs normally, result is cached keyed by session ID
+2. **Subsequent requests** — cache hit skips routing and returns the cached model instantly
+
+The `X-Session-Id` header is forwarded transparently; no changes to your OpenAI
+SDK calls beyond adding the header.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:12000/v1", api_key="EMPTY")
+
+session_id = str(uuid.uuid4())
+
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": prompt}],
+    extra_headers={"X-Session-Id": session_id},  # pin the session
+)
 ```
 
 ---
@@ -93,10 +146,11 @@ routing:
   session_max_entries: 10000    # Max cached sessions before LRU eviction
 ```
 
-Without the `X-Session-Id` header, routing runs fresh every time — no breaking change to existing clients.
+Without the `X-Session-Id` header, routing runs fresh every time — no breaking
+change to existing clients.
 
 ---
 
 ## See Also
 
-- [Model Routing Service Demo](../model_routing_service/) — curl-based examples of the routing endpoint and session pinning
+- [Model Routing Service Demo](../model_routing_service/) — curl-based examples of the routing endpoint
