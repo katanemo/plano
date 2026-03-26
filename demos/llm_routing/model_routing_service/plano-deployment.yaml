@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plano
+  labels:
+    app: plano
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plano
+  template:
+    metadata:
+      labels:
+        app: plano
+    spec:
+      containers:
+        - name: plano
+          image: katanemo/plano:0.4.12
+          ports:
+            - containerPort: 12000  # LLM gateway (chat completions, model routing)
+              name: llm-gateway
+          envFrom:
+            - secretRef:
+                name: plano-secrets
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - name: plano-config
+              mountPath: /app/plano_config.yaml
+              subPath: plano_config.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 12000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 12000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+      volumes:
+        - name: plano-config
+          configMap:
+            name: plano-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plano
+spec:
+  selector:
+    app: plano
+  ports:
+    - name: llm-gateway
+      port: 12000
+      targetPort: 12000

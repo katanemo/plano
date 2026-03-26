@@ -30,9 +30,9 @@ listeners:
 - address: 0.0.0.0
   agents:
   - description: virtual assistant for retrieval augmented generation tasks
-    filter_chain:
-    - input_guards
     id: rag_agent
+    input_filters:
+    - input_guards
   name: travel_booking_service
   port: 8001
   router: plano_orchestrator_v1
@@ -107,11 +107,11 @@ model_providers:
 - internal: true
   model: Arch-Function
   name: arch-function
-  provider_interface: arch
+  provider_interface: plano
 - internal: true
   model: Plano-Orchestrator
-  name: plano-orchestrator
-  provider_interface: arch
+  name: plano/orchestrator
+  provider_interface: plano
 prompt_targets:
 - description: Get current weather at a location.
   endpoint:

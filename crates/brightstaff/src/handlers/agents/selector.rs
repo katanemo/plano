@@ -7,7 +7,7 @@ use common::configuration::{
 use hermesllm::apis::openai::Message;
 use tracing::{debug, warn};
 
-use crate::router::plano_orchestrator::OrchestratorService;
+use crate::router::orchestrator::OrchestratorService;
 
 /// Errors that can occur during agent selection
 #[derive(Debug, thiserror::Error)]
@@ -37,7 +37,7 @@ impl AgentSelector {
     }
 
     /// Find listener by name from the request headers
-    pub async fn find_listener(
+    pub fn find_listener(
         &self,
         listener_name: Option<&str>,
         listeners: &[common::configuration::Listener],
@@ -84,7 +84,7 @@ impl AgentSelector {
     }
 
     /// Convert agent descriptions to orchestration preferences
-    async fn convert_agent_description_to_orchestration_preferences(
+    fn convert_agent_description_to_orchestration_preferences(
         &self,
         agents: &[AgentFilterChain],
     ) -> Vec<AgentUsagePreference> {
@@ -121,9 +121,7 @@ impl AgentSelector {
             return Ok(vec![agents[0].clone()]);
         }
 
-        let usage_preferences = self
-            .convert_agent_description_to_orchestration_preferences(agents)
-            .await;
+        let usage_preferences = self.convert_agent_description_to_orchestration_preferences(agents);
         debug!(
             "Agents usage preferences for orchestration: {}",
             serde_json::to_string(&usage_preferences).unwrap_or_default()
@@ -172,12 +170,13 @@ impl AgentSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::configuration::{AgentFilterChain, Listener};
+    use common::configuration::{AgentFilterChain, Listener, ListenerType};
 
     fn create_test_orchestrator_service() -> Arc<OrchestratorService> {
         Arc::new(OrchestratorService::new(
             "http://localhost:8080".to_string(),
             "test-model".to_string(),
+            "plano-orchestrator".to_string(),
         ))
     }
 
@@ -186,14 +185,17 @@ mod tests {
             id: name.to_string(),
             description: Some(description.to_string()),
             default: Some(is_default),
-            filter_chain: Some(vec![name.to_string()]),
+            input_filters: Some(vec![name.to_string()]),
         }
     }
 
     fn create_test_listener(name: &str, agents: Vec<AgentFilterChain>) -> Listener {
         Listener {
+            listener_type: ListenerType::Agent,
             name: name.to_string(),
             agents: Some(agents),
+            input_filters: None,
+            output_filters: None,
             port: 8080,
             router: None,
         }
@@ -218,9 +220,7 @@ mod tests {
         let listener2 = create_test_listener("other-listener", vec![]);
         let listeners = vec![listener1.clone(), listener2];
 
-        let result = selector
-            .find_listener(Some("test-listener"), &listeners)
-            .await;
+        let result = selector.find_listener(Some("test-listener"), &listeners);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap().name, "test-listener");
@@ -233,9 +233,7 @@ mod tests {
 
         let listeners = vec![create_test_listener("other-listener", vec![])];
 
-        let result = selector
-            .find_listener(Some("nonexistent"), &listeners)
-            .await;
+        let result = selector.find_listener(Some("nonexistent"), &listeners);
 
         assert!(result.is_err());
         matches!(

@@ -89,7 +89,7 @@ def convert_legacy_listeners(
 ) -> tuple[list, dict | None, dict | None]:
     llm_gateway_listener = {
         "name": "egress_traffic",
-        "type": "model_listener",
+        "type": "model",
         "port": 12000,
         "address": "0.0.0.0",
         "timeout": "30s",
@@ -98,7 +98,7 @@ def convert_legacy_listeners(
 
     prompt_gateway_listener = {
         "name": "ingress_traffic",
-        "type": "prompt_listener",
+        "type": "prompt",
         "port": 10000,
         "address": "0.0.0.0",
         "timeout": "30s",

@@ -1,15 +1,11 @@
-import asyncio
 import json
-import time
 from typing import List, Optional, Dict, Any
-import uuid
-from fastapi import FastAPI, Depends, Request
 from fastmcp.exceptions import ToolError
 from openai import AsyncOpenAI
 import os
 import logging
 
-from .api import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
+from .api import ChatMessage
 from . import mcp
 from fastmcp.server.dependencies import get_http_headers
 
@@ -29,8 +25,6 @@ plano_client = AsyncOpenAI(
     base_url=LLM_GATEWAY_ENDPOINT,
     api_key="EMPTY",  # Plano doesn't require a real API key
 )
-
-app = FastAPI()
 
 
 async def validate_query_scope(
@@ -127,12 +121,14 @@ Respond in JSON format:
 
 
 @mcp.tool
-async def input_guards(messages: List[ChatMessage]) -> List[ChatMessage]:
+async def input_guards(body: dict, path: str) -> dict:
     """Input guard that validates queries are within TechCorp's domain.
 
-    If the query is out of scope, replaces the user message with a rejection notice.
+    Receives the full request body dict and the API path hint (e.g. /v1/chat/completions).
+    If the query is out of scope, raises a ToolError to block the request.
     """
-    logger.info(f"Received request with {len(messages)} messages")
+    messages = [ChatMessage(**m) for m in body.get("messages", [])]
+    logger.info(f"Received request with {len(messages)} messages at path {path}")
 
     # Get traceparent header from HTTP request using FastMCP's dependency function
     headers = get_http_headers()
@@ -153,9 +149,8 @@ async def input_guards(messages: List[ChatMessage]) -> List[ChatMessage]:
         reason = validation_result.get("reason", "Query is outside TechCorp's domain")
         logger.warning(f"Query rejected: {reason}")
 
-        # Throw ToolError
         error_message = f"I apologize, but I can only assist with questions related to TechCorp and its services. Your query appears to be outside this scope. {reason}\n\nPlease ask me about TechCorp's products, services, pricing, SLAs, or technical support."
         raise ToolError(error_message)
 
     logger.info("Query validation passed - forwarding to next filter")
-    return messages
+    return body

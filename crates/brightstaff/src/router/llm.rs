@@ -4,15 +4,16 @@ use common::{
     configuration::{LlmProvider, ModelUsagePreference, RoutingPreference},
     consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER},
 };
-use hermesllm::apis::openai::{ChatCompletionsResponse, Message};
+use hermesllm::apis::openai::Message;
 use hyper::header;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use crate::router::router_model_v1::{self};
-
+use super::http::{self, post_and_extract_content};
 use super::router_model::RouterModel;
+
+use crate::router::router_model_v1;
 
 const DEFAULT_SESSION_TTL_SECONDS: u64 = 600;
 const DEFAULT_SESSION_MAX_ENTRIES: usize = 10_000;
@@ -28,7 +29,6 @@ pub struct RouterService {
     router_url: String,
     client: reqwest::Client,
     router_model: Arc<dyn RouterModel>,
-    #[allow(dead_code)]
     routing_provider_name: String,
     llm_usage_defined: bool,
     session_cache: RwLock<HashMap<String, CachedRoute>>,
@@ -38,11 +38,8 @@ pub struct RouterService {
 
 #[derive(Debug, Error)]
 pub enum RoutingError {
-    #[error("Failed to send request: {0}")]
-    RequestError(#[from] reqwest::Error),
-
-    #[error("Failed to parse JSON: {0}, JSON: {1}")]
-    JsonError(serde_json::Error, String),
+    #[error(transparent)]
+    Http(#[from] http::HttpError),
 
     #[error("Router model error: {0}")]
     RouterModelError(#[from] super::router_model::RoutingModelError),
@@ -119,7 +116,6 @@ impl RouterService {
     ) {
         let mut cache = self.session_cache.write().await;
         if cache.len() >= self.session_max_entries && !cache.contains_key(&session_id) {
-            // Evict the oldest entry
             if let Some(oldest_key) = cache
                 .iter()
                 .min_by_key(|(_, v)| v.cached_at)
@@ -164,7 +160,9 @@ impl RouterService {
             return Ok(None);
         }
 
-        if (usage_preferences.is_none() || usage_preferences.as_ref().unwrap().len() < 2)
+        if usage_preferences
+            .as_ref()
+            .is_none_or(|prefs| prefs.len() < 2)
             && !self.llm_usage_defined
         {
             return Ok(None);
@@ -180,88 +178,50 @@ impl RouterService {
             "sending request to arch-router"
         );
 
-        debug!(
-            body = %serde_json::to_string(&router_request).unwrap(),
-            "arch router request"
-        );
+        let body = serde_json::to_string(&router_request)
+            .map_err(super::router_model::RoutingModelError::from)?;
+        debug!(body = %body, "arch router request");
 
-        let mut llm_route_request_headers = header::HeaderMap::new();
-        llm_route_request_headers.insert(
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
         );
-
-        llm_route_request_headers.insert(
-            header::HeaderName::from_static(ARCH_PROVIDER_HINT_HEADER),
-            header::HeaderValue::from_str(&self.routing_provider_name).unwrap(),
-        );
-
-        llm_route_request_headers.insert(
-            header::HeaderName::from_static(TRACE_PARENT_HEADER),
-            header::HeaderValue::from_str(traceparent).unwrap(),
-        );
-
-        llm_route_request_headers.insert(
-            header::HeaderName::from_static(REQUEST_ID_HEADER),
-            header::HeaderValue::from_str(request_id).unwrap(),
-        );
-
-        llm_route_request_headers.insert(
+        if let Ok(val) = header::HeaderValue::from_str(&self.routing_provider_name) {
+            headers.insert(
+                header::HeaderName::from_static(ARCH_PROVIDER_HINT_HEADER),
+                val,
+            );
+        }
+        if let Ok(val) = header::HeaderValue::from_str(traceparent) {
+            headers.insert(header::HeaderName::from_static(TRACE_PARENT_HEADER), val);
+        }
+        if let Ok(val) = header::HeaderValue::from_str(request_id) {
+            headers.insert(header::HeaderName::from_static(REQUEST_ID_HEADER), val);
+        }
+        headers.insert(
             header::HeaderName::from_static("model"),
             header::HeaderValue::from_static("arch-router"),
         );
 
-        let start_time = std::time::Instant::now();
-        let res = self
-            .client
-            .post(&self.router_url)
-            .headers(llm_route_request_headers)
-            .body(serde_json::to_string(&router_request).unwrap())
-            .send()
-            .await?;
-
-        let body = res.text().await?;
-        let router_response_time = start_time.elapsed();
-
-        let chat_completion_response: ChatCompletionsResponse = match serde_json::from_str(&body) {
-            Ok(response) => response,
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    body = %serde_json::to_string(&body).unwrap(),
-                    "failed to parse json response"
-                );
-                return Err(RoutingError::JsonError(
-                    err,
-                    format!("Failed to parse JSON: {}", body),
-                ));
-            }
+        let Some((content, elapsed)) =
+            post_and_extract_content(&self.client, &self.router_url, headers, body).await?
+        else {
+            return Ok(None);
         };
 
-        if chat_completion_response.choices.is_empty() {
-            warn!(body = %body, "no choices in router response");
-            return Ok(None);
-        }
+        let parsed = self
+            .router_model
+            .parse_response(&content, &usage_preferences)?;
 
-        if let Some(content) = &chat_completion_response.choices[0].message.content {
-            let parsed_response = self
-                .router_model
-                .parse_response(content, &usage_preferences)?;
-            info!(
-                content = %content.replace("\n", "\\n"),
-                selected_model = ?parsed_response,
-                response_time_ms = router_response_time.as_millis(),
-                "arch-router determined route"
-            );
+        info!(
+            content = %content.replace("\n", "\\n"),
+            selected_model = ?parsed,
+            response_time_ms = elapsed.as_millis(),
+            "arch-router determined route"
+        );
 
-            if let Some(ref parsed_response) = parsed_response {
-                return Ok(Some(parsed_response.clone()));
-            }
-
-            Ok(None)
-        } else {
-            Ok(None)
-        }
+        Ok(parsed)
     }
 }
 
@@ -306,7 +266,6 @@ mod tests {
         let svc = make_router_service(0, 100);
         svc.cache_route("s1".to_string(), "gpt-4o".to_string(), None)
             .await;
-        // TTL is 0 seconds, so the entry should be expired immediately
         assert!(svc.get_cached_route("s1").await.is_none());
     }
 
@@ -329,12 +288,10 @@ mod tests {
         let svc = make_router_service(600, 2);
         svc.cache_route("s1".to_string(), "model-a".to_string(), None)
             .await;
-        // Small delay so s2 has a later cached_at
         tokio::time::sleep(Duration::from_millis(10)).await;
         svc.cache_route("s2".to_string(), "model-b".to_string(), None)
             .await;
 
-        // Cache is full (2 entries). Adding s3 should evict s1 (oldest).
         svc.cache_route("s3".to_string(), "model-c".to_string(), None)
             .await;
 
@@ -353,7 +310,6 @@ mod tests {
         svc.cache_route("s2".to_string(), "model-b".to_string(), None)
             .await;
 
-        // Updating s1 should not trigger eviction since key already exists
         svc.cache_route(
             "s1".to_string(),
             "model-a-updated".to_string(),

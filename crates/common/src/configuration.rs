@@ -35,14 +35,66 @@ pub struct AgentFilterChain {
     pub id: String,
     pub default: Option<bool>,
     pub description: Option<String>,
-    pub filter_chain: Option<Vec<String>>,
+    pub input_filters: Option<Vec<String>>,
+}
+
+/// A filter chain with its agent references resolved to concrete Agent objects.
+/// Bundles the ordered filter IDs with the agent lookup map so they stay in sync.
+#[derive(Debug, Clone, Default)]
+pub struct ResolvedFilterChain {
+    pub filter_ids: Vec<String>,
+    pub agents: HashMap<String, Agent>,
+}
+
+impl ResolvedFilterChain {
+    pub fn is_empty(&self) -> bool {
+        self.filter_ids.is_empty()
+    }
+
+    pub fn to_agent_filter_chain(&self, id: &str) -> AgentFilterChain {
+        AgentFilterChain {
+            id: id.to_string(),
+            default: None,
+            description: None,
+            input_filters: Some(self.filter_ids.clone()),
+        }
+    }
+}
+
+/// Holds resolved input and output filter chains for a model listener.
+#[derive(Debug, Clone, Default)]
+pub struct FilterPipeline {
+    pub input: Option<ResolvedFilterChain>,
+    pub output: Option<ResolvedFilterChain>,
+}
+
+impl FilterPipeline {
+    pub fn has_input_filters(&self) -> bool {
+        self.input.as_ref().is_some_and(|c| !c.is_empty())
+    }
+
+    pub fn has_output_filters(&self) -> bool {
+        self.output.as_ref().is_some_and(|c| !c.is_empty())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ListenerType {
+    Model,
+    Agent,
+    Prompt,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Listener {
+    #[serde(rename = "type")]
+    pub listener_type: ListenerType,
     pub name: String,
     pub router: Option<String>,
     pub agents: Option<Vec<AgentFilterChain>>,
+    pub input_filters: Option<Vec<String>>,
+    pub output_filters: Option<Vec<String>>,
     pub port: u16,
 }
 
@@ -67,6 +119,7 @@ pub struct Configuration {
     pub model_providers: Vec<LlmProvider>,
     pub model_aliases: Option<HashMap<String, ModelAlias>>,
     pub overrides: Option<Overrides>,
+    pub routing: Option<Routing>,
     pub system_prompt: Option<String>,
     pub prompt_guards: Option<PromptGuards>,
     pub prompt_targets: Option<Vec<PromptTarget>>,
@@ -74,7 +127,6 @@ pub struct Configuration {
     pub ratelimits: Option<Vec<Ratelimit>>,
     pub tracing: Option<Tracing>,
     pub mode: Option<GatewayMode>,
-    pub routing: Option<Routing>,
     pub agents: Option<Vec<Agent>>,
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,
@@ -86,6 +138,8 @@ pub struct Overrides {
     pub prompt_target_intent_matching_threshold: Option<f64>,
     pub optimize_context_window: Option<bool>,
     pub use_agent_orchestrator: Option<bool>,
+    pub llm_routing_model: Option<String>,
+    pub agent_orchestration_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -209,8 +263,6 @@ pub struct EmbeddingProviver {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum LlmProviderType {
-    #[serde(rename = "arch")]
-    Arch,
     #[serde(rename = "anthropic")]
     Anthropic,
     #[serde(rename = "deepseek")]
@@ -239,12 +291,13 @@ pub enum LlmProviderType {
     Qwen,
     #[serde(rename = "amazon_bedrock")]
     AmazonBedrock,
+    #[serde(rename = "plano")]
+    Plano,
 }
 
 impl Display for LlmProviderType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LlmProviderType::Arch => write!(f, "arch"),
             LlmProviderType::Anthropic => write!(f, "anthropic"),
             LlmProviderType::Deepseek => write!(f, "deepseek"),
             LlmProviderType::Groq => write!(f, "groq"),
@@ -259,6 +312,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Zhipu => write!(f, "zhipu"),
             LlmProviderType::Qwen => write!(f, "qwen"),
             LlmProviderType::AmazonBedrock => write!(f, "amazon_bedrock"),
+            LlmProviderType::Plano => write!(f, "plano"),
         }
     }
 }
@@ -593,14 +647,14 @@ mod test {
             },
             LlmProvider {
                 name: "arch-router".to_string(),
-                provider_interface: LlmProviderType::Arch,
+                provider_interface: LlmProviderType::Plano,
                 model: Some("Arch-Router".to_string()),
                 internal: Some(true),
                 ..Default::default()
             },
             LlmProvider {
                 name: "plano-orchestrator".to_string(),
-                provider_interface: LlmProviderType::Arch,
+                provider_interface: LlmProviderType::Plano,
                 model: Some("Plano-Orchestrator".to_string()),
                 internal: Some(true),
                 ..Default::default()

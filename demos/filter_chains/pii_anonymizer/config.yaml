@@ -1,0 +1,28 @@
+version: v0.3.0
+
+filters:
+  - id: pii_anonymizer
+    url: http://localhost:10501/anonymize
+    type: http
+  - id: pii_deanonymizer
+    url: http://localhost:10501/deanonymize
+    type: http
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
+
+listeners:
+  - type: model
+    name: llm_gateway
+    port: 12000
+    input_filters:
+      - pii_anonymizer
+    output_filters:
+      - pii_deanonymizer
+
+tracing:
+  random_sampling: 100

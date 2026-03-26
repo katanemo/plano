@@ -1,16 +1,21 @@
 use bytes::Bytes;
+use common::configuration::ResolvedFilterChain;
 use http_body_util::combinators::BoxBody;
 use http_body_util::StreamBody;
 use hyper::body::Frame;
+use hyper::header::HeaderMap;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::KeyValue;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::{info, warn, Instrument};
+use tracing::{debug, info, warn, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+use crate::handlers::agents::pipeline::{PipelineError, PipelineProcessor};
+
+const STREAM_BUFFER_SIZE: usize = 16;
 use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
 use crate::tracing::{llm, set_service_name, signals as signal_constants};
 use hermesllm::apis::openai::Message;
@@ -29,6 +34,21 @@ pub trait StreamProcessor: Send + 'static {
 
     /// Called when streaming encounters an error
     fn on_error(&mut self, _error: &str) {}
+}
+
+impl StreamProcessor for Box<dyn StreamProcessor> {
+    fn process_chunk(&mut self, chunk: Bytes) -> Result<Option<Bytes>, String> {
+        (**self).process_chunk(chunk)
+    }
+    fn on_first_bytes(&mut self) {
+        (**self).on_first_bytes()
+    }
+    fn on_complete(&mut self) {
+        (**self).on_complete()
+    }
+    fn on_error(&mut self, error: &str) {
+        (**self).on_error(error)
+    }
 }
 
 /// A processor that tracks streaming metrics
@@ -206,16 +226,12 @@ pub struct StreamingResponse {
     pub processor_handle: tokio::task::JoinHandle<()>,
 }
 
-pub fn create_streaming_response<S, P>(
-    mut byte_stream: S,
-    mut processor: P,
-    buffer_size: usize,
-) -> StreamingResponse
+pub fn create_streaming_response<S, P>(mut byte_stream: S, mut processor: P) -> StreamingResponse
 where
     S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
     P: StreamProcessor,
 {
-    let (tx, rx) = mpsc::channel::<Bytes>(buffer_size);
+    let (tx, rx) = mpsc::channel::<Bytes>(STREAM_BUFFER_SIZE);
 
     // Capture the current span so the spawned task inherits the request context
     let current_span = tracing::Span::current();
@@ -268,6 +284,108 @@ where
     );
 
     // Convert channel receiver to HTTP stream
+    let stream = ReceiverStream::new(rx).map(|chunk| Ok::<_, hyper::Error>(Frame::data(chunk)));
+    let stream_body = BoxBody::new(StreamBody::new(stream));
+
+    StreamingResponse {
+        body: stream_body,
+        processor_handle,
+    }
+}
+
+/// Creates a streaming response that processes each raw chunk through output filters.
+/// Filters receive the raw LLM response bytes and request path (any API shape; not limited to
+/// chat completions). On filter error mid-stream the original chunk is passed through (headers already sent).
+pub fn create_streaming_response_with_output_filter<S, P>(
+    mut byte_stream: S,
+    mut inner_processor: P,
+    output_chain: ResolvedFilterChain,
+    request_headers: HeaderMap,
+    request_path: String,
+) -> StreamingResponse
+where
+    S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
+    P: StreamProcessor,
+{
+    let (tx, rx) = mpsc::channel::<Bytes>(STREAM_BUFFER_SIZE);
+    let current_span = tracing::Span::current();
+
+    let processor_handle = tokio::spawn(
+        async move {
+            let mut is_first_chunk = true;
+            let mut pipeline_processor = PipelineProcessor::default();
+            let chain = output_chain.to_agent_filter_chain("output_filter");
+
+            while let Some(item) = byte_stream.next().await {
+                let chunk = match item {
+                    Ok(chunk) => chunk,
+                    Err(err) => {
+                        let err_msg = format!("Error receiving chunk: {:?}", err);
+                        warn!(error = %err_msg, "stream error");
+                        inner_processor.on_error(&err_msg);
+                        break;
+                    }
+                };
+
+                if is_first_chunk {
+                    inner_processor.on_first_bytes();
+                    is_first_chunk = false;
+                }
+
+                // Pass raw chunk bytes through the output filter chain
+                let processed_chunk = match pipeline_processor
+                    .process_raw_filter_chain(
+                        &chunk,
+                        &chain,
+                        &output_chain.agents,
+                        &request_headers,
+                        &request_path,
+                    )
+                    .await
+                {
+                    Ok(filtered) => filtered,
+                    Err(PipelineError::ClientError {
+                        agent,
+                        status,
+                        body,
+                    }) => {
+                        warn!(
+                            agent = %agent,
+                            status = %status,
+                            body = %body,
+                            "output filter client error, passing through original chunk"
+                        );
+                        chunk
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "output filter error, passing through original chunk");
+                        chunk
+                    }
+                };
+
+                // Pass through inner processor for metrics/observability
+                match inner_processor.process_chunk(processed_chunk) {
+                    Ok(Some(final_chunk)) => {
+                        if tx.send(final_chunk).await.is_err() {
+                            warn!("receiver dropped");
+                            break;
+                        }
+                    }
+                    Ok(None) => continue,
+                    Err(err) => {
+                        warn!("processor error: {}", err);
+                        inner_processor.on_error(&err);
+                        break;
+                    }
+                }
+            }
+
+            inner_processor.on_complete();
+            debug!("output filter streaming completed");
+        }
+        .instrument(current_span),
+    );
+
     let stream = ReceiverStream::new(rx).map(|chunk| Ok::<_, hyper::Error>(Frame::data(chunk)));
     let stream_body = BoxBody::new(StreamBody::new(stream));
 

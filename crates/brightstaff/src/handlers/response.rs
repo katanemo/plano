@@ -4,13 +4,15 @@ use hermesllm::apis::OpenAIApi;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 use hermesllm::SseEvent;
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full, StreamBody};
+use http_body_util::StreamBody;
 use hyper::body::Frame;
 use hyper::Response;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn, Instrument};
+
+use super::full;
 
 /// Service for handling HTTP responses and streaming
 pub struct ResponseHandler;
@@ -22,9 +24,40 @@ impl ResponseHandler {
 
     /// Create a full response body from bytes
     pub fn create_full_body<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-        Full::new(chunk.into())
-            .map_err(|never| match never {})
-            .boxed()
+        full(chunk)
+    }
+
+    /// Create a JSON error response with BAD_REQUEST status
+    pub fn create_json_error_response(
+        json: &serde_json::Value,
+    ) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let body = Self::create_full_body(json.to_string());
+        let mut response = Response::new(body);
+        *response.status_mut() = hyper::StatusCode::BAD_REQUEST;
+        response.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        response
+    }
+
+    /// Create a BAD_REQUEST error response with a message
+    pub fn create_bad_request(message: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let json = serde_json::json!({"error": message});
+        Self::create_json_error_response(&json)
+    }
+
+    /// Create an INTERNAL_SERVER_ERROR response with a message
+    pub fn create_internal_error(message: &str) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let json = serde_json::json!({"error": message});
+        let body = Self::create_full_body(json.to_string());
+        let mut response = Response::new(body);
+        *response.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+        response.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        response
     }
 
     /// Create a streaming response from a reqwest response.
@@ -112,7 +145,9 @@ impl ResponseHandler {
             let upstream_api =
                 SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
 
-            let sse_iter = SseStreamIter::try_from(response_bytes.as_ref()).unwrap();
+            let sse_iter = SseStreamIter::try_from(response_bytes.as_ref()).map_err(|e| {
+                BrightStaffError::StreamError(format!("Failed to parse SSE stream: {}", e))
+            })?;
             let mut accumulated_text = String::new();
 
             for sse_event in sse_iter {
@@ -122,7 +157,13 @@ impl ResponseHandler {
                 }
 
                 let transformed_event =
-                    SseEvent::try_from((sse_event, &client_api, &upstream_api)).unwrap();
+                    match SseEvent::try_from((sse_event, &client_api, &upstream_api)) {
+                        Ok(event) => event,
+                        Err(e) => {
+                            warn!(error = ?e, "failed to transform SSE event, skipping");
+                            continue;
+                        }
+                    };
 
                 // Try to get provider response and extract content delta
                 match transformed_event.provider_response() {

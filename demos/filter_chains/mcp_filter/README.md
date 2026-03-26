@@ -18,7 +18,7 @@ This demo consists of four components:
 - Validates queries are within TechCorp's domain
 - Rejects queries about other companies or unrelated topics
 
-### Query Rewrit3r Filter (MCP)
+### Query Rewriter Filter (MCP)
 - **Port**: 10501
 - **Tool**: `query_rewriter`
 - Improves queries using LLM before retrieval
@@ -123,7 +123,7 @@ curl -X POST http://localhost:8001/v1/chat/completions \
     ]
   }'
 ```
-- `LLM_GATEWAY_ENDPOINT` - lpano endpoint (default: `http://localhost:12000/v1`)
+- `LLM_GATEWAY_ENDPOINT` - Plano endpoint (default: `http://localhost:12000/v1`)
 - `OPENAI_API_KEY` - OpenAI API key for model providers
 
 ## Additional Resources

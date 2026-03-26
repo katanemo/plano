@@ -165,7 +165,7 @@ def _resolve_cli_agent_endpoint(plano_config_yaml: dict) -> tuple[str, int]:
 
     if isinstance(listeners, list):
         for listener in listeners:
-            if listener.get("type") in ["model", "model_listener"]:
+            if listener.get("type") == "model":
                 host = listener.get("host") or listener.get("address") or "0.0.0.0"
                 port = listener.get("port", 12000)
                 return host, port

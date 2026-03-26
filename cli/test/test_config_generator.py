@@ -104,13 +104,13 @@ listeners:
     agents:
       - id: simple_tmobile_rag_agent
         description: t-mobile virtual assistant for device contracts.
-        filter_chain:
+        input_filters:
           - query_rewriter
           - context_builder
           - response_generator
       - id: research_agent
         description: agent to research and gather information from various sources.
-        filter_chain:
+        input_filters:
           - research_agent
           - response_generator
     port: 8000
@@ -376,7 +376,7 @@ def test_convert_legacy_llm_providers():
     assert updated_providers == [
         {
             "name": "egress_traffic",
-            "type": "model_listener",
+            "type": "model",
             "port": 12000,
             "address": "0.0.0.0",
             "timeout": "30s",
@@ -384,7 +384,7 @@ def test_convert_legacy_llm_providers():
         },
         {
             "name": "ingress_traffic",
-            "type": "prompt_listener",
+            "type": "prompt",
             "port": 10000,
             "address": "0.0.0.0",
             "timeout": "30s",
@@ -400,7 +400,7 @@ def test_convert_legacy_llm_providers():
             },
         ],
         "name": "egress_traffic",
-        "type": "model_listener",
+        "type": "model",
         "port": 12000,
         "timeout": "30s",
     }
@@ -410,7 +410,7 @@ def test_convert_legacy_llm_providers():
         "name": "ingress_traffic",
         "port": 10000,
         "timeout": "30s",
-        "type": "prompt_listener",
+        "type": "prompt",
     }
 
 
@@ -449,7 +449,7 @@ def test_convert_legacy_llm_providers_no_prompt_gateway():
             "name": "egress_traffic",
             "port": 12000,
             "timeout": "30s",
-            "type": "model_listener",
+            "type": "model",
         }
     ]
     assert llm_gateway == {
@@ -461,7 +461,7 @@ def test_convert_legacy_llm_providers_no_prompt_gateway():
             },
         ],
         "name": "egress_traffic",
-        "type": "model_listener",
+        "type": "model",
         "port": 12000,
         "timeout": "30s",
     }

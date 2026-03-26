@@ -1,6 +1,54 @@
 # Model Routing Service Demo
 
-This demo shows how to use the `/routing/v1/*` endpoints to get routing decisions without proxying requests to an LLM. The endpoint accepts standard LLM request formats and returns which model Plano's router would select.
+Plano is an AI-native proxy and data plane for agentic apps — with built-in orchestration, safety, observability, and intelligent LLM routing.
+
+```
+┌───────────┐      ┌─────────────────────────────────┐      ┌──────────────┐
+│  Client   │ ───► │  Plano                          │ ───► │  OpenAI      │
+│  (any     │      │                                 │      │  Anthropic   │
+│  language)│      │  Arch-Router (1.5B model)       │      │  Any Provider│
+└───────────┘      │  analyzes intent → picks model  │      └──────────────┘
+                   └─────────────────────────────────┘
+```
+
+- **One endpoint, many models** — apps call Plano using standard OpenAI/Anthropic APIs; Plano handles provider selection, keys, and failover
+- **Intelligent routing** — a lightweight 1.5B router model classifies user intent and picks the best model per request
+- **Platform governance** — centralize API keys, rate limits, guardrails, and observability without touching app code
+- **Runs anywhere** — single binary; self-host the router for full data privacy
+
+## How Routing Works
+
+The entire routing configuration is plain YAML — no code:
+
+```yaml
+model_providers:
+  - model: openai/gpt-4o-mini
+    default: true                    # fallback for unmatched requests
+
+  - model: openai/gpt-4o
+    routing_preferences:
+      - name: complex_reasoning
+        description: complex reasoning tasks, multi-step analysis
+
+  - model: anthropic/claude-sonnet-4-20250514
+    routing_preferences:
+      - name: code_generation
+        description: generating new code, writing functions
+```
+
+When a request arrives, Plano sends the conversation and routing preferences to Arch-Router, which classifies the intent and returns the matching route:
+
+```
+1. Request arrives          → "Write binary search in Python"
+2. Preferences serialized   → [{"name":"code_generation", ...}, {"name":"complex_reasoning", ...}]
+3. Arch-Router classifies   → {"route": "code_generation"}
+4. Route → Model lookup     → code_generation → anthropic/claude-sonnet-4-20250514
+5. Request forwarded        → Claude generates the response
+```
+
+No match? Arch-Router returns `other` → Plano falls back to the default model.
+
+The `/routing/v1/*` endpoints return the routing decision **without** forwarding to the LLM — useful for testing and validating routing behavior before going to production.
 
 ## Setup
 
@@ -111,6 +159,69 @@ routing:
 ```
 
 Without the `X-Session-Id` header, routing runs fresh every time (no breaking change).
+
+## Kubernetes Deployment (Self-hosted Arch-Router on GPU)
+
+To run Arch-Router in-cluster using vLLM instead of the default hosted endpoint:
+
+**0. Check your GPU node labels and taints**
+
+```bash
+kubectl get nodes --show-labels | grep -i gpu
+kubectl get node <gpu-node-name> -o jsonpath='{.spec.taints}'
+```
+
+GPU nodes commonly have a `nvidia.com/gpu:NoSchedule` taint — `vllm-deployment.yaml` includes a matching toleration. If you have multiple GPU node pools and need to pin to a specific one, uncomment and set the `nodeSelector` in `vllm-deployment.yaml` using the label for your cloud provider.
+
+**1. Deploy Arch-Router and Plano:**
+
+```bash
+
+# arch-router deployment
+kubectl apply -f vllm-deployment.yaml
+
+# plano deployment
+kubectl create secret generic plano-secrets \
+  --from-literal=OPENAI_API_KEY=$OPENAI_API_KEY \
+  --from-literal=ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+
+kubectl create configmap plano-config \
+  --from-file=plano_config.yaml=config_k8s.yaml \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -f plano-deployment.yaml
+```
+
+**3. Wait for both pods to be ready:**
+
+```bash
+# Arch-Router downloads the model (~1 min) then vLLM loads it (~2 min)
+kubectl get pods -l app=arch-router -w
+kubectl rollout status deployment/plano
+```
+
+**4. Test:**
+
+```bash
+kubectl port-forward svc/plano 12000:12000
+./demo.sh
+```
+
+To confirm requests are hitting your in-cluster Arch-Router (not just health checks):
+
+```bash
+kubectl logs -l app=arch-router -f --tail=0
+# Look for POST /v1/chat/completions entries
+```
+
+**Updating the config:**
+
+```bash
+kubectl create configmap plano-config \
+  --from-file=plano_config.yaml=config_k8s.yaml \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment/plano
+```
 
 ## Demo Output
 

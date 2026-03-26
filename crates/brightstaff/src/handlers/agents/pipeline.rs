@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use common::configuration::{Agent, AgentFilterChain};
 use common::consts::{
     ARCH_UPSTREAM_HOST_HEADER, BRIGHT_STAFF_SERVICE_NAME, ENVOY_RETRY_HEADER, TRACE_PARENT_HEADER,
@@ -11,7 +12,7 @@ use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use tracing::{debug, info, instrument, warn};
 
-use crate::handlers::jsonrpc::{
+use super::jsonrpc::{
     JsonRpcId, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, JSON_RPC_VERSION,
     MCP_INITIALIZE, MCP_INITIALIZE_NOTIFICATION, TOOL_CALL_METHOD,
 };
@@ -35,8 +36,6 @@ pub enum PipelineError {
     NoResultInResponse(String),
     #[error("No structured content in response from agent '{0}'")]
     NoStructuredContentInResponse(String),
-    #[error("No messages in response from agent '{0}'")]
-    NoMessagesInResponse(String),
     #[error("Client error from agent '{agent}' (HTTP {status}): {body}")]
     ClientError {
         agent: String,
@@ -79,74 +78,11 @@ impl PipelineProcessor {
         }
     }
 
-    // /// Process the filter chain of agents (all except the terminal agent)
-    // #[instrument(
-    //     skip(self, chat_history, agent_filter_chain, agent_map, request_headers),
-    //     fields(
-    //         filter_count = agent_filter_chain.filter_chain.as_ref().map(|fc| fc.len()).unwrap_or(0),
-    //         message_count = chat_history.len()
-    //     )
-    // )]
-    #[allow(clippy::too_many_arguments)]
-    pub async fn process_filter_chain(
-        &mut self,
-        chat_history: &[Message],
-        agent_filter_chain: &AgentFilterChain,
-        agent_map: &HashMap<String, Agent>,
-        request_headers: &HeaderMap,
-    ) -> Result<Vec<Message>, PipelineError> {
-        let mut chat_history_updated = chat_history.to_vec();
-
-        // If filter_chain is None or empty, proceed without filtering
-        let filter_chain = match agent_filter_chain.filter_chain.as_ref() {
-            Some(fc) if !fc.is_empty() => fc,
-            _ => return Ok(chat_history_updated),
-        };
-
-        for agent_name in filter_chain {
-            debug!(agent = %agent_name, "processing filter agent");
-
-            let agent = agent_map
-                .get(agent_name)
-                .ok_or_else(|| PipelineError::AgentNotFound(agent_name.clone()))?;
-
-            let tool_name = agent.tool.as_deref().unwrap_or(&agent.id);
-
-            info!(
-                agent = %agent_name,
-                tool = %tool_name,
-                url = %agent.url,
-                agent_type = %agent.agent_type.as_deref().unwrap_or("mcp"),
-                conversation_len = chat_history.len(),
-                "executing filter"
-            );
-
-            if agent.agent_type.as_deref().unwrap_or("mcp") == "mcp" {
-                chat_history_updated = self
-                    .execute_mcp_filter(&chat_history_updated, agent, request_headers)
-                    .await?;
-            } else {
-                chat_history_updated = self
-                    .execute_http_filter(&chat_history_updated, agent, request_headers)
-                    .await?;
-            }
-
-            info!(
-                agent = %agent_name,
-                updated_len = chat_history_updated.len(),
-                "filter completed"
-            );
-        }
-
-        Ok(chat_history_updated)
-    }
-
-    /// Build common MCP headers for requests
-    fn build_mcp_headers(
-        &self,
+    /// Prepare headers shared by all agent/filter requests: removes
+    /// content-length, injects trace context, sets upstream host and retry.
+    fn build_agent_headers(
         request_headers: &HeaderMap,
         agent_id: &str,
-        session_id: Option<&str>,
     ) -> Result<HeaderMap, PipelineError> {
         let mut headers = request_headers.clone();
         headers.remove(hyper::header::CONTENT_LENGTH);
@@ -167,24 +103,34 @@ impl PipelineProcessor {
 
         headers.insert(
             ENVOY_RETRY_HEADER,
-            hyper::header::HeaderValue::from_str("3").unwrap(),
+            hyper::header::HeaderValue::from_static("3"),
         );
+
+        Ok(headers)
+    }
+
+    /// Build headers for MCP requests (adds Accept, Content-Type, optional session id).
+    fn build_mcp_headers(
+        &self,
+        request_headers: &HeaderMap,
+        agent_id: &str,
+        session_id: Option<&str>,
+    ) -> Result<HeaderMap, PipelineError> {
+        let mut headers = Self::build_agent_headers(request_headers, agent_id)?;
 
         headers.insert(
             "Accept",
             hyper::header::HeaderValue::from_static("application/json, text/event-stream"),
         );
-
         headers.insert(
             "Content-Type",
             hyper::header::HeaderValue::from_static("application/json"),
         );
 
         if let Some(sid) = session_id {
-            headers.insert(
-                "mcp-session-id",
-                hyper::header::HeaderValue::from_str(sid).unwrap(),
-            );
+            if let Ok(val) = hyper::header::HeaderValue::from_str(sid) {
+                headers.insert("mcp-session-id", val);
+            }
         }
 
         Ok(headers)
@@ -261,14 +207,17 @@ impl PipelineProcessor {
         Ok(response)
     }
 
-    /// Build a tools/call JSON-RPC request
-    fn build_tool_call_request(
+    /// Build a tools/call JSON-RPC request with a full body dict and path hint.
+    /// Used by execute_mcp_filter_raw so MCP tools receive the same contract as HTTP filters.
+    fn build_tool_call_request_with_body(
         &self,
         tool_name: &str,
-        messages: &[Message],
+        body: &serde_json::Value,
+        path: &str,
     ) -> Result<JsonRpcRequest, PipelineError> {
         let mut arguments = HashMap::new();
-        arguments.insert("messages".to_string(), serde_json::to_value(messages)?);
+        arguments.insert("body".to_string(), serde_json::to_value(body)?);
+        arguments.insert("path".to_string(), serde_json::to_value(path)?);
 
         let mut params = HashMap::new();
         params.insert("name".to_string(), serde_json::to_value(tool_name)?);
@@ -282,35 +231,28 @@ impl PipelineProcessor {
         })
     }
 
-    /// Send request to a specific agent and return the response content
-    #[instrument(
-        skip(self, messages, agent, request_headers),
-        fields(
-            agent_id = %agent.id,
-            filter_name = %agent.id,
-            message_count = messages.len()
-        )
-    )]
-    async fn execute_mcp_filter(
+    /// Like execute_mcp_filter_raw but passes the full raw body dict + path hint as MCP tool arguments.
+    /// The MCP tool receives (body: dict, path: str) and returns the modified body dict.
+    async fn execute_mcp_filter_raw(
         &mut self,
-        messages: &[Message],
+        raw_bytes: &[u8],
         agent: &Agent,
         request_headers: &HeaderMap,
-    ) -> Result<Vec<Message>, PipelineError> {
-        // Set service name for this filter span
+        request_path: &str,
+    ) -> Result<Bytes, PipelineError> {
         set_service_name(operation_component::AGENT_FILTER);
-
-        // Update current span name to include filter name
         use opentelemetry::trace::get_active_span;
         get_active_span(|span| {
-            span.update_name(format!("execute_mcp_filter ({})", agent.id));
+            span.update_name(format!("execute_mcp_filter_raw ({})", agent.id));
         });
 
-        // Get or create MCP session
+        let body: serde_json::Value =
+            serde_json::from_slice(raw_bytes).map_err(PipelineError::ParseError)?;
+
         let mcp_session_id = if let Some(session_id) = self.agent_id_session_map.get(&agent.id) {
             session_id.clone()
         } else {
-            let session_id = self.get_new_session_id(&agent.id, request_headers).await;
+            let session_id = self.get_new_session_id(&agent.id, request_headers).await?;
             self.agent_id_session_map
                 .insert(agent.id.clone(), session_id.clone());
             session_id
@@ -321,11 +263,10 @@ impl PipelineProcessor {
             mcp_session_id, agent.id
         );
 
-        // Build JSON-RPC request
         let tool_name = agent.tool.as_deref().unwrap_or(&agent.id);
-        let json_rpc_request = self.build_tool_call_request(tool_name, messages)?;
+        let json_rpc_request =
+            self.build_tool_call_request_with_body(tool_name, &body, request_path)?;
 
-        // Build headers
         let agent_headers =
             self.build_mcp_headers(request_headers, &agent.id, Some(&mcp_session_id))?;
 
@@ -335,7 +276,6 @@ impl PipelineProcessor {
         let http_status = response.status();
         let response_bytes = response.bytes().await?;
 
-        // Handle HTTP errors
         if !http_status.is_success() {
             let error_body = String::from_utf8_lossy(&response_bytes).to_string();
             return Err(if http_status.is_client_error() {
@@ -353,20 +293,12 @@ impl PipelineProcessor {
             });
         }
 
-        info!(
-            "Response from agent {}: {}",
-            agent.id,
-            String::from_utf8_lossy(&response_bytes)
-        );
-
-        // Parse SSE response
         let data_chunk = self.parse_sse_response(&response_bytes, &agent.id)?;
         let response: JsonRpcResponse = serde_json::from_str(&data_chunk)?;
         let response_result = response
             .result
             .ok_or_else(|| PipelineError::NoResultInResponse(agent.id.clone()))?;
 
-        // Check if error field is set in response result
         if response_result
             .get("isError")
             .and_then(|v| v.as_bool())
@@ -388,21 +320,28 @@ impl PipelineProcessor {
             });
         }
 
-        // Extract structured content and parse messages
-        let response_json = response_result
+        // FastMCP puts structured Pydantic return values in structuredContent.result,
+        // but plain dicts land in content[0].text as a JSON string. Try both.
+        let result = if let Some(structured) = response_result
             .get("structuredContent")
-            .ok_or_else(|| PipelineError::NoStructuredContentInResponse(agent.id.clone()))?;
+            .and_then(|v| v.get("result"))
+            .cloned()
+        {
+            structured
+        } else {
+            let text = response_result
+                .get("content")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|v| v.get("text"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| PipelineError::NoStructuredContentInResponse(agent.id.clone()))?;
+            serde_json::from_str(text).map_err(PipelineError::ParseError)?
+        };
 
-        let messages: Vec<Message> = response_json
-            .get("result")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| PipelineError::NoMessagesInResponse(agent.id.clone()))?
-            .iter()
-            .map(|msg_value| serde_json::from_value(msg_value.clone()))
-            .collect::<Result<Vec<Message>, _>>()
-            .map_err(PipelineError::ParseError)?;
-
-        Ok(messages)
+        Ok(Bytes::from(
+            serde_json::to_vec(&result).map_err(PipelineError::ParseError)?,
+        ))
     }
 
     /// Build an initialize JSON-RPC request
@@ -464,18 +403,19 @@ impl PipelineProcessor {
         Ok(())
     }
 
-    async fn get_new_session_id(&self, agent_id: &str, request_headers: &HeaderMap) -> String {
+    async fn get_new_session_id(
+        &self,
+        agent_id: &str,
+        request_headers: &HeaderMap,
+    ) -> Result<String, PipelineError> {
         info!("initializing MCP session for agent {}", agent_id);
 
         let initialize_request = self.build_initialize_request();
-        let headers = self
-            .build_mcp_headers(request_headers, agent_id, None)
-            .expect("Failed to build headers for initialization");
+        let headers = self.build_mcp_headers(request_headers, agent_id, None)?;
 
         let response = self
             .send_mcp_request(&initialize_request, &headers, agent_id)
-            .await
-            .expect("Failed to initialize MCP session");
+            .await?;
 
         info!("initialize response status: {}", response.status());
 
@@ -483,8 +423,13 @@ impl PipelineProcessor {
             .headers()
             .get("mcp-session-id")
             .and_then(|v| v.to_str().ok())
-            .expect("No mcp-session-id in response")
-            .to_string();
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                PipelineError::NoContentInResponse(format!(
+                    "No mcp-session-id header in initialize response from agent {}",
+                    agent_id
+                ))
+            })?;
 
         info!(
             "created new MCP session for agent {}: {}",
@@ -493,88 +438,63 @@ impl PipelineProcessor {
 
         // Send initialized notification
         self.send_initialized_notification(agent_id, &session_id, &headers)
-            .await
-            .expect("Failed to send initialized notification");
+            .await?;
 
-        session_id
+        Ok(session_id)
     }
 
-    /// Execute a HTTP-based filter agent
+    /// Execute a raw bytes filter — POST bytes to agent.url, receive bytes back.
+    /// Used for input and output filters where the full raw request/response is passed through.
+    /// No MCP protocol wrapping; agent_type is ignored.
     #[instrument(
-        skip(self, messages, agent, request_headers),
+        skip(self, raw_bytes, agent, request_headers),
         fields(
             agent_id = %agent.id,
             agent_url = %agent.url,
             filter_name = %agent.id,
-            message_count = messages.len()
+            bytes_len = raw_bytes.len()
         )
     )]
-    async fn execute_http_filter(
+    async fn execute_raw_filter(
         &mut self,
-        messages: &[Message],
+        raw_bytes: &[u8],
         agent: &Agent,
         request_headers: &HeaderMap,
-    ) -> Result<Vec<Message>, PipelineError> {
-        // Set service name for this filter span
+        request_path: &str,
+    ) -> Result<Bytes, PipelineError> {
         set_service_name(operation_component::AGENT_FILTER);
-
-        // Update current span name to include filter name
         use opentelemetry::trace::get_active_span;
         get_active_span(|span| {
-            span.update_name(format!("execute_http_filter ({})", agent.id));
+            span.update_name(format!("execute_raw_filter ({})", agent.id));
         });
 
-        // Build headers
-        let mut agent_headers = request_headers.clone();
-        agent_headers.remove(hyper::header::CONTENT_LENGTH);
-
-        // Inject OpenTelemetry trace context automatically
-        agent_headers.remove(TRACE_PARENT_HEADER);
-        global::get_text_map_propagator(|propagator| {
-            let cx =
-                tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderInjector(&mut agent_headers));
-        });
-
-        agent_headers.insert(
-            ARCH_UPSTREAM_HOST_HEADER,
-            hyper::header::HeaderValue::from_str(&agent.id)
-                .map_err(|_| PipelineError::AgentNotFound(agent.id.clone()))?,
-        );
-
-        agent_headers.insert(
-            ENVOY_RETRY_HEADER,
-            hyper::header::HeaderValue::from_str("3").unwrap(),
-        );
-
+        let mut agent_headers = Self::build_agent_headers(request_headers, &agent.id)?;
         agent_headers.insert(
             "Accept",
             hyper::header::HeaderValue::from_static("application/json"),
         );
-
         agent_headers.insert(
             "Content-Type",
             hyper::header::HeaderValue::from_static("application/json"),
         );
 
-        debug!(
-            "Sending HTTP request to agent {} at URL: {}",
-            agent.id, agent.url
-        );
+        // Append the original request path so the filter endpoint encodes the API format.
+        // e.g. agent.url="http://host/anonymize" + request_path="/v1/chat/completions"
+        //   -> POST http://host/anonymize/v1/chat/completions
+        let url = format!("{}{}", agent.url, request_path);
+        debug!(agent = %agent.id, url = %url, "sending raw filter request");
 
-        // Send messages array directly as request body
         let response = self
             .client
-            .post(&agent.url)
+            .post(&url)
             .headers(agent_headers)
-            .json(&messages)
+            .body(raw_bytes.to_vec())
             .send()
             .await?;
 
         let http_status = response.status();
         let response_bytes = response.bytes().await?;
 
-        // Handle HTTP errors
         if !http_status.is_success() {
             let error_body = String::from_utf8_lossy(&response_bytes).to_string();
             return Err(if http_status.is_client_error() {
@@ -592,17 +512,56 @@ impl PipelineProcessor {
             });
         }
 
-        debug!(
-            "Response from HTTP agent {}: {}",
-            agent.id,
-            String::from_utf8_lossy(&response_bytes)
-        );
+        debug!(agent = %agent.id, bytes_len = response_bytes.len(), "raw filter response received");
+        Ok(response_bytes)
+    }
 
-        // Parse response - expecting array of messages directly
-        let messages: Vec<Message> =
-            serde_json::from_slice(&response_bytes).map_err(PipelineError::ParseError)?;
+    /// Process a chain of raw-bytes filters sequentially.
+    /// Input: raw request or response bytes. Output: filtered bytes.
+    /// Each agent receives the output of the previous one.
+    pub async fn process_raw_filter_chain(
+        &mut self,
+        raw_bytes: &[u8],
+        agent_filter_chain: &AgentFilterChain,
+        agent_map: &HashMap<String, Agent>,
+        request_headers: &HeaderMap,
+        request_path: &str,
+    ) -> Result<Bytes, PipelineError> {
+        let filter_chain = match agent_filter_chain.input_filters.as_ref() {
+            Some(fc) if !fc.is_empty() => fc,
+            _ => return Ok(Bytes::copy_from_slice(raw_bytes)),
+        };
 
-        Ok(messages)
+        let mut current_bytes = Bytes::copy_from_slice(raw_bytes);
+
+        for agent_name in filter_chain {
+            debug!(agent = %agent_name, "processing raw filter agent");
+
+            let agent = agent_map
+                .get(agent_name)
+                .ok_or_else(|| PipelineError::AgentNotFound(agent_name.clone()))?;
+
+            let agent_type = agent.agent_type.as_deref().unwrap_or("mcp");
+            info!(
+                agent = %agent_name,
+                url = %agent.url,
+                agent_type = %agent_type,
+                bytes_len = current_bytes.len(),
+                "executing raw filter"
+            );
+
+            current_bytes = if agent_type == "mcp" {
+                self.execute_mcp_filter_raw(&current_bytes, agent, request_headers, request_path)
+                    .await?
+            } else {
+                self.execute_raw_filter(&current_bytes, agent, request_headers, request_path)
+                    .await?
+            };
+
+            info!(agent = %agent_name, bytes_len = current_bytes.len(), "raw filter completed");
+        }
+
+        Ok(current_bytes)
     }
 
     /// Send request to terminal agent and return the raw response for streaming
@@ -615,36 +574,15 @@ impl PipelineProcessor {
         terminal_agent: &Agent,
         request_headers: &HeaderMap,
     ) -> Result<reqwest::Response, PipelineError> {
-        // let mut request = original_request.clone();
         original_request.set_messages(messages);
 
         let request_url = "/v1/chat/completions";
 
-        let request_body = ProviderRequestType::to_bytes(&original_request).unwrap();
-        // let request_body = serde_json::to_string(&request)?;
+        let request_body = ProviderRequestType::to_bytes(&original_request)
+            .map_err(|e| PipelineError::NoContentInResponse(e.to_string()))?;
         debug!("sending request to terminal agent {}", terminal_agent.id);
 
-        let mut agent_headers = request_headers.clone();
-        agent_headers.remove(hyper::header::CONTENT_LENGTH);
-
-        // Inject OpenTelemetry trace context automatically
-        agent_headers.remove(TRACE_PARENT_HEADER);
-        global::get_text_map_propagator(|propagator| {
-            let cx =
-                tracing_opentelemetry::OpenTelemetrySpanExt::context(&tracing::Span::current());
-            propagator.inject_context(&cx, &mut HeaderInjector(&mut agent_headers));
-        });
-
-        agent_headers.insert(
-            ARCH_UPSTREAM_HOST_HEADER,
-            hyper::header::HeaderValue::from_str(&terminal_agent.id)
-                .map_err(|_| PipelineError::AgentNotFound(terminal_agent.id.clone()))?,
-        );
-
-        agent_headers.insert(
-            ENVOY_RETRY_HEADER,
-            hyper::header::HeaderValue::from_str("3").unwrap(),
-        );
+        let agent_headers = Self::build_agent_headers(request_headers, &terminal_agent.id)?;
 
         let response = self
             .client
@@ -661,24 +599,13 @@ impl PipelineProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hermesllm::apis::openai::{Message, MessageContent, Role};
     use mockito::Server;
     use std::collections::HashMap;
-
-    fn create_test_message(role: Role, content: &str) -> Message {
-        Message {
-            role,
-            content: Some(MessageContent::Text(content.to_string())),
-            name: None,
-            tool_calls: None,
-            tool_call_id: None,
-        }
-    }
 
     fn create_test_pipeline(agents: Vec<&str>) -> AgentFilterChain {
         AgentFilterChain {
             id: "test-agent".to_string(),
-            filter_chain: Some(agents.iter().map(|s| s.to_string()).collect()),
+            input_filters: Some(agents.iter().map(|s| s.to_string()).collect()),
             description: None,
             default: None,
         }
@@ -690,12 +617,19 @@ mod tests {
         let agent_map = HashMap::new();
         let request_headers = HeaderMap::new();
 
-        let messages = vec![create_test_message(Role::User, "Hello")];
+        let body = serde_json::json!({"messages": [{"role": "user", "content": "Hello"}]});
+        let raw_bytes = serde_json::to_vec(&body).unwrap();
 
         let pipeline = create_test_pipeline(vec!["nonexistent-agent", "terminal-agent"]);
 
         let result = processor
-            .process_filter_chain(&messages, &pipeline, &agent_map, &request_headers)
+            .process_raw_filter_chain(
+                &raw_bytes,
+                &pipeline,
+                &agent_map,
+                &request_headers,
+                "/v1/chat/completions",
+            )
             .await;
 
         assert!(result.is_err());
@@ -725,11 +659,12 @@ mod tests {
             agent_type: None,
         };
 
-        let messages = vec![create_test_message(Role::User, "Hello")];
+        let body = serde_json::json!({"messages": [{"role": "user", "content": "Hello"}]});
+        let raw_bytes = serde_json::to_vec(&body).unwrap();
         let request_headers = HeaderMap::new();
 
         let result = processor
-            .execute_mcp_filter(&messages, &agent, &request_headers)
+            .execute_mcp_filter_raw(&raw_bytes, &agent, &request_headers, "/v1/chat/completions")
             .await;
 
         match result {
@@ -764,11 +699,12 @@ mod tests {
             agent_type: None,
         };
 
-        let messages = vec![create_test_message(Role::User, "Ping")];
+        let body = serde_json::json!({"messages": [{"role": "user", "content": "Ping"}]});
+        let raw_bytes = serde_json::to_vec(&body).unwrap();
         let request_headers = HeaderMap::new();
 
         let result = processor
-            .execute_mcp_filter(&messages, &agent, &request_headers)
+            .execute_mcp_filter_raw(&raw_bytes, &agent, &request_headers, "/v1/chat/completions")
             .await;
 
         match result {
@@ -816,11 +752,12 @@ mod tests {
             agent_type: None,
         };
 
-        let messages = vec![create_test_message(Role::User, "Hi")];
+        let body = serde_json::json!({"messages": [{"role": "user", "content": "Hi"}]});
+        let raw_bytes = serde_json::to_vec(&body).unwrap();
         let request_headers = HeaderMap::new();
 
         let result = processor
-            .execute_mcp_filter(&messages, &agent, &request_headers)
+            .execute_mcp_filter_raw(&raw_bytes, &agent, &request_headers, "/v1/chat/completions")
             .await;
 
         match result {
