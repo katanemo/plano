@@ -31,6 +31,15 @@ RESEARCH_STEPS = [
 ]
 
 
+STEP_LABELS = [
+    "Design REST API schema",
+    "Analyze SQL vs NoSQL trade-offs",
+    "Write SQLAlchemy database models",
+    "Review API security vulnerabilities",
+    "Implement JWT auth middleware",
+]
+
+
 def run_research_loop(session_id=None):
     """Run the research agent loop, optionally with session pinning."""
     results = []
@@ -59,57 +68,78 @@ def run_research_loop(session_id=None):
         route = data.get("route") or "none"
         pinned = data.get("pinned")
 
-        pinned_str = ""
-        if pinned is not None:
-            pinned_str = f"  pinned={pinned}"
-
-        print(f"  Step {i}: {prompt[:60]:<60s}")
-        print(f"          → model={model}  route={route}{pinned_str}")
-        print()
-
         results.append({"step": i, "model": model, "route": route, "pinned": pinned})
 
     return results
 
 
+def print_results_table(results):
+    """Print results as a compact aligned table."""
+    label_width = max(len(l) for l in STEP_LABELS)
+    for r in results:
+        step = r["step"]
+        label = STEP_LABELS[step - 1]
+        model = r["model"]
+        pinned = r["pinned"]
+
+        # Shorten model names for readability
+        short_model = model.replace("anthropic/", "").replace("openai/", "")
+
+        pin_indicator = ""
+        if pinned is True:
+            pin_indicator = "  ◀ pinned"
+        elif pinned is False:
+            pin_indicator = "  ◀ routed"
+
+        print(f"  {step}. {label:<{label_width}}  →  {short_model}{pin_indicator}")
+
+
 def print_summary(label, results):
     """Print a one-line summary of model consistency."""
     models = [r["model"] for r in results]
-    unique = set(models)
+    unique = sorted(set(models))
     if len(unique) == 1:
-        print(f"  ✓ {label}: All 5 steps routed to {models[0]}")
+        short = models[0].replace("anthropic/", "").replace("openai/", "")
+        print(f"  ✓ {label}: All 5 steps → {short}")
     else:
-        print(f"  ✗ {label}: Models varied across steps — {', '.join(unique)}")
+        short = [m.replace("anthropic/", "").replace("openai/", "") for m in unique]
+        print(f"  ✗ {label}: Models varied → {', '.join(short)}")
 
 
 def main():
-    print("=" * 70)
-    print("  Iterative Research Agent — Session Pinning Demo")
-    print("=" * 70)
     print()
-    print("An agent is building a task management app in 5 iterative steps.")
-    print("Each step hits Plano's routing endpoint to pick the best model.")
+    print("  ╔══════════════════════════════════════════════════════════════╗")
+    print("  ║       Session Pinning Demo — Iterative Research Agent        ║")
+    print("  ╚══════════════════════════════════════════════════════════════╝")
+    print()
+    print("  An agent builds a task management app in 5 steps.")
+    print("  Each step asks Plano's router which model to use.")
     print()
 
     # --- Run 1: Without session pinning ---
-    print("-" * 70)
-    print("  Run 1: WITHOUT Session Pinning (no X-Session-Id header)")
-    print("-" * 70)
+    print("  ┌──────────────────────────────────────────────────────────────┐")
+    print("  │  Run 1: WITHOUT Session Pinning                              │")
+    print("  └──────────────────────────────────────────────────────────────┘")
     print()
     results_no_pin = run_research_loop(session_id=None)
+    print_results_table(results_no_pin)
+    print()
 
     # --- Run 2: With session pinning ---
     session_id = str(uuid.uuid4())
-    print("-" * 70)
-    print(f"  Run 2: WITH Session Pinning (X-Session-Id: {session_id})")
-    print("-" * 70)
+    short_sid = session_id[:8]
+    print(f"  ┌──────────────────────────────────────────────────────────────┐")
+    print(f"  │  Run 2: WITH Session Pinning (session: {short_sid}…)         │")
+    print(f"  └──────────────────────────────────────────────────────────────┘")
     print()
     results_pinned = run_research_loop(session_id=session_id)
+    print_results_table(results_pinned)
+    print()
 
     # --- Summary ---
-    print("=" * 70)
-    print("  Summary")
-    print("=" * 70)
+    print("  ┌──────────────────────────────────────────────────────────────┐")
+    print("  │  Summary                                                    │")
+    print("  └──────────────────────────────────────────────────────────────┘")
     print()
     print_summary("Without pinning", results_no_pin)
     print_summary("With pinning   ", results_pinned)
