@@ -1,6 +1,6 @@
-use common::configuration::{ModelUsagePreference, TopLevelRoutingPreference};
+use common::configuration::TopLevelRoutingPreference;
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
-use hermesllm::{ProviderRequest, ProviderRequestType};
+use hermesllm::ProviderRequestType;
 use hyper::StatusCode;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -10,7 +10,10 @@ use crate::streaming::truncate_message;
 use crate::tracing::routing;
 
 pub struct RoutingResult {
+    /// Primary model to use (first in the ranked list).
     pub model_name: String,
+    /// Full ranked list — use subsequent entries as fallbacks on 429/5xx.
+    pub models: Vec<String>,
     pub route_name: Option<String>,
 }
 
@@ -39,12 +42,8 @@ pub async fn router_chat_get_upstream_model(
     traceparent: &str,
     request_path: &str,
     request_id: &str,
-    inline_usage_preferences: Option<Vec<ModelUsagePreference>>,
     inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
 ) -> Result<RoutingResult, RoutingError> {
-    // Clone metadata for routing before converting (which consumes client_request)
-    let routing_metadata = client_request.metadata().clone();
-
     // Convert to ChatCompletionsRequest for routing (regardless of input type)
     let chat_request = match ProviderRequestType::try_from((
         client_request,
@@ -79,22 +78,6 @@ pub async fn router_chat_get_upstream_model(
         "router request"
     );
 
-    // Use inline preferences if provided, otherwise fall back to metadata extraction
-    let usage_preferences: Option<Vec<ModelUsagePreference>> = if inline_usage_preferences.is_some()
-    {
-        inline_usage_preferences
-    } else {
-        let usage_preferences_str: Option<String> =
-            routing_metadata.as_ref().and_then(|metadata| {
-                metadata
-                    .get("plano_preference_config")
-                    .map(|value| value.to_string())
-            });
-        usage_preferences_str
-            .as_ref()
-            .and_then(|s| serde_yaml::from_str(s).ok())
-    };
-
     // Prepare log message with latest message from chat request
     let latest_message_for_log = chat_request
         .messages
@@ -108,7 +91,6 @@ pub async fn router_chat_get_upstream_model(
     let latest_message_for_log = truncate_message(&latest_message_for_log, 50);
 
     info!(
-        has_usage_preferences = usage_preferences.is_some(),
         path = %request_path,
         latest_message = %latest_message_for_log,
         "processing router request"
@@ -122,7 +104,6 @@ pub async fn router_chat_get_upstream_model(
         .determine_route(
             &chat_request.messages,
             traceparent,
-            usage_preferences,
             inline_routing_preferences,
             request_id,
         )
@@ -134,10 +115,12 @@ pub async fn router_chat_get_upstream_model(
 
     match routing_result {
         Ok(route) => match route {
-            Some((route_name, model_name)) => {
+            Some((route_name, ranked_models)) => {
+                let model_name = ranked_models.first().cloned().unwrap_or_default();
                 current_span.record("route.selected_model", model_name.as_str());
                 Ok(RoutingResult {
                     model_name,
+                    models: ranked_models,
                     route_name: Some(route_name),
                 })
             }
@@ -149,6 +132,7 @@ pub async fn router_chat_get_upstream_model(
 
                 Ok(RoutingResult {
                     model_name: "none".to_string(),
+                    models: vec!["none".to_string()],
                     route_name: None,
                 })
             }

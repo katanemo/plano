@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common::{
-    configuration::{
-        LlmProvider, ModelUsagePreference, RoutingPreference, TopLevelRoutingPreference,
-    },
+    configuration::TopLevelRoutingPreference,
     consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER, TRACE_PARENT_HEADER},
 };
+
+use super::router_model::{ModelUsagePreference, RoutingPreference};
 use hermesllm::apis::openai::Message;
 use hyper::header;
 use thiserror::Error;
@@ -22,7 +22,6 @@ pub struct RouterService {
     client: reqwest::Client,
     router_model: Arc<dyn RouterModel>,
     routing_provider_name: String,
-    llm_usage_defined: bool,
     top_level_preferences: HashMap<String, TopLevelRoutingPreference>,
     metrics_service: Option<Arc<ModelMetricsService>>,
 }
@@ -40,60 +39,37 @@ pub type Result<T> = std::result::Result<T, RoutingError>;
 
 impl RouterService {
     pub fn new(
-        providers: Vec<LlmProvider>,
         top_level_prefs: Option<Vec<TopLevelRoutingPreference>>,
         metrics_service: Option<Arc<ModelMetricsService>>,
         router_url: String,
         routing_model_name: String,
         routing_provider_name: String,
     ) -> Self {
-        // Build top-level preference map and sentinel llm_routes when v0.4.0 format is used.
-        let (top_level_preferences, llm_routes, llm_usage_defined) =
-            if let Some(top_prefs) = top_level_prefs {
-                let top_level_map: HashMap<String, TopLevelRoutingPreference> =
-                    top_prefs.into_iter().map(|p| (p.name.clone(), p)).collect();
-                // Build sentinel routes: route_name → first model (RouterModelV1 needs a model
-                // mapping, but RouterService overrides the selection via metrics_service).
-                let sentinel_routes: HashMap<String, Vec<RoutingPreference>> = top_level_map
-                    .iter()
-                    .filter_map(|(name, pref)| {
-                        pref.models.first().map(|first_model| {
-                            (
-                                first_model.clone(),
-                                vec![RoutingPreference {
-                                    name: name.clone(),
-                                    description: pref.description.clone(),
-                                }],
-                            )
-                        })
-                    })
-                    .collect();
-                let defined = !top_level_map.is_empty();
-                (top_level_map, sentinel_routes, defined)
-            } else {
-                // Legacy per-provider format.
-                let providers_with_usage = providers
-                    .iter()
-                    .filter(|provider| provider.routing_preferences.is_some())
-                    .cloned()
-                    .collect::<Vec<LlmProvider>>();
+        let top_level_preferences: HashMap<String, TopLevelRoutingPreference> = top_level_prefs
+            .map_or_else(HashMap::new, |prefs| {
+                prefs.into_iter().map(|p| (p.name.clone(), p)).collect()
+            });
 
-                let routes: HashMap<String, Vec<RoutingPreference>> = providers_with_usage
-                    .iter()
-                    .filter_map(|provider| {
-                        provider
-                            .routing_preferences
-                            .as_ref()
-                            .map(|prefs| (provider.name.clone(), prefs.clone()))
-                    })
-                    .collect();
-
-                let defined = !providers_with_usage.is_empty();
-                (HashMap::new(), routes, defined)
-            };
+        // Build sentinel routes for RouterModelV1: route_name → first model.
+        // RouterModelV1 uses this to build its prompt; RouterService overrides
+        // the model selection via rank_models() after the route is determined.
+        let sentinel_routes: HashMap<String, Vec<RoutingPreference>> = top_level_preferences
+            .iter()
+            .filter_map(|(name, pref)| {
+                pref.models.first().map(|first_model| {
+                    (
+                        first_model.clone(),
+                        vec![RoutingPreference {
+                            name: name.clone(),
+                            description: pref.description.clone(),
+                        }],
+                    )
+                })
+            })
+            .collect();
 
         let router_model = Arc::new(router_model_v1::RouterModelV1::new(
-            llm_routes,
+            sentinel_routes,
             routing_model_name,
             router_model_v1::MAX_TOKEN_LEN,
         ));
@@ -103,7 +79,6 @@ impl RouterService {
             client: reqwest::Client::new(),
             router_model,
             routing_provider_name,
-            llm_usage_defined,
             top_level_preferences,
             metrics_service,
         }
@@ -113,10 +88,9 @@ impl RouterService {
         &self,
         messages: &[Message],
         traceparent: &str,
-        usage_preferences: Option<Vec<ModelUsagePreference>>,
         inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
         request_id: &str,
-    ) -> Result<Option<(String, String)>> {
+    ) -> Result<Option<(String, Vec<String>)>> {
         if messages.is_empty() {
             return Ok(None);
         }
@@ -126,41 +100,27 @@ impl RouterService {
             inline_routing_preferences
                 .map(|prefs| prefs.into_iter().map(|p| (p.name.clone(), p)).collect());
 
-        // Determine whether any routing is defined.
-        let has_top_level = inline_top_map.is_some() || !self.top_level_preferences.is_empty();
-
-        if usage_preferences
-            .as_ref()
-            .is_none_or(|prefs| prefs.len() < 2)
-            && !self.llm_usage_defined
-            && !has_top_level
-        {
+        // No routing defined — skip the router call entirely.
+        if inline_top_map.is_none() && self.top_level_preferences.is_empty() {
             return Ok(None);
         }
 
-        // For top-level format, build a synthetic ModelUsagePreference list so RouterModelV1
+        // For inline overrides, build synthetic ModelUsagePreference list so RouterModelV1
         // generates the correct prompt (route name + description pairs).
+        // For config-level prefs the sentinel routes are already baked into RouterModelV1.
         let effective_usage_preferences: Option<Vec<ModelUsagePreference>> =
-            if let Some(ref inline_map) = inline_top_map {
-                Some(
-                    inline_map
-                        .values()
-                        .map(|p| ModelUsagePreference {
-                            model: p.models.first().cloned().unwrap_or_default(),
-                            routing_preferences: vec![RoutingPreference {
-                                name: p.name.clone(),
-                                description: p.description.clone(),
-                            }],
-                        })
-                        .collect(),
-                )
-            } else if !self.top_level_preferences.is_empty() {
-                // Config top-level prefs: already encoded as sentinel routes in RouterModelV1,
-                // pass None so it uses the pre-built llm_route_json_str.
-                None
-            } else {
-                usage_preferences.clone()
-            };
+            inline_top_map.as_ref().map(|inline_map| {
+                inline_map
+                    .values()
+                    .map(|p| ModelUsagePreference {
+                        model: p.models.first().cloned().unwrap_or_default(),
+                        routing_preferences: vec![RoutingPreference {
+                            name: p.name.clone(),
+                            description: p.description.clone(),
+                        }],
+                    })
+                    .collect()
+            });
 
         let router_request = self
             .router_model
@@ -209,21 +169,20 @@ impl RouterService {
             .router_model
             .parse_response(&content, &effective_usage_preferences)?;
 
-        let result = if let Some((route_name, _sentinel_model)) = parsed {
-            // Check if this route belongs to the top-level preference format.
+        let result = if let Some((route_name, _sentinel)) = parsed {
             let top_pref = inline_top_map
                 .as_ref()
                 .and_then(|m| m.get(&route_name))
                 .or_else(|| self.top_level_preferences.get(&route_name));
 
             if let Some(pref) = top_pref {
-                let selected_model = match &self.metrics_service {
-                    Some(svc) => svc.select_model(&pref.models, &pref.selection_policy).await,
-                    None => pref.models.first().cloned().unwrap_or_default(),
+                let ranked = match &self.metrics_service {
+                    Some(svc) => svc.rank_models(&pref.models, &pref.selection_policy).await,
+                    None => pref.models.clone(),
                 };
-                Some((route_name, selected_model))
+                Some((route_name, ranked))
             } else {
-                Some((route_name, _sentinel_model))
+                None
             }
         } else {
             None

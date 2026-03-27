@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::configuration::{ModelUsagePreference, RoutingPreference};
+use super::router_model::{ModelUsagePreference, RoutingPreference};
 use hermesllm::apis::openai::{ChatCompletionsRequest, Message, MessageContent, Role};
 use hermesllm::transforms::lib::ExtractText;
 use serde::{Deserialize, Serialize};

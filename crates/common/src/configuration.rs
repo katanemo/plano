@@ -110,6 +110,8 @@ pub enum SelectionPreference {
     Cheapest,
     Fastest,
     Random,
+    /// Return models in the same order they were defined — no reordering.
+    None,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,9 +128,25 @@ pub struct TopLevelRoutingPreference {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelMetricsSources {
-    pub url: String,
-    pub refresh_interval: Option<u64>,
+pub struct MetricsAuth {
+    #[serde(rename = "type")]
+    pub auth_type: String, // only "bearer" supported
+    pub token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MetricsSource {
+    CostMetrics {
+        url: String,
+        refresh_interval: Option<u64>,
+        auth: Option<MetricsAuth>,
+    },
+    PrometheusMetrics {
+        url: String,
+        query: String,
+        refresh_interval: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,7 +168,7 @@ pub struct Configuration {
     pub listeners: Vec<Listener>,
     pub state_storage: Option<StateStorageConfig>,
     pub routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
-    pub model_metrics_sources: Option<ModelMetricsSources>,
+    pub model_metrics_sources: Option<Vec<MetricsSource>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -346,18 +364,6 @@ impl LlmProviderType {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ModelUsagePreference {
-    pub model: String,
-    pub routing_preferences: Vec<RoutingPreference>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoutingPreference {
-    pub name: String,
-    pub description: String,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AgentUsagePreference {
     pub model: String,
@@ -407,7 +413,6 @@ pub struct LlmProvider {
     pub port: Option<u16>,
     pub rate_limits: Option<LlmRatelimit>,
     pub usage: Option<String>,
-    pub routing_preferences: Option<Vec<RoutingPreference>>,
     pub cluster_name: Option<String>,
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
@@ -451,7 +456,6 @@ impl Default for LlmProvider {
             port: None,
             rate_limits: None,
             usage: None,
-            routing_preferences: None,
             cluster_name: None,
             base_url_path_prefix: None,
             internal: None,

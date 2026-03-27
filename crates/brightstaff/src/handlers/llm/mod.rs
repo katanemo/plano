@@ -119,7 +119,6 @@ async fn llm_chat_inner(
         temperature,
         tool_names,
         user_message_preview,
-        inline_routing_policy,
         inline_routing_preferences,
         client_api,
         provider_id,
@@ -262,7 +261,6 @@ async fn llm_chat_inner(
             &traceparent,
             &request_path,
             &request_id,
-            inline_routing_policy,
             inline_routing_preferences,
         )
         .await
@@ -325,7 +323,6 @@ struct PreparedRequest {
     temperature: Option<f32>,
     tool_names: Option<Vec<String>>,
     user_message_preview: Option<String>,
-    inline_routing_policy: Option<Vec<common::configuration::ModelUsagePreference>>,
     inline_routing_preferences: Option<Vec<common::configuration::TopLevelRoutingPreference>>,
     client_api: Option<SupportedAPIsFromClient>,
     provider_id: hermesllm::ProviderId,
@@ -355,16 +352,14 @@ async fn parse_and_validate_request(
         "request body received"
     );
 
-    // Extract routing_policy and routing_preferences from request body if present
-    let (chat_request_bytes, inline_routing_policy, inline_routing_preferences) =
-        crate::handlers::routing_service::extract_routing_policy(&raw_bytes, false).map_err(
-            |err| {
-                warn!(error = %err, "failed to parse request JSON");
-                let mut r = Response::new(full(format!("Failed to parse request: {}", err)));
-                *r.status_mut() = StatusCode::BAD_REQUEST;
-                r
-            },
-        )?;
+    // Extract routing_preferences from request body if present
+    let (chat_request_bytes, inline_routing_preferences) =
+        crate::handlers::routing_service::extract_routing_policy(&raw_bytes).map_err(|err| {
+            warn!(error = %err, "failed to parse request JSON");
+            let mut r = Response::new(full(format!("Failed to parse request: {}", err)));
+            *r.status_mut() = StatusCode::BAD_REQUEST;
+            r
+        })?;
 
     let api_type = SupportedAPIsFromClient::from_endpoint(request_path).ok_or_else(|| {
         warn!(path = %request_path, "unsupported endpoint");
@@ -442,7 +437,6 @@ async fn parse_and_validate_request(
         temperature,
         tool_names,
         user_message_preview,
-        inline_routing_policy,
         inline_routing_preferences,
         client_api,
         provider_id,

@@ -174,28 +174,11 @@ async fn init_app_state(
         .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
-    // Validate version-gated routing_preferences rules.
+    // Validate that top-level routing_preferences requires v0.4.0+.
     let config_version = parse_semver(&config.version);
     let is_v040_plus = config_version >= (0, 4, 0);
 
-    if is_v040_plus {
-        // v0.4.0+: per-provider routing_preferences are forbidden.
-        let providers_with_per_provider_prefs: Vec<&str> = config
-            .model_providers
-            .iter()
-            .filter(|p| p.routing_preferences.is_some())
-            .filter_map(|p| p.model.as_deref())
-            .collect();
-        if !providers_with_per_provider_prefs.is_empty() {
-            return Err(format!(
-                "routing_preferences inside model_providers is not allowed in v0.4.0+. \
-                 Use the top-level routing_preferences instead. \
-                 Offending models: {}",
-                providers_with_per_provider_prefs.join(", ")
-            )
-            .into());
-        }
-    } else if config.routing_preferences.is_some() {
+    if !is_v040_plus && config.routing_preferences.is_some() {
         return Err(
             "top-level routing_preferences requires version v0.4.0 or above. \
              Update the version field or remove routing_preferences."
@@ -224,17 +207,34 @@ async fn init_app_state(
         }
     }
 
-    // Initialize ModelMetricsService if model_metrics_sources is configured.
-    let metrics_service: Option<Arc<ModelMetricsService>> =
-        if let Some(ref sources) = config.model_metrics_sources {
-            let svc = ModelMetricsService::new(sources, reqwest::Client::new()).await;
-            Some(Arc::new(svc))
-        } else {
-            None
-        };
+    // Validate and initialize ModelMetricsService if model_metrics_sources is configured.
+    let metrics_service: Option<Arc<ModelMetricsService>> = if let Some(ref sources) =
+        config.model_metrics_sources
+    {
+        use common::configuration::MetricsSource;
+        let cost_count = sources
+            .iter()
+            .filter(|s| matches!(s, MetricsSource::CostMetrics { .. }))
+            .count();
+        let prom_count = sources
+            .iter()
+            .filter(|s| matches!(s, MetricsSource::PrometheusMetrics { .. }))
+            .count();
+        if cost_count > 1 {
+            return Err("model_metrics_sources: only one cost_metrics source is allowed".into());
+        }
+        if prom_count > 1 {
+            return Err(
+                "model_metrics_sources: only one prometheus_metrics source is allowed".into(),
+            );
+        }
+        let svc = ModelMetricsService::new(sources, reqwest::Client::new()).await;
+        Some(Arc::new(svc))
+    } else {
+        None
+    };
 
     let router_service = Arc::new(RouterService::new(
-        config.model_providers.clone(),
         config.routing_preferences.clone(),
         metrics_service,
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),

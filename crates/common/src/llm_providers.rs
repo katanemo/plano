@@ -274,7 +274,6 @@ mod tests {
             port: None,
             rate_limits: None,
             usage: None,
-            routing_preferences: None,
             internal: None,
             stream: None,
             passthrough_auth: None,
