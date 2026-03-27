@@ -147,6 +147,9 @@ pub enum MetricsSource {
         query: String,
         refresh_interval: Option<u64>,
     },
+    DigitalOceanPricing {
+        refresh_interval: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

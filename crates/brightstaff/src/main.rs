@@ -220,6 +220,10 @@ async fn init_app_state(
             .iter()
             .filter(|s| matches!(s, MetricsSource::PrometheusMetrics { .. }))
             .count();
+        let do_count = sources
+            .iter()
+            .filter(|s| matches!(s, MetricsSource::DigitalOceanPricing { .. }))
+            .count();
         if cost_count > 1 {
             return Err("model_metrics_sources: only one cost_metrics source is allowed".into());
         }
@@ -228,11 +232,86 @@ async fn init_app_state(
                 "model_metrics_sources: only one prometheus_metrics source is allowed".into(),
             );
         }
+        if do_count > 1 {
+            return Err(
+                "model_metrics_sources: only one digitalocean_pricing source is allowed".into(),
+            );
+        }
+        if cost_count > 0 && do_count > 0 {
+            return Err(
+                "model_metrics_sources: cost_metrics and digitalocean_pricing cannot both be configured — use one or the other".into(),
+            );
+        }
         let svc = ModelMetricsService::new(sources, reqwest::Client::new()).await;
         Some(Arc::new(svc))
     } else {
         None
     };
+
+    // Validate that selection_policy.prefer is compatible with the configured metric sources.
+    if let Some(ref prefs) = config.routing_preferences {
+        use common::configuration::{MetricsSource, SelectionPreference};
+
+        let has_cost_source = config
+            .model_metrics_sources
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|s| {
+                matches!(
+                    s,
+                    MetricsSource::CostMetrics { .. } | MetricsSource::DigitalOceanPricing { .. }
+                )
+            });
+        let has_prometheus = config
+            .model_metrics_sources
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|s| matches!(s, MetricsSource::PrometheusMetrics { .. }));
+
+        for pref in prefs {
+            if pref.selection_policy.prefer == SelectionPreference::Cheapest && !has_cost_source {
+                return Err(format!(
+                    "routing_preferences route '{}' uses prefer: cheapest but no cost data source is configured — \
+                     add cost_metrics or digitalocean_pricing to model_metrics_sources",
+                    pref.name
+                )
+                .into());
+            }
+            if pref.selection_policy.prefer == SelectionPreference::Fastest && !has_prometheus {
+                return Err(format!(
+                    "routing_preferences route '{}' uses prefer: fastest but no prometheus_metrics source is configured — \
+                     add prometheus_metrics to model_metrics_sources",
+                    pref.name
+                )
+                .into());
+            }
+        }
+    }
+
+    // Warn about models in routing_preferences that have no matching pricing/latency data.
+    if let (Some(ref prefs), Some(ref svc)) = (&config.routing_preferences, &metrics_service) {
+        let cost_data = svc.cost_snapshot().await;
+        let latency_data = svc.latency_snapshot().await;
+        for pref in prefs {
+            use common::configuration::SelectionPreference;
+            for model in &pref.models {
+                let missing = match pref.selection_policy.prefer {
+                    SelectionPreference::Cheapest => !cost_data.contains_key(model.as_str()),
+                    SelectionPreference::Fastest => !latency_data.contains_key(model.as_str()),
+                    _ => false,
+                };
+                if missing {
+                    warn!(
+                        model = %model,
+                        route = %pref.name,
+                        "model has no metric data — will be ranked last"
+                    );
+                }
+            }
+        }
+    }
 
     let router_service = Arc::new(RouterService::new(
         config.routing_preferences.clone(),

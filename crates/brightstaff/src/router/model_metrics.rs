@@ -6,6 +6,8 @@ use common::configuration::{MetricsSource, SelectionPolicy, SelectionPreference}
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models";
+
 pub struct ModelMetricsService {
     cost: Arc<RwLock<HashMap<String, f64>>>,
     latency: Arc<RwLock<HashMap<String, f64>>>,
@@ -70,6 +72,25 @@ impl ModelMetricsService {
                         });
                     }
                 }
+                MetricsSource::DigitalOceanPricing { refresh_interval } => {
+                    let data = fetch_do_pricing(&client).await;
+                    info!(models = data.len(), "fetched digitalocean pricing");
+                    *cost_data.write().await = data;
+
+                    if let Some(interval_secs) = refresh_interval {
+                        let cost_clone = Arc::clone(&cost_data);
+                        let client_clone = client.clone();
+                        let interval = Duration::from_secs(*interval_secs);
+                        tokio::spawn(async move {
+                            loop {
+                                tokio::time::sleep(interval).await;
+                                let data = fetch_do_pricing(&client_clone).await;
+                                info!(models = data.len(), "refreshed digitalocean pricing");
+                                *cost_clone.write().await = data;
+                            }
+                        });
+                    }
+                }
             }
         }
 
@@ -94,6 +115,16 @@ impl ModelMetricsService {
             SelectionPreference::Random => shuffle(models),
             SelectionPreference::None => models.to_vec(),
         }
+    }
+
+    /// Returns a snapshot of the current cost data. Used at startup to warn about unmatched models.
+    pub async fn cost_snapshot(&self) -> HashMap<String, f64> {
+        self.cost.read().await.clone()
+    }
+
+    /// Returns a snapshot of the current latency data. Used at startup to warn about unmatched models.
+    pub async fn latency_snapshot(&self) -> HashMap<String, f64> {
+        self.latency.read().await.clone()
     }
 }
 
@@ -134,6 +165,12 @@ fn shuffle(models: &[String]) -> Vec<String> {
     result
 }
 
+#[derive(serde::Deserialize)]
+struct CostEntry {
+    input_per_million: f64,
+    output_per_million: f64,
+}
+
 async fn fetch_cost_metrics(
     url: &str,
     auth: Option<&common::configuration::MetricsAuth>,
@@ -148,8 +185,11 @@ async fn fetch_cost_metrics(
         }
     }
     match req.send().await {
-        Ok(resp) => match resp.json::<HashMap<String, f64>>().await {
-            Ok(data) => data,
+        Ok(resp) => match resp.json::<HashMap<String, CostEntry>>().await {
+            Ok(data) => data
+                .into_iter()
+                .map(|(k, v)| (k, v.input_per_million + v.output_per_million))
+                .collect(),
             Err(err) => {
                 warn!(error = %err, url = %url, "failed to parse cost metrics response");
                 HashMap::new()
@@ -157,6 +197,49 @@ async fn fetch_cost_metrics(
         },
         Err(err) => {
             warn!(error = %err, url = %url, "failed to fetch cost metrics");
+            HashMap::new()
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct DoModelList {
+    data: Vec<DoModel>,
+}
+
+#[derive(serde::Deserialize)]
+struct DoModel {
+    model_id: String,
+    creator: String,
+    pricing: DoPricing,
+}
+
+#[derive(serde::Deserialize)]
+struct DoPricing {
+    input_price_per_million: f64,
+    output_price_per_million: f64,
+}
+
+async fn fetch_do_pricing(client: &reqwest::Client) -> HashMap<String, f64> {
+    match client.get(DO_PRICING_URL).send().await {
+        Ok(resp) => match resp.json::<DoModelList>().await {
+            Ok(list) => list
+                .data
+                .into_iter()
+                .map(|m| {
+                    let key = format!("{}/{}", m.creator.to_lowercase(), m.model_id);
+                    let cost =
+                        m.pricing.input_price_per_million + m.pricing.output_price_per_million;
+                    (key, cost)
+                })
+                .collect(),
+            Err(err) => {
+                warn!(error = %err, url = DO_PRICING_URL, "failed to parse digitalocean pricing response");
+                HashMap::new()
+            }
+        },
+        Err(err) => {
+            warn!(error = %err, url = DO_PRICING_URL, "failed to fetch digitalocean pricing");
             HashMap::new()
         }
     }

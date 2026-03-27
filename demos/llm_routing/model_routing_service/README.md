@@ -13,42 +13,60 @@ Plano is an AI-native proxy and data plane for agentic apps — with built-in or
 
 - **One endpoint, many models** — apps call Plano using standard OpenAI/Anthropic APIs; Plano handles provider selection, keys, and failover
 - **Intelligent routing** — a lightweight 1.5B router model classifies user intent and picks the best model per request
+- **Cost & latency ranking** — models are ranked by live cost (DigitalOcean pricing API) or latency (Prometheus) before returning the fallback list
 - **Platform governance** — centralize API keys, rate limits, guardrails, and observability without touching app code
 - **Runs anywhere** — single binary; self-host the router for full data privacy
 
 ## How Routing Works
 
-The entire routing configuration is plain YAML — no code:
+Routing is configured in top-level `routing_preferences` (requires `version: v0.4.0`):
 
 ```yaml
-model_providers:
-  - model: openai/gpt-4o-mini
-    default: true                    # fallback for unmatched requests
+version: v0.4.0
 
-  - model: openai/gpt-4o
-    routing_preferences:
-      - name: complex_reasoning
-        description: complex reasoning tasks, multi-step analysis
+routing_preferences:
+  - name: complex_reasoning
+    description: complex reasoning tasks, multi-step analysis, or detailed explanations
+    models:
+      - openai/gpt-4o
+      - openai/gpt-4o-mini
+    selection_policy:
+      prefer: cheapest        # rank by live cost data
 
-  - model: anthropic/claude-sonnet-4-20250514
-    routing_preferences:
-      - name: code_generation
-        description: generating new code, writing functions
+  - name: code_generation
+    description: generating new code, writing functions, or creating boilerplate
+    models:
+      - anthropic/claude-sonnet-4-20250514
+      - openai/gpt-4o
+    selection_policy:
+      prefer: fastest         # rank by Prometheus p95 latency
 ```
 
-When a request arrives, Plano sends the conversation and routing preferences to Arch-Router, which classifies the intent and returns the matching route:
+### `selection_policy.prefer` values
+
+| Value | Behavior |
+|---|---|
+| `cheapest` | Sort models by ascending cost. Requires `cost_metrics` or `digitalocean_pricing` in `model_metrics_sources`. |
+| `fastest` | Sort models by ascending P95 latency. Requires `prometheus_metrics` in `model_metrics_sources`. |
+| `random` | Shuffle the model list on each request. |
+| `none` | Return models in definition order — no reordering. |
+
+When a request arrives, Plano:
+
+1. Sends the conversation + route descriptions to Arch-Router for intent classification
+2. Looks up the matched route and ranks its candidate models by cost or latency
+3. Returns an ordered list — client uses `models[0]`, falls back to `models[1]` on 429/5xx
 
 ```
 1. Request arrives          → "Write binary search in Python"
-2. Preferences serialized   → [{"name":"code_generation", ...}, {"name":"complex_reasoning", ...}]
-3. Arch-Router classifies   → {"route": "code_generation"}
-4. Route → Model lookup     → code_generation → anthropic/claude-sonnet-4-20250514
-5. Request forwarded        → Claude generates the response
+2. Arch-Router classifies   → route: "code_generation"
+3. Rank by latency          → claude-sonnet (0.85s) < gpt-4o (1.2s)
+4. Response                 → models: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"]
 ```
 
-No match? Arch-Router returns `other` → Plano falls back to the default model.
+No match? Arch-Router returns `null` route → client falls back to the model in the original request.
 
-The `/routing/v1/*` endpoints return the routing decision **without** forwarding to the LLM — useful for testing and validating routing behavior before going to production.
+The `/routing/v1/*` endpoints return the routing decision **without** forwarding to the LLM — useful for testing routing behavior before going to production.
 
 ## Setup
 
@@ -59,11 +77,27 @@ export OPENAI_API_KEY=<your-key>
 export ANTHROPIC_API_KEY=<your-key>
 ```
 
-Start Plano:
+Start Prometheus and the mock latency metrics server:
+
 ```bash
 cd demos/llm_routing/model_routing_service
+docker compose up -d
+```
+
+Then start Plano:
+
+```bash
 planoai up config.yaml
 ```
+
+On startup you should see logs like:
+
+```
+fetched digitalocean pricing: N models
+fetched prometheus latency metrics: 3 models
+```
+
+If a model in `routing_preferences` has no matching pricing or latency data, Plano logs a warning at startup — the model is still included but ranked last.
 
 ## Run the demo
 
@@ -95,13 +129,65 @@ curl http://localhost:12000/routing/v1/chat/completions \
 Response:
 ```json
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "c16d1096c1af4a17abb48fb182918a88"
 }
 ```
 
-The response tells you which model would handle this request and which route was matched, without actually making the LLM call.
+The response contains the ranked model list — your client should try `models[0]` first and fall back to `models[1]` on 429 or 5xx errors.
+
+## Metrics Sources
+
+### DigitalOcean Pricing (`digitalocean_pricing`)
+
+Fetches public model pricing from the DigitalOcean Gen-AI catalog (no auth required). Model IDs are normalized as `lowercase(creator)/model_id`. Cost scalar = `input_price_per_million + output_price_per_million`.
+
+```yaml
+model_metrics_sources:
+  - type: digitalocean_pricing
+    refresh_interval: 3600   # re-fetch every hour
+```
+
+### Prometheus Latency (`prometheus_metrics`)
+
+Queries a Prometheus instance for P95 latency. The PromQL expression must return an instant vector with a `model_name` label matching the model names in `routing_preferences`.
+
+```yaml
+model_metrics_sources:
+  - type: prometheus_metrics
+    url: http://localhost:9090
+    query: model_latency_p95_seconds
+    refresh_interval: 60
+```
+
+The demo's `metrics_server.py` exposes mock latency data; `docker compose up -d` starts it alongside Prometheus.
+
+### Custom Cost Endpoint (`cost_metrics`)
+
+```yaml
+model_metrics_sources:
+  - type: cost_metrics
+    url: https://my-internal-pricing-api/costs
+    auth:
+      type: bearer
+      token: $PRICING_TOKEN
+    refresh_interval: 300
+```
+
+Expected response format:
+```json
+{
+  "anthropic/claude-sonnet-4-20250514": {
+    "input_per_million": 3.0,
+    "output_per_million": 15.0
+  },
+  "openai/gpt-4o": {
+    "input_per_million": 5.0,
+    "output_per_million": 20.0
+  }
+}
+```
 
 ## Kubernetes Deployment (Self-hosted Arch-Router on GPU)
 
@@ -119,7 +205,6 @@ GPU nodes commonly have a `nvidia.com/gpu:NoSchedule` taint — `vllm-deployment
 **1. Deploy Arch-Router and Plano:**
 
 ```bash
-
 # arch-router deployment
 kubectl apply -f vllm-deployment.yaml
 
@@ -164,40 +249,4 @@ kubectl create configmap plano-config \
   --from-file=plano_config.yaml=config_k8s.yaml \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl rollout restart deployment/plano
-```
-
-## Demo Output
-
-```
-=== Model Routing Service Demo ===
-
---- 1. Code generation query (OpenAI format) ---
-{
-    "model": "anthropic/claude-sonnet-4-20250514",
-    "route": "code_generation",
-    "trace_id": "c16d1096c1af4a17abb48fb182918a88"
-}
-
---- 2. Complex reasoning query (OpenAI format) ---
-{
-    "model": "openai/gpt-4o",
-    "route": "complex_reasoning",
-    "trace_id": "30795e228aff4d7696f082ed01b75ad4"
-}
-
---- 3. Simple query - no routing match (OpenAI format) ---
-{
-    "model": "none",
-    "route": null,
-    "trace_id": "ae0b6c3b220d499fb5298ac63f4eac0e"
-}
-
---- 4. Code generation query (Anthropic format) ---
-{
-    "model": "anthropic/claude-sonnet-4-20250514",
-    "route": "code_generation",
-    "trace_id": "26be822bbdf14a3ba19fe198e55ea4a9"
-}
-
-=== Demo Complete ===
 ```

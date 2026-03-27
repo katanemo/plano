@@ -548,10 +548,23 @@ properties:
             refresh_interval:
               type: integer
               minimum: 1
+              description: "Refresh interval in seconds"
           required:
             - type
             - url
             - query
+          additionalProperties: false
+        - type: object
+          properties:
+            type:
+              type: string
+              const: digitalocean_pricing
+            refresh_interval:
+              type: integer
+              minimum: 1
+              description: "Refresh interval in seconds"
+          required:
+            - type
           additionalProperties: false
 
 additionalProperties: false
