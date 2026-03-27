@@ -104,6 +104,33 @@ pub enum StateStorageType {
     Postgres,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SelectionPreference {
+    Cheapest,
+    Fastest,
+    Random,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectionPolicy {
+    pub prefer: SelectionPreference,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopLevelRoutingPreference {
+    pub name: String,
+    pub description: String,
+    pub models: Vec<String>,
+    pub selection_policy: SelectionPolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelMetricsSources {
+    pub url: String,
+    pub refresh_interval: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration {
     pub version: String,
@@ -122,6 +149,8 @@ pub struct Configuration {
     pub filters: Option<Vec<Agent>>,
     pub listeners: Vec<Listener>,
     pub state_storage: Option<StateStorageConfig>,
+    pub routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
+    pub model_metrics_sources: Option<ModelMetricsSources>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -317,7 +346,7 @@ impl LlmProviderType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ModelUsagePreference {
     pub model: String,
     pub routing_preferences: Vec<RoutingPreference>,

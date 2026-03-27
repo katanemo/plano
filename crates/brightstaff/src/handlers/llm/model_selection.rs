@@ -1,4 +1,4 @@
-use common::configuration::ModelUsagePreference;
+use common::configuration::{ModelUsagePreference, TopLevelRoutingPreference};
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
 use hermesllm::{ProviderRequest, ProviderRequestType};
 use hyper::StatusCode;
@@ -40,6 +40,7 @@ pub async fn router_chat_get_upstream_model(
     request_path: &str,
     request_id: &str,
     inline_usage_preferences: Option<Vec<ModelUsagePreference>>,
+    inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
 ) -> Result<RoutingResult, RoutingError> {
     // Clone metadata for routing before converting (which consumes client_request)
     let routing_metadata = client_request.metadata().clone();
@@ -122,6 +123,7 @@ pub async fn router_chat_get_upstream_model(
             &chat_request.messages,
             traceparent,
             usage_preferences,
+            inline_routing_preferences,
             request_id,
         )
         .await;

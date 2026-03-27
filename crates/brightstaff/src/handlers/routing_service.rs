@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{ModelUsagePreference, SpanAttributes};
+use common::configuration::{ModelUsagePreference, SpanAttributes, TopLevelRoutingPreference};
 use common::consts::REQUEST_ID_HEADER;
 use common::errors::BrightStaffError;
 use hermesllm::clients::SupportedAPIsFromClient;
@@ -17,21 +17,31 @@ use crate::tracing::{collect_custom_trace_attributes, operation_component, set_s
 
 const ROUTING_POLICY_SIZE_WARNING_BYTES: usize = 5120;
 
-/// Extracts `routing_policy` from a JSON body, returning the cleaned body bytes
-/// and parsed preferences. The `routing_policy` field is removed from the JSON
-/// before re-serializing so downstream parsers don't see the non-standard field.
+type ExtractedRoutingPolicies = (
+    Bytes,
+    Option<Vec<ModelUsagePreference>>,
+    Option<Vec<TopLevelRoutingPreference>>,
+);
+
+/// Extracts `routing_policy` and `routing_preferences` from a JSON body, returning
+/// the cleaned body bytes and both sets of parsed preferences. Both fields are removed
+/// from the JSON before re-serializing so downstream parsers don't see them.
+///
+/// - `routing_policy` — legacy per-provider format (`Vec<ModelUsagePreference>`)
+/// - `routing_preferences` — v0.4.0+ format (`Vec<TopLevelRoutingPreference>`)
 ///
 /// If `warn_on_size` is true, logs a warning when the serialized policy exceeds 5KB.
 pub fn extract_routing_policy(
     raw_bytes: &[u8],
     warn_on_size: bool,
-) -> Result<(Bytes, Option<Vec<ModelUsagePreference>>), String> {
+) -> Result<ExtractedRoutingPolicies, String> {
     let mut json_body: serde_json::Value = serde_json::from_slice(raw_bytes)
         .map_err(|err| format!("Failed to parse JSON: {}", err))?;
 
-    let preferences = json_body
+    // Extract legacy routing_policy
+    let legacy_preferences = json_body
         .as_object_mut()
-        .and_then(|obj| obj.remove("routing_policy"))
+        .and_then(|o| o.remove("routing_policy"))
         .and_then(|policy_value| {
             if warn_on_size {
                 let policy_str = serde_json::to_string(&policy_value).unwrap_or_default();
@@ -58,8 +68,28 @@ pub fn extract_routing_policy(
             }
         });
 
+    // Extract new v0.4.0 routing_preferences
+    let top_level_preferences = json_body
+        .as_object_mut()
+        .and_then(|o| o.remove("routing_preferences"))
+        .and_then(|value| {
+            match serde_json::from_value::<Vec<TopLevelRoutingPreference>>(value) {
+                Ok(prefs) => {
+                    info!(
+                        num_routes = prefs.len(),
+                        "using inline routing_preferences from request body"
+                    );
+                    Some(prefs)
+                }
+                Err(err) => {
+                    warn!(error = %err, "failed to parse routing_preferences");
+                    None
+                }
+            }
+        });
+
     let bytes = Bytes::from(serde_json::to_vec(&json_body).unwrap());
-    Ok((bytes, preferences))
+    Ok((bytes, legacy_preferences, top_level_preferences))
 }
 
 #[derive(serde::Serialize)]
@@ -136,18 +166,19 @@ async fn routing_decision_inner(
         "routing decision request body received"
     );
 
-    // Extract routing_policy from request body before parsing as ProviderRequestType
-    let (chat_request_bytes, inline_preferences) = match extract_routing_policy(&raw_bytes, true) {
-        Ok(result) => result,
-        Err(err) => {
-            warn!(error = %err, "failed to parse request JSON");
-            return Ok(BrightStaffError::InvalidRequest(format!(
-                "Failed to parse request JSON: {}",
-                err
-            ))
-            .into_response());
-        }
-    };
+    // Extract routing_policy and routing_preferences from body before parsing as ProviderRequestType
+    let (chat_request_bytes, inline_preferences, inline_routing_preferences) =
+        match extract_routing_policy(&raw_bytes, true) {
+            Ok(result) => result,
+            Err(err) => {
+                warn!(error = %err, "failed to parse request JSON");
+                return Ok(BrightStaffError::InvalidRequest(format!(
+                    "Failed to parse request JSON: {}",
+                    err
+                ))
+                .into_response());
+            }
+        };
 
     let client_request = match ProviderRequestType::try_from((
         &chat_request_bytes[..],
@@ -172,6 +203,7 @@ async fn routing_decision_inner(
         &request_path,
         &request_id,
         inline_preferences,
+        inline_routing_preferences,
     )
     .await;
 
@@ -227,9 +259,10 @@ mod tests {
     #[test]
     fn extract_routing_policy_no_policy() {
         let body = make_chat_body("");
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, top_prefs) = extract_routing_policy(&body, false).unwrap();
 
         assert!(prefs.is_none());
+        assert!(top_prefs.is_none());
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
         assert_eq!(cleaned_json["model"], "gpt-4o-mini");
         assert!(cleaned_json.get("routing_policy").is_none());
@@ -252,7 +285,7 @@ mod tests {
             }
         ]"#;
         let body = make_chat_body(policy);
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, top_prefs) = extract_routing_policy(&body, false).unwrap();
 
         let prefs = prefs.expect("should have parsed preferences");
         assert_eq!(prefs.len(), 2);
@@ -260,6 +293,7 @@ mod tests {
         assert_eq!(prefs[0].routing_preferences[0].name, "coding");
         assert_eq!(prefs[1].model, "openai/gpt-4o-mini");
         assert_eq!(prefs[1].routing_preferences[0].name, "general");
+        assert!(top_prefs.is_none());
 
         // routing_policy should be stripped from cleaned body
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
@@ -272,7 +306,7 @@ mod tests {
         // routing_policy is present but has wrong shape
         let policy = r#""routing_policy": "not-an-array""#;
         let body = make_chat_body(policy);
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, _) = extract_routing_policy(&body, false).unwrap();
 
         // Invalid policy should be ignored (returns None), not error
         assert!(prefs.is_none());
@@ -293,7 +327,7 @@ mod tests {
     fn extract_routing_policy_empty_array() {
         let policy = r#""routing_policy": []"#;
         let body = make_chat_body(policy);
-        let (_, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (_, prefs, _) = extract_routing_policy(&body, false).unwrap();
 
         let prefs = prefs.expect("empty array is valid");
         assert_eq!(prefs.len(), 0);
@@ -303,13 +337,36 @@ mod tests {
     fn extract_routing_policy_preserves_other_fields() {
         let policy = r#""routing_policy": [{"model": "gpt-4o", "routing_preferences": [{"name": "test", "description": "test"}]}], "temperature": 0.5, "max_tokens": 100"#;
         let body = make_chat_body(policy);
-        let (cleaned, prefs) = extract_routing_policy(&body, false).unwrap();
+        let (cleaned, prefs, _) = extract_routing_policy(&body, false).unwrap();
 
         assert!(prefs.is_some());
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
         assert_eq!(cleaned_json["temperature"], 0.5);
         assert_eq!(cleaned_json["max_tokens"], 100);
         assert!(cleaned_json.get("routing_policy").is_none());
+    }
+
+    #[test]
+    fn extract_routing_policy_top_level_routing_preferences() {
+        let policy = r#""routing_preferences": [
+            {
+                "name": "code generation",
+                "description": "generate new code",
+                "models": ["openai/gpt-4o", "openai/gpt-4o-mini"],
+                "selection_policy": {"prefer": "fastest"}
+            }
+        ]"#;
+        let body = make_chat_body(policy);
+        let (cleaned, legacy_prefs, top_prefs) = extract_routing_policy(&body, false).unwrap();
+
+        assert!(legacy_prefs.is_none());
+        let top_prefs = top_prefs.expect("should have parsed top-level routing_preferences");
+        assert_eq!(top_prefs.len(), 1);
+        assert_eq!(top_prefs[0].name, "code generation");
+        assert_eq!(top_prefs[0].models, vec!["openai/gpt-4o", "openai/gpt-4o-mini"]);
+
+        let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
+        assert!(cleaned_json.get("routing_preferences").is_none());
     }
 
     #[test]

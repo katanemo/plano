@@ -120,6 +120,7 @@ async fn llm_chat_inner(
         tool_names,
         user_message_preview,
         inline_routing_policy,
+        inline_routing_preferences,
         client_api,
         provider_id,
     } = parsed;
@@ -262,6 +263,7 @@ async fn llm_chat_inner(
             &request_path,
             &request_id,
             inline_routing_policy,
+            inline_routing_preferences,
         )
         .await
     }
@@ -324,6 +326,7 @@ struct PreparedRequest {
     tool_names: Option<Vec<String>>,
     user_message_preview: Option<String>,
     inline_routing_policy: Option<Vec<common::configuration::ModelUsagePreference>>,
+    inline_routing_preferences: Option<Vec<common::configuration::TopLevelRoutingPreference>>,
     client_api: Option<SupportedAPIsFromClient>,
     provider_id: hermesllm::ProviderId,
 }
@@ -352,8 +355,8 @@ async fn parse_and_validate_request(
         "request body received"
     );
 
-    // Extract routing_policy from request body if present
-    let (chat_request_bytes, inline_routing_policy) =
+    // Extract routing_policy and routing_preferences from request body if present
+    let (chat_request_bytes, inline_routing_policy, inline_routing_preferences) =
         crate::handlers::routing_service::extract_routing_policy(&raw_bytes, false).map_err(
             |err| {
                 warn!(error = %err, "failed to parse request JSON");
@@ -440,6 +443,7 @@ async fn parse_and_validate_request(
         tool_names,
         user_message_preview,
         inline_routing_policy,
+        inline_routing_preferences,
         client_api,
         provider_id,
     })
