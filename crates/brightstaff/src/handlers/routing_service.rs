@@ -72,8 +72,8 @@ pub fn extract_routing_policy(
     let top_level_preferences = json_body
         .as_object_mut()
         .and_then(|o| o.remove("routing_preferences"))
-        .and_then(|value| {
-            match serde_json::from_value::<Vec<TopLevelRoutingPreference>>(value) {
+        .and_then(
+            |value| match serde_json::from_value::<Vec<TopLevelRoutingPreference>>(value) {
                 Ok(prefs) => {
                     info!(
                         num_routes = prefs.len(),
@@ -85,8 +85,8 @@ pub fn extract_routing_policy(
                     warn!(error = %err, "failed to parse routing_preferences");
                     None
                 }
-            }
-        });
+            },
+        );
 
     let bytes = Bytes::from(serde_json::to_vec(&json_body).unwrap());
     Ok((bytes, legacy_preferences, top_level_preferences))
@@ -363,7 +363,10 @@ mod tests {
         let top_prefs = top_prefs.expect("should have parsed top-level routing_preferences");
         assert_eq!(top_prefs.len(), 1);
         assert_eq!(top_prefs[0].name, "code generation");
-        assert_eq!(top_prefs[0].models, vec!["openai/gpt-4o", "openai/gpt-4o-mini"]);
+        assert_eq!(
+            top_prefs[0].models,
+            vec!["openai/gpt-4o", "openai/gpt-4o-mini"]
+        );
 
         let cleaned_json: serde_json::Value = serde_json::from_slice(&cleaned).unwrap();
         assert!(cleaned_json.get("routing_preferences").is_none());

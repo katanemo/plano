@@ -50,10 +50,8 @@ impl RouterService {
         // Build top-level preference map and sentinel llm_routes when v0.4.0 format is used.
         let (top_level_preferences, llm_routes, llm_usage_defined) =
             if let Some(top_prefs) = top_level_prefs {
-                let top_level_map: HashMap<String, TopLevelRoutingPreference> = top_prefs
-                    .into_iter()
-                    .map(|p| (p.name.clone(), p))
-                    .collect();
+                let top_level_map: HashMap<String, TopLevelRoutingPreference> =
+                    top_prefs.into_iter().map(|p| (p.name.clone(), p)).collect();
                 // Build sentinel routes: route_name → first model (RouterModelV1 needs a model
                 // mapping, but RouterService overrides the selection via metrics_service).
                 let sentinel_routes: HashMap<String, Vec<RoutingPreference>> = top_level_map
@@ -125,9 +123,8 @@ impl RouterService {
 
         // Build inline top-level map from request if present (inline overrides config).
         let inline_top_map: Option<HashMap<String, TopLevelRoutingPreference>> =
-            inline_routing_preferences.map(|prefs| {
-                prefs.into_iter().map(|p| (p.name.clone(), p)).collect()
-            });
+            inline_routing_preferences
+                .map(|prefs| prefs.into_iter().map(|p| (p.name.clone(), p)).collect());
 
         // Determine whether any routing is defined.
         let has_top_level = inline_top_map.is_some() || !self.top_level_preferences.is_empty();
@@ -221,9 +218,7 @@ impl RouterService {
 
             if let Some(pref) = top_pref {
                 let selected_model = match &self.metrics_service {
-                    Some(svc) => {
-                        svc.select_model(&pref.models, &pref.selection_policy).await
-                    }
+                    Some(svc) => svc.select_model(&pref.models, &pref.selection_policy).await,
                     None => pref.models.first().cloned().unwrap_or_default(),
                 };
                 Some((route_name, selected_model))
