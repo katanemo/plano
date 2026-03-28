@@ -166,7 +166,7 @@ Plano validates metric source configuration at startup and exits with a clear er
 | Two `digitalocean_pricing` entries | `only one digitalocean_pricing source is allowed` |
 | `cost_metrics` and `digitalocean_pricing` both present | `cannot both be configured — use one or the other` |
 
-If a model listed in `routing_preferences` has no matching entry in the fetched pricing or latency data, Plano logs a `WARN` at startup — the model is still included but ranked last.
+If a model listed in `routing_preferences` has no matching entry in the fetched pricing or latency data, Plano logs a `WARN` at startup — the model is still included but ranked last. The same warning is also emitted per routing request when a model has no data in cache at decision time (relevant for inline `routing_preferences` overrides that reference models not covered by the configured metrics sources).
 
 ### cost_metrics endpoint
 
