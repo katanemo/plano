@@ -34,13 +34,12 @@ routing_preferences:
       prefer: fastest
 
 model_metrics_sources:
-  - type: digitalocean_pricing
-    refresh_interval: 3600
+  - type: cost_metrics
+    url: http://localhost:8080/costs
+    refresh_interval: 300
 
   - type: prometheus_metrics
     url: http://localhost:9090
     query: model_latency_p95_seconds
     refresh_interval: 60
 
-tracing:
-  random_sampling: 100

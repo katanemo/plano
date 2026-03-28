@@ -6,7 +6,7 @@ use common::configuration::{MetricsSource, SelectionPolicy, SelectionPreference}
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models";
+const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models/catalog";
 
 pub struct ModelMetricsService {
     cost: Arc<RwLock<HashMap<String, f64>>>,

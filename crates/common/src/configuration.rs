@@ -147,6 +147,7 @@ pub enum MetricsSource {
         query: String,
         refresh_interval: Option<u64>,
     },
+    #[serde(rename = "digitalocean_pricing")]
     DigitalOceanPricing {
         refresh_interval: Option<u64>,
     },
