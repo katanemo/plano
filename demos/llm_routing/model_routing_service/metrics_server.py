@@ -17,9 +17,12 @@ model_latency_p95_seconds{model_name="openai/gpt-4o-mini"} 0.40
 """.encode()
 
 COST_DATA = {
-    "anthropic/claude-sonnet-4-20250514": {"input_per_million": 3.0, "output_per_million": 15.0},
-    "openai/gpt-4o":                      {"input_per_million": 5.0, "output_per_million": 20.0},
-    "openai/gpt-4o-mini":                 {"input_per_million": 0.15, "output_per_million": 0.6},
+    "anthropic/claude-sonnet-4-20250514": {
+        "input_per_million": 3.0,
+        "output_per_million": 15.0,
+    },
+    "openai/gpt-4o": {"input_per_million": 5.0, "output_per_million": 20.0},
+    "openai/gpt-4o-mini": {"input_per_million": 0.15, "output_per_million": 0.6},
 }
 
 

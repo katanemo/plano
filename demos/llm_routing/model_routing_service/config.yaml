@@ -51,4 +51,3 @@ model_metrics_sources:
     url: http://localhost:9090
     query: model_latency_p95_seconds
     refresh_interval: 60
-
