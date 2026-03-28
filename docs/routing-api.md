@@ -201,9 +201,15 @@ Fetches public model pricing from the DigitalOcean Gen-AI catalog. No authentica
 model_metrics_sources:
   - type: digitalocean_pricing
     refresh_interval: 3600   # re-fetch every hour; omit to fetch once on startup
+    model_aliases:
+      openai-gpt-4o: openai/gpt-4o
+      openai-gpt-4o-mini: openai/gpt-4o-mini
+      anthropic-claude-sonnet-4: anthropic/claude-sonnet-4-20250514
 ```
 
-Model IDs are normalized as `lowercase(creator)/model_id` — for example, `creator: "OpenAI"`, `model_id: "openai-gpt-4o"` → `"openai/openai-gpt-4o"`. The cost scalar is `input_price_per_million + output_price_per_million`.
+DO catalog entries are stored by their `model_id` field (e.g. `openai-gpt-4o`). The cost scalar is `input_price_per_million + output_price_per_million`.
+
+**`model_aliases`** — optional. Maps DO `model_id` values to the model names used in `routing_preferences`. Without aliases, cost data is stored under the DO model_id (e.g. `openai-gpt-4o`), which won't match models configured as `openai/gpt-4o`. Aliases let you bridge the naming gap without changing your routing config.
 
 **Constraints:**
 - `cost_metrics` and `digitalocean_pricing` cannot both be configured — use one or the other.

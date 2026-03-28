@@ -563,6 +563,11 @@ properties:
               type: integer
               minimum: 1
               description: "Refresh interval in seconds"
+            model_aliases:
+              type: object
+              description: "Map DO catalog keys (lowercase(creator)/model_id) to Plano model names used in routing_preferences. Example: 'openai/openai-gpt-oss-120b: openai/gpt-4o'"
+              additionalProperties:
+                type: string
           required:
             - type
           additionalProperties: false

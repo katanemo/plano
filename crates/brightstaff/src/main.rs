@@ -193,9 +193,7 @@ async fn init_app_state(
         let provider_model_names: std::collections::HashSet<&str> = config
             .model_providers
             .iter()
-            .flat_map(|p| {
-                std::iter::once(p.name.as_str()).chain(p.model.as_deref())
-            })
+            .flat_map(|p| std::iter::once(p.name.as_str()).chain(p.model.as_deref()))
             .collect();
         for pref in route_prefs {
             for model in &pref.models {

@@ -150,6 +150,9 @@ pub enum MetricsSource {
     #[serde(rename = "digitalocean_pricing")]
     DigitalOceanPricing {
         refresh_interval: Option<u64>,
+        /// Map DO catalog keys (`lowercase(creator)/model_id`) to Plano model names.
+        /// Example: `openai/openai-gpt-oss-120b: openai/gpt-4o`
+        model_aliases: Option<HashMap<String, String>>,
     },
 }
 
