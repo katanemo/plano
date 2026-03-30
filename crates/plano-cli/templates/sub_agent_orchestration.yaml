@@ -1,0 +1,57 @@
+version: v0.3.0
+
+agents:
+  - id: weather_agent
+    url: http://langchain-weather-agent:10510
+  - id: flight_agent
+    url: http://crewai-flight-agent:10520
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY # smaller, faster, cheaper model for extracting entities like location
+
+listeners:
+  - type: agent
+    name: travel_booking_service
+    port: 8001
+    router: plano_orchestrator_v1
+    agents:
+      - id: weather_agent
+        description: |
+
+          WeatherAgent is a specialized AI assistant for real-time weather information and forecasts. It provides accurate weather data for any city worldwide using the Open-Meteo API, helping travelers plan their trips with up-to-date weather conditions.
+
+          Capabilities:
+            * Get real-time weather conditions and multi-day forecasts for any city worldwide using Open-Meteo API (free, no API key needed)
+            * Provides current temperature
+            * Provides multi-day forecasts
+            * Provides weather conditions
+            * Provides sunrise/sunset times
+            * Provides detailed weather information
+            * Understands conversation context to resolve location references from previous messages
+            * Handles weather-related questions including "What's the weather in [city]?", "What's the forecast for [city]?", "How's the weather in [city]?"
+            * When queries include both weather and other travel questions (e.g., flights, currency), this agent answers ONLY the weather part
+
+      - id: flight_agent
+        description: |
+
+          FlightAgent is an AI-powered tool specialized in providing live flight information between airports. It leverages the FlightAware AeroAPI to deliver real-time flight status, gate information, and delay updates.
+
+          Capabilities:
+            * Get live flight information between airports using FlightAware AeroAPI
+            * Shows real-time flight status
+            * Shows scheduled/estimated/actual departure and arrival times
+            * Shows gate and terminal information
+            * Shows delays
+            * Shows aircraft type
+            * Shows flight status
+            * Automatically resolves city names to airport codes (IATA/ICAO)
+            * Understands conversation context to infer origin/destination from follow-up questions
+            * Handles flight-related questions including "What flights go from [city] to [city]?", "Do flights go to [city]?", "Are there direct flights from [city]?"
+            * When queries include both flight and other travel questions (e.g., weather, currency), this agent answers ONLY the flight part
+
+tracing:
+  random_sampling: 100

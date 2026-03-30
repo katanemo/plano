@@ -1,10 +1,9 @@
 ---
 name: build-cli
-description: Build and install the Python CLI (planoai). Use after making changes to cli/ code to install locally.
+description: Build and install the Rust CLI (planoai). Use after making changes to plano-cli code to install locally.
 ---
 
-1. `cd cli && uv sync` — ensure dependencies are installed
-2. `cd cli && uv tool install --editable .` — install the CLI locally
-3. Verify the installation: `cd cli && uv run planoai --help`
+1. `cd crates && cargo build --release -p plano-cli` — build the CLI binary
+2. Verify the installation: `./crates/target/release/planoai --help`
 
-If the build or install fails, diagnose and fix the issues.
+If the build fails, diagnose and fix the issues.

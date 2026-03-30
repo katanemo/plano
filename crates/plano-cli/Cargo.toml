@@ -1,0 +1,70 @@
+[package]
+name = "plano-cli"
+version = "0.4.14"
+edition = "2021"
+default-run = "planoai"
+
+[[bin]]
+name = "planoai"
+path = "src/main.rs"
+
+[dependencies]
+# CLI framework
+clap = { version = "4", features = ["derive"] }
+
+# Templating
+tera = "1"
+
+# Config parsing & validation
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9.34"
+serde_json = { version = "1.0", features = ["preserve_order"] }
+jsonschema = "0.29"
+
+# Terminal UI
+console = "0.15"
+indicatif = "0.17"
+dialoguer = "0.11"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Async runtime
+tokio = { version = "1.44", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["stream"] }
+
+# Process management
+nix = { version = "0.29", features = ["signal", "process", "fs"] }
+
+# Archives for binary downloads
+flate2 = "1.0"
+tar = "0.4"
+
+# Version comparison
+semver = "1"
+
+# URL parsing
+url = "2"
+
+# Regex for env var extraction
+regex = "1"
+
+# gRPC for trace listener
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+
+# Reuse workspace crates
+common = { version = "0.1.0", path = "../common" }
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Filesystem helpers
+dirs = "5"
+which = "7"
+atty = "0.2"

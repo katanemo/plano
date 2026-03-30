@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["llm_gateway", "prompt_gateway", "common", "brightstaff", "hermesllm"]
+members = ["llm_gateway", "prompt_gateway", "common", "brightstaff", "hermesllm", "plano-cli"]

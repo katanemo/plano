@@ -25,72 +25,62 @@ jobs:
       - uses: pre-commit/action@v3.0.1
 
   # ──────────────────────────────────────────────
-  # Plano tools (CLI) tests — no Docker needed
+  # Plano CLI (Rust) tests — no Docker needed
   # ──────────────────────────────────────────────
-  plano-tools-tests:
+  plano-cli-tests:
     runs-on: ubuntu-latest-m
-    defaults:
-      run:
-        working-directory: ./cli
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and test plano-cli
+        working-directory: ./crates
+        run: |
+          cargo test -p plano-cli
+          cargo build --release -p plano-cli
+
+      - name: Upload planoai binary
+        uses: actions/upload-artifact@v6
         with:
-          python-version: "3.14"
-
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Install plano tools
-        run: uv sync --extra dev
-
-      - name: Sync CLI templates to demos
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: uv run python -m planoai.template_sync
-
-      - name: Run tests
-        run: uv run pytest
+          name: planoai-binary
+          path: crates/target/release/planoai
+          retention-days: 1
 
   # ──────────────────────────────────────────────
   # Native mode smoke test — build from source & start natively
   # ──────────────────────────────────────────────
   native-smoke-test:
+    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
 
-      - name: Install planoai CLI
-        working-directory: ./cli
-        run: |
-          uv sync
-          uv tool install .
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: crates/target/release/
+
+      - name: Make binary executable
+        run: chmod +x crates/target/release/planoai
 
       - name: Build native binaries
-        run: planoai build
+        run: crates/target/release/planoai build
 
-      - name: Start plano natively
+      - name: Start plano and health check
         env:
           OPENAI_API_KEY: test-key-not-used
-        run: planoai up tests/e2e/config_native_smoke.yaml
-
-      - name: Health check
         run: |
+          crates/target/release/planoai up tests/e2e/config_native_smoke.yaml
+          sleep 3
           for i in $(seq 1 30); do
             if curl -sf http://localhost:12000/healthz > /dev/null 2>&1; then
               echo "Health check passed"
@@ -105,7 +95,7 @@ jobs:
 
       - name: Stop plano
         if: always()
-        run: planoai down || true
+        run: crates/target/release/planoai down || true
 
   # ──────────────────────────────────────────────
   # Single Docker build — shared by all downstream jobs
@@ -152,21 +142,25 @@ jobs:
   # Validate plano config
   # ──────────────────────────────────────────────
   validate-config:
+    needs: plano-cli-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
         with:
-          python-version: "3.14"
+          name: planoai-binary
+          path: crates/target/release/
 
-      - name: Install planoai
-        run: pip install -e ./cli
+      - name: Make binary executable
+        run: chmod +x crates/target/release/planoai
 
       - name: Validate plano config
-        run: bash config/validate_plano_config.sh
+        run: |
+          export PATH="$PWD/crates/target/release:$PATH"
+          bash config/validate_plano_config.sh
 
   # ──────────────────────────────────────────────
   # Docker security scan (Trivy)
@@ -216,7 +210,7 @@ jobs:
   # E2E: prompt_gateway tests
   # ──────────────────────────────────────────────
   test-prompt-gateway:
-    needs: docker-build
+    needs: [docker-build, plano-cli-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -237,6 +231,15 @@ jobs:
       - name: Load plano image
         run: docker load -i /tmp/plano-image.tar
 
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: /usr/local/bin/
+
+      - name: Make binary executable
+        run: chmod +x /usr/local/bin/planoai
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -246,9 +249,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: |
-            tests/e2e/uv.lock
-            cli/uv.lock
+          cache-dependency-glob: tests/e2e/uv.lock
 
       - name: Run prompt_gateway tests
         env:
@@ -266,7 +267,7 @@ jobs:
   # E2E: model_alias_routing tests
   # ──────────────────────────────────────────────
   test-model-alias-routing:
-    needs: docker-build
+    needs: [docker-build, plano-cli-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -287,6 +288,15 @@ jobs:
       - name: Load plano image
         run: docker load -i /tmp/plano-image.tar
 
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: /usr/local/bin/
+
+      - name: Make binary executable
+        run: chmod +x /usr/local/bin/planoai
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -296,9 +306,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: |
-            tests/e2e/uv.lock
-            cli/uv.lock
+          cache-dependency-glob: tests/e2e/uv.lock
 
       - name: Run model alias routing tests
         env:
@@ -316,7 +324,7 @@ jobs:
   # E2E: responses API with state tests
   # ──────────────────────────────────────────────
   test-responses-api-with-state:
-    needs: docker-build
+    needs: [docker-build, plano-cli-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -337,6 +345,15 @@ jobs:
       - name: Load plano image
         run: docker load -i /tmp/plano-image.tar
 
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: /usr/local/bin/
+
+      - name: Make binary executable
+        run: chmod +x /usr/local/bin/planoai
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -346,9 +363,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: |
-            tests/e2e/uv.lock
-            cli/uv.lock
+          cache-dependency-glob: tests/e2e/uv.lock
 
       - name: Run responses API with state tests
         env:
@@ -431,16 +446,11 @@ jobs:
   # E2E: demo — preference based routing
   # ──────────────────────────────────────────────
   e2e-demo-preference:
-    needs: docker-build
+    needs: [docker-build, plano-cli-tests]
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
 
       - name: Download plano image
         uses: actions/download-artifact@v7
@@ -451,22 +461,19 @@ jobs:
       - name: Load plano image
         run: docker load -i /tmp/plano-image.tar
 
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: /usr/local/bin/
 
-      - name: Setup python venv
-        run: python -m venv venv
+      - name: Make binary executable
+        run: chmod +x /usr/local/bin/planoai
 
       - name: Install hurl
         run: |
           curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/4.0.0/hurl_4.0.0_amd64.deb
           sudo dpkg -i hurl_4.0.0_amd64.deb
-
-      - name: Install plano gateway and test dependencies
-        run: |
-          source venv/bin/activate
-          cd cli && echo "installing plano cli" && uv sync && uv tool install .
-          cd ../demos/shared/test_runner && echo "installing test dependencies" && uv sync
 
       - name: Run demo tests
         env:
@@ -476,23 +483,17 @@ jobs:
           ARCH_API_KEY: ${{ secrets.ARCH_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          source venv/bin/activate
           cd demos/shared/test_runner && sh run_demo_tests.sh llm_routing/preference_based_routing
 
   # ──────────────────────────────────────────────
   # E2E: demo — currency conversion
   # ──────────────────────────────────────────────
   e2e-demo-currency:
-    needs: docker-build
+    needs: [docker-build, plano-cli-tests]
     runs-on: ubuntu-latest-m
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
 
       - name: Download plano image
         uses: actions/download-artifact@v7
@@ -503,22 +504,19 @@ jobs:
       - name: Load plano image
         run: docker load -i /tmp/plano-image.tar
 
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Download planoai binary
+        uses: actions/download-artifact@v6
+        with:
+          name: planoai-binary
+          path: /usr/local/bin/
 
-      - name: Setup python venv
-        run: python -m venv venv
+      - name: Make binary executable
+        run: chmod +x /usr/local/bin/planoai
 
       - name: Install hurl
         run: |
           curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/4.0.0/hurl_4.0.0_amd64.deb
           sudo dpkg -i hurl_4.0.0_amd64.deb
-
-      - name: Install plano gateway and test dependencies
-        run: |
-          source venv/bin/activate
-          cd cli && echo "installing plano cli" && uv sync && uv tool install .
-          cd ../demos/shared/test_runner && echo "installing test dependencies" && uv sync
 
       - name: Run demo tests
         env:
@@ -526,5 +524,4 @@ jobs:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          source venv/bin/activate
           cd demos/shared/test_runner && sh run_demo_tests.sh advanced/currency_exchange
