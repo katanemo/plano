@@ -386,7 +386,7 @@ async fn parse_and_validate_request(
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, model_aliases);
-    let (provider_id, _) = get_provider_info(llm_providers, &alias_resolved_model).await;
+    let (provider_id, _, _) = get_provider_info(llm_providers, &alias_resolved_model).await;
 
     // Validate model exists in configuration
     if llm_providers
@@ -741,7 +741,8 @@ async fn get_upstream_path(
     resolved_model: &str,
     is_streaming: bool,
 ) -> String {
-    let (provider_id, base_url_path_prefix) = get_provider_info(llm_providers, model_name).await;
+    let (provider_id, base_url_path_prefix, use_unversioned_paths) =
+        get_provider_info(llm_providers, model_name).await;
 
     let Some(client_api) = SupportedAPIsFromClient::from_endpoint(request_path) else {
         return request_path.to_string();
@@ -753,6 +754,7 @@ async fn get_upstream_path(
         resolved_model,
         is_streaming,
         base_url_path_prefix.as_deref(),
+        use_unversioned_paths,
     )
 }
 
@@ -760,21 +762,23 @@ async fn get_upstream_path(
 async fn get_provider_info(
     llm_providers: &Arc<RwLock<LlmProviders>>,
     model_name: &str,
-) -> (hermesllm::ProviderId, Option<String>) {
+) -> (hermesllm::ProviderId, Option<String>, bool) {
     let providers_lock = llm_providers.read().await;
 
     if let Some(provider) = providers_lock.get(model_name) {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
-        return (provider_id, prefix);
+        let use_unversioned_paths = provider.name.starts_with("perplexity/");
+        return (provider_id, prefix, use_unversioned_paths);
     }
 
     if let Some(provider) = providers_lock.default() {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
-        (provider_id, prefix)
+        let use_unversioned_paths = provider.name.starts_with("perplexity/");
+        (provider_id, prefix, use_unversioned_paths)
     } else {
         warn!("No default provider found, falling back to OpenAI");
-        (hermesllm::ProviderId::OpenAI, None)
+        (hermesllm::ProviderId::OpenAI, None, false)
     }
 }

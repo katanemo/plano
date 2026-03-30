@@ -122,6 +122,7 @@ impl StreamContext {
                     .unwrap_or(&"".to_string()),
                 self.streaming_response,
                 self.llm_provider().base_url_path_prefix.as_deref(),
+                self.llm_provider().name.starts_with("perplexity/"),
             );
             if target_endpoint != request_path {
                 self.set_http_request_header(":path", Some(&target_endpoint));
