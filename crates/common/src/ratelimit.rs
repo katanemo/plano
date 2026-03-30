@@ -150,6 +150,10 @@ fn get_quota(limit: Limit) -> Quota {
         TimeUnit::Second => Quota::per_second(tokens),
         TimeUnit::Minute => Quota::per_minute(tokens),
         TimeUnit::Hour => Quota::per_hour(tokens),
+        TimeUnit::Day => {
+            let per_hour = limit.tokens.saturating_div(24).max(1);
+            Quota::per_hour(NonZero::new(per_hour).expect("per_hour must be positive"))
+        }
     }
 }
 

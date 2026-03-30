@@ -290,6 +290,8 @@ pub enum TimeUnit {
     Minute,
     #[serde(rename = "hour")]
     Hour,
+    #[serde(rename = "day")]
+    Day,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
