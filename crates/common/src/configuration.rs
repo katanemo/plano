@@ -104,16 +104,17 @@ pub enum StateStorageType {
     Postgres,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SelectionPreference {
     Cheapest,
     Fastest,
     /// Return models in the same order they were defined — no reordering.
+    #[default]
     None,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SelectionPolicy {
     pub prefer: SelectionPreference,
 }
@@ -123,6 +124,7 @@ pub struct TopLevelRoutingPreference {
     pub name: String,
     pub description: String,
     pub models: Vec<String>,
+    #[serde(default)]
     pub selection_policy: SelectionPolicy,
 }
 

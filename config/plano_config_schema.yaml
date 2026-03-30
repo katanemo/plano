@@ -502,7 +502,6 @@ properties:
         - name
         - description
         - models
-        - selection_policy
 
   model_metrics_sources:
     type: array
