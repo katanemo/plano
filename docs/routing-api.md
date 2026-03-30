@@ -21,14 +21,12 @@ POST /v1/chat/completions
     {
       "name": "code generation",
       "description": "generating new code snippets",
-      "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "openai/gpt-4o-mini"],
-      "selection_policy": {"prefer": "fastest"}
+      "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "openai/gpt-4o-mini"]
     },
     {
       "name": "general questions",
       "description": "casual conversation and simple queries",
-      "models": ["openai/gpt-4o-mini"],
-      "selection_policy": {"prefer": "cheapest"}
+      "models": ["openai/gpt-4o-mini"]
     }
   ]
 }
@@ -41,15 +39,6 @@ POST /v1/chat/completions
 | `name` | string | yes | Route identifier. Must match the LLM router's route classification. |
 | `description` | string | yes | Natural language description used by the router to match user intent. |
 | `models` | string[] | yes | Ordered candidate pool. At least one entry required. Must be declared in `model_providers`. |
-| `selection_policy.prefer` | enum | yes | How to rank models: `cheapest`, `fastest`, or `none`. |
-
-### `selection_policy.prefer` values
-
-| Value | Behavior |
-|---|---|
-| `cheapest` | Sort by ascending cost from the metrics endpoint. Models with no data appended last. |
-| `fastest` | Sort by ascending latency from the metrics endpoint. Models with no data appended last. |
-| `none` | Return models in the order they were defined — no reordering. |
 
 ### Notes
 
@@ -121,85 +110,13 @@ routing_preferences:
     models:
       - anthropic/claude-sonnet-4-20250514
       - openai/gpt-4o
-    selection_policy:
-      prefer: fastest
 
   - name: general questions
     description: casual conversation and simple queries
     models:
       - openai/gpt-4o-mini
       - openai/gpt-4o
-    selection_policy:
-      prefer: cheapest
-
-# Optional: live cost and latency data sources (max one per type)
-model_metrics_sources:
-  - type: cost
-    provider: digitalocean
-    refresh_interval: 3600
-
-  - type: latency
-    provider: prometheus
-    url: https://internal-prometheus/
-    query: histogram_quantile(0.95, sum by (model_name, le) (rate(model_latency_seconds_bucket[5m])))
-    refresh_interval: 60
 ```
-
-### Startup validation
-
-Plano validates metric source configuration at startup and exits with a clear error if:
-
-| Condition | Error |
-|---|---|
-| `prefer: cheapest` with no cost source | `prefer: cheapest requires a cost metrics source` |
-| `prefer: fastest` with no latency source | `prefer: fastest requires a latency metrics source` |
-| Two `type: cost` entries | `only one cost metrics source is allowed` |
-| Two `type: latency` entries | `only one latency metrics source is allowed` |
-
-If a model listed in `routing_preferences` has no matching entry in the fetched pricing or latency data, Plano logs a `WARN` at startup — the model is still included but ranked last. The same warning is also emitted per routing request when a model has no data in cache at decision time (relevant for inline `routing_preferences` overrides that reference models not covered by the configured metrics sources).
-
-### Cost metrics (provider: digitalocean)
-
-Fetches public model pricing from the DigitalOcean Gen-AI catalog. No authentication required.
-
-```yaml
-model_metrics_sources:
-  - type: cost
-    provider: digitalocean
-    refresh_interval: 3600   # re-fetch every hour; omit to fetch once on startup
-    model_aliases:
-      openai-gpt-4o: openai/gpt-4o
-      openai-gpt-4o-mini: openai/gpt-4o-mini
-      anthropic-claude-sonnet-4: anthropic/claude-sonnet-4-20250514
-```
-
-DO catalog entries are stored by their `model_id` field (e.g. `openai-gpt-4o`). The cost scalar is `input_price_per_million + output_price_per_million`.
-
-**`model_aliases`** — optional. Maps DO `model_id` values to the model names used in `routing_preferences`. Without aliases, cost data is stored under the DO model_id (e.g. `openai-gpt-4o`), which won't match models configured as `openai/gpt-4o`. Aliases let you bridge the naming gap without changing your routing config.
-
-**Constraints:**
-- Only one `type: cost` entry is allowed.
-
-### Latency metrics (provider: prometheus)
-
-Plano queries `{url}/api/v1/query?query={query}` on startup and each `refresh_interval`. The PromQL expression must return an instant vector with a `model_name` label:
-
-```json
-{
-  "status": "success",
-  "data": {
-    "resultType": "vector",
-    "result": [
-      {"metric": {"model_name": "anthropic/claude-sonnet-4-20250514"}, "value": [1234567890, "120.5"]},
-      {"metric": {"model_name": "openai/gpt-4o"}, "value": [1234567890, "200.3"]}
-    ]
-  }
-}
-```
-
-- The PromQL query is responsible for computing the percentile (e.g. `histogram_quantile(0.95, ...)`)
-- Latency units are arbitrary — only relative order matters
-- Models missing from the result are appended at the end of the ranked list
 
 ---
 

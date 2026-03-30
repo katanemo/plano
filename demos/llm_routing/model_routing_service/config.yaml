@@ -22,28 +22,9 @@ routing_preferences:
     models:
       - openai/gpt-4o
       - openai/gpt-4o-mini
-    selection_policy:
-      prefer: cheapest
 
   - name: code_generation
     description: generating new code, writing functions, or creating boilerplate
     models:
       - anthropic/claude-sonnet-4-20250514
       - openai/gpt-4o
-    selection_policy:
-      prefer: fastest
-
-model_metrics_sources:
-  - type: cost
-    provider: digitalocean
-    refresh_interval: 3600
-    model_aliases:
-      openai-gpt-4o: openai/gpt-4o
-      openai-gpt-4o-mini: openai/gpt-4o-mini
-      anthropic-claude-sonnet-4: anthropic/claude-sonnet-4-20250514
-
-  - type: latency
-    provider: prometheus
-    url: http://localhost:9090
-    query: model_latency_p95_seconds
-    refresh_interval: 60

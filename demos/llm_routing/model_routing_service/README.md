@@ -13,7 +13,6 @@ Plano is an AI-native proxy and data plane for agentic apps — with built-in or
 
 - **One endpoint, many models** — apps call Plano using standard OpenAI/Anthropic APIs; Plano handles provider selection, keys, and failover
 - **Intelligent routing** — a lightweight 1.5B router model classifies user intent and picks the best model per request
-- **Cost & latency ranking** — models are ranked by live cost (DigitalOcean pricing API) or latency (Prometheus) before returning the fallback list
 - **Platform governance** — centralize API keys, rate limits, guardrails, and observability without touching app code
 - **Runs anywhere** — single binary; self-host the router for full data privacy
 
@@ -30,38 +29,24 @@ routing_preferences:
     models:
       - openai/gpt-4o
       - openai/gpt-4o-mini
-    selection_policy:
-      prefer: cheapest        # rank by live cost data
 
   - name: code_generation
     description: generating new code, writing functions, or creating boilerplate
     models:
       - anthropic/claude-sonnet-4-20250514
       - openai/gpt-4o
-    selection_policy:
-      prefer: fastest         # rank by Prometheus p95 latency
 ```
-
-### `selection_policy.prefer` values
-
-| Value | Behavior |
-|---|---|
-| `cheapest` | Sort models by ascending cost. Requires a `type: cost` source in `model_metrics_sources`. |
-| `fastest` | Sort models by ascending P95 latency. Requires a `type: latency` source in `model_metrics_sources`. |
-| `random` | Shuffle the model list on each request. |
-| `none` | Return models in definition order — no reordering. |
 
 When a request arrives, Plano:
 
 1. Sends the conversation + route descriptions to Arch-Router for intent classification
-2. Looks up the matched route and ranks its candidate models by cost or latency
+2. Looks up the matched route and returns its candidate models
 3. Returns an ordered list — client uses `models[0]`, falls back to `models[1]` on 429/5xx
 
 ```
 1. Request arrives          → "Write binary search in Python"
 2. Arch-Router classifies   → route: "code_generation"
-3. Rank by latency          → claude-sonnet (0.85s) < gpt-4o (1.2s)
-4. Response                 → models: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"]
+3. Response                 → models: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"]
 ```
 
 No match? Arch-Router returns `null` route → client falls back to the model in the original request.
@@ -77,27 +62,11 @@ export OPENAI_API_KEY=<your-key>
 export ANTHROPIC_API_KEY=<your-key>
 ```
 
-Start Prometheus and the mock latency metrics server:
+Start Plano:
 
 ```bash
-cd demos/llm_routing/model_routing_service
-docker compose up -d
+planoai up demos/llm_routing/model_routing_service/config.yaml
 ```
-
-Then start Plano:
-
-```bash
-planoai up config.yaml
-```
-
-On startup you should see logs like:
-
-```
-fetched digitalocean pricing: N models
-fetched prometheus latency metrics: 3 models
-```
-
-If a model in `routing_preferences` has no matching pricing or latency data, Plano logs a warning at startup — the model is still included but ranked last.
 
 ## Run the demo
 
@@ -135,35 +104,7 @@ Response:
 }
 ```
 
-The response contains the ranked model list — your client should try `models[0]` first and fall back to `models[1]` on 429 or 5xx errors.
-
-## Metrics Sources
-
-### Cost Metrics (provider: digitalocean)
-
-Fetches public model pricing from the DigitalOcean Gen-AI catalog (no auth required). Model IDs are normalized as `lowercase(creator)/model_id`. Cost scalar = `input_price_per_million + output_price_per_million`.
-
-```yaml
-model_metrics_sources:
-  - type: cost
-    provider: digitalocean
-    refresh_interval: 3600   # re-fetch every hour
-```
-
-### Latency Metrics (provider: prometheus)
-
-Queries a Prometheus instance for P95 latency. The PromQL expression must return an instant vector with a `model_name` label matching the model names in `routing_preferences`.
-
-```yaml
-model_metrics_sources:
-  - type: latency
-    provider: prometheus
-    url: http://localhost:9090
-    query: model_latency_p95_seconds
-    refresh_interval: 60
-```
-
-The demo's `metrics_server.py` exposes mock latency data; `docker compose up -d` starts it alongside Prometheus.
+The response contains the model list — your client should try `models[0]` first and fall back to `models[1]` on 429 or 5xx errors.
 
 ## Kubernetes Deployment (Self-hosted Arch-Router on GPU)
 
