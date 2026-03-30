@@ -1,6 +1,6 @@
 Plano Docs v0.4.14
 llms.txt (auto-generated)
-Generated (UTC): 2026-03-30T19:25:35.189116+00:00
+Generated (UTC): 2026-03-30T20:47:23.688799+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -6332,34 +6332,19 @@ model_providers:
   # can select the best model for each request based on intent. Requires the
   # Arch-Router model (or equivalent) to be configured in overrides.llm_routing_model.
   # Each preference has a name (short label) and a description (used for intent matching).
-  - model: openai/gpt-4o
-    name: gpt-4o-coding       # Optional friendly name to distinguish multiple entries for same model
-    access_key: $OPENAI_API_KEY
+  - model: groq/llama-3.3-70b-versatile
+    access_key: $GROQ_API_KEY
     routing_preferences:
       - name: code generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
       - name: code review
         description: reviewing, analyzing, and suggesting improvements to existing code
 
-  - model: anthropic/claude-sonnet-4-0
-    name: claude-sonnet-reasoning
-    access_key: $ANTHROPIC_API_KEY
-    routing_preferences:
-      - name: reasoning
-        description: complex multi-step reasoning, math, logic puzzles, and analytical tasks
-
   # passthrough_auth: forwards the client's Authorization header upstream instead of
   # using the configured access_key. Useful for LiteLLM or similar proxy setups.
   - model: openai/gpt-4o-litellm
     base_url: https://litellm.example.com
     passthrough_auth: true
-
-  # provider_interface: specifies the API format when the provider doesn't match
-  # the default inferred from the model name. Supported: openai, claude, gemini,
-  # mistral, groq, deepseek, plano
-  - model: groq/llama-3.3-70b-versatile
-    access_key: $GROQ_API_KEY
-    provider_interface: groq
 
   # Custom/self-hosted endpoint with explicit http_host override
   - model: openai/llama-3.3-70b
@@ -6475,7 +6460,7 @@ overrides:
   # Trim conversation history to fit within the model's context window
   optimize_context_window: true
   # Use Plano's agent orchestrator for multi-agent request routing
-  use_agent_orchestrator: true
+  use_agent_orchestrator: false
   # Connect timeout for upstream provider clusters (e.g., "5s", "10s"). Default: "5s"
   upstream_connect_timeout: 10s
   # Path to the trusted CA bundle for upstream TLS verification
