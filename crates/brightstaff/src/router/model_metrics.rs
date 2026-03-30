@@ -126,7 +126,6 @@ impl ModelMetricsService {
                 }
                 rank_by_ascending_metric(models, &data)
             }
-            SelectionPreference::Random => shuffle(models),
             SelectionPreference::None => models.to_vec(),
         }
     }
@@ -159,24 +158,6 @@ fn rank_by_ascending_metric(models: &[String], data: &HashMap<String, f64>) -> V
         .map(|(m, _)| (*m).clone())
         .chain(without_data.iter().map(|m| (*m).clone()))
         .collect()
-}
-
-fn shuffle(models: &[String]) -> Vec<String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as usize)
-        .unwrap_or(0);
-    let mut result = models.to_vec();
-    let mut state = seed;
-    for i in (1..result.len()).rev() {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        let j = state % (i + 1);
-        result.swap(i, j);
-    }
-    result
 }
 
 #[derive(serde::Deserialize)]

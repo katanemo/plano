@@ -41,7 +41,7 @@ POST /v1/chat/completions
 | `name` | string | yes | Route identifier. Must match the LLM router's route classification. |
 | `description` | string | yes | Natural language description used by the router to match user intent. |
 | `models` | string[] | yes | Ordered candidate pool. At least one entry required. Must be declared in `model_providers`. |
-| `selection_policy.prefer` | enum | yes | How to rank models: `cheapest`, `fastest`, `random`, or `none`. |
+| `selection_policy.prefer` | enum | yes | How to rank models: `cheapest`, `fastest`, or `none`. |
 
 ### `selection_policy.prefer` values
 
@@ -49,7 +49,6 @@ POST /v1/chat/completions
 |---|---|
 | `cheapest` | Sort by ascending cost from the metrics endpoint. Models with no data appended last. |
 | `fastest` | Sort by ascending latency from the metrics endpoint. Models with no data appended last. |
-| `random` | Shuffle the model list randomly on each request. |
 | `none` | Return models in the order they were defined — no reordering. |
 
 ### Notes

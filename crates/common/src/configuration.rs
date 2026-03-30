@@ -109,7 +109,6 @@ pub enum StateStorageType {
 pub enum SelectionPreference {
     Cheapest,
     Fastest,
-    Random,
     /// Return models in the same order they were defined — no reordering.
     None,
 }

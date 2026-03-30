@@ -493,7 +493,6 @@ properties:
               enum:
                 - cheapest
                 - fastest
-                - random
                 - none
           additionalProperties: false
           required:
