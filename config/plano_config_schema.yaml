@@ -512,52 +512,11 @@ properties:
           properties:
             type:
               type: string
-              const: cost_metrics
-            url:
+              const: cost
+            provider:
               type: string
-            refresh_interval:
-              type: integer
-              minimum: 1
-            auth:
-              type: object
-              properties:
-                type:
-                  type: string
-                  enum:
-                    - bearer
-                token:
-                  type: string
-              required:
-                - type
-                - token
-              additionalProperties: false
-          required:
-            - type
-            - url
-          additionalProperties: false
-        - type: object
-          properties:
-            type:
-              type: string
-              const: prometheus_metrics
-            url:
-              type: string
-            query:
-              type: string
-            refresh_interval:
-              type: integer
-              minimum: 1
-              description: "Refresh interval in seconds"
-          required:
-            - type
-            - url
-            - query
-          additionalProperties: false
-        - type: object
-          properties:
-            type:
-              type: string
-              const: digitalocean_pricing
+              enum:
+                - digitalocean
             refresh_interval:
               type: integer
               minimum: 1
@@ -569,6 +528,30 @@ properties:
                 type: string
           required:
             - type
+            - provider
+          additionalProperties: false
+        - type: object
+          properties:
+            type:
+              type: string
+              const: latency
+            provider:
+              type: string
+              enum:
+                - prometheus
+            url:
+              type: string
+            query:
+              type: string
+            refresh_interval:
+              type: integer
+              minimum: 1
+              description: "Refresh interval in seconds"
+          required:
+            - type
+            - provider
+            - url
+            - query
           additionalProperties: false
 
 additionalProperties: false

@@ -134,19 +134,12 @@ routing_preferences:
 
 # Optional: live cost and latency data sources (max one per type)
 model_metrics_sources:
-  # Option A: DigitalOcean public pricing (no auth required)
-  - type: digitalocean_pricing
+  - type: cost
+    provider: digitalocean
     refresh_interval: 3600
 
-  # Option B: custom cost endpoint (mutually exclusive with digitalocean_pricing)
-  # - type: cost_metrics
-  #   url: https://internal-cost-api/models
-  #   refresh_interval: 300  # seconds; omit for fetch-once on startup
-  #   auth:
-  #     type: bearer
-  #     token: $COST_API_TOKEN
-
-  - type: prometheus_metrics
+  - type: latency
+    provider: prometheus
     url: https://internal-prometheus/
     query: histogram_quantile(0.95, sum by (model_name, le) (rate(model_latency_seconds_bucket[5m])))
     refresh_interval: 60
@@ -158,47 +151,21 @@ Plano validates metric source configuration at startup and exits with a clear er
 
 | Condition | Error |
 |---|---|
-| `prefer: cheapest` with no cost source | `prefer: cheapest requires a cost data source — add cost_metrics or digitalocean_pricing` |
-| `prefer: fastest` with no `prometheus_metrics` | `prefer: fastest requires a prometheus_metrics source` |
-| Two `cost_metrics` entries | `only one cost_metrics source is allowed` |
-| Two `prometheus_metrics` entries | `only one prometheus_metrics source is allowed` |
-| Two `digitalocean_pricing` entries | `only one digitalocean_pricing source is allowed` |
-| `cost_metrics` and `digitalocean_pricing` both present | `cannot both be configured — use one or the other` |
+| `prefer: cheapest` with no cost source | `prefer: cheapest requires a cost metrics source` |
+| `prefer: fastest` with no latency source | `prefer: fastest requires a latency metrics source` |
+| Two `type: cost` entries | `only one cost metrics source is allowed` |
+| Two `type: latency` entries | `only one latency metrics source is allowed` |
 
 If a model listed in `routing_preferences` has no matching entry in the fetched pricing or latency data, Plano logs a `WARN` at startup — the model is still included but ranked last. The same warning is also emitted per routing request when a model has no data in cache at decision time (relevant for inline `routing_preferences` overrides that reference models not covered by the configured metrics sources).
 
-### cost_metrics endpoint
-
-Plano GETs `url` on startup (and on each `refresh_interval`). Expected response — a JSON object mapping model name to an object with `input_per_million` and `output_per_million` fields:
-
-```json
-{
-  "anthropic/claude-sonnet-4-20250514": {
-    "input_per_million": 3.0,
-    "output_per_million": 15.0
-  },
-  "openai/gpt-4o": {
-    "input_per_million": 5.0,
-    "output_per_million": 20.0
-  },
-  "openai/gpt-4o-mini": {
-    "input_per_million": 0.15,
-    "output_per_million": 0.6
-  }
-}
-```
-
-- `auth.type: bearer` adds `Authorization: Bearer <token>` to the request
-- Plano combines the two fields as `input_per_million + output_per_million` to produce a single cost scalar used for ranking
-- Only relative order matters — the unit (e.g. USD per million tokens) is consistent so ranking is correct
-
-### digitalocean_pricing source
+### Cost metrics (provider: digitalocean)
 
 Fetches public model pricing from the DigitalOcean Gen-AI catalog. No authentication required.
 
 ```yaml
 model_metrics_sources:
-  - type: digitalocean_pricing
+  - type: cost
+    provider: digitalocean
     refresh_interval: 3600   # re-fetch every hour; omit to fetch once on startup
     model_aliases:
       openai-gpt-4o: openai/gpt-4o
@@ -211,10 +178,9 @@ DO catalog entries are stored by their `model_id` field (e.g. `openai-gpt-4o`). 
 **`model_aliases`** — optional. Maps DO `model_id` values to the model names used in `routing_preferences`. Without aliases, cost data is stored under the DO model_id (e.g. `openai-gpt-4o`), which won't match models configured as `openai/gpt-4o`. Aliases let you bridge the naming gap without changing your routing config.
 
 **Constraints:**
-- `cost_metrics` and `digitalocean_pricing` cannot both be configured — use one or the other.
-- Only one `digitalocean_pricing` entry is allowed.
+- Only one `type: cost` entry is allowed.
 
-### prometheus_metrics endpoint
+### Latency metrics (provider: prometheus)
 
 Plano queries `{url}/api/v1/query?query={query}` on startup and each `refresh_interval`. The PromQL expression must return an instant vector with a `model_name` label:
 

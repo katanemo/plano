@@ -46,8 +46,8 @@ routing_preferences:
 
 | Value | Behavior |
 |---|---|
-| `cheapest` | Sort models by ascending cost. Requires `cost_metrics` or `digitalocean_pricing` in `model_metrics_sources`. |
-| `fastest` | Sort models by ascending P95 latency. Requires `prometheus_metrics` in `model_metrics_sources`. |
+| `cheapest` | Sort models by ascending cost. Requires a `type: cost` source in `model_metrics_sources`. |
+| `fastest` | Sort models by ascending P95 latency. Requires a `type: latency` source in `model_metrics_sources`. |
 | `random` | Shuffle the model list on each request. |
 | `none` | Return models in definition order — no reordering. |
 
@@ -139,55 +139,31 @@ The response contains the ranked model list — your client should try `models[0
 
 ## Metrics Sources
 
-### DigitalOcean Pricing (`digitalocean_pricing`)
+### Cost Metrics (provider: digitalocean)
 
 Fetches public model pricing from the DigitalOcean Gen-AI catalog (no auth required). Model IDs are normalized as `lowercase(creator)/model_id`. Cost scalar = `input_price_per_million + output_price_per_million`.
 
 ```yaml
 model_metrics_sources:
-  - type: digitalocean_pricing
+  - type: cost
+    provider: digitalocean
     refresh_interval: 3600   # re-fetch every hour
 ```
 
-### Prometheus Latency (`prometheus_metrics`)
+### Latency Metrics (provider: prometheus)
 
 Queries a Prometheus instance for P95 latency. The PromQL expression must return an instant vector with a `model_name` label matching the model names in `routing_preferences`.
 
 ```yaml
 model_metrics_sources:
-  - type: prometheus_metrics
+  - type: latency
+    provider: prometheus
     url: http://localhost:9090
     query: model_latency_p95_seconds
     refresh_interval: 60
 ```
 
 The demo's `metrics_server.py` exposes mock latency data; `docker compose up -d` starts it alongside Prometheus.
-
-### Custom Cost Endpoint (`cost_metrics`)
-
-```yaml
-model_metrics_sources:
-  - type: cost_metrics
-    url: https://my-internal-pricing-api/costs
-    auth:
-      type: bearer
-      token: $PRICING_TOKEN
-    refresh_interval: 300
-```
-
-Expected response format:
-```json
-{
-  "anthropic/claude-sonnet-4-20250514": {
-    "input_per_million": 3.0,
-    "output_per_million": 15.0
-  },
-  "openai/gpt-4o": {
-    "input_per_million": 5.0,
-    "output_per_million": 20.0
-  }
-}
-```
 
 ## Kubernetes Deployment (Self-hosted Arch-Router on GPU)
 

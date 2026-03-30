@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::configuration::{MetricsSource, SelectionPolicy, SelectionPreference};
+use common::configuration::{
+    CostProvider, LatencyProvider, MetricsSource, SelectionPolicy, SelectionPreference,
+};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -20,81 +22,52 @@ impl ModelMetricsService {
 
         for source in sources {
             match source {
-                MetricsSource::CostMetrics {
-                    url,
-                    refresh_interval,
-                    auth,
-                } => {
-                    let data = fetch_cost_metrics(url, auth.as_ref(), &client).await;
-                    info!(models = data.len(), url = %url, "fetched cost metrics");
-                    *cost_data.write().await = data;
+                MetricsSource::Cost(cfg) => match cfg.provider {
+                    CostProvider::Digitalocean => {
+                        let aliases = cfg.model_aliases.clone().unwrap_or_default();
+                        let data = fetch_do_pricing(&client, &aliases).await;
+                        info!(models = data.len(), "fetched digitalocean pricing");
+                        *cost_data.write().await = data;
 
-                    if let Some(interval_secs) = refresh_interval {
-                        let cost_clone = Arc::clone(&cost_data);
-                        let client_clone = client.clone();
-                        let url = url.clone();
-                        let auth = auth.clone();
-                        let interval = Duration::from_secs(*interval_secs);
-                        tokio::spawn(async move {
-                            loop {
-                                tokio::time::sleep(interval).await;
-                                let data =
-                                    fetch_cost_metrics(&url, auth.as_ref(), &client_clone).await;
-                                info!(models = data.len(), url = %url, "refreshed cost metrics");
-                                *cost_clone.write().await = data;
-                            }
-                        });
+                        if let Some(interval_secs) = cfg.refresh_interval {
+                            let cost_clone = Arc::clone(&cost_data);
+                            let client_clone = client.clone();
+                            let interval = Duration::from_secs(interval_secs);
+                            tokio::spawn(async move {
+                                loop {
+                                    tokio::time::sleep(interval).await;
+                                    let data = fetch_do_pricing(&client_clone, &aliases).await;
+                                    info!(models = data.len(), "refreshed digitalocean pricing");
+                                    *cost_clone.write().await = data;
+                                }
+                            });
+                        }
                     }
-                }
-                MetricsSource::PrometheusMetrics {
-                    url,
-                    query,
-                    refresh_interval,
-                } => {
-                    let data = fetch_prometheus_metrics(url, query, &client).await;
-                    info!(models = data.len(), url = %url, "fetched prometheus latency metrics");
-                    *latency_data.write().await = data;
+                },
+                MetricsSource::Latency(cfg) => match cfg.provider {
+                    LatencyProvider::Prometheus => {
+                        let data = fetch_prometheus_metrics(&cfg.url, &cfg.query, &client).await;
+                        info!(models = data.len(), url = %cfg.url, "fetched latency metrics");
+                        *latency_data.write().await = data;
 
-                    if let Some(interval_secs) = refresh_interval {
-                        let latency_clone = Arc::clone(&latency_data);
-                        let client_clone = client.clone();
-                        let url = url.clone();
-                        let query = query.clone();
-                        let interval = Duration::from_secs(*interval_secs);
-                        tokio::spawn(async move {
-                            loop {
-                                tokio::time::sleep(interval).await;
-                                let data =
-                                    fetch_prometheus_metrics(&url, &query, &client_clone).await;
-                                info!(models = data.len(), url = %url, "refreshed prometheus latency metrics");
-                                *latency_clone.write().await = data;
-                            }
-                        });
+                        if let Some(interval_secs) = cfg.refresh_interval {
+                            let latency_clone = Arc::clone(&latency_data);
+                            let client_clone = client.clone();
+                            let url = cfg.url.clone();
+                            let query = cfg.query.clone();
+                            let interval = Duration::from_secs(interval_secs);
+                            tokio::spawn(async move {
+                                loop {
+                                    tokio::time::sleep(interval).await;
+                                    let data =
+                                        fetch_prometheus_metrics(&url, &query, &client_clone).await;
+                                    info!(models = data.len(), url = %url, "refreshed latency metrics");
+                                    *latency_clone.write().await = data;
+                                }
+                            });
+                        }
                     }
-                }
-                MetricsSource::DigitalOceanPricing {
-                    refresh_interval,
-                    model_aliases,
-                } => {
-                    let aliases = model_aliases.clone().unwrap_or_default();
-                    let data = fetch_do_pricing(&client, &aliases).await;
-                    info!(models = data.len(), "fetched digitalocean pricing");
-                    *cost_data.write().await = data;
-
-                    if let Some(interval_secs) = refresh_interval {
-                        let cost_clone = Arc::clone(&cost_data);
-                        let client_clone = client.clone();
-                        let interval = Duration::from_secs(*interval_secs);
-                        tokio::spawn(async move {
-                            loop {
-                                tokio::time::sleep(interval).await;
-                                let data = fetch_do_pricing(&client_clone, &aliases).await;
-                                info!(models = data.len(), "refreshed digitalocean pricing");
-                                *cost_clone.write().await = data;
-                            }
-                        });
-                    }
-                }
+                },
             }
         }
 
@@ -158,43 +131,6 @@ fn rank_by_ascending_metric(models: &[String], data: &HashMap<String, f64>) -> V
         .map(|(m, _)| (*m).clone())
         .chain(without_data.iter().map(|m| (*m).clone()))
         .collect()
-}
-
-#[derive(serde::Deserialize)]
-struct CostEntry {
-    input_per_million: f64,
-    output_per_million: f64,
-}
-
-async fn fetch_cost_metrics(
-    url: &str,
-    auth: Option<&common::configuration::MetricsAuth>,
-    client: &reqwest::Client,
-) -> HashMap<String, f64> {
-    let mut req = client.get(url);
-    if let Some(auth) = auth {
-        if auth.auth_type == "bearer" {
-            req = req.header("Authorization", format!("Bearer {}", auth.token));
-        } else {
-            warn!(auth_type = %auth.auth_type, "unsupported auth type for cost_metrics, skipping auth");
-        }
-    }
-    match req.send().await {
-        Ok(resp) => match resp.json::<HashMap<String, CostEntry>>().await {
-            Ok(data) => data
-                .into_iter()
-                .map(|(k, v)| (k, v.input_per_million + v.output_per_million))
-                .collect(),
-            Err(err) => {
-                warn!(error = %err, url = %url, "failed to parse cost metrics response");
-                HashMap::new()
-            }
-        },
-        Err(err) => {
-            warn!(error = %err, url = %url, "failed to fetch cost metrics");
-            HashMap::new()
-        }
-    }
 }
 
 #[derive(serde::Deserialize)]

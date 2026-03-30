@@ -216,33 +216,17 @@ async fn init_app_state(
         use common::configuration::MetricsSource;
         let cost_count = sources
             .iter()
-            .filter(|s| matches!(s, MetricsSource::CostMetrics { .. }))
+            .filter(|s| matches!(s, MetricsSource::Cost(_)))
             .count();
-        let prom_count = sources
+        let latency_count = sources
             .iter()
-            .filter(|s| matches!(s, MetricsSource::PrometheusMetrics { .. }))
-            .count();
-        let do_count = sources
-            .iter()
-            .filter(|s| matches!(s, MetricsSource::DigitalOceanPricing { .. }))
+            .filter(|s| matches!(s, MetricsSource::Latency(_)))
             .count();
         if cost_count > 1 {
-            return Err("model_metrics_sources: only one cost_metrics source is allowed".into());
+            return Err("model_metrics_sources: only one cost metrics source is allowed".into());
         }
-        if prom_count > 1 {
-            return Err(
-                "model_metrics_sources: only one prometheus_metrics source is allowed".into(),
-            );
-        }
-        if do_count > 1 {
-            return Err(
-                "model_metrics_sources: only one digitalocean_pricing source is allowed".into(),
-            );
-        }
-        if cost_count > 0 && do_count > 0 {
-            return Err(
-                "model_metrics_sources: cost_metrics and digitalocean_pricing cannot both be configured — use one or the other".into(),
-            );
+        if latency_count > 1 {
+            return Err("model_metrics_sources: only one latency metrics source is allowed".into());
         }
         let svc = ModelMetricsService::new(sources, reqwest::Client::new()).await;
         Some(Arc::new(svc))
@@ -259,32 +243,27 @@ async fn init_app_state(
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .any(|s| {
-                matches!(
-                    s,
-                    MetricsSource::CostMetrics { .. } | MetricsSource::DigitalOceanPricing { .. }
-                )
-            });
-        let has_prometheus = config
+            .any(|s| matches!(s, MetricsSource::Cost(_)));
+        let has_latency_source = config
             .model_metrics_sources
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .any(|s| matches!(s, MetricsSource::PrometheusMetrics { .. }));
+            .any(|s| matches!(s, MetricsSource::Latency(_)));
 
         for pref in prefs {
             if pref.selection_policy.prefer == SelectionPreference::Cheapest && !has_cost_source {
                 return Err(format!(
-                    "routing_preferences route '{}' uses prefer: cheapest but no cost data source is configured — \
-                     add cost_metrics or digitalocean_pricing to model_metrics_sources",
+                    "routing_preferences route '{}' uses prefer: cheapest but no cost metrics source is configured — \
+                     add a cost metrics source to model_metrics_sources",
                     pref.name
                 )
                 .into());
             }
-            if pref.selection_policy.prefer == SelectionPreference::Fastest && !has_prometheus {
+            if pref.selection_policy.prefer == SelectionPreference::Fastest && !has_latency_source {
                 return Err(format!(
-                    "routing_preferences route '{}' uses prefer: fastest but no prometheus_metrics source is configured — \
-                     add prometheus_metrics to model_metrics_sources",
+                    "routing_preferences route '{}' uses prefer: fastest but no latency metrics source is configured — \
+                     add a latency metrics source to model_metrics_sources",
                     pref.name
                 )
                 .into());
