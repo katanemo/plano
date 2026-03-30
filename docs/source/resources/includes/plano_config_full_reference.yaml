@@ -19,38 +19,32 @@ filters:
 
 # LLM provider configurations with API keys and model routing
 model_providers:
-  - model: openai/gpt-4o
-    access_key: $OPENAI_API_KEY
-    default: true
-
-  - model: openai/gpt-4o-mini
-    access_key: $OPENAI_API_KEY
-
-  - model: anthropic/claude-sonnet-4-0
-    access_key: $ANTHROPIC_API_KEY
-
-  - model: mistral/ministral-3b-latest
-    access_key: $MISTRAL_API_KEY
-
   # routing_preferences: tags a model with named capabilities so Plano's LLM router
   # can select the best model for each request based on intent. Requires the
   # Arch-Router model (or equivalent) to be configured in overrides.llm_routing_model.
   # Each preference has a name (short label) and a description (used for intent matching).
+  # Each provider/model string must appear only once in model_providers (use optional
+  # `name` only when you legitimately need two rows for the same model, e.g. different base_urls).
   - model: openai/gpt-4o
-    name: gpt-4o-coding       # Optional friendly name to distinguish multiple entries for same model
     access_key: $OPENAI_API_KEY
+    default: true
     routing_preferences:
       - name: code generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
       - name: code review
         description: reviewing, analyzing, and suggesting improvements to existing code
 
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+
   - model: anthropic/claude-sonnet-4-0
-    name: claude-sonnet-reasoning
     access_key: $ANTHROPIC_API_KEY
     routing_preferences:
       - name: reasoning
         description: complex multi-step reasoning, math, logic puzzles, and analytical tasks
+
+  - model: mistral/ministral-3b-latest
+    access_key: $MISTRAL_API_KEY
 
   # passthrough_auth: forwards the client's Authorization header upstream instead of
   # using the configured access_key. Useful for LiteLLM or similar proxy setups.
@@ -58,12 +52,10 @@ model_providers:
     base_url: https://litellm.example.com
     passthrough_auth: true
 
-  # provider_interface: specifies the API format when the provider doesn't match
-  # the default inferred from the model name. Supported: openai, claude, gemini,
-  # mistral, groq, deepseek, plano
+  # provider_interface: set with base_url when the model prefix is not a built-in
+  # Supported values include: openai, claude, gemini, mistral, groq, deepseek, plano
   - model: groq/llama-3.3-70b-versatile
     access_key: $GROQ_API_KEY
-    provider_interface: groq
 
   # Custom/self-hosted endpoint with explicit http_host override
   - model: openai/llama-3.3-70b
@@ -178,8 +170,9 @@ overrides:
   prompt_target_intent_matching_threshold: 0.7
   # Trim conversation history to fit within the model's context window
   optimize_context_window: true
-  # Use Plano's agent orchestrator for multi-agent request routing
-  use_agent_orchestrator: true
+  # Use Plano's agent orchestrator for multi-agent request routing (requires exactly
+  # one entry under `endpoints` when true; this reference lists several endpoints for illustration)
+  use_agent_orchestrator: false
   # Connect timeout for upstream provider clusters (e.g., "5s", "10s"). Default: "5s"
   upstream_connect_timeout: 10s
   # Path to the trusted CA bundle for upstream TLS verification
