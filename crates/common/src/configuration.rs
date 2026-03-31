@@ -104,16 +104,17 @@ pub enum StateStorageType {
     Postgres,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SelectionPreference {
     Cheapest,
     Fastest,
     /// Return models in the same order they were defined — no reordering.
+    #[default]
     None,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SelectionPolicy {
     pub prefer: SelectionPreference,
 }
@@ -123,36 +124,44 @@ pub struct TopLevelRoutingPreference {
     pub name: String,
     pub description: String,
     pub models: Vec<String>,
+    #[serde(default)]
     pub selection_policy: SelectionPolicy,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricsAuth {
-    #[serde(rename = "type")]
-    pub auth_type: String, // only "bearer" supported
-    pub token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MetricsSource {
-    CostMetrics {
-        url: String,
-        refresh_interval: Option<u64>,
-        auth: Option<MetricsAuth>,
-    },
-    PrometheusMetrics {
-        url: String,
-        query: String,
-        refresh_interval: Option<u64>,
-    },
-    #[serde(rename = "digitalocean_pricing")]
-    DigitalOceanPricing {
-        refresh_interval: Option<u64>,
-        /// Map DO catalog keys (`lowercase(creator)/model_id`) to Plano model names.
-        /// Example: `openai/openai-gpt-oss-120b: openai/gpt-4o`
-        model_aliases: Option<HashMap<String, String>>,
-    },
+    Cost(CostMetricsConfig),
+    Latency(LatencyMetricsConfig),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CostMetricsConfig {
+    pub provider: CostProvider,
+    pub refresh_interval: Option<u64>,
+    /// Map DO catalog keys (`lowercase(creator)/model_id`) to Plano model names.
+    /// Example: `openai/openai-gpt-oss-120b: openai/gpt-4o`
+    pub model_aliases: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CostProvider {
+    Digitalocean,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatencyMetricsConfig {
+    pub provider: LatencyProvider,
+    pub url: String,
+    pub query: String,
+    pub refresh_interval: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LatencyProvider {
+    Prometheus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
