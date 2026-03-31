@@ -1,5 +1,5 @@
 use hermesllm::apis::openai::{ModelDetail, ModelObject, Models};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;
 
@@ -116,7 +116,17 @@ pub enum SelectionPreference {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SelectionPolicy {
+    #[serde(default, deserialize_with = "deserialize_selection_preference")]
     pub prefer: SelectionPreference,
+}
+
+fn deserialize_selection_preference<'de, D>(
+    deserializer: D,
+) -> Result<SelectionPreference, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<SelectionPreference>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

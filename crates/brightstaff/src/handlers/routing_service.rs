@@ -27,9 +27,8 @@ pub fn extract_routing_policy(
     let routing_preferences = json_body
         .as_object_mut()
         .and_then(|o| o.remove("routing_preferences"))
-        .and_then(|mut value| {
-            normalize_null_prefer_to_none(&mut value);
-            match serde_json::from_value::<Vec<TopLevelRoutingPreference>>(value) {
+        .and_then(
+            |value| match serde_json::from_value::<Vec<TopLevelRoutingPreference>>(value) {
                 Ok(prefs) => {
                     info!(
                         num_routes = prefs.len(),
@@ -41,41 +40,11 @@ pub fn extract_routing_policy(
                     warn!(error = %err, "failed to parse routing_preferences");
                     None
                 }
-            }
-        });
+            },
+        );
 
     let bytes = Bytes::from(serde_json::to_vec(&json_body).unwrap());
     Ok((bytes, routing_preferences))
-}
-
-fn normalize_null_prefer_to_none(routing_preferences: &mut serde_json::Value) {
-    let Some(preferences) = routing_preferences.as_array_mut() else {
-        return;
-    };
-
-    for preference in preferences {
-        let Some(preference_obj) = preference.as_object_mut() else {
-            continue;
-        };
-
-        let Some(selection_policy) = preference_obj.get_mut("selection_policy") else {
-            continue;
-        };
-
-        let Some(policy_obj) = selection_policy.as_object_mut() else {
-            continue;
-        };
-
-        if policy_obj
-            .get("prefer")
-            .is_some_and(serde_json::Value::is_null)
-        {
-            policy_obj.insert(
-                "prefer".to_string(),
-                serde_json::Value::String("none".to_string()),
-            );
-        }
-    }
 }
 
 #[derive(serde::Serialize)]
