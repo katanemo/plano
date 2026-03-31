@@ -6,7 +6,6 @@ import yaml
 import logging
 from planoai.consts import PLANO_DOCKER_NAME
 
-
 # Standard env var for log level across all Plano components
 LOG_LEVEL_ENV = "LOG_LEVEL"
 

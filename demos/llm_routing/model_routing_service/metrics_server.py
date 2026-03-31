@@ -5,6 +5,7 @@ Exposes two endpoints:
   GET /metrics  — Prometheus text format, P95 latency per model (scraped by Prometheus)
   GET /costs    — JSON cost data per model, compatible with cost_metrics source
 """
+
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
