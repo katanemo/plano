@@ -3,6 +3,8 @@ import os
 import multiprocessing
 import subprocess
 import sys
+import contextlib
+import logging
 import rich_click as click
 from planoai import targets
 
@@ -33,6 +35,7 @@ from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
     NATIVE_PID_FILE,
+    PLANO_RUN_DIR,
     PLANO_DOCKER_IMAGE,
     PLANO_DOCKER_NAME,
 )
@@ -99,6 +102,20 @@ def _print_cli_header(console) -> None:
     console.print(
         f"\n[bold {PLANO_COLOR}]Plano CLI[/bold {PLANO_COLOR}] [dim]v{get_version()}[/dim]\n"
     )
+
+
+@contextlib.contextmanager
+def _temporary_cli_log_level(level: str | None):
+    if level is None:
+        yield
+        return
+
+    current_level = logging.getLevelName(logging.getLogger().level).lower()
+    set_log_level(level)
+    try:
+        yield
+    finally:
+        set_log_level(current_level)
 
 
 def _print_missing_keys(console, missing_keys: list[str]) -> None:
@@ -293,163 +310,204 @@ def build(docker):
     help="Run Plano inside Docker instead of natively.",
     is_flag=True,
 )
-def up(file, path, foreground, with_tracing, tracing_port, docker):
+@click.option(
+    "--verbose",
+    "-v",
+    default=False,
+    help="Show detailed startup logs with timestamps.",
+    is_flag=True,
+)
+def up(file, path, foreground, with_tracing, tracing_port, docker, verbose):
     """Starts Plano."""
     from rich.status import Status
 
     console = _console()
     _print_cli_header(console)
 
-    # Use the utility function to find config file
-    plano_config_file = find_config_file(path, file)
+    with _temporary_cli_log_level("warning" if not verbose else None):
+        # Use the utility function to find config file
+        plano_config_file = find_config_file(path, file)
 
-    # Check if the file exists
-    if not os.path.exists(plano_config_file):
-        console.print(
-            f"[red]✗[/red] Config file not found: [dim]{plano_config_file}[/dim]"
-        )
-        sys.exit(1)
-
-    if not docker:
-        from planoai.native_runner import native_validate_config
-
-        with Status(
-            "[dim]Validating configuration[/dim]",
-            spinner="dots",
-            spinner_style="dim",
-        ):
-            try:
-                native_validate_config(plano_config_file)
-            except SystemExit:
-                console.print(f"[red]✗[/red] Validation failed")
-                sys.exit(1)
-            except Exception as e:
-                console.print(f"[red]✗[/red] Validation failed")
-                console.print(f"  [dim]{str(e).strip()}[/dim]")
-                sys.exit(1)
-    else:
-        with Status(
-            "[dim]Validating configuration (Docker)[/dim]",
-            spinner="dots",
-            spinner_style="dim",
-        ):
-            (
-                validation_return_code,
-                _,
-                validation_stderr,
-            ) = docker_validate_plano_schema(plano_config_file)
-
-        if validation_return_code != 0:
-            console.print(f"[red]✗[/red] Validation failed")
-            if validation_stderr:
-                console.print(f"  [dim]{validation_stderr.strip()}[/dim]")
+        # Check if the file exists
+        if not os.path.exists(plano_config_file):
+            console.print(
+                f"[red]✗[/red] Config file not found: [dim]{plano_config_file}[/dim]"
+            )
             sys.exit(1)
 
-    log.info("Configuration valid")
+        if not docker:
+            from planoai.native_runner import native_validate_config
 
-    # Set up environment
-    default_otel = (
-        DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
-        if docker
-        else DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT
-    )
-    env_stage = {
-        "OTEL_TRACING_GRPC_ENDPOINT": default_otel,
-    }
-    env = os.environ.copy()
-    env.pop("PATH", None)
-
-    # Check access keys
-    access_keys = get_llm_provider_access_keys(plano_config_file=plano_config_file)
-    access_keys = set(access_keys)
-    access_keys = [item[1:] if item.startswith("$") else item for item in access_keys]
-
-    missing_keys = []
-    if access_keys:
-        if file:
-            app_env_file = os.path.join(os.path.dirname(os.path.abspath(file)), ".env")
+            with Status(
+                "[dim]Validating configuration[/dim]",
+                spinner="dots",
+                spinner_style="dim",
+            ):
+                try:
+                    native_validate_config(plano_config_file)
+                except SystemExit:
+                    console.print(f"[red]✗[/red] Validation failed")
+                    sys.exit(1)
+                except Exception as e:
+                    console.print(f"[red]✗[/red] Validation failed")
+                    console.print(f"  [dim]{str(e).strip()}[/dim]")
+                    sys.exit(1)
         else:
-            app_env_file = os.path.abspath(os.path.join(path, ".env"))
+            with Status(
+                "[dim]Validating configuration (Docker)[/dim]",
+                spinner="dots",
+                spinner_style="dim",
+            ):
+                (
+                    validation_return_code,
+                    _,
+                    validation_stderr,
+                ) = docker_validate_plano_schema(plano_config_file)
 
-        if not os.path.exists(app_env_file):
-            for access_key in access_keys:
-                if env.get(access_key) is None:
-                    missing_keys.append(access_key)
-                else:
-                    env_stage[access_key] = env.get(access_key)
-        else:
-            env_file_dict = load_env_file_to_dict(app_env_file)
-            for access_key in access_keys:
-                if env_file_dict.get(access_key) is None:
-                    missing_keys.append(access_key)
-                else:
-                    env_stage[access_key] = env_file_dict[access_key]
-
-    if missing_keys:
-        _print_missing_keys(console, missing_keys)
-        sys.exit(1)
-
-    # Pass log level to the Docker container — supervisord uses LOG_LEVEL
-    # to set RUST_LOG (brightstaff) and envoy component log levels
-    env_stage["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "info")
-
-    # Start the local OTLP trace collector if --with-tracing is set
-    trace_server = None
-    if with_tracing:
-        if _is_port_in_use(tracing_port):
-            # A listener is already running (e.g. `planoai trace listen`)
-            console.print(
-                f"[green]✓[/green] Trace collector already running on port [cyan]{tracing_port}[/cyan]"
-            )
-        else:
-            try:
-                trace_server = start_trace_listener_background(grpc_port=tracing_port)
-                console.print(
-                    f"[green]✓[/green] Trace collector listening on [cyan]0.0.0.0:{tracing_port}[/cyan]"
-                )
-            except Exception as e:
-                console.print(
-                    f"[red]✗[/red] Failed to start trace collector on port {tracing_port}: {e}"
-                )
-                console.print(
-                    f"\n[dim]Check if another process is using port {tracing_port}:[/dim]"
-                )
-                console.print(f"  [cyan]lsof -i :{tracing_port}[/cyan]")
-                console.print(f"\n[dim]Or use a different port:[/dim]")
-                console.print(
-                    f"  [cyan]planoai up --with-tracing --tracing-port 4318[/cyan]\n"
-                )
+            if validation_return_code != 0:
+                console.print(f"[red]✗[/red] Validation failed")
+                if validation_stderr:
+                    console.print(f"  [dim]{validation_stderr.strip()}[/dim]")
                 sys.exit(1)
 
-        # Update the OTEL endpoint so the gateway sends traces to the right port
-        tracing_host = "host.docker.internal" if docker else "localhost"
-        otel_endpoint = f"http://{tracing_host}:{tracing_port}"
-        env_stage["OTEL_TRACING_GRPC_ENDPOINT"] = otel_endpoint
+        log.info("Configuration valid")
 
-    env.update(env_stage)
-    try:
-        if not docker:
-            from planoai.native_runner import start_native
+        # Set up environment
+        default_otel = (
+            DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
+            if docker
+            else DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT
+        )
+        env_stage = {
+            "OTEL_TRACING_GRPC_ENDPOINT": default_otel,
+        }
+        env = os.environ.copy()
+        env.pop("PATH", None)
 
-            start_native(
-                plano_config_file, env, foreground=foreground, with_tracing=with_tracing
-            )
-        else:
-            start_plano(plano_config_file, env, foreground=foreground)
+        # Check access keys
+        access_keys = get_llm_provider_access_keys(plano_config_file=plano_config_file)
+        access_keys = set(access_keys)
+        access_keys = [
+            item[1:] if item.startswith("$") else item for item in access_keys
+        ]
 
-        # When tracing is enabled but --foreground is not, keep the process
-        # alive so the OTLP collector continues to receive spans.
-        if trace_server is not None and not foreground:
-            console.print(
-                f"[dim]Plano is running. Trace collector active on port {tracing_port}. Press Ctrl+C to stop.[/dim]"
-            )
-            trace_server.wait_for_termination()
-    except KeyboardInterrupt:
-        if trace_server is not None:
-            console.print(f"\n[dim]Stopping trace collector...[/dim]")
-    finally:
-        if trace_server is not None:
-            trace_server.stop(grace=2)
+        missing_keys = []
+        if access_keys:
+            if file:
+                app_env_file = os.path.join(
+                    os.path.dirname(os.path.abspath(file)), ".env"
+                )
+            else:
+                app_env_file = os.path.abspath(os.path.join(path, ".env"))
+
+            if not os.path.exists(app_env_file):
+                for access_key in access_keys:
+                    if env.get(access_key) is None:
+                        missing_keys.append(access_key)
+                    else:
+                        env_stage[access_key] = env.get(access_key)
+            else:
+                env_file_dict = load_env_file_to_dict(app_env_file)
+                for access_key in access_keys:
+                    if env_file_dict.get(access_key) is None:
+                        missing_keys.append(access_key)
+                    else:
+                        env_stage[access_key] = env_file_dict[access_key]
+
+        if missing_keys:
+            _print_missing_keys(console, missing_keys)
+            sys.exit(1)
+
+        # Pass log level to the Docker container — supervisord uses LOG_LEVEL
+        # to set RUST_LOG (brightstaff) and envoy component log levels
+        env_stage["LOG_LEVEL"] = os.environ.get("LOG_LEVEL", "info")
+
+        # Start the local OTLP trace collector if --with-tracing is set
+        trace_server = None
+        if with_tracing:
+            if _is_port_in_use(tracing_port):
+                # A listener is already running (e.g. `planoai trace listen`)
+                console.print(
+                    f"[green]✓[/green] Trace collector already running on port [cyan]{tracing_port}[/cyan]"
+                )
+            else:
+                try:
+                    trace_server = start_trace_listener_background(
+                        grpc_port=tracing_port
+                    )
+                    console.print(
+                        f"[green]✓[/green] Trace collector listening on [cyan]0.0.0.0:{tracing_port}[/cyan]"
+                    )
+                except Exception as e:
+                    console.print(
+                        f"[red]✗[/red] Failed to start trace collector on port {tracing_port}: {e}"
+                    )
+                    console.print(
+                        f"\n[dim]Check if another process is using port {tracing_port}:[/dim]"
+                    )
+                    console.print(f"  [cyan]lsof -i :{tracing_port}[/cyan]")
+                    console.print(f"\n[dim]Or use a different port:[/dim]")
+                    console.print(
+                        f"  [cyan]planoai up --with-tracing --tracing-port 4318[/cyan]\n"
+                    )
+                    sys.exit(1)
+
+            # Update the OTEL endpoint so the gateway sends traces to the right port
+            tracing_host = "host.docker.internal" if docker else "localhost"
+            otel_endpoint = f"http://{tracing_host}:{tracing_port}"
+            env_stage["OTEL_TRACING_GRPC_ENDPOINT"] = otel_endpoint
+
+        env.update(env_stage)
+        try:
+            if not docker:
+                from planoai.native_runner import start_native
+
+                if not verbose:
+                    with Status(
+                        f"[{PLANO_COLOR}]Starting Plano...[/{PLANO_COLOR}]",
+                        spinner="dots",
+                    ) as status:
+
+                        def _update_progress(message: str) -> None:
+                            console.print(f"[dim]{message}[/dim]")
+
+                        start_native(
+                            plano_config_file,
+                            env,
+                            foreground=foreground,
+                            with_tracing=with_tracing,
+                            progress_callback=_update_progress,
+                        )
+                    console.print("")
+                    console.print(
+                        "[green]✓[/green] Plano is running! [dim](native mode)[/dim]"
+                    )
+                    log_dir = os.path.join(PLANO_RUN_DIR, "logs")
+                    console.print(f"Logs: {log_dir}")
+                    console.print("Run 'planoai down' to stop.")
+                else:
+                    start_native(
+                        plano_config_file,
+                        env,
+                        foreground=foreground,
+                        with_tracing=with_tracing,
+                    )
+            else:
+                start_plano(plano_config_file, env, foreground=foreground)
+
+            # When tracing is enabled but --foreground is not, keep the process
+            # alive so the OTLP collector continues to receive spans.
+            if trace_server is not None and not foreground:
+                console.print(
+                    f"[dim]Plano is running. Trace collector active on port {tracing_port}. Press Ctrl+C to stop.[/dim]"
+                )
+                trace_server.wait_for_termination()
+        except KeyboardInterrupt:
+            if trace_server is not None:
+                console.print(f"\n[dim]Stopping trace collector...[/dim]")
+        finally:
+            if trace_server is not None:
+                trace_server.stop(grace=2)
 
 
 @click.command()
@@ -459,25 +517,46 @@ def up(file, path, foreground, with_tracing, tracing_port, docker):
     help="Stop a Docker-based Plano instance.",
     is_flag=True,
 )
-def down(docker):
+@click.option(
+    "--verbose",
+    "-v",
+    default=False,
+    help="Show detailed shutdown logs with timestamps.",
+    is_flag=True,
+)
+def down(docker, verbose):
     """Stops Plano."""
     console = _console()
     _print_cli_header(console)
 
-    if not docker:
-        from planoai.native_runner import stop_native
+    with _temporary_cli_log_level("warning" if not verbose else None):
+        if not docker:
+            from planoai.native_runner import stop_native
 
-        with console.status(
-            f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]",
-            spinner="dots",
-        ):
-            stop_native()
-    else:
-        with console.status(
-            f"[{PLANO_COLOR}]Shutting down Plano (Docker)...[/{PLANO_COLOR}]",
-            spinner="dots",
-        ):
-            stop_docker_container()
+            with console.status(
+                f"[{PLANO_COLOR}]Shutting down Plano...[/{PLANO_COLOR}]",
+                spinner="dots",
+            ):
+                stopped = stop_native()
+            if not verbose:
+                if stopped:
+                    console.print(
+                        "[green]✓[/green] Plano stopped! [dim](native mode)[/dim]"
+                    )
+                else:
+                    console.print(
+                        "[dim]No Plano instance was running (native mode)[/dim]"
+                    )
+        else:
+            with console.status(
+                f"[{PLANO_COLOR}]Shutting down Plano (Docker)...[/{PLANO_COLOR}]",
+                spinner="dots",
+            ):
+                stop_docker_container()
+            if not verbose:
+                console.print(
+                    "[green]✓[/green] Plano stopped! [dim](docker mode)[/dim]"
+                )
 
 
 @click.command()
