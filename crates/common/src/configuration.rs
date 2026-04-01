@@ -111,6 +111,7 @@ pub enum SelectionPreference {
     Fastest,
     /// Return models in the same order they were defined — no reordering.
     #[default]
+    #[serde(alias = "")]
     None,
 }
 

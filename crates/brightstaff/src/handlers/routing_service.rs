@@ -284,6 +284,43 @@ mod tests {
     }
 
     #[test]
+    fn extract_routing_policy_selection_policy_missing_defaults_to_none() {
+        let policy = r#""routing_preferences": [
+            {
+                "name": "coding",
+                "description": "code generation, writing functions, debugging",
+                "models": ["openai/gpt-4o", "openai/gpt-4o-mini"]
+            }
+        ]"#;
+        let body = make_chat_body(policy);
+        let (_cleaned, prefs) = extract_routing_policy(&body).unwrap();
+
+        let prefs =
+            prefs.expect("should parse routing_preferences when selection_policy is missing");
+        assert_eq!(prefs.len(), 1);
+        assert_eq!(prefs[0].selection_policy.prefer, SelectionPreference::None);
+    }
+
+    #[test]
+    fn extract_routing_policy_prefer_empty_string_defaults_to_none() {
+        let policy = r#""routing_preferences": [
+            {
+                "name": "coding",
+                "description": "code generation, writing functions, debugging",
+                "models": ["openai/gpt-4o", "openai/gpt-4o-mini"],
+                "selection_policy": {"prefer": ""}
+            }
+        ]"#;
+        let body = make_chat_body(policy);
+        let (_cleaned, prefs) = extract_routing_policy(&body).unwrap();
+
+        let prefs =
+            prefs.expect("should parse routing_preferences when selection_policy.prefer is empty");
+        assert_eq!(prefs.len(), 1);
+        assert_eq!(prefs[0].selection_policy.prefer, SelectionPreference::None);
+    }
+
+    #[test]
     fn routing_decision_response_serialization() {
         let response = RoutingDecisionResponse {
             models: vec![
