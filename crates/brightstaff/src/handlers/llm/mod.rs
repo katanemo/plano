@@ -764,18 +764,19 @@ async fn get_provider_info(
     model_name: &str,
 ) -> (hermesllm::ProviderId, Option<String>, bool) {
     let providers_lock = llm_providers.read().await;
+    const PERPLEXITY_PROVIDER_PREFIX: &str = "perplexity/";
 
     if let Some(provider) = providers_lock.get(model_name) {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
-        let use_unversioned_paths = provider.name.starts_with("perplexity/");
+        let use_unversioned_paths = provider.name.starts_with(PERPLEXITY_PROVIDER_PREFIX);
         return (provider_id, prefix, use_unversioned_paths);
     }
 
     if let Some(provider) = providers_lock.default() {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
-        let use_unversioned_paths = provider.name.starts_with("perplexity/");
+        let use_unversioned_paths = provider.name.starts_with(PERPLEXITY_PROVIDER_PREFIX);
         (provider_id, prefix, use_unversioned_paths)
     } else {
         warn!("No default provider found, falling back to OpenAI");
