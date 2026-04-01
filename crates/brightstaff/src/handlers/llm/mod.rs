@@ -38,6 +38,8 @@ use crate::tracing::{
 };
 use model_selection::router_chat_get_upstream_model;
 
+const PERPLEXITY_PROVIDER_PREFIX: &str = "perplexity/";
+
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
     state: Arc<AppState>,
@@ -764,7 +766,6 @@ async fn get_provider_info(
     model_name: &str,
 ) -> (hermesllm::ProviderId, Option<String>, bool) {
     let providers_lock = llm_providers.read().await;
-    const PERPLEXITY_PROVIDER_PREFIX: &str = "perplexity/";
 
     if let Some(provider) = providers_lock.get(model_name) {
         let provider_id = provider.provider_interface.to_provider_id();
