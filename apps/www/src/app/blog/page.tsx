@@ -44,6 +44,10 @@ function formatDate(dateString: string): string {
 }
 
 async function getBlogPosts(): Promise<BlogPost[]> {
+  if (!client) {
+    return [];
+  }
+
   const query = `*[_type == "blog" && published == true] | order(publishedAt desc) {
     _id,
     title,
@@ -58,7 +62,12 @@ async function getBlogPosts(): Promise<BlogPost[]> {
     featured
   }`;
 
-  return await client.fetch(query);
+  try {
+    return await client.fetch(query);
+  } catch (error) {
+    console.error("Error fetching blog posts:", error);
+    return [];
+  }
 }
 
 export default async function BlogPage() {

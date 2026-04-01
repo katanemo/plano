@@ -25,6 +25,10 @@ interface BlogPost {
 }
 
 async function getBlogPost(slug: string): Promise<BlogPost | null> {
+  if (!client) {
+    return null;
+  }
+
   const query = `*[_type == "blog" && slug.current == $slug && published == true][0] {
     _id,
     title,
@@ -51,17 +55,31 @@ async function getBlogPost(slug: string): Promise<BlogPost | null> {
     author
   }`;
 
-  const post = await client.fetch(query, { slug });
-  return post || null;
+  try {
+    const post = await client.fetch(query, { slug });
+    return post || null;
+  } catch (error) {
+    console.error("Error fetching blog post:", error);
+    return null;
+  }
 }
 
 async function getAllBlogSlugs(): Promise<string[]> {
+  if (!client) {
+    return [];
+  }
+
   const query = `*[_type == "blog" && published == true] {
     "slug": slug.current
   }`;
 
-  const posts = await client.fetch(query);
-  return posts.map((post: { slug: string }) => post.slug);
+  try {
+    const posts = await client.fetch(query);
+    return posts.map((post: { slug: string }) => post.slug);
+  } catch (error) {
+    console.error("Error fetching blog slugs:", error);
+    return [];
+  }
 }
 
 export async function generateStaticParams() {

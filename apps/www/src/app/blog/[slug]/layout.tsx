@@ -17,6 +17,10 @@ interface BlogPost {
 }
 
 async function getBlogPost(slug: string): Promise<BlogPost | null> {
+  if (!client) {
+    return null;
+  }
+
   const query = `*[_type == "blog" && slug.current == $slug && published == true][0] {
     _id,
     title,
@@ -26,8 +30,13 @@ async function getBlogPost(slug: string): Promise<BlogPost | null> {
     author
   }`;
 
-  const post = await client.fetch(query, { slug });
-  return post || null;
+  try {
+    const post = await client.fetch(query, { slug });
+    return post || null;
+  } catch (error) {
+    console.error("Error fetching blog post metadata:", error);
+    return null;
+  }
 }
 
 export async function generateMetadata({

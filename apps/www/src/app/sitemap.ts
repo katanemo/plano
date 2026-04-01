@@ -10,6 +10,10 @@ interface BlogPost {
 }
 
 async function getBlogPosts(): Promise<BlogPost[]> {
+  if (!client) {
+    return [];
+  }
+
   const query = `*[_type == "blog" && published == true] | order(publishedAt desc) {
     slug,
     publishedAt,

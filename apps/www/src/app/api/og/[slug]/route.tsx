@@ -39,6 +39,10 @@ function loadFont(fileName: string, baseUrl: string) {
 }
 
 async function getBlogPost(slug: string) {
+  if (!client) {
+    return null;
+  }
+
   const query = `*[_type == "blog" && slug.current == $slug && published == true][0] {
     _id,
     title,
@@ -53,8 +57,13 @@ async function getBlogPost(slug: string) {
     }
   }`;
 
-  const post = await client.fetch(query, { slug });
-  return post;
+  try {
+    const post = await client.fetch(query, { slug });
+    return post;
+  } catch (error) {
+    console.error("Error fetching blog post for OG image:", error);
+    return null;
+  }
 }
 
 function formatDate(dateString: string): string {
