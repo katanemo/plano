@@ -38,7 +38,7 @@ export default function RootLayout({
           `}
         </Script>
         <Link
-          href="https://digitalocean.com"
+          href="https://digitalocean.com/blog/digitalocean-acquires-katanemo-labs-inc"
           target="_blank"
           rel="noopener noreferrer"
           className="block w-full bg-[#7780D9] py-3 text-white transition-opacity"
