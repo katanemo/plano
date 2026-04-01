@@ -44,9 +44,13 @@ export default function RootLayout({
           className="block w-full bg-[#7780D9] py-3 text-white transition-opacity"
         >
           <div className="mx-auto flex max-w-[85rem] items-center justify-center gap-4 px-6 text-center md:justify-between md:text-left lg:px-8">
-            <span className="w-full text-xs font-medium leading-snug md:w-auto md:text-base">
+            <span className="w-full text-xs font-medium leading-snug md:w-auto md:text-base flex items-center">
               DigitalOcean acquires Katanemo Labs, Inc. to accelerate AI
               development
+              <ArrowRightIcon
+                aria-hidden
+                className="ml-1 inline-block h-3 w-3 align-[-1px] text-white/90 md:hidden"
+              />
             </span>
             <span className="hidden shrink-0 items-center gap-1 text-base font-medium tracking-[-0.989px] font-mono leading-snug opacity-70 transition-opacity hover:opacity-100 md:inline-flex">
               Read the announcement
