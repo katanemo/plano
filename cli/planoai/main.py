@@ -593,6 +593,82 @@ def cli_agent(type, file, path, settings):
         sys.exit(1)
 
 
+@click.command("log-level")
+@click.argument("level", required=False)
+@click.option(
+    "--show",
+    is_flag=True,
+    help="Show current log levels for both brightstaff and Envoy.",
+)
+@click.option(
+    "--docker",
+    default=False,
+    is_flag=True,
+    help="Target a Docker-based Plano instance.",
+)
+def log_level(level, show, docker):
+    """Dynamically change the log level for a running Plano instance.
+
+    Sets the log level for both the brightstaff service and Envoy proxy.
+    LEVEL accepts standard log levels (trace, debug, info, warn, error) or
+    RUST_LOG-style filters (e.g. 'brightstaff=debug,info').
+    """
+    import requests as req
+
+    brightstaff_port = 19091 if docker else 9091
+    envoy_admin_port = 19901 if docker else 9901
+    brightstaff_url = f"http://localhost:{brightstaff_port}/admin/log-level"
+    envoy_url = f"http://localhost:{envoy_admin_port}/logging"
+
+    console = _console()
+
+    if show or not level:
+        # Show current log levels
+        try:
+            resp = req.get(brightstaff_url, timeout=3)
+            data = resp.json()
+            console.print(
+                f"  brightstaff: [bold]{data.get('level', 'unknown')}[/bold]"
+            )
+        except Exception:
+            console.print("  brightstaff: [dim]unavailable[/dim]")
+
+        try:
+            resp = req.get(envoy_url, timeout=3)
+            console.print(f"  envoy: [dim](see {envoy_url} for per-logger levels)[/dim]")
+        except Exception:
+            console.print("  envoy: [dim]unavailable[/dim]")
+        return
+
+    # Set log level on both services
+    errors = []
+    try:
+        resp = req.put(brightstaff_url, data=level, timeout=3)
+        if resp.status_code == 200:
+            console.print(f"  brightstaff → [bold]{level}[/bold]")
+        else:
+            err = resp.json().get("error", resp.text)
+            console.print(f"  brightstaff: [red]error[/red] — {err}")
+            errors.append("brightstaff")
+    except Exception as e:
+        console.print(f"  brightstaff: [red]unavailable[/red] — {e}")
+        errors.append("brightstaff")
+
+    try:
+        resp = req.post(f"{envoy_url}?level={level}", timeout=3)
+        if resp.status_code == 200:
+            console.print(f"  envoy → [bold]{level}[/bold]")
+        else:
+            console.print(f"  envoy: [red]error[/red] — {resp.text.strip()}")
+            errors.append("envoy")
+    except Exception as e:
+        console.print(f"  envoy: [red]unavailable[/red] — {e}")
+        errors.append("envoy")
+
+    if errors:
+        sys.exit(1)
+
+
 # add commands to the main group
 main.add_command(up)
 main.add_command(down)
@@ -602,6 +678,7 @@ main.add_command(cli_agent)
 main.add_command(generate_prompt_targets)
 main.add_command(init_cmd, name="init")
 main.add_command(trace_cmd, name="trace")
+main.add_command(log_level)
 
 if __name__ == "__main__":
     main()

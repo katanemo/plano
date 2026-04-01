@@ -1,0 +1,27 @@
+
+version: v0.4.0
+
+overrides:
+  llm_routing_model: plano/Plano-Orchestrator
+  agent_orchestration_model: plano/Plano-Orchestrator
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: plano/Plano-Orchestrator
+    base_url: http://plano-orchestrator:10001
+    passthrough_auth: true
+
+model_metrics_sources:
+  - type: cost
+    provider: digitalocean
+    refresh_interval: 3600
+
+  - type: latency
+    provider: prometheus
+    url: http://metrics-kube-prometheus-st-prometheus:9090
+    query: histogram_quantile(0.95, sum by (model_name, le) (rate(inference_proxy_inference_client_ttft_duration_bucket[5m])))
+    refresh_interval: 300

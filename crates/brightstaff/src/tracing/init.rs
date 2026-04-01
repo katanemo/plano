@@ -8,11 +8,37 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::fmt::{format, time::FormatTime, FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::reload;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use super::ServiceNameOverrideExporter;
 use common::configuration::Tracing;
+
+type ReloadHandle = reload::Handle<EnvFilter, tracing_subscriber::Registry>;
+
+static LOG_LEVEL_HANDLE: OnceLock<ReloadHandle> = OnceLock::new();
+
+/// Dynamically change the log level filter at runtime.
+///
+/// Accepts any valid `RUST_LOG` / `EnvFilter` syntax, e.g. `"debug"`,
+/// `"brightstaff=trace,info"`.
+pub fn set_log_level(new_filter: &str) -> Result<(), String> {
+    let handle = LOG_LEVEL_HANDLE
+        .get()
+        .ok_or_else(|| "tracer not initialized".to_string())?;
+    let filter = EnvFilter::try_new(new_filter)
+        .map_err(|e| format!("invalid filter '{new_filter}': {e}"))?;
+    handle
+        .reload(filter)
+        .map_err(|e| format!("failed to reload filter: {e}"))
+}
+
+/// Returns the current log level filter string, if the tracer is initialized.
+pub fn get_log_level() -> Option<String> {
+    let handle = LOG_LEVEL_HANDLE.get()?;
+    handle.with_current(|f| f.to_string()).ok()
+}
 
 struct BracketedTime;
 
@@ -118,9 +144,10 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
             let telemetry_layer =
                 tracing_opentelemetry::layer().with_tracer(provider.tracer("brightstaff"));
 
-            // Combine the OpenTelemetry layer with fmt layer using the registry
             let env_filter =
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+            let (filter_layer, reload_handle) = reload::Layer::new(env_filter);
+            LOG_LEVEL_HANDLE.set(reload_handle).ok();
 
             // Create fmt layer with span field formatting enabled (no ANSI to keep fields parseable)
             let fmt_layer = tracing_subscriber::fmt::layer()
@@ -129,8 +156,8 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
                 .with_ansi(false);
 
             let subscriber = tracing_subscriber::registry()
+                .with(filter_layer)
                 .with(telemetry_layer)
-                .with(env_filter)
                 .with(fmt_layer);
 
             tracing::subscriber::set_global_default(subscriber)
@@ -144,6 +171,8 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
 
             let env_filter =
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+            let (filter_layer, reload_handle) = reload::Layer::new(env_filter);
+            LOG_LEVEL_HANDLE.set(reload_handle).ok();
 
             // Create fmt layer with span field formatting enabled (no ANSI to keep fields parseable)
             let fmt_layer = tracing_subscriber::fmt::layer()
@@ -152,7 +181,7 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
                 .with_ansi(false);
 
             tracing_subscriber::registry()
-                .with(env_filter)
+                .with(filter_layer)
                 .with(fmt_layer)
                 .init();
 

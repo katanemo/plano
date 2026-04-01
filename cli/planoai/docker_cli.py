@@ -74,6 +74,7 @@ def docker_start_plano_detached(
     port_mappings = [
         "12001:12001",
         "19901:9901",
+        "19091:9091",
     ]
 
     for port in gateway_ports:

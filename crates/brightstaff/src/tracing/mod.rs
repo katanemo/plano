@@ -7,7 +7,7 @@ pub use constants::{
     error, http, llm, operation_component, routing, signals, OperationNameBuilder,
 };
 pub use custom_attributes::collect_custom_trace_attributes;
-pub use init::init_tracer;
+pub use init::{get_log_level, init_tracer, set_log_level};
 pub use service_name_exporter::{ServiceNameOverrideExporter, SERVICE_NAME_OVERRIDE_KEY};
 
 use opentelemetry::trace::get_active_span;

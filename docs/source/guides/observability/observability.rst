@@ -9,3 +9,4 @@ Observability
   tracing
   monitoring
   access_logging
+  logging

@@ -11,7 +11,7 @@ use brightstaff::router::orchestrator::OrchestratorService;
 use brightstaff::state::memory::MemoryConversationalStorage;
 use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
-use brightstaff::tracing::init_tracer;
+use brightstaff::tracing::{get_log_level, init_tracer, set_log_level};
 use bytes::Bytes;
 use common::configuration::{
     Agent, Configuration, FilterPipeline, ListenerType, ResolvedFilterChain,
@@ -385,6 +385,59 @@ async fn init_state_storage(
 }
 
 // ---------------------------------------------------------------------------
+// Admin handlers
+// ---------------------------------------------------------------------------
+
+use http_body_util::BodyExt;
+
+fn json_response(
+    status: StatusCode,
+    body: &str,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let bytes = Bytes::from(body.to_string());
+    let body = http_body_util::Full::new(bytes)
+        .map_err(|never| match never {})
+        .boxed();
+    let mut resp = Response::new(body);
+    *resp.status_mut() = status;
+    resp.headers_mut()
+        .insert("Content-Type", HeaderValue::from_static("application/json"));
+    Ok(resp)
+}
+
+async fn handle_get_log_level() -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    match get_log_level() {
+        Some(level) => json_response(StatusCode::OK, &format!("{{\"level\":\"{level}\"}}")),
+        None => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{\"error\":\"tracer not initialized\"}",
+        ),
+    }
+}
+
+async fn handle_set_log_level(
+    req: Request<Incoming>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let body = req.collect().await.map_err(|_| ()).unwrap();
+    let new_level = String::from_utf8_lossy(&body.to_bytes()).trim().to_string();
+
+    if new_level.is_empty() {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            "{\"error\":\"body must contain a log level filter, e.g. 'debug'\"}",
+        );
+    }
+
+    match set_log_level(&new_level) {
+        Ok(()) => {
+            info!(level = %new_level, "log level updated");
+            json_response(StatusCode::OK, &format!("{{\"level\":\"{new_level}\"}}"))
+        }
+        Err(e) => json_response(StatusCode::BAD_REQUEST, &format!("{{\"error\":\"{e}\"}}")),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Request routing
 // ---------------------------------------------------------------------------
 
@@ -424,6 +477,13 @@ async fn route(
             .with_context(parent_cx)
             .await;
         }
+    }
+
+    // --- Admin routes ---
+    match (req.method(), path.as_str()) {
+        (&Method::GET, "/admin/log-level") => return handle_get_log_level().await,
+        (&Method::PUT, "/admin/log-level") => return handle_set_log_level(req).await,
+        _ => {}
     }
 
     // --- Standard routes ---
