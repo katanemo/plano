@@ -15,7 +15,7 @@ from sphinxawesome_theme import ThemeOptions
 from sphinxawesome_theme.postprocess import Icons
 
 project = "Plano Docs"
-copyright = "2025, Katanemo Labs, Inc"
+copyright = "2026, Katanemo Labs, a DigitalOcean Company"
 author = "Katanemo Labs, Inc"
 release = " v0.4.16"
 
