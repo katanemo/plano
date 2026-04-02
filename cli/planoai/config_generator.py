@@ -21,6 +21,7 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "groq",
     "mistral",
     "openai",
+    "xiaomi",
     "gemini",
     "anthropic",
     "together_ai",

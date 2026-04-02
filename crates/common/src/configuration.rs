@@ -339,6 +339,8 @@ pub enum LlmProviderType {
     Mistral,
     #[serde(rename = "openai")]
     OpenAI,
+    #[serde(rename = "xiaomi")]
+    Xiaomi,
     #[serde(rename = "gemini")]
     Gemini,
     #[serde(rename = "xai")]
@@ -370,6 +372,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Gemini => write!(f, "gemini"),
             LlmProviderType::Mistral => write!(f, "mistral"),
             LlmProviderType::OpenAI => write!(f, "openai"),
+            LlmProviderType::Xiaomi => write!(f, "xiaomi"),
             LlmProviderType::XAI => write!(f, "xai"),
             LlmProviderType::TogetherAI => write!(f, "together_ai"),
             LlmProviderType::AzureOpenAI => write!(f, "azure_openai"),

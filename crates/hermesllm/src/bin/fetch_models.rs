@@ -316,6 +316,12 @@ fn fetch_all_models() -> Result<ProviderModels, Box<dyn std::error::Error>> {
             "https://open.bigmodel.cn/api/paas/v4/models",
             "z-ai",
         ),
+        (
+            "xiaomi",
+            "MIMO_API_KEY",
+            "https://api.xiaomimimo.com/v1/models",
+            "xiaomi",
+        ),
     ];
 
     // Fetch from OpenAI-compatible providers

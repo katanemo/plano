@@ -28,6 +28,7 @@ fn load_provider_models() -> &'static HashMap<String, Vec<String>> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderId {
     OpenAI,
+    Xiaomi,
     Mistral,
     Deepseek,
     Groq,
@@ -51,6 +52,7 @@ impl TryFrom<&str> for ProviderId {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value.to_lowercase().as_str() {
             "openai" => Ok(ProviderId::OpenAI),
+            "xiaomi" => Ok(ProviderId::Xiaomi),
             "mistral" => Ok(ProviderId::Mistral),
             "deepseek" => Ok(ProviderId::Deepseek),
             "groq" => Ok(ProviderId::Groq),
@@ -84,6 +86,7 @@ impl ProviderId {
             ProviderId::TogetherAI => "together",
             ProviderId::Gemini => "google",
             ProviderId::OpenAI => "openai",
+            ProviderId::Xiaomi => "xiaomi",
             ProviderId::Anthropic => "anthropic",
             ProviderId::Mistral => "mistralai",
             ProviderId::Deepseek => "deepseek",
@@ -132,6 +135,7 @@ impl ProviderId {
             // OpenAI-compatible providers only support OpenAI chat completions
             (
                 ProviderId::OpenAI
+                | ProviderId::Xiaomi
                 | ProviderId::Groq
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
@@ -150,6 +154,7 @@ impl ProviderId {
 
             (
                 ProviderId::OpenAI
+                | ProviderId::Xiaomi
                 | ProviderId::Groq
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
@@ -213,6 +218,7 @@ impl Display for ProviderId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProviderId::OpenAI => write!(f, "OpenAI"),
+            ProviderId::Xiaomi => write!(f, "xiaomi"),
             ProviderId::Mistral => write!(f, "Mistral"),
             ProviderId::Deepseek => write!(f, "Deepseek"),
             ProviderId::Groq => write!(f, "Groq"),

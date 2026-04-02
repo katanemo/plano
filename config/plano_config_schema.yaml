@@ -188,6 +188,7 @@ properties:
             - groq
             - mistral
             - openai
+            - xiaomi
             - gemini
         routing_preferences:
           type: array
@@ -235,6 +236,7 @@ properties:
             - groq
             - mistral
             - openai
+            - xiaomi
             - gemini
         routing_preferences:
           type: array
