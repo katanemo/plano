@@ -21,6 +21,9 @@
     "node": ">=18.0.0"
   },
   "packageManager": "npm@10.0.0",
+  "overrides": {
+    "undici": "^7.0.0"
+  },
   "dependencies": {
     "next": "^16.1.6",
     "react": "^19.2.3",
