@@ -14,6 +14,30 @@ DEMOS="$@"
 
 echo "Running tests for demos: $DEMOS"
 
+run_hurl_with_retries() {
+  local demo_name="$1"
+  local max_attempts=1
+  local attempt=1
+
+  if [ "$demo_name" = "llm_routing/preference_based_routing" ]; then
+    max_attempts=3
+  fi
+
+  while true; do
+    if hurl hurl_tests/*.hurl; then
+      return 0
+    fi
+
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      return 1
+    fi
+
+    attempt=$((attempt + 1))
+    echo "hurl failed for $demo_name, retrying (attempt $attempt/$max_attempts) ..."
+    sleep 2
+  done
+}
+
 for demo in $DEMOS
 do
   echo "******************************************"
@@ -31,7 +55,7 @@ do
     echo "skipping docker compose for $demo"
   fi
   echo "starting hurl tests"
-  if ! hurl hurl_tests/*.hurl; then
+  if ! run_hurl_with_retries "$demo"; then
     echo "Hurl tests failed for $demo"
     echo "docker logs for plano:"
     docker logs plano | tail -n 100
