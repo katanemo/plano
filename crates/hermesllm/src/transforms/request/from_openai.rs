@@ -97,7 +97,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                 MessageRole::User => Role::User,
                                 MessageRole::Assistant => Role::Assistant,
                                 MessageRole::System => Role::System,
-                                MessageRole::Developer => Role::System, // Map developer to system
+                                MessageRole::Developer => Role::Developer,
                                 MessageRole::Tool => Role::Tool,
                             };
 
@@ -281,7 +281,7 @@ impl TryFrom<Message> for MessagesMessage {
                     ]),
                 });
             }
-            Role::System => {
+            Role::System | Role::Developer => {
                 return Err(TransformError::UnsupportedConversion(
                     "System messages should be handled separately".to_string(),
                 ));
@@ -303,7 +303,7 @@ impl TryFrom<Message> for BedrockMessage {
             Role::User => ConversationRole::User,
             Role::Assistant => ConversationRole::Assistant,
             Role::Tool => ConversationRole::User, // Tool results become user messages in Bedrock
-            Role::System => {
+            Role::System | Role::Developer => {
                 return Err(TransformError::UnsupportedConversion(
                     "System messages should be handled separately in Bedrock".to_string(),
                 ));
@@ -452,7 +452,7 @@ impl TryFrom<Message> for BedrockMessage {
                     },
                 });
             }
-            Role::System => {
+            Role::System | Role::Developer => {
                 // Already handled above with early return
                 unreachable!()
             }
@@ -706,7 +706,7 @@ impl TryFrom<ChatCompletionsRequest> for AnthropicMessagesRequest {
 
         for message in req.messages {
             match message.role {
-                Role::System => {
+                Role::System | Role::Developer => {
                     system_prompt = Some(message.into());
                 }
                 _ => {
@@ -755,7 +755,7 @@ impl TryFrom<ChatCompletionsRequest> for ConverseRequest {
 
         for message in req.messages {
             match message.role {
-                Role::System => {
+                Role::System | Role::Developer => {
                     let system_text = message.content.extract_text();
                     system_messages.push(SystemContentBlock::Text { text: system_text });
                 }

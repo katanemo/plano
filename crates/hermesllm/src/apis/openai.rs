@@ -150,6 +150,7 @@ pub enum Role {
     User,
     Assistant,
     Tool,
+    Developer,
 }
 
 #[skip_serializing_none]
@@ -736,6 +737,7 @@ impl ProviderStreamResponse for ChatCompletionsStreamResponse {
                 Role::User => "user",
                 Role::Assistant => "assistant",
                 Role::Tool => "tool",
+                Role::Developer => "developer",
             })
         })
     }
