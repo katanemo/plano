@@ -37,7 +37,6 @@ This directory contains demos showcasing Plano's capabilities as an AI-native pr
 | Demo | Description |
 |------|-------------|
 | [Ollama](integrations/ollama/) | Use Ollama as a local LLM provider through Plano |
-| [Xiaomi MiMo](integrations/xiaomi_mimo/) | Route OpenAI-compatible MiMo API calls through Plano as a model provider |
 | [Spotify Bearer Auth](integrations/spotify_bearer_auth/) | Bearer token authentication for third-party APIs (Spotify new releases and top tracks) |
 
 ## Advanced
