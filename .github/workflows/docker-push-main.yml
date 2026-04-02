@@ -3,6 +3,8 @@ name: Publish docker image (latest)
 env:
   DOCKER_IMAGE: katanemo/plano
   GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/plano
+  DOCR_IMAGE: registry.digitalocean.com/genai-prod/plano
+  DOCR_PREVIEW_IMAGE: registry.digitalocean.com/genai-preview/plano
 
 on:
   push:
@@ -34,6 +36,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.PLATFORM_DIGITALOCEAN_TOKEN }}
+
+      - name: Log in to DOCR (prod)
+        run: doctl registry login
+
       - name: Build and Push ARM64 Image
         uses: docker/build-push-action@v6
         with:
@@ -44,6 +54,21 @@ jobs:
           tags: |
             ${{ env.DOCKER_IMAGE }}:latest-arm64
             ${{ env.GHCR_IMAGE }}:latest-arm64
+            ${{ env.DOCR_IMAGE }}:latest-arm64
+
+      - name: Switch to DOCR preview
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.PLATFORM_DIGITALOCEAN_TOKEN_PREVIEW }}
+
+      - name: Log in to DOCR (preview)
+        run: doctl registry login
+
+      - name: Push to DOCR Preview
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCR_PREVIEW_IMAGE }}:latest-arm64 \
+            ${{ env.DOCKER_IMAGE }}:latest-arm64
 
   # Build AMD64 image on GitHub's AMD64 runner — push to both registries
   build-amd64:
@@ -65,6 +90,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.PLATFORM_DIGITALOCEAN_TOKEN }}
+
+      - name: Log in to DOCR (prod)
+        run: doctl registry login
+
       - name: Build and Push AMD64 Image
         uses: docker/build-push-action@v6
         with:
@@ -75,6 +108,21 @@ jobs:
           tags: |
             ${{ env.DOCKER_IMAGE }}:latest-amd64
             ${{ env.GHCR_IMAGE }}:latest-amd64
+            ${{ env.DOCR_IMAGE }}:latest-amd64
+
+      - name: Switch to DOCR preview
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.PLATFORM_DIGITALOCEAN_TOKEN_PREVIEW }}
+
+      - name: Log in to DOCR (preview)
+        run: doctl registry login
+
+      - name: Push to DOCR Preview
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCR_PREVIEW_IMAGE }}:latest-amd64 \
+            ${{ env.DOCKER_IMAGE }}:latest-amd64
 
   # Combine ARM64 and AMD64 images into multi-arch manifests for both registries
   create-manifest:
@@ -94,6 +142,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.PLATFORM_DIGITALOCEAN_TOKEN }}
+
+      - name: Log in to DOCR (prod)
+        run: doctl registry login
+
       - name: Create Docker Hub Multi-Arch Manifest
         run: |
           docker buildx imagetools create \
@@ -107,3 +163,25 @@ jobs:
             -t ${{ env.GHCR_IMAGE }}:latest \
             ${{ env.GHCR_IMAGE }}:latest-arm64 \
             ${{ env.GHCR_IMAGE }}:latest-amd64
+
+      - name: Create DOCR Prod Multi-Arch Manifest
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCR_IMAGE }}:latest \
+            ${{ env.DOCR_IMAGE }}:latest-arm64 \
+            ${{ env.DOCR_IMAGE }}:latest-amd64
+
+      - name: Switch to DOCR preview
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.PLATFORM_DIGITALOCEAN_TOKEN_PREVIEW }}
+
+      - name: Log in to DOCR (preview)
+        run: doctl registry login
+
+      - name: Create DOCR Preview Multi-Arch Manifest
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCR_PREVIEW_IMAGE }}:latest \
+            ${{ env.DOCKER_IMAGE }}:latest-arm64 \
+            ${{ env.DOCKER_IMAGE }}:latest-amd64
