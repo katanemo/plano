@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "organization": "Plano",
+  "name": "plano-agent-skills",
+  "abstract": "Best practices for building agents and agentic applications with Plano — the AI-native proxy and dataplane. Covers configuration, routing, agent orchestration, filter chains, observability, CLI operations, and deployment patterns.",
+  "homepage": "https://github.com/katanemo/archgw",
+  "license": "Apache-2.0"
+}
