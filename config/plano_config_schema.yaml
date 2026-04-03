@@ -177,6 +177,11 @@ properties:
         passthrough_auth:
           type: boolean
           description: "When true, forwards the client's Authorization header to upstream instead of using the configured access_key. Useful for routing to services like LiteLLM that validate their own virtual keys."
+        http_headers:
+          type: object
+          description: "Custom HTTP headers to include in requests to this LLM provider. Useful for providers requiring non-standard authentication or telemetry headers."
+          additionalProperties:
+            type: string
         http_host:
           type: string
         provider_interface:
@@ -224,6 +229,11 @@ properties:
         passthrough_auth:
           type: boolean
           description: "When true, forwards the client's Authorization header to upstream instead of using the configured access_key. Useful for routing to services like LiteLLM that validate their own virtual keys."
+        http_headers:
+          type: object
+          description: "Custom HTTP headers to include in requests to this LLM provider. Useful for providers requiring non-standard authentication or telemetry headers."
+          additionalProperties:
+            type: string
         http_host:
           type: string
         provider_interface:
