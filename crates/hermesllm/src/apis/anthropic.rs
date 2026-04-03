@@ -572,7 +572,9 @@ impl ProviderRequest for MessagesRequest {
         let mut regular_messages = Vec::new();
 
         for msg in messages {
-            if msg.role == crate::apis::openai::Role::System {
+            if msg.role == crate::apis::openai::Role::System
+                || msg.role == crate::apis::openai::Role::Developer
+            {
                 system_messages.push(msg.clone());
             } else {
                 regular_messages.push(msg.clone());

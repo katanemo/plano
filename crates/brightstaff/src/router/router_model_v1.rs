@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::configuration::{ModelUsagePreference, RoutingPreference};
+use super::router_model::{ModelUsagePreference, RoutingPreference};
 use hermesllm::apis::openai::{ChatCompletionsRequest, Message, MessageContent, Role};
 use hermesllm::transforms::lib::ExtractText;
 use serde::{Deserialize, Serialize};
@@ -80,6 +80,7 @@ impl RouterModel for RouterModelV1 {
             .iter()
             .filter(|m| {
                 m.role != Role::System
+                    && m.role != Role::Developer
                     && m.role != Role::Tool
                     && !m.content.extract_text().is_empty()
             })

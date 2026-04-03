@@ -12,7 +12,6 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 
-
 resource = Resource.create(
     {
         "service.name": "weather-forecast-service",

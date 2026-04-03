@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 
 from planoai.consts import (
     NATIVE_PID_FILE,
@@ -157,7 +158,13 @@ def render_native_config(plano_config_file, env, with_tracing=False):
     return envoy_config_path, plano_config_rendered_path
 
 
-def start_native(plano_config_file, env, foreground=False, with_tracing=False):
+def start_native(
+    plano_config_file,
+    env,
+    foreground=False,
+    with_tracing=False,
+    progress_callback: Callable[[str], None] | None = None,
+):
     """Start Envoy and brightstaff natively."""
     from planoai.core import _get_gateway_ports
 
@@ -174,6 +181,8 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
     )
 
     log.info("Configuration rendered")
+    if progress_callback:
+        progress_callback("Configuration valid...")
 
     log_dir = os.path.join(PLANO_RUN_DIR, "logs")
     os.makedirs(log_dir, exist_ok=True)
@@ -194,6 +203,8 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
         os.path.join(log_dir, "brightstaff.log"),
     )
     log.info(f"Started brightstaff (PID {brightstaff_pid})")
+    if progress_callback:
+        progress_callback(f"Started brightstaff (PID: {brightstaff_pid})...")
 
     # Start envoy
     envoy_pid = _daemon_exec(
@@ -210,6 +221,8 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
         os.path.join(log_dir, "envoy.log"),
     )
     log.info(f"Started envoy (PID {envoy_pid})")
+    if progress_callback:
+        progress_callback(f"Started envoy (PID: {envoy_pid})...")
 
     # Save PIDs
     os.makedirs(PLANO_RUN_DIR, exist_ok=True)
@@ -225,6 +238,8 @@ def start_native(plano_config_file, env, foreground=False, with_tracing=False):
     # Health check
     gateway_ports = _get_gateway_ports(plano_config_file)
     log.info("Waiting for listeners to become healthy...")
+    if progress_callback:
+        progress_callback("Waiting for listeners to become healthy...")
 
     start_time = time.time()
     timeout = 60
@@ -353,10 +368,15 @@ def _kill_pid(pid):
 
 
 def stop_native():
-    """Stop natively-running Envoy and brightstaff processes."""
+    """Stop natively-running Envoy and brightstaff processes.
+
+    Returns:
+        bool: True if at least one process was running and received a stop signal,
+        False if no running native Plano process was found.
+    """
     if not os.path.exists(NATIVE_PID_FILE):
         log.info("No native Plano instance found (PID file missing).")
-        return
+        return False
 
     with open(NATIVE_PID_FILE, "r") as f:
         pids = json.load(f)
@@ -364,12 +384,14 @@ def stop_native():
     envoy_pid = pids.get("envoy_pid")
     brightstaff_pid = pids.get("brightstaff_pid")
 
+    had_running_process = False
     for name, pid in [("envoy", envoy_pid), ("brightstaff", brightstaff_pid)]:
         if pid is None:
             continue
         try:
             os.kill(pid, signal.SIGTERM)
             log.info(f"Sent SIGTERM to {name} (PID {pid})")
+            had_running_process = True
         except ProcessLookupError:
             log.info(f"{name} (PID {pid}) already stopped")
             continue
@@ -394,7 +416,11 @@ def stop_native():
                 pass
 
     os.unlink(NATIVE_PID_FILE)
-    log.info("Plano stopped (native mode).")
+    if had_running_process:
+        log.info("Plano stopped (native mode).")
+    else:
+        log.info("No native Plano instance was running.")
+    return had_running_process
 
 
 def native_validate_config(plano_config_file):

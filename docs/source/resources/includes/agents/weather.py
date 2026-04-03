@@ -230,12 +230,12 @@ async def get_weather_data(request: Request, messages: list, days: int = 1):
                     "day_name": date_obj.strftime("%A"),
                     "temperature_c": round(temp_c, 1) if temp_c is not None else None,
                     "temperature_f": celsius_to_fahrenheit(temp_c),
-                    "temperature_max_c": round(temp_max, 1)
-                    if temp_max is not None
-                    else None,
-                    "temperature_min_c": round(temp_min, 1)
-                    if temp_min is not None
-                    else None,
+                    "temperature_max_c": (
+                        round(temp_max, 1) if temp_max is not None else None
+                    ),
+                    "temperature_min_c": (
+                        round(temp_min, 1) if temp_min is not None else None
+                    ),
                     "weather_code": weather_code,
                     "sunrise": sunrise.split("T")[1] if sunrise else None,
                     "sunset": sunset.split("T")[1] if sunset else None,

@@ -1,4 +1,4 @@
-version: v0.3.0
+version: v0.4.0
 
 listeners:
   - type: model
@@ -6,22 +6,25 @@ listeners:
     port: 12000
 
 model_providers:
-
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: complex_reasoning
-        description: complex reasoning tasks, multi-step analysis, or detailed explanations
 
   - model: anthropic/claude-sonnet-4-20250514
     access_key: $ANTHROPIC_API_KEY
-    routing_preferences:
-      - name: code_generation
-        description: generating new code, writing functions, or creating boilerplate
 
-tracing:
-  random_sampling: 100
+routing_preferences:
+  - name: complex_reasoning
+    description: complex reasoning tasks, multi-step analysis, or detailed explanations
+    models:
+      - openai/gpt-4o
+      - openai/gpt-4o-mini
+
+  - name: code_generation
+    description: generating new code, writing functions, or creating boilerplate
+    models:
+      - anthropic/claude-sonnet-4-20250514
+      - openai/gpt-4o

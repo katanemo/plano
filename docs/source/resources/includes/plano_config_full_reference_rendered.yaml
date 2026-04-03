@@ -8,6 +8,7 @@ endpoints:
     connect_timeout: 0.005s
     endpoint: 127.0.0.1
     port: 80
+    protocol: http
   flight_agent:
     endpoint: localhost
     port: 10520
@@ -19,6 +20,11 @@ endpoints:
   mistral_local:
     endpoint: 127.0.0.1
     port: 8001
+  secure_service:
+    endpoint: api.example.com
+    http_host: api.example.com
+    port: 443
+    protocol: https
   weather_agent:
     endpoint: localhost
     port: 10510
@@ -38,6 +44,9 @@ listeners:
   router: plano_orchestrator_v1
   type: agent
 - address: 0.0.0.0
+  input_filters:
+  - input_guards
+  max_retries: 3
   model_providers:
   - access_key: $OPENAI_API_KEY
     default: true
@@ -56,6 +65,16 @@ listeners:
     model: ministral-3b-latest
     name: mistral/ministral-3b-latest
     provider_interface: mistral
+  - access_key: $GROQ_API_KEY
+    model: llama-3.3-70b-versatile
+    name: groq/llama-3.3-70b-versatile
+    provider_interface: groq
+    routing_preferences:
+    - description: generating new code snippets, functions, or boilerplate based on
+        user prompts or requirements
+      name: code generation
+    - description: reviewing, analyzing, and suggesting improvements to existing code
+      name: code review
   - base_url: https://litellm.example.com
     cluster_name: openai_litellm.example.com
     endpoint: litellm.example.com
@@ -65,8 +84,21 @@ listeners:
     port: 443
     protocol: https
     provider_interface: openai
+  - access_key: $CUSTOM_API_KEY
+    base_url: https://api.custom-provider.com
+    cluster_name: openai_api.custom-provider.com
+    endpoint: api.custom-provider.com
+    http_host: api.custom-provider.com
+    model: llama-3.3-70b
+    name: openai/llama-3.3-70b
+    port: 443
+    protocol: https
+    provider_interface: openai
   name: model_1
+  output_filters:
+  - input_guards
   port: 12000
+  timeout: 30s
   type: model
 - address: 0.0.0.0
   name: prompt_function_listener
@@ -95,6 +127,16 @@ model_providers:
   model: ministral-3b-latest
   name: mistral/ministral-3b-latest
   provider_interface: mistral
+- access_key: $GROQ_API_KEY
+  model: llama-3.3-70b-versatile
+  name: groq/llama-3.3-70b-versatile
+  provider_interface: groq
+  routing_preferences:
+  - description: generating new code snippets, functions, or boilerplate based on
+      user prompts or requirements
+    name: code generation
+  - description: reviewing, analyzing, and suggesting improvements to existing code
+    name: code review
 - base_url: https://litellm.example.com
   cluster_name: openai_litellm.example.com
   endpoint: litellm.example.com
@@ -104,6 +146,20 @@ model_providers:
   port: 443
   protocol: https
   provider_interface: openai
+- access_key: $CUSTOM_API_KEY
+  base_url: https://api.custom-provider.com
+  cluster_name: openai_api.custom-provider.com
+  endpoint: api.custom-provider.com
+  http_host: api.custom-provider.com
+  model: llama-3.3-70b
+  name: openai/llama-3.3-70b
+  port: 443
+  protocol: https
+  provider_interface: openai
+- internal: true
+  model: Arch-Router
+  name: arch-router
+  provider_interface: plano
 - internal: true
   model: Arch-Function
   name: arch-function
@@ -112,8 +168,22 @@ model_providers:
   model: Plano-Orchestrator
   name: plano/orchestrator
   provider_interface: plano
+overrides:
+  agent_orchestration_model: Plano-Orchestrator
+  llm_routing_model: Arch-Router
+  optimize_context_window: true
+  prompt_target_intent_matching_threshold: 0.7
+  upstream_connect_timeout: 10s
+  upstream_tls_ca_path: /etc/ssl/certs/ca-certificates.crt
+  use_agent_orchestrator: false
+prompt_guards:
+  input_guards:
+    jailbreak:
+      on_exception:
+        message: I'm sorry, I can't help with that request.
 prompt_targets:
-- description: Get current weather at a location.
+- auto_llm_dispatch_on_response: true
+  description: Get current weather at a location.
   endpoint:
     http_method: POST
     name: app_server
@@ -129,7 +199,36 @@ prompt_targets:
     name: days
     required: true
     type: int
+  system_prompt: You are a weather expert. Provide accurate and concise weather information.
+ratelimits:
+- limit:
+    tokens: 100000
+    unit: hour
+  model: openai/gpt-4o
+  selector:
+    key: x-user-id
+    value: '*'
+- limit:
+    tokens: 500000
+    unit: day
+  model: openai/gpt-4o-mini
+  selector:
+    key: x-org-id
+    value: acme-corp
+state_storage:
+  type: memory
+system_prompt: 'You are a helpful assistant. Always respond concisely and accurately.
+
+  '
 tracing:
   opentracing_grpc_endpoint: http://localhost:4317
   random_sampling: 100
+  span_attributes:
+    header_prefixes:
+    - x-user-
+    - x-org-
+    static:
+      environment: production
+      service.team: platform
+  trace_arch_internal: false
 version: v0.3.0

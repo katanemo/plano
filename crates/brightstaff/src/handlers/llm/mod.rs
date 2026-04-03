@@ -38,6 +38,8 @@ use crate::tracing::{
 };
 use model_selection::router_chat_get_upstream_model;
 
+const PERPLEXITY_PROVIDER_PREFIX: &str = "perplexity/";
+
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
     state: Arc<AppState>,
@@ -134,7 +136,7 @@ async fn llm_chat_inner(
         temperature,
         tool_names,
         user_message_preview,
-        inline_routing_policy,
+        inline_routing_preferences,
         client_api,
         provider_id,
     } = parsed;
@@ -284,7 +286,7 @@ async fn llm_chat_inner(
                 &traceparent,
                 &request_path,
                 &request_id,
-                inline_routing_policy,
+                inline_routing_preferences,
             )
             .await
         }
@@ -357,7 +359,7 @@ struct PreparedRequest {
     temperature: Option<f32>,
     tool_names: Option<Vec<String>>,
     user_message_preview: Option<String>,
-    inline_routing_policy: Option<Vec<common::configuration::ModelUsagePreference>>,
+    inline_routing_preferences: Option<Vec<common::configuration::TopLevelRoutingPreference>>,
     client_api: Option<SupportedAPIsFromClient>,
     provider_id: hermesllm::ProviderId,
 }
@@ -386,16 +388,14 @@ async fn parse_and_validate_request(
         "request body received"
     );
 
-    // Extract routing_policy from request body if present
-    let (chat_request_bytes, inline_routing_policy) =
-        crate::handlers::routing_service::extract_routing_policy(&raw_bytes, false).map_err(
-            |err| {
-                warn!(error = %err, "failed to parse request JSON");
-                let mut r = Response::new(full(format!("Failed to parse request: {}", err)));
-                *r.status_mut() = StatusCode::BAD_REQUEST;
-                r
-            },
-        )?;
+    // Extract routing_preferences from request body if present
+    let (chat_request_bytes, inline_routing_preferences) =
+        crate::handlers::routing_service::extract_routing_policy(&raw_bytes).map_err(|err| {
+            warn!(error = %err, "failed to parse request JSON");
+            let mut r = Response::new(full(format!("Failed to parse request: {}", err)));
+            *r.status_mut() = StatusCode::BAD_REQUEST;
+            r
+        })?;
 
     let api_type = SupportedAPIsFromClient::from_endpoint(request_path).ok_or_else(|| {
         warn!(path = %request_path, "unsupported endpoint");
@@ -420,7 +420,7 @@ async fn parse_and_validate_request(
     let temperature = client_request.get_temperature();
     let is_streaming_request = client_request.is_streaming();
     let alias_resolved_model = resolve_model_alias(&model_from_request, model_aliases);
-    let (provider_id, _) = get_provider_info(llm_providers, &alias_resolved_model).await;
+    let (provider_id, _, _) = get_provider_info(llm_providers, &alias_resolved_model).await;
 
     // Validate model exists in configuration
     if llm_providers
@@ -473,7 +473,7 @@ async fn parse_and_validate_request(
         temperature,
         tool_names,
         user_message_preview,
-        inline_routing_policy,
+        inline_routing_preferences,
         client_api,
         provider_id,
     })
@@ -775,7 +775,8 @@ async fn get_upstream_path(
     resolved_model: &str,
     is_streaming: bool,
 ) -> String {
-    let (provider_id, base_url_path_prefix) = get_provider_info(llm_providers, model_name).await;
+    let (provider_id, base_url_path_prefix, use_unversioned_paths) =
+        get_provider_info(llm_providers, model_name).await;
 
     let Some(client_api) = SupportedAPIsFromClient::from_endpoint(request_path) else {
         return request_path.to_string();
@@ -787,6 +788,7 @@ async fn get_upstream_path(
         resolved_model,
         is_streaming,
         base_url_path_prefix.as_deref(),
+        use_unversioned_paths,
     )
 }
 
@@ -794,21 +796,124 @@ async fn get_upstream_path(
 async fn get_provider_info(
     llm_providers: &Arc<RwLock<LlmProviders>>,
     model_name: &str,
-) -> (hermesllm::ProviderId, Option<String>) {
+) -> (hermesllm::ProviderId, Option<String>, bool) {
     let providers_lock = llm_providers.read().await;
 
     if let Some(provider) = providers_lock.get(model_name) {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
-        return (provider_id, prefix);
+        let use_unversioned_paths = provider.name.starts_with(PERPLEXITY_PROVIDER_PREFIX);
+        return (provider_id, prefix, use_unversioned_paths);
     }
 
     if let Some(provider) = providers_lock.default() {
         let provider_id = provider.provider_interface.to_provider_id();
         let prefix = provider.base_url_path_prefix.clone();
-        (provider_id, prefix)
+        let use_unversioned_paths = provider.name.starts_with(PERPLEXITY_PROVIDER_PREFIX);
+        (provider_id, prefix, use_unversioned_paths)
     } else {
         warn!("No default provider found, falling back to OpenAI");
-        (hermesllm::ProviderId::OpenAI, None)
+        (hermesllm::ProviderId::OpenAI, None, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{get_provider_info, get_upstream_path};
+    use common::configuration::{LlmProvider, LlmProviderType};
+    use common::llm_providers::LlmProviders;
+    use hermesllm::apis::OpenAIApi;
+    use hermesllm::clients::SupportedAPIsFromClient;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    fn build_provider(name: &str, model: &str) -> LlmProvider {
+        LlmProvider {
+            name: name.to_string(),
+            provider_interface: LlmProviderType::OpenAI,
+            access_key: Some("test_key".to_string()),
+            model: Some(model.to_string()),
+            default: Some(false),
+            ..Default::default()
+        }
+    }
+
+    fn providers_lock(providers: Vec<LlmProvider>) -> Arc<RwLock<LlmProviders>> {
+        Arc::new(RwLock::new(
+            LlmProviders::try_from(providers).expect("test providers should be valid"),
+        ))
+    }
+
+    #[tokio::test]
+    async fn test_get_provider_info_marks_perplexity_as_unversioned() {
+        let providers = providers_lock(vec![build_provider("perplexity/sonar-pro", "sonar-pro")]);
+
+        let (provider_id, prefix, use_unversioned_paths) =
+            get_provider_info(&providers, "perplexity/sonar-pro").await;
+
+        assert_eq!(provider_id, hermesllm::ProviderId::OpenAI);
+        assert_eq!(prefix, None);
+        assert!(use_unversioned_paths);
+    }
+
+    #[tokio::test]
+    async fn test_get_upstream_path_for_perplexity_uses_unversioned_chat_endpoint() {
+        let providers = providers_lock(vec![build_provider("perplexity/sonar-pro", "sonar-pro")]);
+
+        let upstream_path = get_upstream_path(
+            &providers,
+            "perplexity/sonar-pro",
+            "/v1/chat/completions",
+            "sonar-pro",
+            false,
+        )
+        .await;
+
+        assert_eq!(upstream_path, "/chat/completions");
+    }
+
+    #[tokio::test]
+    async fn test_get_upstream_path_for_non_perplexity_keeps_v1_chat_endpoint() {
+        let providers = providers_lock(vec![build_provider("openai/gpt-4o-mini", "gpt-4o-mini")]);
+
+        let upstream_path = get_upstream_path(
+            &providers,
+            "openai/gpt-4o-mini",
+            "/v1/chat/completions",
+            "gpt-4o-mini",
+            false,
+        )
+        .await;
+
+        assert_eq!(upstream_path, "/v1/chat/completions");
+    }
+
+    #[tokio::test]
+    async fn test_perplexity_with_and_without_versioning_paths() {
+        let providers = providers_lock(vec![build_provider("perplexity/sonar-pro", "sonar-pro")]);
+
+        // This is the path Plano should use for Perplexity (works).
+        let success_path = get_upstream_path(
+            &providers,
+            "perplexity/sonar-pro",
+            "/v1/chat/completions",
+            "sonar-pro",
+            false,
+        )
+        .await;
+        assert_eq!(success_path, "/chat/completions");
+
+        // This is the generic OpenAI default path; for Perplexity this would 404.
+        let fail_path = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
+            .target_endpoint_for_provider(
+                &hermesllm::ProviderId::OpenAI,
+                "/v1/chat/completions",
+                "sonar-pro",
+                false,
+                None,
+                false,
+            );
+        assert_eq!(fail_path, "/v1/chat/completions");
+        assert_ne!(success_path, fail_path);
     }
 }

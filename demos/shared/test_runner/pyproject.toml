@@ -8,7 +8,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pytest>=8.3.3",
-    "requests>=2.29.0",
+    "requests>=2.33.0",
     "pytest-sugar>=1.0.0",
     "deepdiff>=8.0.1",
     "pytest-retry>=1.6.3",

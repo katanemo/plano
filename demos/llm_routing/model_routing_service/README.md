@@ -18,37 +18,40 @@ Plano is an AI-native proxy and data plane for agentic apps — with built-in or
 
 ## How Routing Works
 
-The entire routing configuration is plain YAML — no code:
+Routing is configured in top-level `routing_preferences` (requires `version: v0.4.0`):
 
 ```yaml
-model_providers:
-  - model: openai/gpt-4o-mini
-    default: true                    # fallback for unmatched requests
+version: v0.4.0
 
-  - model: openai/gpt-4o
-    routing_preferences:
-      - name: complex_reasoning
-        description: complex reasoning tasks, multi-step analysis
+routing_preferences:
+  - name: complex_reasoning
+    description: complex reasoning tasks, multi-step analysis, or detailed explanations
+    models:
+      - openai/gpt-4o
+      - openai/gpt-4o-mini
 
-  - model: anthropic/claude-sonnet-4-20250514
-    routing_preferences:
-      - name: code_generation
-        description: generating new code, writing functions
+  - name: code_generation
+    description: generating new code, writing functions, or creating boilerplate
+    models:
+      - anthropic/claude-sonnet-4-20250514
+      - openai/gpt-4o
 ```
 
-When a request arrives, Plano sends the conversation and routing preferences to Arch-Router, which classifies the intent and returns the matching route:
+When a request arrives, Plano:
+
+1. Sends the conversation + route descriptions to Arch-Router for intent classification
+2. Looks up the matched route and returns its candidate models
+3. Returns an ordered list — client uses `models[0]`, falls back to `models[1]` on 429/5xx
 
 ```
 1. Request arrives          → "Write binary search in Python"
-2. Preferences serialized   → [{"name":"code_generation", ...}, {"name":"complex_reasoning", ...}]
-3. Arch-Router classifies   → {"route": "code_generation"}
-4. Route → Model lookup     → code_generation → anthropic/claude-sonnet-4-20250514
-5. Request forwarded        → Claude generates the response
+2. Arch-Router classifies   → route: "code_generation"
+3. Response                 → models: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"]
 ```
 
-No match? Arch-Router returns `other` → Plano falls back to the default model.
+No match? Arch-Router returns `null` route → client falls back to the model in the original request.
 
-The `/routing/v1/*` endpoints return the routing decision **without** forwarding to the LLM — useful for testing and validating routing behavior before going to production.
+The `/routing/v1/*` endpoints return the routing decision **without** forwarding to the LLM — useful for testing routing behavior before going to production.
 
 ## Setup
 
@@ -60,9 +63,9 @@ export ANTHROPIC_API_KEY=<your-key>
 ```
 
 Start Plano:
+
 ```bash
-cd demos/llm_routing/model_routing_service
-planoai up config.yaml
+planoai up demos/llm_routing/model_routing_service/config.yaml
 ```
 
 ## Run the demo
@@ -95,13 +98,13 @@ curl http://localhost:12000/routing/v1/chat/completions \
 Response:
 ```json
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "c16d1096c1af4a17abb48fb182918a88"
 }
 ```
 
-The response tells you which model would handle this request and which route was matched, without actually making the LLM call.
+The response contains the model list — your client should try `models[0]` first and fall back to `models[1]` on 429 or 5xx errors.
 
 ## Session Pinning
 
@@ -176,7 +179,6 @@ GPU nodes commonly have a `nvidia.com/gpu:NoSchedule` taint — `vllm-deployment
 **1. Deploy Arch-Router and Plano:**
 
 ```bash
-
 # arch-router deployment
 kubectl apply -f vllm-deployment.yaml
 
@@ -223,6 +225,7 @@ kubectl create configmap plano-config \
 kubectl rollout restart deployment/plano
 ```
 
+
 ## Demo Output
 
 ```
@@ -230,35 +233,35 @@ kubectl rollout restart deployment/plano
 
 --- 1. Code generation query (OpenAI format) ---
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "c16d1096c1af4a17abb48fb182918a88"
 }
 
 --- 2. Complex reasoning query (OpenAI format) ---
 {
-    "model": "openai/gpt-4o",
+    "models": ["openai/gpt-4o", "openai/gpt-4o-mini"],
     "route": "complex_reasoning",
     "trace_id": "30795e228aff4d7696f082ed01b75ad4"
 }
 
 --- 3. Simple query - no routing match (OpenAI format) ---
 {
-    "model": "none",
+    "models": ["none"],
     "route": null,
     "trace_id": "ae0b6c3b220d499fb5298ac63f4eac0e"
 }
 
 --- 4. Code generation query (Anthropic format) ---
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "26be822bbdf14a3ba19fe198e55ea4a9"
 }
 
 --- 7. Session pinning - first call (fresh routing decision) ---
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6",
     "session_id": "demo-session-001",
@@ -277,7 +280,7 @@ kubectl rollout restart deployment/plano
 
 --- 9. Different session gets its own fresh routing ---
 {
-    "model": "openai/gpt-4o",
+    "models": ["openai/gpt-4o", "openai/gpt-4o-mini"],
     "route": "complex_reasoning",
     "trace_id": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
     "session_id": "demo-session-002",

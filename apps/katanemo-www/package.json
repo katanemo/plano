@@ -12,6 +12,7 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@katanemo/shared-styles": "*",
     "@katanemo/ui": "*",
     "next": "^16.1.6",

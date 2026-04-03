@@ -9,6 +9,7 @@ properties:
       - 0.1-beta
       - 0.2.0
       - v0.3.0
+      - v0.4.0
 
   agents:
     type: array
@@ -486,6 +487,88 @@ properties:
         additionalProperties: false
         required:
           - jailbreak
+  routing_preferences:
+    type: array
+    items:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        models:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        selection_policy:
+          type: object
+          properties:
+            prefer:
+              type: string
+              enum:
+                - cheapest
+                - fastest
+                - none
+          additionalProperties: false
+          required:
+            - prefer
+      additionalProperties: false
+      required:
+        - name
+        - description
+        - models
+
+  model_metrics_sources:
+    type: array
+    items:
+      oneOf:
+        - type: object
+          properties:
+            type:
+              type: string
+              const: cost
+            provider:
+              type: string
+              enum:
+                - digitalocean
+            refresh_interval:
+              type: integer
+              minimum: 1
+              description: "Refresh interval in seconds"
+            model_aliases:
+              type: object
+              description: "Map DO catalog keys (lowercase(creator)/model_id) to Plano model names used in routing_preferences. Example: 'openai/openai-gpt-oss-120b: openai/gpt-4o'"
+              additionalProperties:
+                type: string
+          required:
+            - type
+            - provider
+          additionalProperties: false
+        - type: object
+          properties:
+            type:
+              type: string
+              const: latency
+            provider:
+              type: string
+              enum:
+                - prometheus
+            url:
+              type: string
+            query:
+              type: string
+            refresh_interval:
+              type: integer
+              minimum: 1
+              description: "Refresh interval in seconds"
+          required:
+            - type
+            - provider
+            - url
+            - query
+          additionalProperties: false
+
 additionalProperties: false
 required:
   - version

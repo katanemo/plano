@@ -1,6 +1,16 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CLI_DIR="$REPO_ROOT/cli"
+
+# Use uv run if available and cli/ has a pyproject.toml, otherwise fall back to bare python
+if command -v uv &> /dev/null && [ -f "$CLI_DIR/pyproject.toml" ]; then
+  PYTHON_CMD="uv run --directory $CLI_DIR python"
+else
+  PYTHON_CMD="python"
+fi
+
 failed_files=()
 
 for file in $(find . -name config.yaml -o -name plano_config_full_reference.yaml); do
@@ -14,7 +24,7 @@ for file in $(find . -name config.yaml -o -name plano_config_full_reference.yaml
   ENVOY_CONFIG_TEMPLATE_FILE="envoy.template.yaml" \
   PLANO_CONFIG_FILE_RENDERED="$rendered_file" \
   ENVOY_CONFIG_FILE_RENDERED="/dev/null" \
-  python -m planoai.config_generator 2>&1 > /dev/null
+  $PYTHON_CMD -m planoai.config_generator 2>&1 > /dev/null
 
   if [ $? -ne 0 ]; then
     echo "Validation failed for $file"

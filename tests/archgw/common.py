@@ -1,7 +1,6 @@
 import json
 import os
 
-
 PROMPT_GATEWAY_ENDPOINT = os.getenv(
     "PROMPT_GATEWAY_ENDPOINT", "http://localhost:10000/v1/chat/completions"
 )

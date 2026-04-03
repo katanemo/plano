@@ -36,7 +36,7 @@ export function Footer() {
             {/* Copyright */}
             <div className="mt-auto">
               <p className="font-sans text-sm sm:text-base text-black/63 tracking-[-0.6px] sm:tracking-[-0.8px]!">
-                © Katanemo Labs, Inc. 2025 / Plano by Katanemo Labs, Inc.
+                © 2026 Katanemo Labs, a DigitalOcean Company / Plano by Katanemo Labs
               </p>
             </div>
           </div>

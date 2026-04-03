@@ -92,6 +92,7 @@ impl SupportedAPIsFromClient {
         model_id: &str,
         is_streaming: bool,
         base_url_path_prefix: Option<&str>,
+        use_unversioned_paths: bool,
     ) -> String {
         // Helper function to build endpoint with optional prefix override
         let build_endpoint = |provider_prefix: &str, suffix: &str| -> String {
@@ -161,7 +162,13 @@ impl SupportedAPIsFromClient {
                         build_endpoint("/v1", endpoint_suffix)
                     }
                 }
-                _ => build_endpoint("/v1", endpoint_suffix),
+                _ => {
+                    if use_unversioned_paths {
+                        build_endpoint("", endpoint_suffix)
+                    } else {
+                        build_endpoint("/v1", endpoint_suffix)
+                    }
+                }
             }
         };
 
@@ -343,7 +350,8 @@ mod tests {
                 "/v1/chat/completions",
                 "gpt-4",
                 false,
-                None
+                None,
+                false
             ),
             "/v1/chat/completions"
         );
@@ -355,7 +363,8 @@ mod tests {
                 "/v1/chat/completions",
                 "llama2",
                 false,
-                None
+                None,
+                false
             ),
             "/openai/v1/chat/completions"
         );
@@ -367,7 +376,8 @@ mod tests {
                 "/v1/chat/completions",
                 "chatglm",
                 false,
-                None
+                None,
+                false
             ),
             "/api/paas/v4/chat/completions"
         );
@@ -379,7 +389,8 @@ mod tests {
                 "/v1/chat/completions",
                 "qwen-turbo",
                 false,
-                None
+                None,
+                false
             ),
             "/compatible-mode/v1/chat/completions"
         );
@@ -391,7 +402,8 @@ mod tests {
                 "/v1/chat/completions",
                 "gpt-4",
                 false,
-                None
+                None,
+                false
             ),
             "/openai/deployments/gpt-4/chat/completions?api-version=2025-01-01-preview"
         );
@@ -403,9 +415,27 @@ mod tests {
                 "/v1/chat/completions",
                 "gemini-pro",
                 false,
-                None
+                None,
+                false
             ),
             "/v1beta/openai/chat/completions"
+        );
+    }
+
+    #[test]
+    fn test_target_endpoint_unversioned_paths() {
+        let api = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+
+        assert_eq!(
+            api.target_endpoint_for_provider(
+                &ProviderId::OpenAI,
+                "/v1/chat/completions",
+                "sonar-pro",
+                false,
+                None,
+                true
+            ),
+            "/chat/completions"
         );
     }
 
@@ -420,7 +450,8 @@ mod tests {
                 "/v1/chat/completions",
                 "chatglm",
                 false,
-                Some("/api/coding/paas/v4")
+                Some("/api/coding/paas/v4"),
+                false
             ),
             "/api/coding/paas/v4/chat/completions"
         );
@@ -432,7 +463,8 @@ mod tests {
                 "/v1/chat/completions",
                 "chatglm",
                 false,
-                Some("api/coding/paas/v4")
+                Some("api/coding/paas/v4"),
+                false
             ),
             "/api/coding/paas/v4/chat/completions"
         );
@@ -444,7 +476,8 @@ mod tests {
                 "/v1/chat/completions",
                 "chatglm",
                 false,
-                Some("/api/coding/paas/v4/")
+                Some("/api/coding/paas/v4/"),
+                false
             ),
             "/api/coding/paas/v4/chat/completions"
         );
@@ -456,7 +489,8 @@ mod tests {
                 "/v1/chat/completions",
                 "gpt-4",
                 false,
-                Some("/custom/api/v2")
+                Some("/custom/api/v2"),
+                false
             ),
             "/custom/api/v2/chat/completions"
         );
@@ -468,7 +502,8 @@ mod tests {
                 "/v1/chat/completions",
                 "llama2",
                 false,
-                Some("/api/v2")
+                Some("/api/v2"),
+                false
             ),
             "/api/v2/v1/chat/completions"
         );
@@ -485,7 +520,8 @@ mod tests {
                 "/v1/chat/completions",
                 "chatglm",
                 false,
-                Some("/")
+                Some("/"),
+                false
             ),
             "/api/paas/v4/chat/completions"
         );
@@ -497,7 +533,8 @@ mod tests {
                 "/v1/chat/completions",
                 "chatglm",
                 false,
-                None
+                None,
+                false
             ),
             "/api/paas/v4/chat/completions"
         );
@@ -514,7 +551,8 @@ mod tests {
                 "/v1/messages",
                 "us.amazon.nova-pro-v1:0",
                 false,
-                None
+                None,
+                false
             ),
             "/model/us.amazon.nova-pro-v1:0/converse"
         );
@@ -526,7 +564,8 @@ mod tests {
                 "/v1/messages",
                 "us.amazon.nova-pro-v1:0",
                 true,
-                None
+                None,
+                false
             ),
             "/model/us.amazon.nova-pro-v1:0/converse-stream"
         );
@@ -538,7 +577,8 @@ mod tests {
                 "/v1/messages",
                 "us.amazon.nova-pro-v1:0",
                 false,
-                Some("/custom/path")
+                Some("/custom/path"),
+                false
             ),
             "/custom/path/model/us.amazon.nova-pro-v1:0/converse"
         );
@@ -550,7 +590,8 @@ mod tests {
                 "/v1/messages",
                 "us.amazon.nova-pro-v1:0",
                 true,
-                Some("/custom/path")
+                Some("/custom/path"),
+                false
             ),
             "/custom/path/model/us.amazon.nova-pro-v1:0/converse-stream"
         );
@@ -567,7 +608,8 @@ mod tests {
                 "/v1/messages",
                 "claude-3-opus",
                 false,
-                None
+                None,
+                false
             ),
             "/v1/messages"
         );
@@ -579,7 +621,8 @@ mod tests {
                 "/v1/messages",
                 "claude-3-opus",
                 false,
-                Some("/api/v2")
+                Some("/api/v2"),
+                false
             ),
             "/api/v2/messages"
         );
@@ -596,7 +639,8 @@ mod tests {
                 "/custom/path",
                 "llama2",
                 false,
-                None
+                None,
+                false
             ),
             "/v1/chat/completions"
         );
@@ -608,7 +652,8 @@ mod tests {
                 "/custom/path",
                 "chatglm",
                 false,
-                None
+                None,
+                false
             ),
             "/v1/chat/completions"
         );
@@ -620,7 +665,8 @@ mod tests {
                 "/custom/path",
                 "chatglm",
                 false,
-                Some("/api/v2")
+                Some("/api/v2"),
+                false
             ),
             "/api/v2/chat/completions"
         );
@@ -637,7 +683,8 @@ mod tests {
                 "/v1/chat/completions",
                 "gpt-4-deployment",
                 false,
-                None
+                None,
+                false
             ),
             "/openai/deployments/gpt-4-deployment/chat/completions?api-version=2025-01-01-preview"
         );
@@ -649,7 +696,8 @@ mod tests {
                 "/v1/chat/completions",
                 "gpt-4-deployment",
                 false,
-                Some("/custom/azure/path")
+                Some("/custom/azure/path"),
+                false
             ),
             "/custom/azure/path/gpt-4-deployment/chat/completions?api-version=2025-01-01-preview"
         );
@@ -664,7 +712,8 @@ mod tests {
                 "/v1/responses",
                 "grok-4-1-fast-reasoning",
                 false,
-                None
+                None,
+                false
             ),
             "/v1/responses"
         );

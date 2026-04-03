@@ -16,6 +16,7 @@
     "migrate:blogs": "tsx scripts/migrate-blogs.ts"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@katanemo/shared-styles": "*",
     "@katanemo/ui": "*",
     "@portabletext/react": "^5.0.0",
@@ -32,8 +33,8 @@
     "next": "^16.1.6",
     "next-sanity": "^11.6.9",
     "papaparse": "^5.5.3",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.0",
     "remark-gfm": "^4.0.1",

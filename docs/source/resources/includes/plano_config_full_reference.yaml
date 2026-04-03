@@ -32,12 +32,29 @@ model_providers:
   - model: mistral/ministral-3b-latest
     access_key: $MISTRAL_API_KEY
 
-  # Example: Passthrough authentication for LiteLLM or similar proxies
-  # When passthrough_auth is true, client's Authorization header is forwarded
-  # instead of using the configured access_key
+  # routing_preferences: tags a model with named capabilities so Plano's LLM router
+  # can select the best model for each request based on intent. Requires the
+  # Arch-Router model (or equivalent) to be configured in overrides.llm_routing_model.
+  # Each preference has a name (short label) and a description (used for intent matching).
+  - model: groq/llama-3.3-70b-versatile
+    access_key: $GROQ_API_KEY
+    routing_preferences:
+      - name: code generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+      - name: code review
+        description: reviewing, analyzing, and suggesting improvements to existing code
+
+  # passthrough_auth: forwards the client's Authorization header upstream instead of
+  # using the configured access_key. Useful for LiteLLM or similar proxy setups.
   - model: openai/gpt-4o-litellm
     base_url: https://litellm.example.com
     passthrough_auth: true
+
+  # Custom/self-hosted endpoint with explicit http_host override
+  - model: openai/llama-3.3-70b
+    base_url: https://api.custom-provider.com
+    http_host: api.custom-provider.com
+    access_key: $CUSTOM_API_KEY
 
 # Model aliases - use friendly names instead of full provider model names
 model_aliases:
@@ -66,25 +83,37 @@ listeners:
     name: model_1
     address: 0.0.0.0
     port: 12000
-    # Optional: attach input filters for guardrails on direct LLM requests
-    # input_filters:
-    #   - input_guards
+    timeout: 30s          # Request timeout (e.g. "30s", "60s")
+    max_retries: 3        # Number of retries on upstream failure
+    input_filters:        # Filters applied before forwarding to LLM
+      - input_guards
+    output_filters:       # Filters applied to LLM responses before returning to client
+      - input_guards
 
   # Prompt listener for function calling (for prompt_targets)
   - type: prompt
     name: prompt_function_listener
     address: 0.0.0.0
     port: 10000
-    # This listener is used for prompt_targets and function calling
 
 # Reusable service endpoints
 endpoints:
   app_server:
     endpoint: 127.0.0.1:80
     connect_timeout: 0.005s
+    protocol: http        # http or https
 
   mistral_local:
     endpoint: 127.0.0.1:8001
+
+  secure_service:
+    endpoint: api.example.com:443
+    protocol: https
+    http_host: api.example.com  # Override the Host header sent upstream
+
+# Optional top-level system prompt applied to all prompt_targets
+system_prompt: |
+  You are a helpful assistant. Always respond concisely and accurately.
 
 # Prompt targets for function calling and API orchestration
 prompt_targets:
@@ -104,8 +133,75 @@ prompt_targets:
       name: app_server
       path: /weather
       http_method: POST
+    # Per-target system prompt (overrides top-level system_prompt for this target)
+    system_prompt: You are a weather expert. Provide accurate and concise weather information.
+    # auto_llm_dispatch_on_response: when true, the LLM is called again with the
+    # function response to produce a final natural-language answer for the user
+    auto_llm_dispatch_on_response: true
+
+# Rate limits - control token usage per model and request selector
+ratelimits:
+  - model: openai/gpt-4o
+    selector:
+      key: x-user-id       # HTTP header key used to identify the rate-limit subject
+      value: "*"           # Wildcard matches any value; use a specific string to target one
+    limit:
+      tokens: 100000       # Maximum tokens allowed in the given time unit
+      unit: hour           # Time unit: "minute", "hour", or "day"
+
+  - model: openai/gpt-4o-mini
+    selector:
+      key: x-org-id
+      value: acme-corp
+    limit:
+      tokens: 500000
+      unit: day
+
+# Global behavior overrides
+overrides:
+  # Threshold for routing a request to a prompt_target (0.0–1.0). Lower = more permissive.
+  prompt_target_intent_matching_threshold: 0.7
+  # Trim conversation history to fit within the model's context window
+  optimize_context_window: true
+  # Use Plano's agent orchestrator for multi-agent request routing
+  use_agent_orchestrator: false
+  # Connect timeout for upstream provider clusters (e.g., "5s", "10s"). Default: "5s"
+  upstream_connect_timeout: 10s
+  # Path to the trusted CA bundle for upstream TLS verification
+  upstream_tls_ca_path: /etc/ssl/certs/ca-certificates.crt
+  # Model used for intent-based LLM routing (must be listed in model_providers)
+  llm_routing_model: Arch-Router
+  # Model used for agent orchestration (must be listed in model_providers)
+  agent_orchestration_model: Plano-Orchestrator
+
+# State storage for multi-turn conversation history
+state_storage:
+  type: memory            # "memory" (in-process) or "postgres" (persistent)
+  # connection_string is required when type is postgres.
+  # Supports environment variable substitution: $VAR or ${VAR}
+  # connection_string: postgresql://user:$DB_PASS@localhost:5432/plano
+
+# Input guardrails applied globally to all incoming requests
+prompt_guards:
+  input_guards:
+    jailbreak:
+      on_exception:
+        message: "I'm sorry, I can't help with that request."
 
 # OpenTelemetry tracing configuration
 tracing:
   # Random sampling percentage (1-100)
   random_sampling: 100
+  # Include internal Plano spans in traces
+  trace_arch_internal: false
+  # gRPC endpoint for OpenTelemetry collector (e.g., Jaeger, Tempo)
+  opentracing_grpc_endpoint: http://localhost:4317
+  span_attributes:
+    # Propagate request headers whose names start with these prefixes as span attributes
+    header_prefixes:
+      - x-user-
+      - x-org-
+    # Static key/value pairs added to every span
+    static:
+      environment: production
+      service.team: platform

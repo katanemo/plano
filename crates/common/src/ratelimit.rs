@@ -73,7 +73,10 @@ impl RatelimitMap {
             match new_ratelimit_map.datastore.get_mut(&ratelimit_config.model) {
                 Some(limits) => match limits.get_mut(&ratelimit_config.selector) {
                     Some(_) => {
-                        panic!("repeated selector. Selectors per provider must be unique")
+                        log::error!(
+                            "repeated selector for model '{}'. Selectors per provider must be unique, skipping duplicate",
+                            ratelimit_config.model
+                        );
                     }
                     None => {
                         limits.insert(ratelimit_config.selector, limit);
@@ -150,6 +153,10 @@ fn get_quota(limit: Limit) -> Quota {
         TimeUnit::Second => Quota::per_second(tokens),
         TimeUnit::Minute => Quota::per_minute(tokens),
         TimeUnit::Hour => Quota::per_hour(tokens),
+        TimeUnit::Day => {
+            let per_hour = limit.tokens.saturating_div(24).max(1);
+            Quota::per_hour(NonZero::new(per_hour).expect("per_hour must be positive"))
+        }
     }
 }
 

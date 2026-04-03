@@ -66,7 +66,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${ibmPlexSans.variable} antialiased text-white`}>
+      <body
+        className={`${ibmPlexSans.variable} overflow-hidden antialiased text-white`}
+      >
         {/* Google tag (gtag.js) */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-RLD5BDNW5N"
@@ -80,7 +82,9 @@ export default function RootLayout({
             gtag('config', 'G-RLD5BDNW5N');
           `}
         </Script>
-        <div className="min-h-screen">{children}</div>
+        <div className="h-screen overflow-hidden">
+          {children}
+        </div>
       </body>
     </html>
   );

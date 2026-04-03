@@ -1,6 +1,5 @@
 import json
 
-
 ARCH_STATE_HEADER = "x-arch-state"
 
 

@@ -8,6 +8,7 @@ import { BlogSectionHeader } from "@/components/BlogSectionHeader";
 import { pageMetadata } from "@/lib/metadata";
 
 export const metadata: Metadata = pageMetadata.blog;
+export const dynamic = "force-dynamic";
 
 interface BlogPost {
   _id: string;
@@ -44,6 +45,10 @@ function formatDate(dateString: string): string {
 }
 
 async function getBlogPosts(): Promise<BlogPost[]> {
+  if (!client) {
+    return [];
+  }
+
   const query = `*[_type == "blog" && published == true] | order(publishedAt desc) {
     _id,
     title,
@@ -58,12 +63,48 @@ async function getBlogPosts(): Promise<BlogPost[]> {
     featured
   }`;
 
-  return await client.fetch(query);
+  try {
+    return await client.fetch(query);
+  } catch (error) {
+    console.error("Error fetching blog posts:", error);
+    return [];
+  }
+}
+
+async function getFeaturedBlogPost(): Promise<BlogPost | null> {
+  if (!client) {
+    return null;
+  }
+
+  const query = `*[_type == "blog" && published == true && featured == true] | order(_updatedAt desc, publishedAt desc)[0] {
+    _id,
+    title,
+    slug,
+    summary,
+    publishedAt,
+    mainImage,
+    mainImageUrl,
+    thumbnailImage,
+    thumbnailImageUrl,
+    author,
+    featured
+  }`;
+
+  try {
+    const post = await client.fetch(query);
+    return post || null;
+  } catch (error) {
+    console.error("Error fetching featured blog post:", error);
+    return null;
+  }
 }
 
 export default async function BlogPage() {
-  const posts = await getBlogPosts();
-  const featuredPost = posts.find((post) => post.featured) || posts[0];
+  const [posts, featuredCandidate] = await Promise.all([
+    getBlogPosts(),
+    getFeaturedBlogPost(),
+  ]);
+  const featuredPost = featuredCandidate || posts[0];
   const recentPosts = posts
     .filter((post) => post._id !== featuredPost?._id)
     .slice(0, 3);

@@ -1,11 +1,23 @@
 import Image from "next/image";
 import Link from "next/link";
 import LogoSlider from "../components/LogoSlider";
+import { ArrowRightIcon } from "@heroicons/react/16/solid";
 
 export default function HomePage() {
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 pt-12 pb-16 font-sans sm:pt-20 lg:items-start lg:justify-start lg:pt-24">
+    <main className="relative flex h-full items-center justify-center overflow-hidden px-6 pt-12 pb-16 font-sans sm:pt-20 lg:items-start lg:justify-start lg:pt-24">
       <div className="relative mx-auto w-full max-w-6xl flex flex-col items-center justify-center text-left lg:items-start lg:justify-start">
+        <Link
+          href="https://digitalocean.com/blog/digitalocean-acquires-katanemo-labs-inc"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mb-7 inline-flex max-w-[20rem] items-center gap-1 self-start rounded-full border border-[#22A875]/30 bg-[#22A875]/30 px-2.5 py-1 text-left text-[12px] leading-tight font-medium text-white transition-opacity hover:opacity-90 lg:hidden"
+        >
+          <span>
+            DigitalOcean acquires Katanemo Labs, Inc.
+          </span>
+          <ArrowRightIcon aria-hidden className="h-3 w-3 shrink-0 text-white/90" />
+        </Link>
         <div className="pointer-events-none mb-6 w-full self-start lg:hidden">
           <Image
             src="/KatanemoLogo.svg"
@@ -17,6 +29,20 @@ export default function HomePage() {
           />
         </div>
         <div className="relative z-10 max-w-xl sm:max-w-2xl lg:max-w-2xl xl:max-w-8xl lg:pr-[26vw] xl:pr-[2vw] sm:right-0 md:right-0 lg:right-0 xl:right-20 2xl:right-50 sm:mt-36 mt-0">
+          <Link
+            href="https://digitalocean.com/blog/digitalocean-acquires-katanemo-labs-inc"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-4 hidden max-w-full items-center gap-2 rounded-full border border-[#22A875]/70 bg-[#22A875]/50 px-4 py-1 text-left text-sm font-medium text-white transition-opacity hover:opacity-90 lg:inline-flex"
+          >
+            <span>
+              DigitalOcean acquires Katanemo Labs, Inc.
+            </span>
+            <ArrowRightIcon
+              aria-hidden
+              className="h-4 w-4 shrink-0 text-white/90"
+            />
+          </Link>
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-sans font-medium leading-tight tracking-tight text-white">
             Forward-deployed AI infrastructure engineers.
           </h1>

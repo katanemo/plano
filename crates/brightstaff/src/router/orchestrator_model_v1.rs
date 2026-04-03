@@ -183,6 +183,7 @@ impl OrchestratorModel for OrchestratorModelV1 {
             .iter()
             .filter(|m| {
                 m.role != Role::System
+                    && m.role != Role::Developer
                     && m.role != Role::Tool
                     && !m.content.extract_text().is_empty()
             })

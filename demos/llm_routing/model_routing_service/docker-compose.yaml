@@ -1,0 +1,17 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - model-metrics
+
+  model-metrics:
+    image: python:3.11-slim
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./metrics_server.py:/metrics_server.py:ro
+    command: python /metrics_server.py

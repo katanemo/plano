@@ -95,6 +95,7 @@ impl TryFrom<ChatCompletionsResponse> for ResponsesAPIResponse {
                         Role::Assistant => "assistant".to_string(),
                         Role::System => "system".to_string(),
                         Role::Tool => "tool".to_string(),
+                        Role::Developer => "developer".to_string(),
                     },
                     content,
                 });
