@@ -762,7 +762,7 @@ impl ArchFunctionHandler {
 
         // Keep system message if present
         if let Some(first) = messages.first() {
-            if first.role == Role::System {
+            if first.role == Role::System || first.role == Role::Developer {
                 if let Some(MessageContent::Text(content)) = &first.content {
                     num_tokens += content.len() / 4; // Approximate 4 chars per token
                 }

@@ -133,13 +133,13 @@ jobs:
           load: true
           tags: |
             ${{ env.PLANO_DOCKER_IMAGE }}
-            ${{ env.DOCKER_IMAGE }}:0.4.16
+            ${{ env.DOCKER_IMAGE }}:0.4.17
             ${{ env.DOCKER_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Save image as artifact
-        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.16 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
+        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.17 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v6
@@ -477,7 +477,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           source venv/bin/activate
-          cd demos/shared/test_runner && sh run_demo_tests.sh llm_routing/preference_based_routing
+          cd demos/shared/test_runner && bash run_demo_tests.sh llm_routing/preference_based_routing
 
   # ──────────────────────────────────────────────
   # E2E: demo — currency conversion
@@ -527,4 +527,4 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           source venv/bin/activate
-          cd demos/shared/test_runner && sh run_demo_tests.sh advanced/currency_exchange
+          cd demos/shared/test_runner && bash run_demo_tests.sh advanced/currency_exchange
