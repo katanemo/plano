@@ -9,6 +9,7 @@ env:
 on:
   release:
     types: [published]
+  workflow_dispatch: # remove after testing
 
 permissions:
   contents: read
