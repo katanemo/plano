@@ -174,6 +174,9 @@ async fn init_app_state(
         .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
+    let session_ttl_seconds = config.routing.as_ref().and_then(|r| r.session_ttl_seconds);
+    let session_max_entries = config.routing.as_ref().and_then(|r| r.session_max_entries);
+
     // Validate that top-level routing_preferences requires v0.4.0+.
     let config_version = parse_semver(&config.version);
     let is_v040_plus = config_version >= (0, 4, 0);
@@ -300,7 +303,21 @@ async fn init_app_state(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         routing_model_name,
         routing_llm_provider,
+        session_ttl_seconds,
+        session_max_entries,
     ));
+
+    // Spawn background task to clean up expired session cache entries every 5 minutes
+    {
+        let router_service = Arc::clone(&router_service);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop {
+                interval.tick().await;
+                router_service.cleanup_expired_sessions().await;
+            }
+        });
+    }
 
     let orchestrator_model_name: String = overrides
         .agent_orchestration_model

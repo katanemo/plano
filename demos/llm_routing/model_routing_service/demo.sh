@@ -109,4 +109,47 @@ curl -s "$PLANO_URL/routing/v1/chat/completions" \
   }' | python3 -m json.tool
 echo ""
 
+# --- Example 7: Session pinning - first call (fresh routing) ---
+echo "--- 7. Session pinning - first call (fresh routing decision) ---"
+echo ""
+curl -s "$PLANO_URL/routing/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: demo-session-001" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "Write a Python function that implements binary search on a sorted array"}
+    ]
+  }' | python3 -m json.tool
+echo ""
+
+# --- Example 8: Session pinning - second call (pinned result) ---
+echo "--- 8. Session pinning - second call (same session, pinned) ---"
+echo "    Notice: same model returned with \"pinned\": true, routing was skipped"
+echo ""
+curl -s "$PLANO_URL/routing/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: demo-session-001" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "Now explain how merge sort works and when to prefer it over quicksort"}
+    ]
+  }' | python3 -m json.tool
+echo ""
+
+# --- Example 9: Different session gets fresh routing ---
+echo "--- 9. Different session gets its own fresh routing ---"
+echo ""
+curl -s "$PLANO_URL/routing/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "X-Session-Id: demo-session-002" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "Explain the trade-offs between microservices and monolithic architectures"}
+    ]
+  }' | python3 -m json.tool
+echo ""
+
 echo "=== Demo Complete ==="

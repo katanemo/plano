@@ -423,6 +423,22 @@ properties:
     enum:
       - llm
       - prompt
+  routing:
+    type: object
+    properties:
+      llm_provider:
+        type: string
+      model:
+        type: string
+      session_ttl_seconds:
+        type: integer
+        minimum: 1
+        description: TTL in seconds for session-pinned routing cache entries. Default 600 (10 minutes).
+      session_max_entries:
+        type: integer
+        minimum: 1
+        description: Maximum number of session-pinned routing cache entries. Default 10000.
+    additionalProperties: false
   state_storage:
     type: object
     properties:

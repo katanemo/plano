@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use common::configuration::{SpanAttributes, TopLevelRoutingPreference};
-use common::consts::REQUEST_ID_HEADER;
+use common::consts::{REQUEST_ID_HEADER, SESSION_ID_HEADER};
 use common::errors::BrightStaffError;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::ProviderRequestType;
@@ -53,6 +53,9 @@ struct RoutingDecisionResponse {
     models: Vec<String>,
     route: Option<String>,
     trace_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    pinned: bool,
 }
 
 pub async fn routing_decision(
@@ -67,6 +70,11 @@ pub async fn routing_decision(
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    let session_id: Option<String> = request_headers
+        .get(SESSION_ID_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
 
     let custom_attrs = collect_custom_trace_attributes(&request_headers, span_attributes.as_ref());
 
@@ -85,6 +93,7 @@ pub async fn routing_decision(
         request_path,
         request_headers,
         custom_attrs,
+        session_id,
     )
     .instrument(request_span)
     .await
@@ -97,6 +106,7 @@ async fn routing_decision_inner(
     request_path: String,
     request_headers: hyper::HeaderMap,
     custom_attrs: std::collections::HashMap<String, String>,
+    session_id: Option<String>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     set_service_name(operation_component::ROUTING);
     opentelemetry::trace::get_active_span(|span| {
@@ -113,6 +123,34 @@ async fn routing_decision_inner(
         .nth(1)
         .unwrap_or("unknown")
         .to_string();
+
+    // Session pinning: check cache before doing any routing work
+    if let Some(ref sid) = session_id {
+        if let Some(cached) = router_service.get_cached_route(sid).await {
+            info!(
+                session_id = %sid,
+                model = %cached.model_name,
+                route = ?cached.route_name,
+                "returning pinned routing decision from cache"
+            );
+            let response = RoutingDecisionResponse {
+                models: vec![cached.model_name],
+                route: cached.route_name,
+                trace_id,
+                session_id: Some(sid.clone()),
+                pinned: true,
+            };
+            let json = serde_json::to_string(&response).unwrap();
+            let body = Full::new(Bytes::from(json))
+                .map_err(|never| match never {})
+                .boxed();
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .body(body)
+                .unwrap());
+        }
+    }
 
     // Parse request body
     let raw_bytes = request.collect().await?.to_bytes();
@@ -152,7 +190,7 @@ async fn routing_decision_inner(
     };
 
     let routing_result = router_chat_get_upstream_model(
-        router_service,
+        Arc::clone(&router_service),
         client_request,
         &traceparent,
         &request_path,
@@ -163,10 +201,23 @@ async fn routing_decision_inner(
 
     match routing_result {
         Ok(result) => {
+            // Cache the result if session_id is present
+            if let Some(ref sid) = session_id {
+                router_service
+                    .cache_route(
+                        sid.clone(),
+                        result.model_name.clone(),
+                        result.route_name.clone(),
+                    )
+                    .await;
+            }
+
             let response = RoutingDecisionResponse {
                 models: result.models,
                 route: result.route_name,
                 trace_id,
+                session_id,
+                pinned: false,
             };
 
             info!(
@@ -329,6 +380,8 @@ mod tests {
             ],
             route: Some("code_generation".to_string()),
             trace_id: "abc123".to_string(),
+            session_id: Some("sess-abc".to_string()),
+            pinned: true,
         };
         let json = serde_json::to_string(&response).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -336,6 +389,8 @@ mod tests {
         assert_eq!(parsed["models"][1], "openai/gpt-4o");
         assert_eq!(parsed["route"], "code_generation");
         assert_eq!(parsed["trace_id"], "abc123");
+        assert_eq!(parsed["session_id"], "sess-abc");
+        assert_eq!(parsed["pinned"], true);
     }
 
     #[test]
@@ -344,10 +399,14 @@ mod tests {
             models: vec!["none".to_string()],
             route: None,
             trace_id: "abc123".to_string(),
+            session_id: None,
+            pinned: false,
         };
         let json = serde_json::to_string(&response).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["models"][0], "none");
         assert!(parsed["route"].is_null());
+        assert!(parsed.get("session_id").is_none());
+        assert_eq!(parsed["pinned"], false);
     }
 }

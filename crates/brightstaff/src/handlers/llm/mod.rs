@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use common::configuration::{FilterPipeline, ModelAlias};
-use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER};
+use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, SESSION_ID_HEADER};
 use common::llm_providers::LlmProviders;
 use hermesllm::apis::openai::Message;
 use hermesllm::apis::openai_responses::InputParam;
@@ -93,6 +93,21 @@ async fn llm_chat_inner(
     });
 
     let traceparent = extract_or_generate_traceparent(&request_headers);
+
+    // Session pinning: extract session ID and check cache before routing
+    let session_id: Option<String> = request_headers
+        .get(SESSION_ID_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
+    let pinned_model: Option<String> = if let Some(ref sid) = session_id {
+        state
+            .router_service
+            .get_cached_route(sid)
+            .await
+            .map(|c| c.model_name)
+    } else {
+        None
+    };
 
     let full_qualified_llm_provider_url = format!("{}{}", state.llm_provider_url, request_path);
 
@@ -244,46 +259,65 @@ async fn llm_chat_inner(
             }
         };
 
-    // --- Phase 3: Route the request ---
-    let routing_span = info_span!(
-        "routing",
-        component = "routing",
-        http.method = "POST",
-        http.target = %request_path,
-        model.requested = %model_from_request,
-        model.alias_resolved = %alias_resolved_model,
-        route.selected_model = tracing::field::Empty,
-        routing.determination_ms = tracing::field::Empty,
-    );
-    let routing_result = match async {
-        set_service_name(operation_component::ROUTING);
-        router_chat_get_upstream_model(
-            Arc::clone(&state.router_service),
-            client_request,
-            &traceparent,
-            &request_path,
-            &request_id,
-            inline_routing_preferences,
-        )
-        .await
-    }
-    .instrument(routing_span)
-    .await
-    {
-        Ok(result) => result,
-        Err(err) => {
-            let mut internal_error = Response::new(full(err.message));
-            *internal_error.status_mut() = err.status_code;
-            return Ok(internal_error);
-        }
-    };
-
-    // Determine final model (router returns "none" when it doesn't select a specific model)
-    let router_selected_model = routing_result.model_name;
-    let resolved_model = if router_selected_model != "none" {
-        router_selected_model
+    // --- Phase 3: Route the request (or use pinned model from session cache) ---
+    let resolved_model = if let Some(cached_model) = pinned_model {
+        info!(
+            session_id = %session_id.as_deref().unwrap_or(""),
+            model = %cached_model,
+            "using pinned routing decision from cache"
+        );
+        cached_model
     } else {
-        alias_resolved_model.clone()
+        let routing_span = info_span!(
+            "routing",
+            component = "routing",
+            http.method = "POST",
+            http.target = %request_path,
+            model.requested = %model_from_request,
+            model.alias_resolved = %alias_resolved_model,
+            route.selected_model = tracing::field::Empty,
+            routing.determination_ms = tracing::field::Empty,
+        );
+        let routing_result = match async {
+            set_service_name(operation_component::ROUTING);
+            router_chat_get_upstream_model(
+                Arc::clone(&state.router_service),
+                client_request,
+                &traceparent,
+                &request_path,
+                &request_id,
+                inline_routing_preferences,
+            )
+            .await
+        }
+        .instrument(routing_span)
+        .await
+        {
+            Ok(result) => result,
+            Err(err) => {
+                let mut internal_error = Response::new(full(err.message));
+                *internal_error.status_mut() = err.status_code;
+                return Ok(internal_error);
+            }
+        };
+
+        let (router_selected_model, route_name) =
+            (routing_result.model_name, routing_result.route_name);
+        let model = if router_selected_model != "none" {
+            router_selected_model
+        } else {
+            alias_resolved_model.clone()
+        };
+
+        // Cache the routing decision so subsequent requests with the same session ID are pinned
+        if let Some(ref sid) = session_id {
+            state
+                .router_service
+                .cache_route(sid.clone(), model.clone(), route_name)
+                .await;
+        }
+
+        model
     };
     tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
 

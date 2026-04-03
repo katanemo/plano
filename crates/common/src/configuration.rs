@@ -8,6 +8,14 @@ use crate::api::open_ai::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Routing {
+    pub model_provider: Option<String>,
+    pub model: Option<String>,
+    pub session_ttl_seconds: Option<u64>,
+    pub session_max_entries: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelAlias {
     pub target: String,
 }
@@ -182,6 +190,7 @@ pub struct Configuration {
     pub model_providers: Vec<LlmProvider>,
     pub model_aliases: Option<HashMap<String, ModelAlias>>,
     pub overrides: Option<Overrides>,
+    pub routing: Option<Routing>,
     pub system_prompt: Option<String>,
     pub prompt_guards: Option<PromptGuards>,
     pub prompt_targets: Option<Vec<PromptTarget>>,
