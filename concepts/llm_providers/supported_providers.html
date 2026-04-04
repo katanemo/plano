@@ -698,6 +698,55 @@ Any provider that implements the OpenAI API interface can be configured using cu
 </span></code></pre></div>
 </div>
 </section>
+<section id="xiaomi-mimo">
+<h3>Xiaomi MiMo<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#xiaomi-mimo" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#xiaomi-mimo'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p><strong>Provider Prefix:</strong> <code class="docutils literal notranslate"><span class="pre">xiaomi/</span></code></p>
+<p><strong>API Endpoint:</strong> <code class="docutils literal notranslate"><span class="pre">/v1/chat/completions</span></code></p>
+<p><strong>Authentication:</strong> API Key - Create your key in the <a class="reference external" href="https://platform.xiaomimimo.com/#/docs/quick-start/model-hyperparameters" rel="nofollow noopener">Xiaomi MiMo API Open Platform<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> and set <code class="docutils literal notranslate"><span class="pre">MIMO_API_KEY</span></code>.</p>
+<p><strong>Supported Chat Models:</strong> All Xiaomi MiMo chat models including mimo-v2-pro, mimo-v2-omni, mimo-v2-flash, and future chat model releases.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 20.0%"/>
+<col style="width: 50.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Model Name</p></th>
+<th class="head"><p>Model ID for Config</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>MiMo V2 Pro</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">xiaomi/mimo-v2-pro</span></code></p></td>
+<td><p>Highest capability general model</p></td>
+</tr>
+<tr class="row-odd"><td><p>MiMo V2 Omni</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">xiaomi/mimo-v2-omni</span></code></p></td>
+<td><p>Multimodal-capable assistant model</p></td>
+</tr>
+<tr class="row-even"><td><p>MiMo V2 Flash</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">xiaomi/mimo-v2-flash</span></code></p></td>
+<td><p>Faster, lower-latency model</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Configuration Examples:</strong></p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">llm_providers</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="c1"># Configure all known Xiaomi models with wildcard expansion</span>
+</span><span id="line-3"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xiaomi/*</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$MIMO_API_KEY</span>
+</span><span id="line-5">
+</span><span id="line-6"><span class="w">  </span><span class="c1"># Or configure specific models</span>
+</span><span id="line-7"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xiaomi/mimo-v2-pro</span>
+</span><span id="line-8"><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$MIMO_API_KEY</span>
+</span><span id="line-9"><span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-10">
+</span><span id="line-11"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xiaomi/mimo-v2-omni</span>
+</span><span id="line-12"><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$MIMO_API_KEY</span>
+</span></code></pre></div>
+</div>
+</section>
 </section>
 <section id="providers-requiring-base-url">
 <h2>Providers Requiring Base URL<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#providers-requiring-base-url" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#providers-requiring-base-url'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -901,7 +950,7 @@ Any provider that implements the OpenAI API interface can be configured using cu
 </div>
 <p><strong>How Wildcards Work:</strong></p>
 <ol class="arabic simple">
-<li><p><strong>Known Providers</strong> (OpenAI, Anthropic, DeepSeek, Mistral, Groq, Gemini, Together AI, xAI, Moonshot, Zhipu):</p>
+<li><p><strong>Known Providers</strong> (OpenAI, Anthropic, DeepSeek, Mistral, Groq, Gemini, Together AI, xAI, Moonshot, Zhipu, Xiaomi):</p>
 <ul class="simple">
 <li><p>Expands at config load time to all models in Plano’s provider registry</p></li>
 <li><p>Creates entries for both canonical (<code class="docutils literal notranslate"><span class="pre">openai/gpt-4</span></code>) and short names (<code class="docutils literal notranslate"><span class="pre">gpt-4</span></code>)</p></li>
@@ -1111,6 +1160,7 @@ Any provider that implements the OpenAI API interface can be configured using cu
 <li><a :data-current="activeSection === '#xai'" class="reference internal" href="#xai">xAI</a></li>
 <li><a :data-current="activeSection === '#moonshot-ai'" class="reference internal" href="#moonshot-ai">Moonshot AI</a></li>
 <li><a :data-current="activeSection === '#zhipu-ai'" class="reference internal" href="#zhipu-ai">Zhipu AI</a></li>
+<li><a :data-current="activeSection === '#xiaomi-mimo'" class="reference internal" href="#xiaomi-mimo">Xiaomi MiMo</a></li>
 </ul>
 </li>
 <li><a :data-current="activeSection === '#providers-requiring-base-url'" class="reference internal" href="#providers-requiring-base-url">Providers Requiring Base URL</a><ul>
@@ -1140,7 +1190,7 @@ Any provider that implements the OpenAI API interface can be configured using cu
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 03, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 04, 2026. </p>
 </div>
 </div>
 </footer>

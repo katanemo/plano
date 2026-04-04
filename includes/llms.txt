@@ -1,6 +1,6 @@
 Plano Docs v0.4.17
 llms.txt (auto-generated)
-Generated (UTC): 2026-04-03T17:06:07.664678+00:00
+Generated (UTC): 2026-04-04T16:59:07.910060+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -1789,6 +1789,61 @@ llm_providers:
   - model: zhipu/glm-4.5-air
     access_key: $ZHIPU_API_KEY
 
+Xiaomi MiMo
+
+Provider Prefix: xiaomi/
+
+API Endpoint: /v1/chat/completions
+
+Authentication: API Key - Create your key in the Xiaomi MiMo API Open Platform and set MIMO_API_KEY.
+
+Supported Chat Models: All Xiaomi MiMo chat models including mimo-v2-pro, mimo-v2-omni, mimo-v2-flash, and future chat model releases.
+
+
+
+
+
+
+
+Model Name
+
+Model ID for Config
+
+Description
+
+MiMo V2 Pro
+
+xiaomi/mimo-v2-pro
+
+Highest capability general model
+
+MiMo V2 Omni
+
+xiaomi/mimo-v2-omni
+
+Multimodal-capable assistant model
+
+MiMo V2 Flash
+
+xiaomi/mimo-v2-flash
+
+Faster, lower-latency model
+
+Configuration Examples:
+
+llm_providers:
+  # Configure all known Xiaomi models with wildcard expansion
+  - model: xiaomi/*
+    access_key: $MIMO_API_KEY
+
+  # Or configure specific models
+  - model: xiaomi/mimo-v2-pro
+    access_key: $MIMO_API_KEY
+    default: true
+
+  - model: xiaomi/mimo-v2-omni
+    access_key: $MIMO_API_KEY
+
 Providers Requiring Base URL
 
 The following providers require a base_url parameter to be configured. For detailed information on base URL configuration including path prefix behavior and examples, see base_url_details.
@@ -2005,7 +2060,7 @@ llm_providers:
 
 How Wildcards Work:
 
-Known Providers (OpenAI, Anthropic, DeepSeek, Mistral, Groq, Gemini, Together AI, xAI, Moonshot, Zhipu):
+Known Providers (OpenAI, Anthropic, DeepSeek, Mistral, Groq, Gemini, Together AI, xAI, Moonshot, Zhipu, Xiaomi):
 
 Expands at config load time to all models in Plano’s provider registry
 
