@@ -257,7 +257,7 @@ static_resources:
                           route:
                             auto_host_rewrite: true
                             cluster: bright_staff
-                            timeout: 300s
+                            timeout: {{ prompt_gateway_listener.timeout | default('300s') }}
                         {% for cluster_name, cluster in plano_clusters.items() %}
                         - match:
                             prefix: "/"
@@ -268,7 +268,7 @@ static_resources:
                           route:
                             auto_host_rewrite: true
                             cluster: {{ cluster_name }}
-                            timeout: 300s
+                            timeout: {{ prompt_gateway_listener.timeout | default('300s') }}
                         {% endfor %}
                 http_filters:
                   - name: envoy.filters.http.router
@@ -336,7 +336,7 @@ static_resources:
                             auto_host_rewrite: true
                             prefix_rewrite: "/agents/"
                             cluster: bright_staff
-                            timeout: {{ listener.timeout | default('30s') }}
+                            timeout: {{ listener.timeout | default('300s') }}
                 http_filters:
                   - name: envoy.filters.http.compressor
                     typed_config:
@@ -517,12 +517,12 @@ static_resources:
                           route:
                             auto_host_rewrite: true
                             cluster: {{ llm_cluster_name }}
-                            timeout: 300s
+                            timeout: {{ llm_gateway_listener.timeout }}
                             {% if llm_gateway_listener.max_retries %}
                             retry_policy:
                               retry_on: "5xx,connect-failure,refused-stream,reset,retriable-status-codes"
                               num_retries: {{ llm_gateway_listener.max_retries }}
-                              per_try_timeout: 30s
+                              per_try_timeout: {{ llm_gateway_listener.timeout }}
                               retriable_status_codes: [429, 500, 502, 503, 504]
                               retry_back_off:
                                 base_interval: 0.5s
