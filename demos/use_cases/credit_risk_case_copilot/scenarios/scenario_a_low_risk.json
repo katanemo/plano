@@ -1,0 +1,20 @@
+{
+  "applicant_name": "Sarah Ahmed",
+  "loan_amount": 300000,
+  "monthly_income": 200000,
+  "employment_status": "FULL_TIME",
+  "employment_duration_months": 48,
+  "credit_score": 780,
+  "existing_loans": 0,
+  "total_debt": 25000,
+  "delinquencies": 0,
+  "utilization_rate": 15.5,
+  "cnic": "12345-6789012-3",
+  "phone": "+923001234567",
+  "email": "sarah.ahmed@example.com",
+  "address": "123 Main Street, Lahore",
+  "kyc_complete": true,
+  "income_verified": true,
+  "address_verified": true,
+  "additional_info": "Stable employment at multinational corporation, excellent credit history, low debt-to-income ratio"
+}
