@@ -809,6 +809,10 @@ impl HttpContext for StreamContext {
             return Action::Continue;
         }
 
+        // Capture request ID and traceparent early so all subsequent log messages include them
+        self.request_id = self.get_http_request_header(REQUEST_ID_HEADER);
+        self.traceparent = self.get_http_request_header(TRACE_PARENT_HEADER);
+
         // Capture HTTP method and protocol for tracing
         self.http_method = self.get_http_request_header(":method");
         self.http_protocol = self.get_http_request_header(":scheme");
@@ -883,9 +887,6 @@ impl HttpContext for StreamContext {
 
         self.delete_content_length_header();
         self.save_ratelimit_header();
-
-        self.request_id = self.get_http_request_header(REQUEST_ID_HEADER);
-        self.traceparent = self.get_http_request_header(TRACE_PARENT_HEADER);
 
         Action::Continue
     }
