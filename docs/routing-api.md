@@ -120,6 +120,49 @@ routing_preferences:
 
 ---
 
+## Model Affinity
+
+In agentic loops where the same session makes multiple LLM calls, send an `X-Model-Affinity` header to pin the routing decision. The first request routes normally and caches the result. All subsequent requests with the same affinity ID return the cached model without re-running routing.
+
+```json
+POST /v1/chat/completions
+X-Model-Affinity: a1b2c3d4-5678-...
+
+{
+  "model": "openai/gpt-4o-mini",
+  "messages": [...]
+}
+```
+
+The routing decision endpoint also supports model affinity:
+
+```json
+POST /routing/v1/chat/completions
+X-Model-Affinity: a1b2c3d4-5678-...
+```
+
+Response when pinned:
+```json
+{
+  "models": ["anthropic/claude-sonnet-4-20250514"],
+  "route": "code generation",
+  "trace_id": "...",
+  "session_id": "a1b2c3d4-5678-...",
+  "pinned": true
+}
+```
+
+Without the header, routing runs fresh every time (no breaking change).
+
+Configure TTL and cache size:
+```yaml
+routing:
+  session_ttl_seconds: 600    # default: 10 min
+  session_max_entries: 10000  # upper limit
+```
+
+---
+
 ## Version Requirements
 
 | Version | Top-level `routing_preferences` |

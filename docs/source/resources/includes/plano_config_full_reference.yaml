@@ -174,6 +174,11 @@ overrides:
   # Model used for agent orchestration (must be listed in model_providers)
   agent_orchestration_model: Plano-Orchestrator
 
+# Model affinity — pin routing decisions for agentic loops
+routing:
+  session_ttl_seconds: 600    # How long a pinned session lasts (default: 600s / 10 min)
+  session_max_entries: 10000  # Max cached sessions before eviction (upper limit: 10000)
+
 # State storage for multi-turn conversation history
 state_storage:
   type: memory            # "memory" (in-process) or "postgres" (persistent)

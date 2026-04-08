@@ -376,6 +376,44 @@ For the canonical Plano Kubernetes deployment (ConfigMap, Secrets, Deployment YA
 `demo README <https://github.com/katanemo/plano/tree/main/demos/llm_routing/model_routing_service/README.md>`_.
 
 
+.. _model_affinity:
+
+Model Affinity
+--------------
+
+In agentic loops — where a single user request triggers multiple LLM calls through tool use — Plano's router classifies each turn independently. Because successive prompts differ in intent (tool selection looks like code generation, reasoning about results looks like analysis), the router may select different models mid-session. This causes behavioral inconsistency and invalidates provider-side KV caches, increasing both latency and cost.
+
+**Model affinity** pins the routing decision for the duration of a session. Send an ``X-Model-Affinity`` header with any string identifier (typically a UUID). The first request routes normally and caches the result. All subsequent requests with the same affinity ID skip routing and reuse the cached model.
+
+.. code-block:: python
+
+    import uuid
+    from openai import OpenAI
+
+    client = OpenAI(base_url="http://localhost:12000/v1", api_key="EMPTY")
+    affinity_id = str(uuid.uuid4())
+
+    # Every call in the loop uses the same header
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        tools=tools,
+        extra_headers={"X-Model-Affinity": affinity_id},
+    )
+
+Without the header, routing runs fresh on every request — no behavior change for existing clients.
+
+**Configuration:**
+
+.. code-block:: yaml
+
+    routing:
+      session_ttl_seconds: 600    # How long affinity lasts (default: 10 min)
+      session_max_entries: 10000  # Max cached sessions (upper limit: 10000)
+
+To start a new routing decision (e.g., when the agent's task changes), generate a new affinity ID.
+
+
 Combining Routing Methods
 -------------------------
 
