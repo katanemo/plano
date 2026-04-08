@@ -1,8 +1,6 @@
 use bytes::Bytes;
 use common::configuration::{FilterPipeline, ModelAlias};
-use common::consts::{
-    ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, ROUTING_SESSION_ID_HEADER,
-};
+use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, MODEL_AFFINITY_HEADER};
 use common::llm_providers::LlmProviders;
 use hermesllm::apis::openai::Message;
 use hermesllm::apis::openai_responses::InputParam;
@@ -98,7 +96,7 @@ async fn llm_chat_inner(
 
     // Session pinning: extract session ID and check cache before routing
     let session_id: Option<String> = request_headers
-        .get(ROUTING_SESSION_ID_HEADER)
+        .get(MODEL_AFFINITY_HEADER)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
     let pinned_model: Option<String> = if let Some(ref sid) = session_id {

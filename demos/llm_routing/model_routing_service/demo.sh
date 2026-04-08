@@ -114,7 +114,7 @@ echo "--- 7. Session pinning - first call (fresh routing decision) ---"
 echo ""
 curl -s "$PLANO_URL/routing/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "X-Routing-Session-Id: demo-session-001" \
+  -H "X-Model-Affinity: demo-session-001" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [
@@ -129,7 +129,7 @@ echo "    Notice: same model returned with \"pinned\": true, routing was skipped
 echo ""
 curl -s "$PLANO_URL/routing/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "X-Routing-Session-Id: demo-session-001" \
+  -H "X-Model-Affinity: demo-session-001" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [
@@ -143,7 +143,7 @@ echo "--- 9. Different session gets its own fresh routing ---"
 echo ""
 curl -s "$PLANO_URL/routing/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "X-Routing-Session-Id: demo-session-002" \
+  -H "X-Model-Affinity: demo-session-002" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [

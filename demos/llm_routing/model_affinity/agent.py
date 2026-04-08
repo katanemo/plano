@@ -11,10 +11,9 @@ each with its own tool-calling loop. The tasks deliberately alternate between
 code_generation and complex_reasoning intents so Plano's preference-based
 router selects different models for each task.
 
-If the client sends X-Routing-Session-Id, the agent forwards it on every
-outbound call to Plano. The first task pins the model; all subsequent tasks
-skip the router and reuse it — keeping the whole session on one consistent
-model.
+If the client sends X-Model-Affinity, the agent forwards it on every outbound
+call to Plano. The first task pins the model; all subsequent tasks skip the
+router and reuse it — keeping the whole session on one consistent model.
 
 Run standalone:
     uv run agent.py
@@ -310,12 +309,12 @@ async def run_task(
 
     Each task is an independent conversation so the router sees only
     this task's intent — not the accumulated context of previous tasks.
-    Session pinning via X-Routing-Session-Id pins the model from the first
-    task onward, so all tasks stay on the same model.
+    Model affinity via X-Model-Affinity pins the model from the first task
+    onward, so all tasks stay on the same model.
 
     Returns (answer, first_model_used).
     """
-    headers = {"X-Routing-Session-Id": session_id} if session_id else {}
+    headers = {"X-Model-Affinity": session_id} if session_id else {}
     messages: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -392,7 +391,7 @@ app = FastAPI(title="Research Agent", version="1.0.0")
 @app.post("/v1/chat/completions")
 async def chat(request: Request) -> JSONResponse:
     body = await request.json()
-    session_id: str | None = request.headers.get("x-routing-session-id")
+    session_id: str | None = request.headers.get("x-model-affinity")
 
     log.info("request  session_id=%s", session_id or "none")
 
