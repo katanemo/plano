@@ -20,6 +20,7 @@ use crate::router::router_model_v1;
 
 const DEFAULT_SESSION_TTL_SECONDS: u64 = 600;
 const DEFAULT_SESSION_MAX_ENTRIES: usize = 10_000;
+const MAX_SESSION_MAX_ENTRIES: usize = 10_000;
 
 #[derive(Clone, Debug)]
 pub struct CachedRoute {
@@ -92,7 +93,9 @@ impl RouterService {
 
         let session_ttl =
             Duration::from_secs(session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS));
-        let session_max_entries = session_max_entries.unwrap_or(DEFAULT_SESSION_MAX_ENTRIES);
+        let session_max_entries = session_max_entries
+            .unwrap_or(DEFAULT_SESSION_MAX_ENTRIES)
+            .min(MAX_SESSION_MAX_ENTRIES);
 
         RouterService {
             router_url,

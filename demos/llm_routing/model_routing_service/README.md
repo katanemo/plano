@@ -108,13 +108,13 @@ The response contains the model list — your client should try `models[0]` firs
 
 ## Session Pinning
 
-Send an `X-Session-Id` header to pin the routing decision for a session. Once a model is selected, all subsequent requests with the same session ID return the same model without re-running routing.
+Send an `X-Routing-Session-Id` header to pin the routing decision for a session. Once a model is selected, all subsequent requests with the same session ID return the same model without re-running routing.
 
 ```bash
 # First call — runs routing, caches result
 curl http://localhost:12000/routing/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-Session-Id: my-session-123" \
+  -H "X-Routing-Session-Id: my-session-123" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [{"role": "user", "content": "Write a Python function for binary search"}]
@@ -136,7 +136,7 @@ Response (first call):
 # Second call — same session, returns cached result
 curl http://localhost:12000/routing/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-Session-Id: my-session-123" \
+  -H "X-Routing-Session-Id: my-session-123" \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [{"role": "user", "content": "Now explain merge sort"}]
@@ -161,7 +161,7 @@ routing:
   session_max_entries: 10000    # default: 10000
 ```
 
-Without the `X-Session-Id` header, routing runs fresh every time (no breaking change).
+Without the `X-Routing-Session-Id` header, routing runs fresh every time (no breaking change).
 
 ## Kubernetes Deployment (Self-hosted Arch-Router on GPU)
 

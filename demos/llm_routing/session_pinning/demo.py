@@ -52,7 +52,7 @@ async def wait_for_agent(timeout: int = 30) -> bool:
 async def ask_agent(query: str, session_id: str | None = None) -> dict:
     headers: dict[str, str] = {}
     if session_id:
-        headers["X-Session-Id"] = session_id
+        headers["X-Routing-Session-Id"] = session_id
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         r = await client.post(
@@ -113,7 +113,7 @@ async def main() -> None:
     print("  ╚══════════════════════════════════════════════════════════════╝")
     print()
     print(f"  Agent : {AGENT_URL}")
-    print(f"  Query : \"{QUERY[:72]}…\"")
+    print(f'  Query : "{QUERY[:72]}…"')
     print()
     print("  The agent uses a tool-calling loop (get_db_benchmarks,")
     print("  get_case_studies, check_feature_support) to research the")
@@ -149,7 +149,7 @@ async def main() -> None:
 
     # ── Run 2 ────────────────────────────────────────────────────────────
     print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print(f"  Run 2: WITH Session Pinning  (X-Session-Id: {sid[:8]}…)")
+    print(f"  Run 2: WITH Session Pinning  (X-Routing-Session-Id: {sid[:8]}…)")
     print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print()
     print("  LLM turns inside the agent loop:")

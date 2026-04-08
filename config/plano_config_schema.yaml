@@ -437,6 +437,7 @@ properties:
       session_max_entries:
         type: integer
         minimum: 1
+        maximum: 10000
         description: Maximum number of session-pinned routing cache entries. Default 10000.
     additionalProperties: false
   state_storage:

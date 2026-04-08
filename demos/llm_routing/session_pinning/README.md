@@ -1,15 +1,15 @@
 # Session Pinning Demo
 
-> Consistent model selection for agentic loops using `X-Session-Id`.
+> Consistent model selection for agentic loops using `X-Routing-Session-Id`.
 
 ## Why Session Pinning?
 
 When an agent runs in a loop — research → analyse → implement → evaluate → summarise — each step hits Plano's router independently. Because prompts vary in intent, the router may select **different models** for each step, fragmenting context mid-session.
 
-**Session pinning** solves this: send an `X-Session-Id` header and the first request runs routing as usual, caching the decision. Every subsequent request with the same session ID returns the **same model**, without re-running the router.
+**Session pinning** solves this: send an `X-Routing-Session-Id` header and the first request runs routing as usual, caching the decision. Every subsequent request with the same session ID returns the **same model**, without re-running the router.
 
 ```
-Without pinning                          With pinning (X-Session-Id)
+Without pinning                          With pinning (X-Routing-Session-Id)
 ─────────────────                        ──────────────────────────
 Step 1 → claude-sonnet  (code_gen)       Step 1 → claude-sonnet  ← routed
 Step 2 → gpt-4o         (reasoning)      Step 2 → claude-sonnet  ← pinned ✓
@@ -56,8 +56,8 @@ accumulated message history. Steps alternate between `code_generation` and
 The demo runs the loop **twice** against `/v1/chat/completions` using the
 [OpenAI SDK](https://github.com/openai/openai-python):
 
-1. **Without pinning** — no `X-Session-Id`; models alternate per step
-2. **With pinning** — `X-Session-Id` header included; model is pinned from step 1
+1. **Without pinning** — no `X-Routing-Session-Id`; models alternate per step
+2. **With pinning** — `X-Routing-Session-Id` header included; model is pinned from step 1
 
 Each step makes real LLM calls. Step 5's report explicitly references findings
 from earlier steps, demonstrating why coherent context requires a consistent model.
@@ -85,7 +85,7 @@ from earlier steps, demonstrating why coherent context requires a consistent mod
   ✗  Without pinning: model switched 4 time(s) — gpt-4o, claude-sonnet-4-20250514
 
 
-  Run 2: WITH Session Pinning  (X-Session-Id: a1b2c3d4…)
+  Run 2: WITH Session Pinning  (X-Routing-Session-Id: a1b2c3d4…)
   ─────────────────────────────────────────────────────────────────────
   step 1  [claude-sonnet-4-20250514]  List requirements
           "Critical requirements: 1. ACID transactions for order integrity…"
@@ -112,12 +112,12 @@ from earlier steps, demonstrating why coherent context requires a consistent mod
 
 ### How It Works
 
-Session pinning is implemented in brightstaff. When `X-Session-Id` is present:
+Session pinning is implemented in brightstaff. When `X-Routing-Session-Id` is present:
 
 1. **First request** — routing runs normally, result is cached keyed by session ID
 2. **Subsequent requests** — cache hit skips routing and returns the cached model instantly
 
-The `X-Session-Id` header is forwarded transparently; no changes to your OpenAI
+The `X-Routing-Session-Id` header is forwarded transparently; no changes to your OpenAI
 SDK calls beyond adding the header.
 
 ```python
@@ -130,7 +130,7 @@ session_id = str(uuid.uuid4())
 response = client.chat.completions.create(
     model="gpt-4o-mini",
     messages=[{"role": "user", "content": prompt}],
-    extra_headers={"X-Session-Id": session_id},  # pin the session
+    extra_headers={"X-Routing-Session-Id": session_id},  # pin the session
 )
 ```
 
@@ -146,7 +146,7 @@ routing:
   session_max_entries: 10000    # Max cached sessions before LRU eviction
 ```
 
-Without the `X-Session-Id` header, routing runs fresh every time — no breaking
+Without the `X-Routing-Session-Id` header, routing runs fresh every time — no breaking
 change to existing clients.
 
 ---

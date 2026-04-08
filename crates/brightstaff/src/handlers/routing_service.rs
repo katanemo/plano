@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use common::configuration::{SpanAttributes, TopLevelRoutingPreference};
-use common::consts::{REQUEST_ID_HEADER, SESSION_ID_HEADER};
+use common::consts::{REQUEST_ID_HEADER, ROUTING_SESSION_ID_HEADER};
 use common::errors::BrightStaffError;
 use hermesllm::clients::SupportedAPIsFromClient;
 use hermesllm::ProviderRequestType;
@@ -72,7 +72,7 @@ pub async fn routing_decision(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let session_id: Option<String> = request_headers
-        .get(SESSION_ID_HEADER)
+        .get(ROUTING_SESSION_ID_HEADER)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
 
