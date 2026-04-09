@@ -343,37 +343,42 @@ where prompts get routed to, apply guardrails, and enable critical agent observa
 </span><span id="line-174"><span class="linenos">174</span><span class="w">  </span><span class="c1"># Model used for agent orchestration (must be listed in model_providers)</span>
 </span><span id="line-175"><span class="linenos">175</span><span class="w">  </span><span class="nt">agent_orchestration_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Plano-Orchestrator</span>
 </span><span id="line-176"><span class="linenos">176</span>
-</span><span id="line-177"><span class="linenos">177</span><span class="c1"># State storage for multi-turn conversation history</span>
-</span><span id="line-178"><span class="linenos">178</span><span class="nt">state_storage</span><span class="p">:</span>
-</span><span id="line-179"><span class="linenos">179</span><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span><span class="w">            </span><span class="c1"># "memory" (in-process) or "postgres" (persistent)</span>
-</span><span id="line-180"><span class="linenos">180</span><span class="w">  </span><span class="c1"># connection_string is required when type is postgres.</span>
-</span><span id="line-181"><span class="linenos">181</span><span class="w">  </span><span class="c1"># Supports environment variable substitution: $VAR or ${VAR}</span>
-</span><span id="line-182"><span class="linenos">182</span><span class="w">  </span><span class="c1"># connection_string: postgresql://user:$DB_PASS@localhost:5432/plano</span>
-</span><span id="line-183"><span class="linenos">183</span>
-</span><span id="line-184"><span class="linenos">184</span><span class="c1"># Input guardrails applied globally to all incoming requests</span>
-</span><span id="line-185"><span class="linenos">185</span><span class="nt">prompt_guards</span><span class="p">:</span>
-</span><span id="line-186"><span class="linenos">186</span><span class="w">  </span><span class="nt">input_guards</span><span class="p">:</span>
-</span><span id="line-187"><span class="linenos">187</span><span class="w">    </span><span class="nt">jailbreak</span><span class="p">:</span>
-</span><span id="line-188"><span class="linenos">188</span><span class="w">      </span><span class="nt">on_exception</span><span class="p">:</span>
-</span><span id="line-189"><span class="linenos">189</span><span class="w">        </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"I'm</span><span class="nv"> </span><span class="s">sorry,</span><span class="nv"> </span><span class="s">I</span><span class="nv"> </span><span class="s">can't</span><span class="nv"> </span><span class="s">help</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">request."</span>
-</span><span id="line-190"><span class="linenos">190</span>
-</span><span id="line-191"><span class="linenos">191</span><span class="c1"># OpenTelemetry tracing configuration</span>
-</span><span id="line-192"><span class="linenos">192</span><span class="nt">tracing</span><span class="p">:</span>
-</span><span id="line-193"><span class="linenos">193</span><span class="w">  </span><span class="c1"># Random sampling percentage (1-100)</span>
-</span><span id="line-194"><span class="linenos">194</span><span class="w">  </span><span class="nt">random_sampling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-</span><span id="line-195"><span class="linenos">195</span><span class="w">  </span><span class="c1"># Include internal Plano spans in traces</span>
-</span><span id="line-196"><span class="linenos">196</span><span class="w">  </span><span class="nt">trace_arch_internal</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="line-197"><span class="linenos">197</span><span class="w">  </span><span class="c1"># gRPC endpoint for OpenTelemetry collector (e.g., Jaeger, Tempo)</span>
-</span><span id="line-198"><span class="linenos">198</span><span class="w">  </span><span class="nt">opentracing_grpc_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:4317</span>
-</span><span id="line-199"><span class="linenos">199</span><span class="w">  </span><span class="nt">span_attributes</span><span class="p">:</span>
-</span><span id="line-200"><span class="linenos">200</span><span class="w">    </span><span class="c1"># Propagate request headers whose names start with these prefixes as span attributes</span>
-</span><span id="line-201"><span class="linenos">201</span><span class="w">    </span><span class="nt">header_prefixes</span><span class="p">:</span>
-</span><span id="line-202"><span class="linenos">202</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-user-</span>
-</span><span id="line-203"><span class="linenos">203</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-org-</span>
-</span><span id="line-204"><span class="linenos">204</span><span class="w">    </span><span class="c1"># Static key/value pairs added to every span</span>
-</span><span id="line-205"><span class="linenos">205</span><span class="w">    </span><span class="nt">static</span><span class="p">:</span>
-</span><span id="line-206"><span class="linenos">206</span><span class="w">      </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="line-207"><span class="linenos">207</span><span class="w">      </span><span class="nt">service.team</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">platform</span>
+</span><span id="line-177"><span class="linenos">177</span><span class="c1"># Model affinity — pin routing decisions for agentic loops</span>
+</span><span id="line-178"><span class="linenos">178</span><span class="nt">routing</span><span class="p">:</span>
+</span><span id="line-179"><span class="linenos">179</span><span class="w">  </span><span class="nt">session_ttl_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span><span class="w">    </span><span class="c1"># How long a pinned session lasts (default: 600s / 10 min)</span>
+</span><span id="line-180"><span class="linenos">180</span><span class="w">  </span><span class="nt">session_max_entries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span><span class="w">  </span><span class="c1"># Max cached sessions before eviction (upper limit: 10000)</span>
+</span><span id="line-181"><span class="linenos">181</span>
+</span><span id="line-182"><span class="linenos">182</span><span class="c1"># State storage for multi-turn conversation history</span>
+</span><span id="line-183"><span class="linenos">183</span><span class="nt">state_storage</span><span class="p">:</span>
+</span><span id="line-184"><span class="linenos">184</span><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span><span class="w">            </span><span class="c1"># "memory" (in-process) or "postgres" (persistent)</span>
+</span><span id="line-185"><span class="linenos">185</span><span class="w">  </span><span class="c1"># connection_string is required when type is postgres.</span>
+</span><span id="line-186"><span class="linenos">186</span><span class="w">  </span><span class="c1"># Supports environment variable substitution: $VAR or ${VAR}</span>
+</span><span id="line-187"><span class="linenos">187</span><span class="w">  </span><span class="c1"># connection_string: postgresql://user:$DB_PASS@localhost:5432/plano</span>
+</span><span id="line-188"><span class="linenos">188</span>
+</span><span id="line-189"><span class="linenos">189</span><span class="c1"># Input guardrails applied globally to all incoming requests</span>
+</span><span id="line-190"><span class="linenos">190</span><span class="nt">prompt_guards</span><span class="p">:</span>
+</span><span id="line-191"><span class="linenos">191</span><span class="w">  </span><span class="nt">input_guards</span><span class="p">:</span>
+</span><span id="line-192"><span class="linenos">192</span><span class="w">    </span><span class="nt">jailbreak</span><span class="p">:</span>
+</span><span id="line-193"><span class="linenos">193</span><span class="w">      </span><span class="nt">on_exception</span><span class="p">:</span>
+</span><span id="line-194"><span class="linenos">194</span><span class="w">        </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"I'm</span><span class="nv"> </span><span class="s">sorry,</span><span class="nv"> </span><span class="s">I</span><span class="nv"> </span><span class="s">can't</span><span class="nv"> </span><span class="s">help</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">request."</span>
+</span><span id="line-195"><span class="linenos">195</span>
+</span><span id="line-196"><span class="linenos">196</span><span class="c1"># OpenTelemetry tracing configuration</span>
+</span><span id="line-197"><span class="linenos">197</span><span class="nt">tracing</span><span class="p">:</span>
+</span><span id="line-198"><span class="linenos">198</span><span class="w">  </span><span class="c1"># Random sampling percentage (1-100)</span>
+</span><span id="line-199"><span class="linenos">199</span><span class="w">  </span><span class="nt">random_sampling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="line-200"><span class="linenos">200</span><span class="w">  </span><span class="c1"># Include internal Plano spans in traces</span>
+</span><span id="line-201"><span class="linenos">201</span><span class="w">  </span><span class="nt">trace_arch_internal</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="line-202"><span class="linenos">202</span><span class="w">  </span><span class="c1"># gRPC endpoint for OpenTelemetry collector (e.g., Jaeger, Tempo)</span>
+</span><span id="line-203"><span class="linenos">203</span><span class="w">  </span><span class="nt">opentracing_grpc_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:4317</span>
+</span><span id="line-204"><span class="linenos">204</span><span class="w">  </span><span class="nt">span_attributes</span><span class="p">:</span>
+</span><span id="line-205"><span class="linenos">205</span><span class="w">    </span><span class="c1"># Propagate request headers whose names start with these prefixes as span attributes</span>
+</span><span id="line-206"><span class="linenos">206</span><span class="w">    </span><span class="nt">header_prefixes</span><span class="p">:</span>
+</span><span id="line-207"><span class="linenos">207</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-user-</span>
+</span><span id="line-208"><span class="linenos">208</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-org-</span>
+</span><span id="line-209"><span class="linenos">209</span><span class="w">    </span><span class="c1"># Static key/value pairs added to every span</span>
+</span><span id="line-210"><span class="linenos">210</span><span class="w">    </span><span class="nt">static</span><span class="p">:</span>
+</span><span id="line-211"><span class="linenos">211</span><span class="w">      </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
+</span><span id="line-212"><span class="linenos">212</span><span class="w">      </span><span class="nt">service.team</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">platform</span>
 </span></code></pre></div>
 </div>
 </div>
@@ -401,7 +406,7 @@ where prompts get routed to, apply guardrails, and enable critical agent observa
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 04, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 09, 2026. </p>
 </div>
 </div>
 </footer>

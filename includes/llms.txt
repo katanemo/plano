@@ -1,6 +1,6 @@
 Plano Docs v0.4.17
 llms.txt (auto-generated)
-Generated (UTC): 2026-04-04T16:59:07.910060+00:00
+Generated (UTC): 2026-04-09T00:32:32.796454+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -3979,6 +3979,38 @@ For the canonical Plano Kubernetes deployment (ConfigMap, Secrets, Deployment YA
 deployment. For full step-by-step commands specific to this demo, see the
 demo README.
 
+
+
+Model Affinity
+
+In agentic loops — where a single user request triggers multiple LLM calls through tool use — Plano’s router classifies each turn independently. Because successive prompts differ in intent (tool selection looks like code generation, reasoning about results looks like analysis), the router may select different models mid-session. This causes behavioral inconsistency and invalidates provider-side KV caches, increasing both latency and cost.
+
+Model affinity pins the routing decision for the duration of a session. Send an X-Model-Affinity header with any string identifier (typically a UUID). The first request routes normally and caches the result. All subsequent requests with the same affinity ID skip routing and reuse the cached model.
+
+import uuid
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:12000/v1", api_key="EMPTY")
+affinity_id = str(uuid.uuid4())
+
+# Every call in the loop uses the same header
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=messages,
+    tools=tools,
+    extra_headers={"X-Model-Affinity": affinity_id},
+)
+
+Without the header, routing runs fresh on every request — no behavior change for existing clients.
+
+Configuration:
+
+routing:
+  session_ttl_seconds: 600    # How long affinity lasts (default: 10 min)
+  session_max_entries: 10000  # Max cached sessions (upper limit: 10000)
+
+To start a new routing decision (e.g., when the agent’s task changes), generate a new affinity ID.
+
 Combining Routing Methods
 
 You can combine static model selection with dynamic routing preferences for maximum flexibility:
@@ -6524,6 +6556,11 @@ overrides:
   llm_routing_model: Arch-Router
   # Model used for agent orchestration (must be listed in model_providers)
   agent_orchestration_model: Plano-Orchestrator
+
+# Model affinity — pin routing decisions for agentic loops
+routing:
+  session_ttl_seconds: 600    # How long a pinned session lasts (default: 600s / 10 min)
+  session_max_entries: 10000  # Max cached sessions before eviction (upper limit: 10000)
 
 # State storage for multi-turn conversation history
 state_storage:
