@@ -181,9 +181,7 @@ impl RouterModel for RouterModelV1 {
             return Ok(None);
         }
         let router_resp_fixed = fix_json_response(content);
-        let router_response: LlmRouterResponse = serde_json::from_str(router_resp_fixed.as_str())?;
-
-        let selected_route = router_response.route.unwrap_or_default().to_string();
+        let selected_route = parse_selected_route(&router_resp_fixed)?;
 
         if selected_route.is_empty() || selected_route == "other" {
             return Ok(None);
@@ -264,7 +262,7 @@ fn convert_to_router_preferences(
 }
 
 fn fix_json_response(body: &str) -> String {
-    let mut updated_body = body.to_string();
+    let mut updated_body = body.trim().to_string();
 
     updated_body = updated_body.replace("'", "\"");
 
@@ -286,7 +284,36 @@ fn fix_json_response(body: &str) -> String {
             .to_string();
     }
 
+    updated_body = updated_body.trim().to_string();
+
     updated_body
+}
+
+fn parse_selected_route(content: &str) -> Result<String> {
+    if content.is_empty() {
+        return Ok(String::new());
+    }
+
+    // If output is JSON-shaped, preserve strict JSON parsing behavior.
+    let looks_like_json = content.starts_with('{')
+        || content.starts_with('[')
+        || content.starts_with('"')
+        || content.starts_with("```");
+
+    if looks_like_json {
+        let router_response: LlmRouterResponse = serde_json::from_str(content)?;
+        return Ok(router_response.route.unwrap_or_default());
+    }
+
+    // Accept common plain-text formats from routing LLMs.
+    let raw = content.trim().trim_matches('"');
+    if let Some((key, value)) = raw.split_once(':') {
+        if key.trim().eq_ignore_ascii_case("route") {
+            return Ok(value.trim().to_string());
+        }
+    }
+
+    Ok(raw.to_string())
 }
 
 impl std::fmt::Debug for dyn RouterModel {
@@ -833,6 +860,22 @@ Based on your analysis, provide your response in the following JSON formats if y
 
         // Case 7: Code block marker
         let input = "```json\n{\"route\": \"Image generation\"}\n```";
+        let result = router.parse_response(input, &None).unwrap();
+        assert_eq!(
+            result,
+            Some(("Image generation".to_string(), "gpt-4o".to_string()))
+        );
+
+        // Case 8: Plain text route response
+        let input = "Image generation";
+        let result = router.parse_response(input, &None).unwrap();
+        assert_eq!(
+            result,
+            Some(("Image generation".to_string(), "gpt-4o".to_string()))
+        );
+
+        // Case 9: Plain text with route prefix
+        let input = "route: Image generation";
         let result = router.parse_response(input, &None).unwrap();
         assert_eq!(
             result,

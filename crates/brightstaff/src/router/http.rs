@@ -1,5 +1,5 @@
-use hermesllm::apis::openai::ChatCompletionsResponse;
 use hyper::header;
+use serde::Deserialize;
 use thiserror::Error;
 use tracing::warn;
 
@@ -12,8 +12,23 @@ pub enum HttpError {
     Json(serde_json::Error, String),
 }
 
+#[derive(Debug, Deserialize)]
+struct RouterChatCompletionResponse {
+    choices: Vec<RouterChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RouterChoice {
+    message: RouterMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct RouterMessage {
+    content: Option<String>,
+}
+
 /// Sends a POST request to the given URL and extracts the text content
-/// from the first choice of the `ChatCompletionsResponse`.
+/// from the first choice of a chat-completions-like response.
 ///
 /// Returns `Some((content, elapsed))` on success, or `None` if the response
 /// had no choices or the first choice had no content.
@@ -30,7 +45,7 @@ pub async fn post_and_extract_content(
     let body = res.text().await?;
     let elapsed = start_time.elapsed();
 
-    let response: ChatCompletionsResponse = serde_json::from_str(&body).map_err(|err| {
+    let response: RouterChatCompletionResponse = serde_json::from_str(&body).map_err(|err| {
         warn!(error = %err, body = %body, "failed to parse json response");
         HttpError::Json(err, format!("Failed to parse JSON: {}", body))
     })?;
