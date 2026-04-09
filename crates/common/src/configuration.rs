@@ -206,6 +206,15 @@ pub struct Configuration {
     pub model_metrics_sources: Option<Vec<MetricsSource>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub enum TokenCountingStrategy {
+    #[default]
+    #[serde(rename = "estimate")]
+    Estimate,
+    #[serde(rename = "auto")]
+    Auto,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Overrides {
     pub prompt_target_intent_matching_threshold: Option<f64>,
@@ -213,6 +222,7 @@ pub struct Overrides {
     pub use_agent_orchestrator: Option<bool>,
     pub llm_routing_model: Option<String>,
     pub agent_orchestration_model: Option<String>,
+    pub token_counting_strategy: Option<TokenCountingStrategy>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
