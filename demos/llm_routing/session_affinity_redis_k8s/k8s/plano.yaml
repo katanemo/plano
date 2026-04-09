@@ -1,0 +1,130 @@
+---
+# Plano Deployment — 2 replicas sharing one Redis instance.
+# All replicas are stateless; routing state lives entirely in Redis.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plano
+  namespace: plano-demo
+  labels:
+    app: plano
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: plano
+  template:
+    metadata:
+      labels:
+        app: plano
+    spec:
+      containers:
+        - name: plano
+          # Local dev: run-local.sh sets this to plano-redis:local and loads it
+          # into minikube/kind so no registry is needed.
+          # Production: replace with your registry image and use imagePullPolicy: Always.
+          image: plano-redis:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 12000
+              name: llm-gateway
+          envFrom:
+            - secretRef:
+                name: plano-secrets
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: plano-config
+              mountPath: /app/plano_config.yaml
+              subPath: plano_config.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 12000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 12000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+      volumes:
+        - name: plano-config
+          configMap:
+            name: plano-config
+---
+# LoadBalancer Service — exposes Plano externally.
+# On minikube, run: minikube tunnel
+# On kind, use NodePort instead (see comment below).
+# On cloud providers (GKE, EKS, AKS), an external IP is assigned automatically.
+apiVersion: v1
+kind: Service
+metadata:
+  name: plano
+  namespace: plano-demo
+  labels:
+    app: plano
+spec:
+  type: LoadBalancer
+  selector:
+    app: plano
+  ports:
+    - name: llm-gateway
+      port: 12000
+      targetPort: 12000
+---
+# Uncomment and use instead of the LoadBalancer above when running on kind/minikube
+# without tunnel:
+#
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: plano
+#   namespace: plano-demo
+# spec:
+#   type: NodePort
+#   selector:
+#     app: plano
+#   ports:
+#     - name: llm-gateway
+#       port: 12000
+#       targetPort: 12000
+#       nodePort: 32000
+---
+# HorizontalPodAutoscaler — scales 2 to 5 replicas based on CPU.
+# Demonstrates that new replicas join the existing session state seamlessly.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: plano
+  namespace: plano-demo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: plano
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: plano-demo
+  labels:
+    app.kubernetes.io/part-of: plano-session-affinity-demo
