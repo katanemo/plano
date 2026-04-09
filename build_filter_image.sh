@@ -1,1 +1,1 @@
-docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.17
+docker build  -f Dockerfile . -t katanemo/plano -t katanemo/plano:0.4.18
