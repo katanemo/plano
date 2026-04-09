@@ -1,0 +1,50 @@
+---
+# ConfigMap wrapping the Plano config file.
+# Regenerate after editing config_k8s.yaml:
+#   kubectl create configmap plano-config \
+#     --from-file=plano_config.yaml=../config_k8s.yaml \
+#     -n plano-demo --dry-run=client -o yaml | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plano-config
+  namespace: plano-demo
+data:
+  plano_config.yaml: |
+    version: v0.4.0
+
+    listeners:
+      - type: model
+        name: model_listener
+        port: 12000
+
+    model_providers:
+      - model: openai/gpt-4o-mini
+        access_key: $OPENAI_API_KEY
+        default: true
+
+      - model: openai/gpt-5.2
+        access_key: $OPENAI_API_KEY
+
+    routing_preferences:
+      - name: fast_responses
+        description: short factual questions, quick lookups, simple summarization, or greetings
+        models:
+          - openai/gpt-4o-mini
+
+      - name: deep_reasoning
+        description: multi-step reasoning, complex analysis, code review, or detailed explanations
+        models:
+          - openai/gpt-5.2
+          - openai/gpt-4o-mini
+
+    routing:
+      session_ttl_seconds: 600
+      session_cache:
+        type: redis
+        url: redis://redis.plano-demo.svc.cluster.local:6379
+
+    tracing:
+      random_sampling: 100
+      trace_arch_internal: true
+      opentracing_grpc_endpoint: http://jaeger.plano-demo.svc.cluster.local:4317
