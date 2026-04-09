@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Duration, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use common::{
     configuration::TopLevelRoutingPreference,
@@ -6,10 +6,10 @@ use common::{
 };
 
 use super::router_model::{ModelUsagePreference, RoutingPreference};
+use super::session_cache::{CachedRoute, MemorySessionCache, SessionCache};
 use hermesllm::apis::openai::Message;
 use hyper::header;
 use thiserror::Error;
-use tokio::sync::RwLock;
 use tracing::{debug, info};
 
 use super::http::{self, post_and_extract_content};
@@ -18,16 +18,9 @@ use super::router_model::RouterModel;
 
 use crate::router::router_model_v1;
 
-const DEFAULT_SESSION_TTL_SECONDS: u64 = 600;
-const DEFAULT_SESSION_MAX_ENTRIES: usize = 10_000;
-const MAX_SESSION_MAX_ENTRIES: usize = 10_000;
-
-#[derive(Clone, Debug)]
-pub struct CachedRoute {
-    pub model_name: String,
-    pub route_name: Option<String>,
-    pub cached_at: Instant,
-}
+pub const DEFAULT_SESSION_TTL_SECONDS: u64 = 600;
+pub const DEFAULT_SESSION_MAX_ENTRIES: usize = 10_000;
+pub const MAX_SESSION_MAX_ENTRIES: usize = 10_000;
 
 pub struct RouterService {
     router_url: String,
@@ -36,9 +29,7 @@ pub struct RouterService {
     routing_provider_name: String,
     top_level_preferences: HashMap<String, TopLevelRoutingPreference>,
     metrics_service: Option<Arc<ModelMetricsService>>,
-    session_cache: RwLock<HashMap<String, CachedRoute>>,
-    session_ttl: Duration,
-    session_max_entries: usize,
+    session_cache: Arc<dyn SessionCache>,
 }
 
 #[derive(Debug, Error)]
@@ -61,6 +52,34 @@ impl RouterService {
         routing_provider_name: String,
         session_ttl_seconds: Option<u64>,
         session_max_entries: Option<usize>,
+    ) -> Self {
+        let session_ttl =
+            Duration::from_secs(session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS));
+        let session_max_entries = session_max_entries
+            .unwrap_or(DEFAULT_SESSION_MAX_ENTRIES)
+            .min(MAX_SESSION_MAX_ENTRIES);
+
+        let session_cache: Arc<dyn SessionCache> =
+            Arc::new(MemorySessionCache::new(session_ttl, session_max_entries));
+
+        RouterService::with_cache(
+            top_level_prefs,
+            metrics_service,
+            router_url,
+            routing_model_name,
+            routing_provider_name,
+            session_cache,
+        )
+    }
+
+    /// Create a `RouterService` with an explicit `SessionCache` backend.
+    pub fn with_cache(
+        top_level_prefs: Option<Vec<TopLevelRoutingPreference>>,
+        metrics_service: Option<Arc<ModelMetricsService>>,
+        router_url: String,
+        routing_model_name: String,
+        routing_provider_name: String,
+        session_cache: Arc<dyn SessionCache>,
     ) -> Self {
         let top_level_preferences: HashMap<String, TopLevelRoutingPreference> = top_level_prefs
             .map_or_else(HashMap::new, |prefs| {
@@ -91,12 +110,6 @@ impl RouterService {
             router_model_v1::MAX_TOKEN_LEN,
         ));
 
-        let session_ttl =
-            Duration::from_secs(session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS));
-        let session_max_entries = session_max_entries
-            .unwrap_or(DEFAULT_SESSION_MAX_ENTRIES)
-            .min(MAX_SESSION_MAX_ENTRIES);
-
         RouterService {
             router_url,
             client: reqwest::Client::new(),
@@ -104,65 +117,37 @@ impl RouterService {
             routing_provider_name,
             top_level_preferences,
             metrics_service,
-            session_cache: RwLock::new(HashMap::new()),
-            session_ttl,
-            session_max_entries,
+            session_cache,
         }
     }
 
     /// Look up a cached routing decision by session ID.
     /// Returns None if not found or expired.
     pub async fn get_cached_route(&self, session_id: &str) -> Option<CachedRoute> {
-        let cache = self.session_cache.read().await;
-        if let Some(entry) = cache.get(session_id) {
-            if entry.cached_at.elapsed() < self.session_ttl {
-                return Some(entry.clone());
-            }
-        }
-        None
+        self.session_cache.get(session_id).await
     }
 
     /// Store a routing decision in the session cache.
-    /// If at max capacity, evicts the oldest entry.
     pub async fn cache_route(
         &self,
         session_id: String,
         model_name: String,
         route_name: Option<String>,
     ) {
-        let mut cache = self.session_cache.write().await;
-        if cache.len() >= self.session_max_entries && !cache.contains_key(&session_id) {
-            if let Some(oldest_key) = cache
-                .iter()
-                .min_by_key(|(_, v)| v.cached_at)
-                .map(|(k, _)| k.clone())
-            {
-                cache.remove(&oldest_key);
-            }
-        }
-        cache.insert(
-            session_id,
-            CachedRoute {
-                model_name,
-                route_name,
-                cached_at: Instant::now(),
-            },
-        );
+        let route = CachedRoute {
+            model_name,
+            route_name,
+            cached_at_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or(Duration::ZERO)
+                .as_millis() as u64,
+        };
+        self.session_cache.put(&session_id, route).await;
     }
 
     /// Remove all expired entries from the session cache.
     pub async fn cleanup_expired_sessions(&self) {
-        let mut cache = self.session_cache.write().await;
-        let before = cache.len();
-        cache.retain(|_, entry| entry.cached_at.elapsed() < self.session_ttl);
-        let removed = before - cache.len();
-        if removed > 0 {
-            info!(
-                removed = removed,
-                remaining = cache.len(),
-                "cleaned up expired session cache entries"
-            );
-        }
+        self.session_cache.cleanup_expired().await;
     }
 
     pub async fn determine_route(
@@ -335,8 +320,8 @@ mod tests {
 
         svc.cleanup_expired_sessions().await;
 
-        let cache = svc.session_cache.read().await;
-        assert!(cache.is_empty());
+        assert!(svc.get_cached_route("s1").await.is_none());
+        assert!(svc.get_cached_route("s2").await.is_none());
     }
 
     #[tokio::test]
@@ -351,11 +336,12 @@ mod tests {
         svc.cache_route("s3".to_string(), "model-c".to_string(), None)
             .await;
 
-        let cache = svc.session_cache.read().await;
-        assert_eq!(cache.len(), 2);
-        assert!(!cache.contains_key("s1"));
-        assert!(cache.contains_key("s2"));
-        assert!(cache.contains_key("s3"));
+        assert!(
+            svc.get_cached_route("s1").await.is_none(),
+            "s1 should have been evicted"
+        );
+        assert!(svc.get_cached_route("s2").await.is_some());
+        assert!(svc.get_cached_route("s3").await.is_some());
     }
 
     #[tokio::test]
@@ -373,8 +359,11 @@ mod tests {
         )
         .await;
 
-        let cache = svc.session_cache.read().await;
-        assert_eq!(cache.len(), 2);
-        assert_eq!(cache.get("s1").unwrap().model_name, "model-a-updated");
+        assert!(svc.get_cached_route("s1").await.is_some());
+        assert!(svc.get_cached_route("s2").await.is_some());
+        assert_eq!(
+            svc.get_cached_route("s1").await.unwrap().model_name,
+            "model-a-updated"
+        );
     }
 }

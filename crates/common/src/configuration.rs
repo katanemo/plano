@@ -7,12 +7,27 @@ use crate::api::open_ai::{
     ChatCompletionTool, FunctionDefinition, FunctionParameter, FunctionParameters, ParameterType,
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionCacheType {
+    Memory,
+    Redis,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionCacheConfig {
+    #[serde(rename = "type")]
+    pub cache_type: SessionCacheType,
+    pub url: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Routing {
     pub llm_provider: Option<String>,
     pub model: Option<String>,
     pub session_ttl_seconds: Option<u64>,
     pub session_max_entries: Option<usize>,
+    pub session_cache: Option<SessionCacheConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

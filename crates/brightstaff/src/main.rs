@@ -8,6 +8,7 @@ use brightstaff::handlers::routing_service::routing_decision;
 use brightstaff::router::llm::RouterService;
 use brightstaff::router::model_metrics::ModelMetricsService;
 use brightstaff::router::orchestrator::OrchestratorService;
+use brightstaff::router::session_cache::{MemorySessionCache, RedisSessionCache, SessionCache};
 use brightstaff::state::memory::MemoryConversationalStorage;
 use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
@@ -176,6 +177,10 @@ async fn init_app_state(
 
     let session_ttl_seconds = config.routing.as_ref().and_then(|r| r.session_ttl_seconds);
     let session_max_entries = config.routing.as_ref().and_then(|r| r.session_max_entries);
+    let session_cache_config = config
+        .routing
+        .as_ref()
+        .and_then(|r| r.session_cache.clone());
 
     // Validate that top-level routing_preferences requires v0.4.0+.
     let config_version = parse_semver(&config.version);
@@ -297,17 +302,24 @@ async fn init_app_state(
         }
     }
 
-    let router_service = Arc::new(RouterService::new(
+    let session_cache = init_session_cache(
+        session_cache_config,
+        session_ttl_seconds,
+        session_max_entries,
+    )
+    .await?;
+
+    let router_service = Arc::new(RouterService::with_cache(
         config.routing_preferences.clone(),
         metrics_service,
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         routing_model_name,
         routing_llm_provider,
-        session_ttl_seconds,
-        session_max_entries,
+        session_cache,
     ));
 
-    // Spawn background task to clean up expired session cache entries every 5 minutes
+    // Spawn background task to clean up expired session cache entries every 5 minutes.
+    // For the Redis backend this is a no-op because Redis handles TTL natively.
     {
         let router_service = Arc::clone(&router_service);
         tokio::spawn(async move {
@@ -359,6 +371,59 @@ async fn init_app_state(
         http_client: reqwest::Client::new(),
         filter_pipeline,
     })
+}
+
+/// Initialize the session cache backend from the routing config.
+///
+/// - No config  → memory backend with defaults
+/// - `type: memory` → memory backend (explicit)
+/// - `type: redis`  → Redis backend; `url` is required
+async fn init_session_cache(
+    cache_config: Option<common::configuration::SessionCacheConfig>,
+    session_ttl_seconds: Option<u64>,
+    session_max_entries: Option<usize>,
+) -> Result<Arc<dyn SessionCache>, Box<dyn std::error::Error + Send + Sync>> {
+    use brightstaff::router::llm::{
+        DEFAULT_SESSION_MAX_ENTRIES, DEFAULT_SESSION_TTL_SECONDS, MAX_SESSION_MAX_ENTRIES,
+    };
+    use common::configuration::SessionCacheType;
+
+    let ttl_secs = session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS);
+    let max_entries = session_max_entries
+        .unwrap_or(DEFAULT_SESSION_MAX_ENTRIES)
+        .min(MAX_SESSION_MAX_ENTRIES);
+
+    let cache_type = cache_config
+        .as_ref()
+        .map(|c| &c.cache_type)
+        .unwrap_or(&SessionCacheType::Memory);
+
+    let cache: Arc<dyn SessionCache> = match cache_type {
+        SessionCacheType::Memory => {
+            info!(cache_type = "memory", "initialized session cache");
+            Arc::new(MemorySessionCache::new(
+                std::time::Duration::from_secs(ttl_secs),
+                max_entries,
+            ))
+        }
+        SessionCacheType::Redis => {
+            let url = cache_config
+                .as_ref()
+                .and_then(|c| c.url.as_deref())
+                .ok_or("session_cache.url is required for redis session cache")?;
+
+            debug!(url = %url, "redis session cache connection");
+            info!(cache_type = "redis", url = %url, "initializing session cache");
+
+            Arc::new(
+                RedisSessionCache::new(url, ttl_secs)
+                    .await
+                    .map_err(|e| format!("failed to initialize Redis session cache: {e}"))?,
+            )
+        }
+    };
+
+    Ok(cache)
 }
 
 /// Initialize the conversation state storage backend (if configured).
