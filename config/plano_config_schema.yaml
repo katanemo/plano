@@ -441,6 +441,20 @@ properties:
         minimum: 1
         maximum: 10000
         description: Maximum number of session-pinned routing cache entries. Default 10000.
+      session_cache:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - memory
+              - redis
+            default: memory
+            description: Session cache backend. "memory" (default) is in-process; "redis" is shared across replicas.
+          url:
+            type: string
+            description: Redis URL, e.g. redis://localhost:6379. Required when type is redis.
+        additionalProperties: false
     additionalProperties: false
   state_storage:
     type: object
