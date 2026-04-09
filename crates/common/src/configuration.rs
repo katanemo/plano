@@ -18,6 +18,8 @@ pub enum SessionCacheType {
 pub struct SessionCacheConfig {
     #[serde(rename = "type")]
     pub cache_type: SessionCacheType,
+    /// Redis connection URL (e.g. `redis://localhost:6379`).
+    /// Required when `cache_type` is [`SessionCacheType::Redis`]; ignored otherwise.
     pub url: Option<String>,
 }
 

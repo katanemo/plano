@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 /// A cached routing decision stored by session ID.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -156,16 +156,27 @@ impl SessionCache for RedisSessionCache {
     }
 
     async fn put(&self, session_id: &str, route: CachedRoute) {
-        let Ok(json) = serde_json::to_string(&route) else {
-            return;
+        let json = match serde_json::to_string(&route) {
+            Ok(j) => j,
+            Err(e) => {
+                warn!(session_id = %session_id, error = %e, "failed to serialize CachedRoute for Redis");
+                return;
+            }
         };
         let mut conn = self.conn.write().await;
-        let _: redis::RedisResult<()> = conn.set_ex(session_id, json, self.ttl_secs).await;
+        if let Err(e) = conn
+            .set_ex::<_, _, ()>(session_id, json, self.ttl_secs)
+            .await
+        {
+            warn!(session_id = %session_id, error = %e, "failed to write session cache entry to Redis");
+        }
     }
 
     async fn remove(&self, session_id: &str) {
         let mut conn = self.conn.write().await;
-        let _: redis::RedisResult<()> = conn.del(session_id).await;
+        if let Err(e) = conn.del::<_, ()>(session_id).await {
+            debug!(session_id = %session_id, error = %e, "failed to delete session cache entry from Redis");
+        }
     }
 
     /// Redis handles expiry natively — this is a no-op.

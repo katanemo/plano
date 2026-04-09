@@ -53,6 +53,29 @@ fn parse_semver(version: &str) -> (u32, u32, u32) {
     (major, minor, patch)
 }
 
+/// Redact the userinfo (username:password) from a URL string for safe logging.
+///
+/// `redis://user:secret@localhost:6379` → `redis://<redacted>@localhost:6379`
+///
+/// URLs without credentials are returned unchanged.
+fn redact_url_credentials(url: &str) -> String {
+    // Find "://" and then look for "@" before any "/" in the authority.
+    if let Some(after_scheme) = url.find("://").map(|i| i + 3) {
+        let authority = &url[after_scheme..];
+        if let Some(at_pos) = authority.find('@') {
+            // Only redact if the '@' comes before any path separator.
+            if !authority[..at_pos].contains('/') {
+                return format!(
+                    "{}<redacted>@{}",
+                    &url[..after_scheme],
+                    &authority[at_pos + 1..]
+                );
+            }
+        }
+    }
+    url.to_string()
+}
+
 /// CORS pre-flight response for the models endpoint.
 fn cors_preflight() -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let mut response = Response::new(empty());
@@ -412,8 +435,10 @@ async fn init_session_cache(
                 .and_then(|c| c.url.as_deref())
                 .ok_or("session_cache.url is required for redis session cache")?;
 
+            // Log only the host portion to avoid exposing credentials in plain-text logs.
+            let display_url = redact_url_credentials(url);
             debug!(url = %url, "redis session cache connection");
-            info!(cache_type = "redis", url = %url, "initializing session cache");
+            info!(cache_type = "redis", url = %display_url, "initializing session cache");
 
             Arc::new(
                 RedisSessionCache::new(url, ttl_secs)
