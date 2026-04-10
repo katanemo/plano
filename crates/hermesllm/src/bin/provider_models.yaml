@@ -328,7 +328,11 @@ providers:
   - xiaomi/mimo-v2-flash
   - xiaomi/mimo-v2-omni
   - xiaomi/mimo-v2-pro
+  chatgpt:
+  - chatgpt/gpt-5.4
+  - chatgpt/gpt-5.3-codex
+  - chatgpt/gpt-5.2
 metadata:
-  total_providers: 11
-  total_models: 316
+  total_providers: 12
+  total_models: 319
   last_updated: 2026-04-03T23:14:46.956158+00:00
