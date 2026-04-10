@@ -232,6 +232,14 @@ impl StreamContext {
         Ok(())
     }
 
+    fn set_custom_provider_headers(&mut self) {
+        if let Some(http_headers) = self.llm_provider().http_headers.clone() {
+            for (key, value) in &http_headers {
+                self.set_http_request_header(key.as_str(), Some(value.as_str()));
+            }
+        }
+    }
+
     fn delete_content_length_header(&mut self) {
         // Remove the Content-Length header because further body manipulations in the gateway logic will invalidate it.
         // Server's generally throw away requests whose body length do not match the Content-Length header.
@@ -879,6 +887,7 @@ impl HttpContext for StreamContext {
                     self.send_server_error(error, Some(StatusCode::BAD_REQUEST));
                 }
             }
+            self.set_custom_provider_headers();
         }
 
         self.delete_content_length_header();

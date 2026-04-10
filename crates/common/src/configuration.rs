@@ -457,6 +457,7 @@ pub struct LlmProvider {
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
+    pub http_headers: Option<HashMap<String, String>>,
 }
 
 pub trait IntoModels {
@@ -500,6 +501,7 @@ impl Default for LlmProvider {
             base_url_path_prefix: None,
             internal: None,
             passthrough_auth: None,
+            http_headers: None,
         }
     }
 }
