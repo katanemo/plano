@@ -189,10 +189,13 @@ async fn init_app_state(
     // Validate that all models referenced in top-level routing_preferences exist in model_providers.
     // The CLI renders model_providers with `name` = "openai/gpt-4o" and `model` = "gpt-4o",
     // so we accept a match against either field.
+    // Internal providers (arch-router, arch-function, etc.) are excluded since they are not
+    // valid routing targets for user-defined routing_preferences.
     if let Some(ref route_prefs) = config.routing_preferences {
         let provider_model_names: std::collections::HashSet<&str> = config
             .model_providers
             .iter()
+            .filter(|p| p.internal != Some(true))
             .flat_map(|p| std::iter::once(p.name.as_str()).chain(p.model.as_deref()))
             .collect();
         for pref in route_prefs {
