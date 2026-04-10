@@ -277,6 +277,7 @@ mod tests {
             internal: None,
             stream: None,
             passthrough_auth: None,
+            headers: None,
         }
     }
 

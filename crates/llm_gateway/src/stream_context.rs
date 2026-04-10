@@ -229,6 +229,14 @@ impl StreamContext {
             }
         }
 
+        // Apply any extra headers configured on the provider (e.g., ChatGPT-Account-Id, originator)
+        let headers = self.llm_provider().headers.clone();
+        if let Some(headers) = headers {
+            for (key, value) in &headers {
+                self.set_http_request_header(key, Some(value));
+            }
+        }
+
         Ok(())
     }
 

@@ -192,7 +192,9 @@ impl SupportedAPIsFromClient {
                 // For Responses API, check if provider supports it, otherwise translate to chat/completions
                 match provider_id {
                     // Providers that support /v1/responses natively
-                    ProviderId::OpenAI | ProviderId::XAI => route_by_provider("/responses"),
+                    ProviderId::OpenAI | ProviderId::XAI | ProviderId::ChatGPT => {
+                        route_by_provider("/responses")
+                    }
                     // All other providers: translate to /chat/completions
                     _ => route_by_provider("/chat/completions"),
                 }

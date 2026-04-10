@@ -89,6 +89,41 @@ impl ProviderRequestType {
                 req.web_search_options = None;
             }
         }
+
+        // ChatGPT requires instructions, store=false, and input as a list
+        if provider_id == ProviderId::ChatGPT {
+            if let Self::ResponsesAPIRequest(req) = self {
+                use crate::apis::openai_responses::{
+                    InputItem, InputMessage, InputParam, MessageContent, MessageRole,
+                };
+
+                const CHATGPT_BASE_INSTRUCTIONS: &str =
+                    "You are Codex, based on GPT-5. You are running as a coding agent in the Codex CLI on a user's computer.";
+                match &req.instructions {
+                    Some(existing) if existing.contains(CHATGPT_BASE_INSTRUCTIONS) => {}
+                    Some(existing) => {
+                        req.instructions =
+                            Some(format!("{}\n\n{}", CHATGPT_BASE_INSTRUCTIONS, existing));
+                    }
+                    None => {
+                        req.instructions = Some(CHATGPT_BASE_INSTRUCTIONS.to_string());
+                    }
+                }
+                req.store = Some(false);
+                req.stream = Some(true);
+
+                // ChatGPT backend requires input to be a list, not a plain string
+                if let InputParam::Text(text) = &req.input {
+                    req.input = InputParam::Items(vec![InputItem::Message(InputMessage {
+                        role: MessageRole::User,
+                        content: MessageContent::Text(text.clone()),
+                    })]);
+                }
+                if let InputParam::SingleItem(item) = &req.input {
+                    req.input = InputParam::Items(vec![item.clone()]);
+                }
+            }
+        }
     }
 }
 
