@@ -14,6 +14,7 @@ SUPPORTED_PROVIDERS_WITH_BASE_URL = [
     "qwen",
     "amazon_bedrock",
     "plano",
+    "openrouter",
 ]
 
 SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
