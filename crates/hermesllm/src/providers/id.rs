@@ -44,6 +44,7 @@ pub enum ProviderId {
     Zhipu,
     Qwen,
     AmazonBedrock,
+    OpenRouter,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -71,6 +72,7 @@ impl TryFrom<&str> for ProviderId {
             "qwen" => Ok(ProviderId::Qwen),
             "amazon_bedrock" => Ok(ProviderId::AmazonBedrock),
             "amazon" => Ok(ProviderId::AmazonBedrock), // alias
+            "openrouter" => Ok(ProviderId::OpenRouter),
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -148,7 +150,8 @@ impl ProviderId {
                 | ProviderId::Ollama
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
-                | ProviderId::Qwen,
+                | ProviderId::Qwen
+                | ProviderId::OpenRouter,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -167,7 +170,8 @@ impl ProviderId {
                 | ProviderId::Ollama
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
-                | ProviderId::Qwen,
+                | ProviderId::Qwen
+                | ProviderId::OpenRouter,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -234,6 +238,7 @@ impl Display for ProviderId {
             ProviderId::Zhipu => write!(f, "zhipu"),
             ProviderId::Qwen => write!(f, "qwen"),
             ProviderId::AmazonBedrock => write!(f, "amazon_bedrock"),
+            ProviderId::OpenRouter => write!(f, "openrouter"),
         }
     }
 }
