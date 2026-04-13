@@ -216,6 +216,8 @@ ratelimits:
     key: x-org-id
     value: acme-corp
 routing:
+  session_cache:
+    type: memory
   session_max_entries: 10000
   session_ttl_seconds: 600
 state_storage:
