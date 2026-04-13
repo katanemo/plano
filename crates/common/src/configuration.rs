@@ -21,6 +21,9 @@ pub struct SessionCacheConfig {
     pub cache_type: SessionCacheType,
     /// Redis URL, e.g. `redis://localhost:6379`. Required when `type` is `redis`.
     pub url: Option<String>,
+    /// Optional HTTP header name whose value is used as a tenant prefix in the cache key.
+    /// When set, keys are scoped as `plano:affinity:{tenant_id}:{session_id}`.
+    pub tenant_header: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

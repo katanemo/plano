@@ -298,6 +298,12 @@ async fn init_app_state(
         }
     }
 
+    let session_tenant_header = config
+        .routing
+        .as_ref()
+        .and_then(|r| r.session_cache.as_ref())
+        .and_then(|c| c.tenant_header.clone());
+
     let router_service = Arc::new(RouterService::new(
         config.routing_preferences.clone(),
         metrics_service,
@@ -306,6 +312,7 @@ async fn init_app_state(
         routing_llm_provider,
         session_ttl_seconds,
         session_cache,
+        session_tenant_header,
     ));
 
     let orchestrator_model_name: String = overrides

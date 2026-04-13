@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashMap, sync::Arc, time::Duration};
 
 use common::{
     configuration::TopLevelRoutingPreference,
@@ -31,6 +31,7 @@ pub struct RouterService {
     metrics_service: Option<Arc<ModelMetricsService>>,
     session_cache: Arc<dyn SessionCache>,
     session_ttl: Duration,
+    tenant_header: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -45,6 +46,7 @@ pub enum RoutingError {
 pub type Result<T> = std::result::Result<T, RoutingError>;
 
 impl RouterService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         top_level_prefs: Option<Vec<TopLevelRoutingPreference>>,
         metrics_service: Option<Arc<ModelMetricsService>>,
@@ -53,6 +55,7 @@ impl RouterService {
         routing_provider_name: String,
         session_ttl_seconds: Option<u64>,
         session_cache: Arc<dyn SessionCache>,
+        tenant_header: Option<String>,
     ) -> Self {
         let top_level_preferences: HashMap<String, TopLevelRoutingPreference> = top_level_prefs
             .map_or_else(HashMap::new, |prefs| {
@@ -95,25 +98,48 @@ impl RouterService {
             metrics_service,
             session_cache,
             session_ttl,
+            tenant_header,
+        }
+    }
+
+    /// Name of the HTTP header used to scope cache keys by tenant, if configured.
+    #[must_use]
+    pub fn tenant_header(&self) -> Option<&str> {
+        self.tenant_header.as_deref()
+    }
+
+    /// Build the cache key, optionally scoped by tenant: `{tenant_id}:{session_id}` or `{session_id}`.
+    /// Returns a borrowed key when no tenant prefix is needed, avoiding an allocation.
+    fn session_key<'a>(tenant_id: Option<&str>, session_id: &'a str) -> Cow<'a, str> {
+        match tenant_id {
+            Some(t) => Cow::Owned(format!("{t}:{session_id}")),
+            None => Cow::Borrowed(session_id),
         }
     }
 
     /// Look up a cached routing decision by session ID.
     /// Returns None if not found or expired.
-    pub async fn get_cached_route(&self, session_id: &str) -> Option<CachedRoute> {
-        self.session_cache.get(session_id).await
+    pub async fn get_cached_route(
+        &self,
+        session_id: &str,
+        tenant_id: Option<&str>,
+    ) -> Option<CachedRoute> {
+        self.session_cache
+            .get(&Self::session_key(tenant_id, session_id))
+            .await
     }
 
     /// Store a routing decision in the session cache.
     pub async fn cache_route(
         &self,
         session_id: String,
+        tenant_id: Option<&str>,
         model_name: String,
         route_name: Option<String>,
     ) {
         self.session_cache
             .put(
-                &session_id,
+                &Self::session_key(tenant_id, &session_id),
                 CachedRoute {
                     model_name,
                     route_name,
@@ -121,16 +147,6 @@ impl RouterService {
                 self.session_ttl,
             )
             .await;
-    }
-
-    /// Log a routing decision, used to surface affinity hits in structured logs.
-    pub fn log_affinity_hit(session_id: &str, model_name: &str, route_name: &Option<String>) {
-        info!(
-            session_id = %session_id,
-            model = %model_name,
-            route = ?route_name,
-            "returning pinned routing decision from cache"
-        );
     }
 
     pub async fn determine_route(
@@ -263,13 +279,17 @@ mod tests {
             "arch-router".to_string(),
             Some(ttl_seconds),
             session_cache,
+            None,
         )
     }
 
     #[tokio::test]
     async fn test_cache_miss_returns_none() {
         let svc = make_router_service(600, 100);
-        assert!(svc.get_cached_route("unknown-session").await.is_none());
+        assert!(svc
+            .get_cached_route("unknown-session", None)
+            .await
+            .is_none());
     }
 
     #[tokio::test]
@@ -277,12 +297,13 @@ mod tests {
         let svc = make_router_service(600, 100);
         svc.cache_route(
             "s1".to_string(),
+            None,
             "gpt-4o".to_string(),
             Some("code".to_string()),
         )
         .await;
 
-        let cached = svc.get_cached_route("s1").await.unwrap();
+        let cached = svc.get_cached_route("s1", None).await.unwrap();
         assert_eq!(cached.model_name, "gpt-4o");
         assert_eq!(cached.route_name, Some("code".to_string()));
     }
@@ -290,60 +311,61 @@ mod tests {
     #[tokio::test]
     async fn test_cache_expired_entry_returns_none() {
         let svc = make_router_service(0, 100);
-        svc.cache_route("s1".to_string(), "gpt-4o".to_string(), None)
+        svc.cache_route("s1".to_string(), None, "gpt-4o".to_string(), None)
             .await;
-        assert!(svc.get_cached_route("s1").await.is_none());
+        assert!(svc.get_cached_route("s1", None).await.is_none());
     }
 
     #[tokio::test]
     async fn test_expired_entries_not_returned() {
         let svc = make_router_service(0, 100);
-        svc.cache_route("s1".to_string(), "gpt-4o".to_string(), None)
+        svc.cache_route("s1".to_string(), None, "gpt-4o".to_string(), None)
             .await;
-        svc.cache_route("s2".to_string(), "claude".to_string(), None)
+        svc.cache_route("s2".to_string(), None, "claude".to_string(), None)
             .await;
 
         // Entries with TTL=0 should be expired immediately
-        assert!(svc.get_cached_route("s1").await.is_none());
-        assert!(svc.get_cached_route("s2").await.is_none());
+        assert!(svc.get_cached_route("s1", None).await.is_none());
+        assert!(svc.get_cached_route("s2", None).await.is_none());
     }
 
     #[tokio::test]
     async fn test_cache_evicts_oldest_when_full() {
         let svc = make_router_service(600, 2);
-        svc.cache_route("s1".to_string(), "model-a".to_string(), None)
+        svc.cache_route("s1".to_string(), None, "model-a".to_string(), None)
             .await;
         tokio::time::sleep(Duration::from_millis(10)).await;
-        svc.cache_route("s2".to_string(), "model-b".to_string(), None)
+        svc.cache_route("s2".to_string(), None, "model-b".to_string(), None)
             .await;
 
-        svc.cache_route("s3".to_string(), "model-c".to_string(), None)
+        svc.cache_route("s3".to_string(), None, "model-c".to_string(), None)
             .await;
 
         // s1 should be evicted (oldest); s2 and s3 should remain
-        assert!(svc.get_cached_route("s1").await.is_none());
-        assert!(svc.get_cached_route("s2").await.is_some());
-        assert!(svc.get_cached_route("s3").await.is_some());
+        assert!(svc.get_cached_route("s1", None).await.is_none());
+        assert!(svc.get_cached_route("s2", None).await.is_some());
+        assert!(svc.get_cached_route("s3", None).await.is_some());
     }
 
     #[tokio::test]
     async fn test_cache_update_existing_session_does_not_evict() {
         let svc = make_router_service(600, 2);
-        svc.cache_route("s1".to_string(), "model-a".to_string(), None)
+        svc.cache_route("s1".to_string(), None, "model-a".to_string(), None)
             .await;
-        svc.cache_route("s2".to_string(), "model-b".to_string(), None)
+        svc.cache_route("s2".to_string(), None, "model-b".to_string(), None)
             .await;
 
         svc.cache_route(
             "s1".to_string(),
+            None,
             "model-a-updated".to_string(),
             Some("route".to_string()),
         )
         .await;
 
         // Both sessions should still be present
-        let s1 = svc.get_cached_route("s1").await.unwrap();
+        let s1 = svc.get_cached_route("s1", None).await.unwrap();
         assert_eq!(s1.model_name, "model-a-updated");
-        assert!(svc.get_cached_route("s2").await.is_some());
+        assert!(svc.get_cached_route("s2", None).await.is_some());
     }
 }

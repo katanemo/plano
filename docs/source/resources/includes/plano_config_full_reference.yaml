@@ -185,6 +185,7 @@ routing:
     type: memory              # "memory" (default) or "redis"
     # url is required when type is "redis". Supports redis:// and rediss:// (TLS).
     # url: redis://localhost:6379
+    # tenant_header: x-org-id  # optional; when set, keys are scoped as plano:affinity:{tenant_id}:{session_id}
 
 # State storage for multi-turn conversation history
 state_storage:

@@ -99,10 +99,16 @@ async fn llm_chat_inner(
         .get(MODEL_AFFINITY_HEADER)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
+    let tenant_id: Option<String> = state
+        .router_service
+        .tenant_header()
+        .and_then(|hdr| request_headers.get(hdr))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
     let pinned_model: Option<String> = if let Some(ref sid) = session_id {
         state
             .router_service
-            .get_cached_route(sid)
+            .get_cached_route(sid, tenant_id.as_deref())
             .await
             .map(|c| c.model_name)
     } else {
@@ -313,7 +319,7 @@ async fn llm_chat_inner(
         if let Some(ref sid) = session_id {
             state
                 .router_service
-                .cache_route(sid.clone(), model.clone(), route_name)
+                .cache_route(sid.clone(), tenant_id.as_deref(), model.clone(), route_name)
                 .await;
         }
 
