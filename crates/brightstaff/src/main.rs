@@ -8,8 +8,7 @@ use brightstaff::handlers::routing_service::routing_decision;
 use brightstaff::router::llm::RouterService;
 use brightstaff::router::model_metrics::ModelMetricsService;
 use brightstaff::router::orchestrator::OrchestratorService;
-use brightstaff::session_cache::memory::MemorySessionCache;
-use brightstaff::session_cache::SessionCache;
+use brightstaff::session_cache::init_session_cache;
 use brightstaff::state::memory::MemoryConversationalStorage;
 use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
@@ -309,18 +308,6 @@ async fn init_app_state(
         session_cache,
     ));
 
-    // Spawn background task to clean up expired session cache entries every 5 minutes
-    {
-        let router_service = Arc::clone(&router_service);
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
-            loop {
-                interval.tick().await;
-                router_service.cleanup_expired_sessions().await;
-            }
-        });
-    }
-
     let orchestrator_model_name: String = overrides
         .agent_orchestration_model
         .as_deref()
@@ -361,54 +348,6 @@ async fn init_app_state(
         http_client: reqwest::Client::new(),
         filter_pipeline,
     })
-}
-
-/// Initialize the session cache backend based on config.
-/// Defaults to the in-memory backend when no `session_cache` is configured.
-async fn init_session_cache(
-    config: &Configuration,
-) -> Result<Arc<dyn SessionCache>, Box<dyn std::error::Error + Send + Sync>> {
-    use common::configuration::SessionCacheType;
-    use std::time::Duration;
-
-    let session_ttl_seconds = config.routing.as_ref().and_then(|r| r.session_ttl_seconds);
-    let session_max_entries = config.routing.as_ref().and_then(|r| r.session_max_entries);
-
-    const DEFAULT_SESSION_TTL_SECONDS: u64 = 600;
-    const DEFAULT_SESSION_MAX_ENTRIES: usize = 10_000;
-    const MAX_SESSION_MAX_ENTRIES: usize = 10_000;
-
-    let ttl = Duration::from_secs(session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS));
-    let max_entries = session_max_entries
-        .unwrap_or(DEFAULT_SESSION_MAX_ENTRIES)
-        .min(MAX_SESSION_MAX_ENTRIES);
-
-    let cache_config = config
-        .routing
-        .as_ref()
-        .and_then(|r| r.session_cache.as_ref());
-
-    let cache_type = cache_config
-        .map(|c| &c.cache_type)
-        .unwrap_or(&SessionCacheType::Memory);
-
-    match cache_type {
-        SessionCacheType::Memory => {
-            info!(storage_type = "memory", "initialized session cache");
-            Ok(Arc::new(MemorySessionCache::new(ttl, max_entries)))
-        }
-        SessionCacheType::Redis => {
-            use brightstaff::session_cache::redis::RedisSessionCache;
-            let url = cache_config
-                .and_then(|c| c.url.as_ref())
-                .ok_or("session_cache.url is required when type is redis")?;
-            info!(storage_type = "redis", url = %url, "initializing session cache");
-            let cache = RedisSessionCache::new(url)
-                .await
-                .map_err(|e| format!("failed to connect to Redis session cache: {e}"))?;
-            Ok(Arc::new(cache))
-        }
-    }
 }
 
 /// Initialize the conversation state storage backend (if configured).

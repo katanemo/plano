@@ -123,11 +123,6 @@ impl RouterService {
             .await;
     }
 
-    /// Remove all expired entries from the session cache.
-    pub async fn cleanup_expired_sessions(&self) {
-        self.session_cache.cleanup_expired().await;
-    }
-
     /// Log a routing decision, used to surface affinity hits in structured logs.
     pub fn log_affinity_hit(session_id: &str, model_name: &str, route_name: &Option<String>) {
         info!(
@@ -259,8 +254,7 @@ mod tests {
     use crate::session_cache::memory::MemorySessionCache;
 
     fn make_router_service(ttl_seconds: u64, max_entries: usize) -> RouterService {
-        let ttl = Duration::from_secs(ttl_seconds);
-        let session_cache = Arc::new(MemorySessionCache::new(ttl, max_entries));
+        let session_cache = Arc::new(MemorySessionCache::new(max_entries));
         RouterService::new(
             None,
             None,
@@ -302,16 +296,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cleanup_removes_expired() {
+    async fn test_expired_entries_not_returned() {
         let svc = make_router_service(0, 100);
         svc.cache_route("s1".to_string(), "gpt-4o".to_string(), None)
             .await;
         svc.cache_route("s2".to_string(), "claude".to_string(), None)
             .await;
 
-        svc.cleanup_expired_sessions().await;
-
-        // After cleanup, both expired entries should be gone
+        // Entries with TTL=0 should be expired immediately
         assert!(svc.get_cached_route("s1").await.is_none());
         assert!(svc.get_cached_route("s2").await.is_none());
     }
