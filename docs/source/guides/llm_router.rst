@@ -413,6 +413,52 @@ Without the header, routing runs fresh on every request — no behavior change f
 
 To start a new routing decision (e.g., when the agent's task changes), generate a new affinity ID.
 
+Session Cache Backends
+~~~~~~~~~~~~~~~~~~~~~~
+
+By default, Plano stores session affinity state in an in-process LRU cache. This works well for single-instance deployments, but sessions are not shared across replicas — each instance has its own independent cache.
+
+For deployments with multiple Plano replicas (Kubernetes, Docker Compose with ``scale``, or any load-balanced setup), use Redis as the session cache backend. All replicas connect to the same Redis instance, so an affinity decision made by one replica is honoured by every other replica in the pool.
+
+**In-memory (default)**
+
+No configuration required. Sessions live only for the lifetime of the process and are lost on restart.
+
+.. code-block:: yaml
+
+    routing:
+      session_ttl_seconds: 600    # How long affinity lasts (default: 10 min)
+      session_max_entries: 10000  # LRU capacity (upper limit: 10000)
+
+**Redis**
+
+Requires a reachable Redis instance. The ``url`` field supports standard Redis URI syntax, including authentication (``redis://:password@host:6379``) and TLS (``rediss://host:6380``). Redis handles TTL expiry natively, so no periodic cleanup is needed.
+
+.. code-block:: yaml
+
+    routing:
+      session_ttl_seconds: 600
+      session_cache:
+        type: redis
+        url: redis://localhost:6379
+
+.. note::
+   When using Redis in a multi-tenant environment, construct the ``X-Model-Affinity`` header value to include a tenant identifier, for example ``{tenant_id}:{session_id}``. Plano stores each key under the internal namespace ``plano:affinity:{key}``, so tenant-scoped values avoid cross-tenant collisions without any additional configuration.
+
+**Example: Kubernetes multi-replica deployment**
+
+Deploy a Redis instance alongside your Plano pods and point all replicas at it:
+
+.. code-block:: yaml
+
+    routing:
+      session_ttl_seconds: 600
+      session_cache:
+        type: redis
+        url: redis://redis.plano.svc.cluster.local:6379
+
+With this configuration, any replica that first receives a request for affinity ID ``abc-123`` caches the routing decision in Redis. Subsequent requests for ``abc-123`` — regardless of which replica they land on — retrieve the same pinned model.
+
 
 Combining Routing Methods
 -------------------------
