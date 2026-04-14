@@ -119,13 +119,8 @@ def _temporary_cli_log_level(level: str | None):
         set_log_level(current_level)
 
 
-def _inject_chatgpt_tokens_if_needed(plano_config_file, env, console):
+def _inject_chatgpt_tokens_if_needed(config, env, console):
     """If config uses chatgpt providers, resolve tokens from ~/.plano/chatgpt/auth.json."""
-    import yaml
-
-    with open(plano_config_file, "r") as f:
-        config = yaml.safe_load(f)
-
     providers = config.get("model_providers") or config.get("llm_providers") or []
     has_chatgpt = any(str(p.get("model", "")).startswith("chatgpt/") for p in providers)
     if not has_chatgpt:
@@ -412,8 +407,13 @@ def up(file, path, foreground, with_tracing, tracing_port, docker, verbose):
         env = os.environ.copy()
         env.pop("PATH", None)
 
+        import yaml
+
+        with open(plano_config_file, "r") as f:
+            plano_config = yaml.safe_load(f)
+
         # Inject ChatGPT tokens from ~/.plano/chatgpt/auth.json if any provider needs them
-        _inject_chatgpt_tokens_if_needed(plano_config_file, env, console)
+        _inject_chatgpt_tokens_if_needed(plano_config, env, console)
 
         # Check access keys
         access_keys = get_llm_provider_access_keys(plano_config_file=plano_config_file)

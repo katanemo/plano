@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from planoai.utils import convert_legacy_listeners
 from jinja2 import Environment, FileSystemLoader
 import yaml
@@ -343,8 +344,6 @@ def validate_and_render_schema():
                     model_provider["base_url"] = CHATGPT_API_BASE
                 if not model_provider.get("access_key"):
                     model_provider["access_key"] = "$CHATGPT_ACCESS_TOKEN"
-                import uuid
-
                 headers = model_provider.get("headers", {})
                 headers.setdefault(
                     "ChatGPT-Account-Id",
