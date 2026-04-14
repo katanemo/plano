@@ -11,6 +11,8 @@ from collections.abc import Callable
 from planoai.consts import (
     NATIVE_PID_FILE,
     PLANO_RUN_DIR,
+    PLANO_WATCHDOG_LOG_FILE,
+    PLANO_WATCHDOG_STATE_FILE,
 )
 from planoai.docker_cli import health_check_endpoint
 from planoai.native_binaries import (
@@ -164,6 +166,7 @@ def start_native(
     foreground=False,
     with_tracing=False,
     progress_callback: Callable[[str], None] | None = None,
+    spawn_watchdog: bool = True,
 ):
     """Start Envoy and brightstaff natively."""
     from planoai.core import _get_gateway_ports
@@ -224,13 +227,14 @@ def start_native(
     if progress_callback:
         progress_callback(f"Started envoy (PID: {envoy_pid})...")
 
-    # Save PIDs
+    # Save PIDs (watchdog_pid filled in after health check)
     os.makedirs(PLANO_RUN_DIR, exist_ok=True)
     with open(NATIVE_PID_FILE, "w") as f:
         json.dump(
             {
                 "envoy_pid": envoy_pid,
                 "brightstaff_pid": brightstaff_pid,
+                "watchdog_pid": None,
             },
             f,
         )
@@ -253,6 +257,40 @@ def start_native(
             log.info("Plano is running (native mode)")
             for port in gateway_ports:
                 log.info(f"  http://localhost:{port}")
+
+            # Save watchdog state (env + metadata) for use during token refresh restarts
+            state_fd = os.open(
+                PLANO_WATCHDOG_STATE_FILE,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            with os.fdopen(state_fd, "w") as _f:
+                json.dump({"env": env, "with_tracing": with_tracing}, _f)
+
+            # Spawn background token watchdog for ChatGPT providers
+            watchdog_pid = 0
+            if spawn_watchdog:
+                from planoai.chatgpt_watchdog import (
+                    spawn_watchdog as _spawn_watchdog,
+                )
+
+                watchdog_pid = _spawn_watchdog(plano_config_file)
+                if watchdog_pid:
+                    log.info(f"Started ChatGPT token watchdog (PID {watchdog_pid})")
+                    if progress_callback:
+                        progress_callback(
+                            f"Started token watchdog (PID: {watchdog_pid})..."
+                        )
+                    with open(NATIVE_PID_FILE, "w") as f:
+                        json.dump(
+                            {
+                                "envoy_pid": envoy_pid,
+                                "brightstaff_pid": brightstaff_pid,
+                                "watchdog_pid": watchdog_pid,
+                            },
+                            f,
+                        )
+
             break
 
         # Check if processes are still alive
@@ -367,8 +405,11 @@ def _kill_pid(pid):
         pass
 
 
-def stop_native():
-    """Stop natively-running Envoy and brightstaff processes.
+def stop_native(skip_pids: set | None = None):
+    """Stop natively-running Envoy, brightstaff, and watchdog processes.
+
+    Args:
+        skip_pids: Set of PIDs to skip (used by the watchdog to avoid self-termination).
 
     Returns:
         bool: True if at least one process was running and received a stop signal,
@@ -383,9 +424,16 @@ def stop_native():
 
     envoy_pid = pids.get("envoy_pid")
     brightstaff_pid = pids.get("brightstaff_pid")
+    watchdog_pid = pids.get("watchdog_pid")
 
     had_running_process = False
-    for name, pid in [("envoy", envoy_pid), ("brightstaff", brightstaff_pid)]:
+    for name, pid in [
+        ("envoy", envoy_pid),
+        ("brightstaff", brightstaff_pid),
+        ("watchdog", watchdog_pid),
+    ]:
+        if skip_pids and pid in skip_pids:
+            continue
         if pid is None:
             continue
         try:
