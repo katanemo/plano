@@ -524,6 +524,41 @@ instead of a file.</p></li>
 </span></code></pre></div>
 </div>
 <p>To start a new routing decision (e.g., when the agent’s task changes), generate a new affinity ID.</p>
+<section id="session-cache-backends">
+<h3>Session Cache Backends<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#session-cache-backends" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#session-cache-backends'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>By default, Plano stores session affinity state in an in-process LRU cache. This works well for single-instance deployments, but sessions are not shared across replicas — each instance has its own independent cache.</p>
+<p>For deployments with multiple Plano replicas (Kubernetes, Docker Compose with <code class="docutils literal notranslate"><span class="pre">scale</span></code>, or any load-balanced setup), use Redis as the session cache backend. All replicas connect to the same Redis instance, so an affinity decision made by one replica is honoured by every other replica in the pool.</p>
+<p><strong>In-memory (default)</strong></p>
+<p>No configuration required. Sessions live only for the lifetime of the process and are lost on restart.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">routing</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="nt">session_ttl_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span><span class="w">    </span><span class="c1"># How long affinity lasts (default: 10 min)</span>
+</span><span id="line-3"><span class="w">  </span><span class="nt">session_max_entries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span><span class="w">  </span><span class="c1"># LRU capacity (upper limit: 10000)</span>
+</span></code></pre></div>
+</div>
+<p><strong>Redis</strong></p>
+<p>Requires a reachable Redis instance. The <code class="docutils literal notranslate"><span class="pre">url</span></code> field supports standard Redis URI syntax, including authentication (<code class="docutils literal notranslate"><span class="pre">redis://:password@host:6379</span></code>) and TLS (<code class="docutils literal notranslate"><span class="pre">rediss://host:6380</span></code>). Redis handles TTL expiry natively, so no periodic cleanup is needed.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">routing</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="nt">session_ttl_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
+</span><span id="line-3"><span class="w">  </span><span class="nt">session_cache</span><span class="p">:</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis</span>
+</span><span id="line-5"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis://localhost:6379</span>
+</span></code></pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>When using Redis in a multi-tenant environment, construct the <code class="docutils literal notranslate"><span class="pre">X-Model-Affinity</span></code> header value to include a tenant identifier, for example <code class="docutils literal notranslate"><span class="pre">{tenant_id}:{session_id}</span></code>. Plano stores each key under the internal namespace <code class="docutils literal notranslate"><span class="pre">plano:affinity:{key}</span></code>, so tenant-scoped values avoid cross-tenant collisions without any additional configuration.</p>
+</div>
+<p><strong>Example: Kubernetes multi-replica deployment</strong></p>
+<p>Deploy a Redis instance alongside your Plano pods and point all replicas at it:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">routing</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="nt">session_ttl_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
+</span><span id="line-3"><span class="w">  </span><span class="nt">session_cache</span><span class="p">:</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis</span>
+</span><span id="line-5"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redis://redis.plano.svc.cluster.local:6379</span>
+</span></code></pre></div>
+</div>
+<p>With this configuration, any replica that first receives a request for affinity ID <code class="docutils literal notranslate"><span class="pre">abc-123</span></code> caches the routing decision in Redis. Subsequent requests for <code class="docutils literal notranslate"><span class="pre">abc-123</span></code> — regardless of which replica they land on — retrieve the same pinned model.</p>
+</section>
 </section>
 <section id="combining-routing-methods">
 <h2>Combining Routing Methods<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#combining-routing-methods" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#combining-routing-methods'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -663,7 +698,10 @@ instead of a file.</p></li>
 <li><a :data-current="activeSection === '#using-vllm-on-kubernetes-gpu-nodes'" class="reference internal" href="#using-vllm-on-kubernetes-gpu-nodes">Using vLLM on Kubernetes (GPU nodes)</a></li>
 </ul>
 </li>
-<li><a :data-current="activeSection === '#model-affinity'" class="reference internal" href="#model-affinity">Model Affinity</a></li>
+<li><a :data-current="activeSection === '#model-affinity'" class="reference internal" href="#model-affinity">Model Affinity</a><ul>
+<li><a :data-current="activeSection === '#session-cache-backends'" class="reference internal" href="#session-cache-backends">Session Cache Backends</a></li>
+</ul>
+</li>
 <li><a :data-current="activeSection === '#combining-routing-methods'" class="reference internal" href="#combining-routing-methods">Combining Routing Methods</a></li>
 <li><a :data-current="activeSection === '#example-use-cases'" class="reference internal" href="#example-use-cases">Example Use Cases</a></li>
 <li><a :data-current="activeSection === '#best-practices'" class="reference internal" href="#best-practices">Best practices</a></li>
@@ -676,7 +714,7 @@ instead of a file.</p></li>
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 09, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 14, 2026. </p>
 </div>
 </div>
 </footer>

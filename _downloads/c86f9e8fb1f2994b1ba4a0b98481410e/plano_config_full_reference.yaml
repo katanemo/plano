@@ -178,6 +178,14 @@ overrides:
 routing:
   session_ttl_seconds: 600    # How long a pinned session lasts (default: 600s / 10 min)
   session_max_entries: 10000  # Max cached sessions before eviction (upper limit: 10000)
+  # session_cache controls the backend used to store affinity state.
+  # "memory" (default) is in-process and works for single-instance deployments.
+  # "redis" shares state across replicas — required for multi-replica / Kubernetes setups.
+  session_cache:
+    type: memory              # "memory" (default) or "redis"
+    # url is required when type is "redis". Supports redis:// and rediss:// (TLS).
+    # url: redis://localhost:6379
+    # tenant_header: x-org-id  # optional; when set, keys are scoped as plano:affinity:{tenant_id}:{session_id}
 
 # State storage for multi-turn conversation history
 state_storage:
