@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod debug;
 pub mod function_calling;
 pub mod llm;
 pub mod models;

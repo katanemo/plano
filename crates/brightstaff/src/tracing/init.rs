@@ -109,6 +109,8 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
 
             let provider = SdkTracerProvider::builder()
                 .with_batch_exporter(exporter)
+                .with_max_attributes_per_span(64)
+                .with_max_events_per_span(16)
                 .build();
 
             global::set_tracer_provider(provider.clone());

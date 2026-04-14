@@ -123,6 +123,12 @@ pub struct StateStorageConfig {
     #[serde(rename = "type")]
     pub storage_type: StateStorageType,
     pub connection_string: Option<String>,
+    /// TTL in seconds for in-memory state entries (default: 1800 = 30 min).
+    /// Only applies when type is `memory`.
+    pub ttl_seconds: Option<u64>,
+    /// Maximum number of in-memory state entries (default: 10000).
+    /// Only applies when type is `memory`.
+    pub max_entries: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

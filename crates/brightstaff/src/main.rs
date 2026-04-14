@@ -1,5 +1,10 @@
+#[cfg(feature = "jemalloc")]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use brightstaff::app_state::AppState;
 use brightstaff::handlers::agents::orchestrator::agent_chat;
+use brightstaff::handlers::debug;
 use brightstaff::handlers::empty;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
@@ -368,11 +373,15 @@ async fn init_state_storage(
 
     let storage: Arc<dyn StateStorage> = match storage_config.storage_type {
         common::configuration::StateStorageType::Memory => {
+            let ttl = storage_config.ttl_seconds.unwrap_or(1800);
+            let max = storage_config.max_entries.unwrap_or(10_000);
             info!(
                 storage_type = "memory",
+                ttl_seconds = ttl,
+                max_entries = max,
                 "initialized conversation state storage"
             );
-            Arc::new(MemoryConversationalStorage::new())
+            Arc::new(MemoryConversationalStorage::with_limits(ttl, max))
         }
         common::configuration::StateStorageType::Postgres => {
             let connection_string = storage_config
@@ -456,6 +465,8 @@ async fn route(
             Ok(list_models(Arc::clone(&state.llm_providers)).await)
         }
         (&Method::OPTIONS, "/v1/models" | "/agents/v1/models") => cors_preflight(),
+        (&Method::GET, "/debug/memstats") => debug::memstats().await,
+        (&Method::GET, "/debug/state_size") => debug::state_size(Arc::clone(&state)).await,
         _ => {
             debug!(method = %req.method(), path = %path, "no route found");
             let mut not_found = Response::new(empty());

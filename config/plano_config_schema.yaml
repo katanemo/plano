@@ -472,6 +472,14 @@ properties:
       connection_string:
         type: string
         description: Required when type is postgres. Supports environment variable substitution using $VAR or ${VAR} syntax.
+      ttl_seconds:
+        type: integer
+        minimum: 60
+        description: TTL in seconds for in-memory state entries. Only applies when type is memory. Default 1800 (30 min).
+      max_entries:
+        type: integer
+        minimum: 100
+        description: Maximum number of in-memory state entries. Only applies when type is memory. Default 10000.
     additionalProperties: false
     required:
       - type
