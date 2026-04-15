@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 
 use super::orchestrator_model::{OrchestratorModel, OrchestratorModelError};
 
-pub const MAX_TOKEN_LEN: usize = 2048; // Default max token length for the orchestration model
+pub const MAX_TOKEN_LEN: usize = 8192; // Default max token length for the orchestration model
 
 /// Custom JSON formatter that produces spaced JSON (space after colons and commas), same as JSON in python
 struct SpacedJsonFormatter;
