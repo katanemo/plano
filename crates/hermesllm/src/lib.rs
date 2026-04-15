@@ -11,6 +11,7 @@ pub use apis::streaming_shapes::sse::{SseEvent, SseStreamIter};
 pub use aws_smithy_eventstream::frame::DecodedFrame;
 pub use providers::id::ProviderId;
 pub use providers::request::{ProviderRequest, ProviderRequestError, ProviderRequestType};
+pub use providers::request_adapter::serialize_for_upstream;
 pub use providers::response::{
     ProviderResponse, ProviderResponseError, ProviderResponseType, TokenUsage,
 };

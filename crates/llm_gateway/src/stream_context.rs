@@ -27,7 +27,8 @@ use hermesllm::clients::endpoints::SupportedAPIsFromClient;
 use hermesllm::providers::response::ProviderResponse;
 use hermesllm::providers::streaming_response::ProviderStreamResponse;
 use hermesllm::{
-    DecodedFrame, ProviderId, ProviderRequest, ProviderRequestType, ProviderResponseType,
+    serialize_for_upstream, DecodedFrame, ProviderId, ProviderRequest, ProviderRequestType,
+    ProviderResponseType,
     ProviderStreamResponseType,
 };
 
@@ -1105,7 +1106,9 @@ impl HttpContext for StreamContext {
                                 );
                                 return Action::Pause;
                             }
-                        }
+                        };
+
+                        request_bytes
                     }
                     Err(e) => {
                         warn!(
