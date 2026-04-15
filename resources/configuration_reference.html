@@ -203,7 +203,7 @@ where prompts get routed to, apply guardrails, and enable critical agent observa
 </span><span id="line-34"><span class="linenos"> 34</span>
 </span><span id="line-35"><span class="linenos"> 35</span><span class="w">  </span><span class="c1"># routing_preferences: tags a model with named capabilities so Plano's LLM router</span>
 </span><span id="line-36"><span class="linenos"> 36</span><span class="w">  </span><span class="c1"># can select the best model for each request based on intent. Requires the</span>
-</span><span id="line-37"><span class="linenos"> 37</span><span class="w">  </span><span class="c1"># Arch-Router model (or equivalent) to be configured in overrides.llm_routing_model.</span>
+</span><span id="line-37"><span class="linenos"> 37</span><span class="w">  </span><span class="c1"># Plano-Orchestrator model (or equivalent) to be configured in overrides.llm_routing_model.</span>
 </span><span id="line-38"><span class="linenos"> 38</span><span class="w">  </span><span class="c1"># Each preference has a name (short label) and a description (used for intent matching).</span>
 </span><span id="line-39"><span class="linenos"> 39</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">groq/llama-3.3-70b-versatile</span>
 </span><span id="line-40"><span class="linenos"> 40</span><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$GROQ_API_KEY</span>
@@ -339,7 +339,7 @@ where prompts get routed to, apply guardrails, and enable critical agent observa
 </span><span id="line-170"><span class="linenos">170</span><span class="w">  </span><span class="c1"># Path to the trusted CA bundle for upstream TLS verification</span>
 </span><span id="line-171"><span class="linenos">171</span><span class="w">  </span><span class="nt">upstream_tls_ca_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/etc/ssl/certs/ca-certificates.crt</span>
 </span><span id="line-172"><span class="linenos">172</span><span class="w">  </span><span class="c1"># Model used for intent-based LLM routing (must be listed in model_providers)</span>
-</span><span id="line-173"><span class="linenos">173</span><span class="w">  </span><span class="nt">llm_routing_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Arch-Router</span>
+</span><span id="line-173"><span class="linenos">173</span><span class="w">  </span><span class="nt">llm_routing_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Plano-Orchestrator</span>
 </span><span id="line-174"><span class="linenos">174</span><span class="w">  </span><span class="c1"># Model used for agent orchestration (must be listed in model_providers)</span>
 </span><span id="line-175"><span class="linenos">175</span><span class="w">  </span><span class="nt">agent_orchestration_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Plano-Orchestrator</span>
 </span><span id="line-176"><span class="linenos">176</span>
@@ -414,7 +414,7 @@ where prompts get routed to, apply guardrails, and enable critical agent observa
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 14, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 15, 2026. </p>
 </div>
 </div>
 </footer>
