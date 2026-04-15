@@ -514,15 +514,27 @@ impl TryFrom<ResponsesAPIRequest> for ChatCompletionsRequest {
                         description,
                         parameters,
                         strict,
-                    } => converted_chat_tools.push(Tool {
-                        tool_type: "function".to_string(),
-                        function: crate::apis::openai::Function {
-                            name,
-                            description,
-                            parameters: normalize_function_parameters(parameters, None),
-                            strict,
-                        },
-                    }),
+                        function,
+                    } => {
+                        let resolved_name = function
+                            .as_ref()
+                            .and_then(|f| f.name.clone())
+                            .or_else(|| name.clone())
+                            .unwrap_or_else(|| "".to_string());
+                        let resolved_description = function
+                            .as_ref()
+                            .and_then(|f| f.description.clone())
+                            .or_else(|| description.clone());
+                        converted_chat_tools.push(Tool {
+                            tool_type: "function".to_string(),
+                            function: crate::apis::openai::Function {
+                                name: resolved_name,
+                                description: resolved_description,
+                                parameters: normalize_function_parameters(parameters, None),
+                                strict,
+                            },
+                        })
+                    }
                     ResponsesTool::WebSearchPreview {
                         search_context_size,
                         user_location,
@@ -804,10 +816,10 @@ impl TryFrom<ChatCompletionsRequest> for ConverseRequest {
                     .into_iter()
                     .map(|tool| BedrockTool::ToolSpec {
                         tool_spec: ToolSpecDefinition {
-                            name: tool.function.name,
-                            description: tool.function.description,
+                            name: tool.function.name.clone(),
+                            description: tool.function.description.clone(),
                             input_schema: ToolInputSchema {
-                                json: tool.function.parameters,
+                                json: tool.function.parameters.clone(),
                             },
                         },
                     })
@@ -1350,7 +1362,7 @@ mod tests {
                 output: serde_json::json!({"status":"ok","stdout":"hello"}),
             }]),
             tools: Some(vec![ResponsesTool::Function {
-                name: "exec_command".to_string(),
+                name: Some("exec_command".to_string()),
                 description: Some("Execute a shell command".to_string()),
                 parameters: Some(serde_json::json!({
                     "type": "object",
@@ -1359,6 +1371,7 @@ mod tests {
                     },
                     "required": ["cmd"]
                 })),
+                function: None,
                 strict: Some(false),
             }]),
             include: None,

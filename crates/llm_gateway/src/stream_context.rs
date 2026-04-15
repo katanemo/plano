@@ -27,7 +27,8 @@ use hermesllm::clients::endpoints::SupportedAPIsFromClient;
 use hermesllm::providers::response::ProviderResponse;
 use hermesllm::providers::streaming_response::ProviderStreamResponse;
 use hermesllm::{
-    DecodedFrame, ProviderId, ProviderRequest, ProviderRequestType, ProviderResponseType,
+    serialize_for_upstream, DecodedFrame, ProviderId, ProviderRequest, ProviderRequestType,
+    ProviderResponseType,
     ProviderStreamResponseType,
 };
 
@@ -1056,14 +1057,10 @@ impl HttpContext for StreamContext {
 
                 match ProviderRequestType::try_from((deserialized_client_request, upstream)) {
                     Ok(mut request) => {
-                        request.normalize_for_upstream(self.get_provider_id(), upstream);
-                        debug!(
-                            "request_id={}: upstream request payload: {}",
-                            self.request_identifier(),
-                            String::from_utf8_lossy(&request.to_bytes().unwrap_or_default())
-                        );
+                        let provider_id = self.get_provider_id();
+                        request.normalize_for_upstream(provider_id, upstream);
 
-                        match request.to_bytes() {
+                        let request_bytes = match serialize_for_upstream(&request, provider_id) {
                             Ok(bytes) => bytes,
                             Err(e) => {
                                 warn!(
@@ -1080,7 +1077,9 @@ impl HttpContext for StreamContext {
                                 );
                                 return Action::Pause;
                             }
-                        }
+                        };
+
+                        request_bytes
                     }
                     Err(e) => {
                         warn!(
