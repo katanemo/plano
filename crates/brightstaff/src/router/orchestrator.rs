@@ -195,7 +195,16 @@ impl OrchestratorService {
             )
             .await?;
 
-        let result = if let Some(routes) = orchestration_result {
+        let result = if let Some(ref routes) = orchestration_result {
+            if routes.len() > 1 {
+                let all_routes: Vec<&str> = routes.iter().map(|(name, _)| name.as_str()).collect();
+                info!(
+                    routes = ?all_routes,
+                    using = %all_routes.first().unwrap_or(&"none"),
+                    "plano-orchestrator detected multiple intents, using first"
+                );
+            }
+
             if let Some((route_name, _)) = routes.first() {
                 let top_pref = inline_top_map
                     .as_ref()
