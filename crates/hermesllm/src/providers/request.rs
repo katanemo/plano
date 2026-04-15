@@ -1005,6 +1005,54 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_for_upstream_chatgpt_sets_store_stream_and_wraps_input() {
+        use crate::apis::openai::OpenAIApi::Responses;
+        use crate::apis::openai_responses::InputParam;
+
+        let responses_req = ResponsesAPIRequest {
+            model: "gpt-5.4".to_string(),
+            input: InputParam::Text("Hello, Codex!".to_string()),
+            temperature: None,
+            max_output_tokens: Some(8192),
+            stream: Some(false),
+            metadata: None,
+            tools: None,
+            tool_choice: None,
+            parallel_tool_calls: None,
+            instructions: None,
+            modalities: None,
+            user: None,
+            store: None,
+            reasoning_effort: None,
+            include: None,
+            audio: None,
+            text: None,
+            service_tier: None,
+            top_p: None,
+            top_logprobs: None,
+            stream_options: None,
+            truncation: None,
+            conversation: None,
+            previous_response_id: None,
+            max_tool_calls: None,
+            background: None,
+        };
+
+        let upstream_api = SupportedUpstreamAPIs::OpenAIResponsesAPI(Responses);
+        let mut request = ProviderRequestType::ResponsesAPIRequest(responses_req);
+        request.normalize_for_upstream(ProviderId::ChatGPT, &upstream_api);
+
+        match request {
+            ProviderRequestType::ResponsesAPIRequest(req) => {
+                assert_eq!(req.max_output_tokens, Some(8192));
+                assert_eq!(req.store, Some(false));
+                assert_eq!(req.stream, Some(true));
+                assert!(matches!(req.input, InputParam::Items(_)));
+            }
+            _ => panic!("Expected ResponsesAPIRequest variant"),
+        }
+    }
+    #[test]
     fn test_chat_completions_to_responses_api_not_supported() {
         use crate::apis::openai::OpenAIApi::Responses;
         use crate::apis::openai::{Message, MessageContent, Role};

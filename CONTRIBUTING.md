@@ -100,6 +100,16 @@ For library tests only:
 cargo test --lib
 ```
 
+**Build Rust artifacts with the correct targets:**
+
+```bash
+cd crates
+cargo build --release --target wasm32-wasip1 -p llm_gateway -p prompt_gateway
+cargo build --release -p brightstaff -p hermesllm -p common
+```
+
+Do not run a blanket workspace-native build such as `cargo build --release` from `crates/`. The `llm_gateway` and `prompt_gateway` crates are Proxy-WASM `cdylib`s and must be built for `wasm32-wasip1`, while `brightstaff`, `hermesllm`, and `common` build natively.
+
 **Run Python CLI tests:**
 
 ```bash
