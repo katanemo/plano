@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pretty-print Plano MODEL_RESOLUTION lines from docker logs
-# - hides Arch-Router
+# - hides Plano-Orchestrator
 # - prints timestamp
 # - colors MODEL_RESOLUTION red
 # - colors req_model cyan
@@ -9,7 +9,7 @@
 
 docker logs -f plano 2>&1 \
 | awk '
-/MODEL_RESOLUTION:/ && $0 !~ /Arch-Router/ {
+/MODEL_RESOLUTION:/ && $0 !~ /Plano-Orchestrator/ {
   # extract timestamp between first [ and ]
   ts=""
   if (match($0, /\[[0-9-]+ [0-9:.]+\]/)) {

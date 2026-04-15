@@ -32,9 +32,9 @@ planoai up config.yaml
 
 3. Test with curl or open AnythingLLM http://localhost:3001/
 
-## Running with local Arch-Router (via Ollama)
+## Running with local routing model (via Ollama)
 
-By default, Plano uses a hosted Arch-Router endpoint. To self-host Arch-Router locally using Ollama:
+By default, Plano uses a hosted Plano-Orchestrator endpoint. To self-host a routing model locally using Ollama:
 
 1. Install [Ollama](https://ollama.ai) and pull the model:
 ```bash

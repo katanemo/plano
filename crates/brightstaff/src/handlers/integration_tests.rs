@@ -147,8 +147,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_handling_flow() {
-        let router_service = create_test_orchestrator_service();
-        let agent_selector = AgentSelector::new(router_service);
+        let orchestrator_service = create_test_orchestrator_service();
+        let agent_selector = AgentSelector::new(orchestrator_service);
 
         // Test listener not found
         let result = agent_selector.find_listener(Some("nonexistent"), &[]);

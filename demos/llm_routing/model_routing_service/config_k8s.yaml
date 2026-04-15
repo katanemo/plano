@@ -1,7 +1,7 @@
 version: v0.3.0
 
 overrides:
-  llm_routing_model: plano/Arch-Router
+  llm_routing_model: plano/Plano-Orchestrator
 
 listeners:
   - type: model
@@ -10,8 +10,8 @@ listeners:
 
 model_providers:
 
-  - model: plano/Arch-Router
-    base_url: http://arch-router:10000
+  - model: plano/Plano-Orchestrator
+    base_url: http://plano-orchestrator:10000
 
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY

@@ -22,7 +22,6 @@ pub(crate) mod model_selection;
 
 use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
-use crate::handlers::extract_or_generate_traceparent;
 use crate::handlers::extract_request_id;
 use crate::handlers::full;
 use crate::state::response_state_processor::ResponsesStateProcessor;
@@ -92,22 +91,20 @@ async fn llm_chat_inner(
         }
     });
 
-    let traceparent = extract_or_generate_traceparent(&request_headers);
-
     // Session pinning: extract session ID and check cache before routing
     let session_id: Option<String> = request_headers
         .get(MODEL_AFFINITY_HEADER)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
     let tenant_id: Option<String> = state
-        .router_service
+        .orchestrator_service
         .tenant_header()
         .and_then(|hdr| request_headers.get(hdr))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     let pinned_model: Option<String> = if let Some(ref sid) = session_id {
         state
-            .router_service
+            .orchestrator_service
             .get_cached_route(sid, tenant_id.as_deref())
             .await
             .map(|c| c.model_name)
@@ -287,9 +284,8 @@ async fn llm_chat_inner(
         let routing_result = match async {
             set_service_name(operation_component::ROUTING);
             router_chat_get_upstream_model(
-                Arc::clone(&state.router_service),
+                Arc::clone(&state.orchestrator_service),
                 client_request,
-                &traceparent,
                 &request_path,
                 &request_id,
                 inline_routing_preferences,
@@ -315,10 +311,9 @@ async fn llm_chat_inner(
             alias_resolved_model.clone()
         };
 
-        // Cache the routing decision so subsequent requests with the same session ID are pinned
         if let Some(ref sid) = session_id {
             state
-                .router_service
+                .orchestrator_service
                 .cache_route(sid.clone(), tenant_id.as_deref(), model.clone(), route_name)
                 .await;
         }

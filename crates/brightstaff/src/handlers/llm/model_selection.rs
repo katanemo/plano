@@ -5,7 +5,7 @@ use hyper::StatusCode;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::router::llm::RouterService;
+use crate::router::orchestrator::OrchestratorService;
 use crate::streaming::truncate_message;
 use crate::tracing::routing;
 
@@ -37,9 +37,8 @@ impl RoutingError {
 /// * `Ok(RoutingResult)` - Contains the selected model name and span ID
 /// * `Err(RoutingError)` - Contains error details and optional span ID
 pub async fn router_chat_get_upstream_model(
-    router_service: Arc<RouterService>,
+    orchestrator_service: Arc<OrchestratorService>,
     client_request: ProviderRequestType,
-    traceparent: &str,
     request_path: &str,
     request_id: &str,
     inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
@@ -99,11 +98,9 @@ pub async fn router_chat_get_upstream_model(
     // Capture start time for routing span
     let routing_start_time = std::time::Instant::now();
 
-    // Attempt to determine route using the router service
-    let routing_result = router_service
+    let routing_result = orchestrator_service
         .determine_route(
             &chat_request.messages,
-            traceparent,
             inline_routing_preferences,
             request_id,
         )

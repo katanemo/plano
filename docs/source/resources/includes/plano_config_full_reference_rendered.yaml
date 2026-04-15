@@ -157,10 +157,6 @@ model_providers:
   protocol: https
   provider_interface: openai
 - internal: true
-  model: Arch-Router
-  name: arch-router
-  provider_interface: plano
-- internal: true
   model: Arch-Function
   name: arch-function
   provider_interface: plano
@@ -170,7 +166,7 @@ model_providers:
   provider_interface: plano
 overrides:
   agent_orchestration_model: Plano-Orchestrator
-  llm_routing_model: Arch-Router
+  llm_routing_model: Plano-Orchestrator
   optimize_context_window: true
   prompt_target_intent_matching_threshold: 0.7
   upstream_connect_timeout: 10s

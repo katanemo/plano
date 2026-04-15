@@ -6,7 +6,7 @@ Plano is an AI-native proxy and data plane for agentic apps — with built-in or
 ┌───────────┐      ┌─────────────────────────────────┐      ┌──────────────┐
 │  Client   │ ───► │  Plano                          │ ───► │  OpenAI      │
 │  (any     │      │                                 │      │  Anthropic   │
-│  language)│      │  Arch-Router (1.5B model)       │      │  Any Provider│
+│  language)│      │  Plano-Orchestrator              │      │  Any Provider│
 └───────────┘      │  analyzes intent → picks model  │      └──────────────┘
                    └─────────────────────────────────┘
 ```
@@ -39,17 +39,17 @@ routing_preferences:
 
 When a request arrives, Plano:
 
-1. Sends the conversation + route descriptions to Arch-Router for intent classification
+1. Sends the conversation + route descriptions to Plano-Orchestrator for intent classification
 2. Looks up the matched route and returns its candidate models
 3. Returns an ordered list — client uses `models[0]`, falls back to `models[1]` on 429/5xx
 
 ```
 1. Request arrives          → "Write binary search in Python"
-2. Arch-Router classifies   → route: "code_generation"
+2. Plano-Orchestrator classifies → route: "code_generation"
 3. Response                 → models: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"]
 ```
 
-No match? Arch-Router returns `null` route → client falls back to the model in the original request.
+No match? Plano-Orchestrator returns an empty route → client falls back to the model in the original request.
 
 The `/routing/v1/*` endpoints return the routing decision **without** forwarding to the LLM — useful for testing routing behavior before going to production.
 
@@ -163,9 +163,9 @@ routing:
 
 Without the `X-Model-Affinity` header, routing runs fresh every time (no breaking change).
 
-## Kubernetes Deployment (Self-hosted Arch-Router on GPU)
+## Kubernetes Deployment (Self-hosted Plano-Orchestrator on GPU)
 
-To run Arch-Router in-cluster using vLLM instead of the default hosted endpoint:
+To run Plano-Orchestrator in-cluster using vLLM instead of the default hosted endpoint:
 
 **0. Check your GPU node labels and taints**
 
@@ -176,10 +176,10 @@ kubectl get node <gpu-node-name> -o jsonpath='{.spec.taints}'
 
 GPU nodes commonly have a `nvidia.com/gpu:NoSchedule` taint — `vllm-deployment.yaml` includes a matching toleration. If you have multiple GPU node pools and need to pin to a specific one, uncomment and set the `nodeSelector` in `vllm-deployment.yaml` using the label for your cloud provider.
 
-**1. Deploy Arch-Router and Plano:**
+**1. Deploy Plano-Orchestrator and Plano:**
 
 ```bash
-# arch-router deployment
+# plano-orchestrator deployment
 kubectl apply -f vllm-deployment.yaml
 
 # plano deployment
@@ -197,8 +197,8 @@ kubectl apply -f plano-deployment.yaml
 **3. Wait for both pods to be ready:**
 
 ```bash
-# Arch-Router downloads the model (~1 min) then vLLM loads it (~2 min)
-kubectl get pods -l app=arch-router -w
+# Plano-Orchestrator downloads the model (~1 min) then vLLM loads it (~2 min)
+kubectl get pods -l app=plano-orchestrator -w
 kubectl rollout status deployment/plano
 ```
 
@@ -209,10 +209,10 @@ kubectl port-forward svc/plano 12000:12000
 ./demo.sh
 ```
 
-To confirm requests are hitting your in-cluster Arch-Router (not just health checks):
+To confirm requests are hitting your in-cluster Plano-Orchestrator (not just health checks):
 
 ```bash
-kubectl logs -l app=arch-router -f --tail=0
+kubectl logs -l app=plano-orchestrator -f --tail=0
 # Look for POST /v1/chat/completions entries
 ```
 

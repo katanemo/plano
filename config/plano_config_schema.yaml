@@ -284,7 +284,7 @@ properties:
         description: "Path to the trusted CA bundle for upstream TLS verification. Default is '/etc/ssl/certs/ca-certificates.crt'."
       llm_routing_model:
         type: string
-        description: "Model name for the LLM router (e.g., 'Arch-Router'). Must match a model in model_providers."
+        description: "Model name for the LLM router (e.g., 'Plano-Orchestrator'). Must match a model in model_providers."
       agent_orchestration_model:
         type: string
         description: "Model name for the agent orchestrator (e.g., 'Plano-Orchestrator'). Must match a model in model_providers."

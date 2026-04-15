@@ -133,16 +133,16 @@ Clients use semantic names:
 
 .. _preference_aligned_routing:
 
-Preference-aligned routing (Arch-Router)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Preference-aligned routing (Plano-Orchestrator)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Preference-aligned routing uses the `Arch-Router <https://huggingface.co/katanemo/Arch-Router-1.5B>`_ model to pick the best LLM based on domain, action, and your configured preferences instead of hard-coding a model.
+Preference-aligned routing uses the Plano-Orchestrator model to pick the best LLM based on domain, action, and your configured preferences instead of hard-coding a model.
 
 - **Domain**: High-level topic of the request (e.g., legal, healthcare, programming).
 - **Action**: What the user wants to do (e.g., summarize, generate code, translate).
 - **Routing preferences**: Your mapping from (domain, action) to preferred models.
 
-Arch-Router analyzes each prompt to infer domain and action, then applies your preferences to select a model. This decouples **routing policy** (how to choose) from **model assignment** (what to run), making routing transparent, controllable, and easy to extend as you add or swap models.
+Plano-Orchestrator analyzes each prompt to infer domain and action, then applies your preferences to select a model. This decouples **routing policy** (how to choose) from **model assignment** (what to run), making routing transparent, controllable, and easy to extend as you add or swap models.
 
 Configuration
 ^^^^^^^^^^^^^
@@ -187,21 +187,21 @@ Clients can let the router decide or still specify aliases:
 
 .. code-block:: python
 
-    # Let Arch-Router choose based on content
+    # Let Plano-Orchestrator choose based on content
     response = client.chat.completions.create(
         messages=[{"role": "user", "content": "Write a creative story about space exploration"}]
         # No model specified - router will analyze and choose claude-sonnet-4-5
     )
 
 
-Arch-Router
------------
-The `Arch-Router <https://huggingface.co/katanemo/Arch-Router-1.5B>`_ is a state-of-the-art **preference-based routing model** specifically designed to address the limitations of traditional LLM routing. This compact 1.5B model delivers production-ready performance with low latency and high accuracy while solving key routing challenges.
+Plano-Orchestrator
+-------------------
+Plano-Orchestrator is a **preference-based routing model** specifically designed to address the limitations of traditional LLM routing. It delivers production-ready performance with low latency and high accuracy while solving key routing challenges.
 
 **Addressing Traditional Routing Limitations:**
 
 **Human Preference Alignment**
-Unlike benchmark-driven approaches, Arch-Router learns to match queries with human preferences by using domain-action mappings that capture subjective evaluation criteria, ensuring routing decisions align with real-world user needs.
+Unlike benchmark-driven approaches, Plano-Orchestrator learns to match queries with human preferences by using domain-action mappings that capture subjective evaluation criteria, ensuring routing decisions align with real-world user needs.
 
 **Flexible Model Integration**
 The system supports seamlessly adding new models for routing without requiring retraining or architectural modifications, enabling dynamic adaptation to evolving model landscapes.
@@ -209,15 +209,15 @@ The system supports seamlessly adding new models for routing without requiring r
 **Preference-Encoded Routing**
 Provides a practical mechanism to encode user preferences through domain-action mappings, offering transparent and controllable routing decisions that can be customized for specific use cases.
 
-To support effective routing, Arch-Router introduces two key concepts:
+To support effective routing, Plano-Orchestrator introduces two key concepts:
 
 - **Domain** – the high-level thematic category or subject matter of a request (e.g., legal, healthcare, programming).
 
 - **Action** – the specific type of operation the user wants performed (e.g., summarization, code generation, booking appointment, translation).
 
-Both domain and action configs are associated with preferred models or model variants. At inference time, Arch-Router analyzes the incoming prompt to infer its domain and action using semantic similarity, task indicators, and contextual cues. It then applies the user-defined routing preferences to select the model best suited to handle the request.
+Both domain and action configs are associated with preferred models or model variants. At inference time, Plano-Orchestrator analyzes the incoming prompt to infer its domain and action using semantic similarity, task indicators, and contextual cues. It then applies the user-defined routing preferences to select the model best suited to handle the request.
 
-In summary, Arch-Router demonstrates:
+In summary, Plano-Orchestrator demonstrates:
 
 - **Structured Preference Routing**: Aligns prompt request with model strengths using explicit domain–action mappings.
 
@@ -228,10 +228,10 @@ In summary, Arch-Router demonstrates:
 - **Production-Ready Performance**: Optimized for low-latency, high-throughput applications in multi-model environments.
 
 
-Self-hosting Arch-Router
-------------------------
+Self-hosting Plano-Orchestrator
+-------------------------------
 
-By default, Plano uses a hosted Arch-Router endpoint. To run Arch-Router locally, you can serve the model yourself using either **Ollama** or **vLLM**.
+By default, Plano uses a hosted Plano-Orchestrator endpoint. To run Plano-Orchestrator locally, you can serve the model yourself using either **Ollama** or **vLLM**.
 
 Using Ollama (recommended for local development)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -240,7 +240,7 @@ Using Ollama (recommended for local development)
 
    Download and install from `ollama.ai <https://ollama.ai>`_.
 
-2. **Pull and serve Arch-Router**
+2. **Pull and serve the routing model**
 
    .. code-block:: bash
 
@@ -249,7 +249,7 @@ Using Ollama (recommended for local development)
 
    This downloads the quantized GGUF model from HuggingFace and starts serving on ``http://localhost:11434``.
 
-3. **Configure Plano to use local Arch-Router**
+3. **Configure Plano to use local routing model**
 
    .. code-block:: yaml
 
@@ -313,7 +313,7 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
            --load-format gguf \
            --chat-template ${SNAPSHOT_DIR}template.jinja \
            --tokenizer katanemo/Arch-Router-1.5B \
-           --served-model-name Arch-Router \
+           --served-model-name Plano-Orchestrator \
            --gpu-memory-utilization 0.3 \
            --tensor-parallel-size 1 \
            --enable-prefix-caching
@@ -323,10 +323,10 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
    .. code-block:: yaml
 
        overrides:
-         llm_routing_model: plano/Arch-Router
+         llm_routing_model: plano/Plano-Orchestrator
 
        model_providers:
-         - model: plano/Arch-Router
+         - model: plano/Plano-Orchestrator
            base_url: http://<your-server-ip>:10000
 
          - model: openai/gpt-5.2
@@ -350,14 +350,14 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
 Using vLLM on Kubernetes (GPU nodes)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For teams running Kubernetes, Arch-Router and Plano can be deployed as in-cluster services.
+For teams running Kubernetes, Plano-Orchestrator and Plano can be deployed as in-cluster services.
 The ``demos/llm_routing/model_routing_service/`` directory includes ready-to-use manifests:
 
-- ``vllm-deployment.yaml`` — Arch-Router served by vLLM, with an init container to download
+- ``vllm-deployment.yaml`` — Plano-Orchestrator served by vLLM, with an init container to download
   the model from HuggingFace
-- ``plano-deployment.yaml`` — Plano proxy configured to use the in-cluster Arch-Router
+- ``plano-deployment.yaml`` — Plano proxy configured to use the in-cluster Plano-Orchestrator
 - ``config_k8s.yaml`` — Plano config with ``llm_routing_model`` pointing at
-  ``http://arch-router:10000`` instead of the default hosted endpoint
+  ``http://plano-orchestrator:10000`` instead of the default hosted endpoint
 
 Key things to know before deploying:
 
@@ -504,7 +504,7 @@ This configuration allows clients to:
 
 Example Use Cases
 -----------------
-Here are common scenarios where Arch-Router excels:
+Here are common scenarios where Plano-Orchestrator excels:
 
 - **Coding Tasks**: Distinguish between code generation requests ("write a Python function"), debugging needs ("fix this error"), and code optimization ("make this faster"), routing each to appropriately specialized models.
 
@@ -545,10 +545,10 @@ Best practices
 Unsupported Features
 --------------------
 
-The following features are **not supported** by the Arch-Router model:
+The following features are **not supported** by the Plano-Orchestrator routing model:
 
 - **Multi-modality**: The model is not trained to process raw image or audio inputs. It can handle textual queries *about* these modalities (e.g., "generate an image of a cat"), but cannot interpret encoded multimedia data directly.
 
-- **Function calling**: Arch-Router is designed for **semantic preference matching**, not exact intent classification or tool execution. For structured function invocation, use models in the Plano Function Calling collection instead.
+- **Function calling**: Plano-Orchestrator is designed for **semantic preference matching**, not exact intent classification or tool execution. For structured function invocation, use models in the Plano Function Calling collection instead.
 
-- **System prompt dependency**: Arch-Router routes based solely on the user’s conversation history. It does not use or rely on system prompts for routing decisions.
+- **System prompt dependency**: Plano-Orchestrator routes based solely on the user’s conversation history. It does not use or rely on system prompts for routing decisions.
