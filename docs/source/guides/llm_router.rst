@@ -136,7 +136,7 @@ Clients use semantic names:
 Preference-aligned routing (Plano-Orchestrator)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Preference-aligned routing uses the Plano-Orchestrator model to pick the best LLM based on domain, action, and your configured preferences instead of hard-coding a model.
+Preference-aligned routing uses the `Plano-Orchestrator <https://huggingface.co/katanemo/Plano-Orchestrator-30B-A3B>`_ model to pick the best LLM based on domain, action, and your configured preferences instead of hard-coding a model.
 
 - **Domain**: High-level topic of the request (e.g., legal, healthcare, programming).
 - **Action**: What the user wants to do (e.g., summarize, generate code, translate).
