@@ -303,6 +303,10 @@ async fn init_app_state(
         .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_LLM_PROVIDER.to_string());
 
+    let orchestrator_max_tokens = overrides
+        .orchestrator_model_context_length
+        .unwrap_or(brightstaff::router::orchestrator_model_v1::MAX_TOKEN_LEN);
+
     let orchestrator_service = Arc::new(OrchestratorService::with_routing(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         orchestrator_model_name,
@@ -312,6 +316,7 @@ async fn init_app_state(
         session_ttl_seconds,
         session_cache,
         session_tenant_header,
+        orchestrator_max_tokens,
     ));
 
     let state_storage = init_state_storage(config).await?;

@@ -233,6 +233,7 @@ pub struct Overrides {
     pub use_agent_orchestrator: Option<bool>,
     pub llm_routing_model: Option<String>,
     pub agent_orchestration_model: Option<String>,
+    pub orchestrator_model_context_length: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

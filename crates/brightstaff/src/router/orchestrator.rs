@@ -50,11 +50,12 @@ impl OrchestratorService {
         orchestrator_url: String,
         orchestration_model_name: String,
         orchestrator_provider_name: String,
+        max_token_length: usize,
     ) -> Self {
         let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::new(
             HashMap::new(),
             orchestration_model_name,
-            orchestrator_model_v1::MAX_TOKEN_LEN,
+            max_token_length,
         ));
 
         OrchestratorService {
@@ -80,6 +81,7 @@ impl OrchestratorService {
         session_ttl_seconds: Option<u64>,
         session_cache: Arc<dyn SessionCache>,
         tenant_header: Option<String>,
+        max_token_length: usize,
     ) -> Self {
         let top_level_preferences: HashMap<String, TopLevelRoutingPreference> = top_level_prefs
             .map_or_else(HashMap::new, |prefs| {
@@ -89,7 +91,7 @@ impl OrchestratorService {
         let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::new(
             HashMap::new(),
             orchestration_model_name,
-            orchestrator_model_v1::MAX_TOKEN_LEN,
+            max_token_length,
         ));
 
         let session_ttl =
@@ -333,6 +335,7 @@ mod tests {
             Some(ttl_seconds),
             session_cache,
             None,
+            orchestrator_model_v1::MAX_TOKEN_LEN,
         )
     }
 
