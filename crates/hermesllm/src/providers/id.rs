@@ -44,6 +44,7 @@ pub enum ProviderId {
     Zhipu,
     Qwen,
     AmazonBedrock,
+    DigitalOcean,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -71,6 +72,9 @@ impl TryFrom<&str> for ProviderId {
             "qwen" => Ok(ProviderId::Qwen),
             "amazon_bedrock" => Ok(ProviderId::AmazonBedrock),
             "amazon" => Ok(ProviderId::AmazonBedrock), // alias
+            "digitalocean" => Ok(ProviderId::DigitalOcean),
+            "do" => Ok(ProviderId::DigitalOcean),    // alias
+            "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -95,6 +99,7 @@ impl ProviderId {
             ProviderId::Moonshotai => "moonshotai",
             ProviderId::Zhipu => "z-ai",
             ProviderId::Qwen => "qwen",
+            ProviderId::DigitalOcean => "digitalocean",
             _ => return Vec::new(),
         };
 
@@ -148,7 +153,8 @@ impl ProviderId {
                 | ProviderId::Ollama
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
-                | ProviderId::Qwen,
+                | ProviderId::Qwen
+                | ProviderId::DigitalOcean,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -167,7 +173,8 @@ impl ProviderId {
                 | ProviderId::Ollama
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
-                | ProviderId::Qwen,
+                | ProviderId::Qwen
+                | ProviderId::DigitalOcean,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -234,6 +241,7 @@ impl Display for ProviderId {
             ProviderId::Zhipu => write!(f, "zhipu"),
             ProviderId::Qwen => write!(f, "qwen"),
             ProviderId::AmazonBedrock => write!(f, "amazon_bedrock"),
+            ProviderId::DigitalOcean => write!(f, "digitalocean"),
         }
     }
 }

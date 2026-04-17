@@ -28,6 +28,7 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "xai",
     "moonshotai",
     "zhipu",
+    "digitalocean",
 ]
 
 SUPPORTED_PROVIDERS = (
