@@ -25,7 +25,7 @@ def test_zero_env_vars_produces_pure_passthrough():
         assert "access_key" not in provider
     # All known providers should be listed.
     names = {p["name"] for p in cfg["model_providers"]}
-    assert "do" in names
+    assert "digitalocean" in names
     assert "openai" in names
     assert "anthropic" in names
 
@@ -37,7 +37,7 @@ def test_env_keys_promote_providers_to_env_keyed():
     by_name = {p["name"]: p for p in cfg["model_providers"]}
     assert by_name["openai"].get("access_key") == "$OPENAI_API_KEY"
     assert by_name["openai"].get("passthrough_auth") is None
-    assert by_name["do"].get("access_key") == "$DO_API_KEY"
+    assert by_name["digitalocean"].get("access_key") == "$DO_API_KEY"
     # Unset env keys remain pass-through.
     assert by_name["anthropic"].get("passthrough_auth") is True
 
@@ -45,7 +45,7 @@ def test_env_keys_promote_providers_to_env_keyed():
 def test_detection_summary_strings():
     det = detect_providers(env={"OPENAI_API_KEY": "sk", "DO_API_KEY": "d"})
     summary = det.summary
-    assert "env-keyed" in summary and "openai" in summary and "do" in summary
+    assert "env-keyed" in summary and "openai" in summary and "digitalocean" in summary
     assert "pass-through" in summary
 
 
@@ -62,9 +62,9 @@ def test_synthesized_config_validates_against_schema():
     jsonschema.validate(cfg, _schema())
 
 
-def test_provider_defaults_do_is_configured():
+def test_provider_defaults_digitalocean_is_configured():
     by_name = {p.name: p for p in PROVIDER_DEFAULTS}
-    assert "do" in by_name
-    assert by_name["do"].env_var == "DO_API_KEY"
-    assert by_name["do"].base_url == "https://inference.do-ai.run/v1"
-    assert by_name["do"].model_pattern == "do/*"
+    assert "digitalocean" in by_name
+    assert by_name["digitalocean"].env_var == "DO_API_KEY"
+    assert by_name["digitalocean"].base_url == "https://inference.do-ai.run/v1"
+    assert by_name["digitalocean"].model_pattern == "digitalocean/*"

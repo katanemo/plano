@@ -72,14 +72,13 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         base_url="https://api.mistral.ai/v1",
         model_pattern="mistral/*",
     ),
-    # DigitalOcean Gradient is OpenAI-compatible and `do` is not in the built-in
-    # SUPPORTED_PROVIDERS list, so we must provide provider_interface explicitly.
+    # DigitalOcean Gradient is now a first-class provider (see #889) — model
+    # prefix `digitalocean/` routes to the built-in cluster, no base_url needed.
     ProviderDefault(
-        name="do",
+        name="digitalocean",
         env_var="DO_API_KEY",
         base_url="https://inference.do-ai.run/v1",
-        model_pattern="do/*",
-        provider_interface="openai",
+        model_pattern="digitalocean/*",
     ),
 ]
 
