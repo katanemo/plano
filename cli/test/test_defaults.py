@@ -44,24 +44,13 @@ def test_env_keys_promote_providers_to_env_keyed():
     assert by_name["anthropic"].get("passthrough_auth") is True
 
 
-def test_first_env_keyed_provider_becomes_default():
+def test_no_default_is_synthesized():
+    # Bare model names resolve via brightstaff's wildcard expansion registering
+    # bare keys, so the synthesizer intentionally never sets `default: true`.
     cfg = synthesize_default_config(
         env={"OPENAI_API_KEY": "sk-1", "ANTHROPIC_API_KEY": "a-1"}
     )
-    defaults = [p for p in cfg["model_providers"] if p.get("default") is True]
-    assert len(defaults) == 1
-    # openai appears first in PROVIDER_DEFAULTS so it wins.
-    assert defaults[0]["model"] == "openai/gpt-4o-mini"
-    assert defaults[0]["access_key"] == "$OPENAI_API_KEY"
-
-
-def test_default_skips_providers_without_default_model():
-    # Groq has no default_model wired up — the next env-keyed provider with one
-    # should be picked instead.
-    cfg = synthesize_default_config(env={"GROQ_API_KEY": "g", "ANTHROPIC_API_KEY": "a"})
-    defaults = [p for p in cfg["model_providers"] if p.get("default") is True]
-    assert len(defaults) == 1
-    assert defaults[0]["model"].startswith("anthropic/")
+    assert not any(p.get("default") is True for p in cfg["model_providers"])
 
 
 def test_listener_port_is_configurable():
