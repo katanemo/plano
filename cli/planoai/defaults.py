@@ -27,6 +27,10 @@ class ProviderDefault:
     env_var: str
     base_url: str
     model_pattern: str
+    # Concrete, small, cheap model to promote to `default: true` in the
+    # synthesized config when this provider has an env key. Lets clients send
+    # bare (unprefixed) model names that Plano otherwise rejects.
+    default_model: str | None = None
     # Only set for providers whose prefix in the model pattern is NOT one of the
     # built-in SUPPORTED_PROVIDERS in cli/planoai/config_generator.py. For
     # built-ins, the validator infers the interface from the model prefix and
@@ -41,18 +45,21 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         env_var="OPENAI_API_KEY",
         base_url="https://api.openai.com/v1",
         model_pattern="openai/*",
+        default_model="gpt-4o-mini",
     ),
     ProviderDefault(
         name="anthropic",
         env_var="ANTHROPIC_API_KEY",
         base_url="https://api.anthropic.com/v1",
         model_pattern="anthropic/*",
+        default_model="claude-haiku-4-5",
     ),
     ProviderDefault(
         name="gemini",
         env_var="GEMINI_API_KEY",
         base_url="https://generativelanguage.googleapis.com/v1beta",
         model_pattern="gemini/*",
+        default_model="gemini-2.5-flash",
     ),
     ProviderDefault(
         name="groq",
@@ -79,6 +86,7 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         env_var="DO_API_KEY",
         base_url="https://inference.do-ai.run/v1",
         model_pattern="digitalocean/*",
+        default_model="openai-gpt-5.4-mini",
     ),
 ]
 
@@ -137,11 +145,27 @@ def synthesize_default_config(
     for p in detection.passthrough:
         model_providers.append(_entry(p, {"passthrough_auth": True}))
 
-    # We intentionally don't mark any provider as `default: true` here:
-    # the validator rejects wildcard models (e.g. `openai/*`) as defaults, and
-    # all our entries are wildcards. Clients should prefix model names (e.g.
-    # `openai/gpt-4o-mini`, `do/router:software-engineering`); the wildcard
-    # matcher routes them to the correct provider.
+    # Promote the first env-keyed provider that ships a `default_model` to a
+    # concrete `default: true` entry. This lets clients send bare (unprefixed)
+    # model names and still route somewhere sensible. Wildcards can't be marked
+    # default (the validator rejects it), so we add a second concrete row.
+    #
+    # When no env keys are present, we leave `default` unset: the user is fully
+    # in pass-through mode and must prefix model names so Plano knows which
+    # upstream to route to.
+    default_picked = next(
+        (p for p in detection.with_keys if p.default_model is not None), None
+    )
+    if default_picked is not None:
+        model_providers.append(
+            {
+                "name": f"{default_picked.name}/{default_picked.default_model}",
+                "model": f"{default_picked.name}/{default_picked.default_model}",
+                "base_url": default_picked.base_url,
+                "access_key": f"${default_picked.env_var}",
+                "default": True,
+            }
+        )
 
     return {
         "version": "v0.4.0",

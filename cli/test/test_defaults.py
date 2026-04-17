@@ -23,6 +23,8 @@ def test_zero_env_vars_produces_pure_passthrough():
     for provider in cfg["model_providers"]:
         assert provider.get("passthrough_auth") is True
         assert "access_key" not in provider
+        # No provider should be marked default in pure pass-through mode.
+        assert provider.get("default") is not True
     # All known providers should be listed.
     names = {p["name"] for p in cfg["model_providers"]}
     assert "digitalocean" in names
@@ -40,6 +42,31 @@ def test_env_keys_promote_providers_to_env_keyed():
     assert by_name["digitalocean"].get("access_key") == "$DO_API_KEY"
     # Unset env keys remain pass-through.
     assert by_name["anthropic"].get("passthrough_auth") is True
+
+
+def test_first_env_keyed_provider_becomes_default():
+    cfg = synthesize_default_config(
+        env={"OPENAI_API_KEY": "sk-1", "ANTHROPIC_API_KEY": "a-1"}
+    )
+    defaults = [p for p in cfg["model_providers"] if p.get("default") is True]
+    assert len(defaults) == 1
+    # openai appears first in PROVIDER_DEFAULTS so it wins.
+    assert defaults[0]["model"] == "openai/gpt-4o-mini"
+    assert defaults[0]["access_key"] == "$OPENAI_API_KEY"
+
+
+def test_default_skips_providers_without_default_model():
+    # Groq has no default_model wired up — the next env-keyed provider with one
+    # should be picked instead.
+    cfg = synthesize_default_config(env={"GROQ_API_KEY": "g", "ANTHROPIC_API_KEY": "a"})
+    defaults = [p for p in cfg["model_providers"] if p.get("default") is True]
+    assert len(defaults) == 1
+    assert defaults[0]["model"].startswith("anthropic/")
+
+
+def test_listener_port_is_configurable():
+    cfg = synthesize_default_config(env={}, listener_port=11000)
+    assert cfg["listeners"][0]["port"] == 11000
 
 
 def test_detection_summary_strings():
