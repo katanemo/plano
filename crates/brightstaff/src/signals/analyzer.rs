@@ -940,8 +940,26 @@ pub struct FollowUpSignal {
     pub repair_ratio: f64,
     /// Whether repair ratio is concerning (> 0.3)
     pub is_concerning: bool,
-    /// List of detected repair phrases
+    /// List of detected repair phrases (human-readable)
     pub repair_phrases: Vec<String>,
+    /// Structured per-message repair indicators, one per detection
+    #[serde(default)]
+    pub repair_indicators: Vec<FollowUpIndicator>,
+}
+
+/// Individual repair / follow-up indicator
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowUpIndicator {
+    /// Message index where the repair was detected (relative to the analyzer's
+    /// normalized message slice; absolute indices are attached when projecting
+    /// to `SignalEvent`).
+    pub message_index: usize,
+    /// Relevant text snippet — either the matched lexical pattern or a marker
+    /// string for the semantic-rephrase path.
+    pub snippet: String,
+    /// True when the repair was detected by semantic rephrase of the previous
+    /// user turn rather than a lexical repair pattern.
+    pub similar_to_prev_user_turn: bool,
 }
 
 /// User frustration indicators
@@ -1102,6 +1120,13 @@ pub enum EscalationType {
 pub trait SignalAnalyzer {
     /// Analyze a conversation and generate a complete signal report
     fn analyze(&self, messages: &[Message]) -> SignalReport;
+
+    /// Analyze a conversation and return both the aggregate report and the
+    /// underlying event stream. The default implementation returns an empty
+    /// event list; implementors that support events should override.
+    fn analyze_with_events(&self, messages: &[Message]) -> (SignalReport, Vec<super::SignalEvent>) {
+        (self.analyze(messages), Vec::new())
+    }
 }
 
 /// Text-based implementation of signal analyzer that computes all signals from a message array
@@ -1248,6 +1273,7 @@ impl TextBasedSignalAnalyzer {
     ) -> FollowUpSignal {
         let mut repair_count = 0;
         let mut repair_phrases = Vec::new();
+        let mut repair_indicators = Vec::new();
         let mut user_turn_count = 0;
 
         for (i, role, norm_msg) in normalized_messages {
@@ -1269,6 +1295,11 @@ impl TextBasedSignalAnalyzer {
                 ) {
                     repair_count += 1;
                     repair_phrases.push(format!("Turn {}: '{}'", i + 1, pattern.raw));
+                    repair_indicators.push(FollowUpIndicator {
+                        message_index: *i,
+                        snippet: pattern.raw.clone(),
+                        similar_to_prev_user_turn: false,
+                    });
                     found_in_turn = true;
                     break;
                 }
@@ -1284,6 +1315,11 @@ impl TextBasedSignalAnalyzer {
                             repair_count += 1;
                             repair_phrases
                                 .push(format!("Turn {}: Similar rephrase detected", i + 1));
+                            repair_indicators.push(FollowUpIndicator {
+                                message_index: *i,
+                                snippet: "Similar rephrase detected".to_string(),
+                                similar_to_prev_user_turn: true,
+                            });
                         }
                         break;
                     }
@@ -1304,6 +1340,7 @@ impl TextBasedSignalAnalyzer {
             repair_ratio,
             is_concerning,
             repair_phrases,
+            repair_indicators,
         }
     }
 
@@ -1865,6 +1902,10 @@ impl TextBasedSignalAnalyzer {
 
 impl SignalAnalyzer for TextBasedSignalAnalyzer {
     fn analyze(&self, messages: &[Message]) -> SignalReport {
+        self.analyze_with_events(messages).0
+    }
+
+    fn analyze_with_events(&self, messages: &[Message]) -> (SignalReport, Vec<super::SignalEvent>) {
         // Limit the number of messages to process (take most recent messages)
         let messages_to_process = if messages.len() > self.max_messages {
             &messages[messages.len() - self.max_messages..]
@@ -1914,7 +1955,7 @@ impl SignalAnalyzer for TextBasedSignalAnalyzer {
             &overall_quality,
         );
 
-        SignalReport {
+        let report = SignalReport {
             turn_count,
             follow_up,
             frustration,
@@ -1923,7 +1964,88 @@ impl SignalAnalyzer for TextBasedSignalAnalyzer {
             escalation,
             overall_quality,
             summary,
+        };
+
+        // Detector indicator indices are relative to the (possibly truncated)
+        // slice. Project them back to absolute indices in the original input
+        // so event consumers can reference the original conversation.
+        let abs_offset = messages.len().saturating_sub(self.max_messages);
+        let events = Self::project_events(&report, abs_offset);
+
+        (report, events)
+    }
+}
+
+impl TextBasedSignalAnalyzer {
+    /// Project the indicator collections inside a `SignalReport` into a
+    /// flat event stream. One event per detected indicator.
+    fn project_events(report: &SignalReport, abs_offset: usize) -> Vec<super::SignalEvent> {
+        use super::{SignalEvent, SignalEvidence, SignalSubtype};
+
+        let mut events: Vec<SignalEvent> = Vec::new();
+
+        for indicator in &report.follow_up.repair_indicators {
+            events.push(SignalEvent::new(
+                SignalSubtype::Repair,
+                indicator.message_index + abs_offset,
+                SignalEvidence::Repair {
+                    snippet: indicator.snippet.clone(),
+                    similar_to_prev_user_turn: indicator.similar_to_prev_user_turn,
+                },
+            ));
         }
+
+        for ind in &report.frustration.indicators {
+            events.push(SignalEvent::new(
+                SignalSubtype::Frustration,
+                ind.message_index + abs_offset,
+                SignalEvidence::Frustration {
+                    indicator_type: ind.indicator_type.clone(),
+                    snippet: ind.snippet.clone(),
+                },
+            ));
+        }
+
+        for rep in &report.repetition.repetitions {
+            // `message_indices` always has exactly two entries: the earlier
+            // and later assistant messages in the detected pair.
+            if let [first, second] = rep.message_indices.as_slice() {
+                events.push(SignalEvent::new(
+                    SignalSubtype::Repetition,
+                    first + abs_offset,
+                    SignalEvidence::Repetition {
+                        other_message_idx: second + abs_offset,
+                        similarity: rep.similarity,
+                        repetition_type: rep.repetition_type.clone(),
+                    },
+                ));
+            }
+        }
+
+        for ind in &report.positive_feedback.indicators {
+            events.push(SignalEvent::new(
+                SignalSubtype::PositiveFeedback,
+                ind.message_index + abs_offset,
+                SignalEvidence::PositiveFeedback {
+                    indicator_type: ind.indicator_type.clone(),
+                    snippet: ind.snippet.clone(),
+                },
+            ));
+        }
+
+        for req in &report.escalation.requests {
+            events.push(SignalEvent::new(
+                SignalSubtype::Escalation,
+                req.message_index + abs_offset,
+                SignalEvidence::Escalation {
+                    escalation_type: req.escalation_type.clone(),
+                    snippet: req.snippet.clone(),
+                },
+            ));
+        }
+
+        events.sort_by_key(|e| e.source_message_idx);
+        events
     }
 }
 
@@ -3186,5 +3308,386 @@ mod tests {
 
         // Validate overall quality
         assert_eq!(report.overall_quality, InteractionQuality::Severe, "Should be classified as Severe due to escalation + excessive frustration + looping + high repair ratio");
+    }
+
+    // ========================================================================
+    // Event-level tests (Phase 1 — SignalEvent stream)
+    // ========================================================================
+
+    use crate::signals::{SignalEvidence, SignalSubtype, SignalType};
+    use std::collections::HashSet;
+
+    fn sample_frustrated_conversation() -> Vec<Message> {
+        vec![
+            create_message(Role::User, "I can't log into my account"),
+            create_message(
+                Role::Assistant,
+                "Have you tried resetting your password from the login page?",
+            ),
+            create_message(
+                Role::User,
+                "THAT DOESN'T WORK I ALREADY TRIED THAT!!! This is ridiculous!",
+            ),
+            create_message(
+                Role::Assistant,
+                "I apologize for the frustration. Let me escalate this.",
+            ),
+            create_message(Role::User, "Can I speak to a human agent please?"),
+        ]
+    }
+
+    #[test]
+    fn empty_conversation_yields_no_events() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let (_report, events) = analyzer.analyze_with_events(&[]);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn events_have_unique_ids() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let (_report, events) = analyzer.analyze_with_events(&messages);
+        assert!(!events.is_empty(), "sample should produce events");
+
+        let ids: HashSet<_> = events.iter().map(|e| e.event_id).collect();
+        assert_eq!(
+            ids.len(),
+            events.len(),
+            "every SignalEvent must have a unique event_id"
+        );
+    }
+
+    #[test]
+    fn event_source_idx_within_message_bounds() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let (_report, events) = analyzer.analyze_with_events(&messages);
+
+        for event in &events {
+            assert!(
+                event.source_message_idx < messages.len(),
+                "event source_message_idx {} out of bounds for conversation of len {} (subtype={:?})",
+                event.source_message_idx,
+                messages.len(),
+                event.signal_subtype,
+            );
+        }
+    }
+
+    #[test]
+    fn event_role_matches_subtype() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let (_report, events) = analyzer.analyze_with_events(&messages);
+
+        for event in &events {
+            let role = &messages[event.source_message_idx].role;
+            match event.signal_subtype {
+                SignalSubtype::Repair
+                | SignalSubtype::Frustration
+                | SignalSubtype::PositiveFeedback
+                | SignalSubtype::Escalation => {
+                    assert_eq!(
+                        *role,
+                        Role::User,
+                        "subtype {:?} must reference a User message",
+                        event.signal_subtype
+                    );
+                }
+                SignalSubtype::Repetition => {
+                    assert_eq!(
+                        *role,
+                        Role::Assistant,
+                        "Repetition must reference an Assistant message"
+                    );
+                }
+                SignalSubtype::ToolFailure
+                | SignalSubtype::ExecutionLoop
+                | SignalSubtype::Exhaustion => {
+                    panic!(
+                        "Phase 2 subtype {:?} should not be emitted in Phase 1",
+                        event.signal_subtype
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn event_evidence_variant_matches_subtype() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let (_report, events) = analyzer.analyze_with_events(&messages);
+
+        for event in &events {
+            let ok = matches!(
+                (&event.signal_subtype, &event.evidence),
+                (SignalSubtype::Repair, SignalEvidence::Repair { .. })
+                    | (
+                        SignalSubtype::Frustration,
+                        SignalEvidence::Frustration { .. }
+                    )
+                    | (SignalSubtype::Repetition, SignalEvidence::Repetition { .. })
+                    | (
+                        SignalSubtype::PositiveFeedback,
+                        SignalEvidence::PositiveFeedback { .. }
+                    )
+                    | (SignalSubtype::Escalation, SignalEvidence::Escalation { .. })
+            );
+            assert!(
+                ok,
+                "evidence variant does not match subtype {:?}: {:?}",
+                event.signal_subtype, event.evidence
+            );
+        }
+    }
+
+    #[test]
+    fn event_counts_fold_to_report_aggregates() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let (report, events) = analyzer.analyze_with_events(&messages);
+
+        let count = |subtype: SignalSubtype| -> usize {
+            events
+                .iter()
+                .filter(|e| e.signal_subtype == subtype)
+                .count()
+        };
+
+        assert_eq!(count(SignalSubtype::Repair), report.follow_up.repair_count);
+        assert_eq!(
+            count(SignalSubtype::Frustration),
+            report.frustration.frustration_count
+        );
+        assert_eq!(
+            count(SignalSubtype::Repetition),
+            report.repetition.repetition_count
+        );
+        assert_eq!(
+            count(SignalSubtype::PositiveFeedback),
+            report.positive_feedback.positive_count
+        );
+        assert_eq!(
+            count(SignalSubtype::Escalation),
+            report.escalation.escalation_count
+        );
+    }
+
+    #[test]
+    fn events_are_sorted_by_source_message_idx() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let (_report, events) = analyzer.analyze_with_events(&messages);
+
+        let mut prev = 0usize;
+        for e in &events {
+            assert!(
+                e.source_message_idx >= prev,
+                "events must be sorted by source_message_idx"
+            );
+            prev = e.source_message_idx;
+        }
+    }
+
+    #[test]
+    fn events_all_map_to_interaction_layer_in_phase_1() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let (_report, events) = analyzer.analyze_with_events(&messages);
+
+        for event in &events {
+            assert_eq!(
+                event.signal_type,
+                SignalType::Interaction,
+                "Phase 1 should only emit Interaction-layer events; got {:?}",
+                event.signal_type
+            );
+            assert_eq!(event.signal_subtype.layer(), event.signal_type);
+        }
+    }
+
+    /// Structural snapshot gate: locks down the JSON shape (field names,
+    /// ordering, nesting) of `SignalReport` against the frustrated fixture.
+    /// Content values are asserted loosely — the goal is to catch silent
+    /// schema changes from future refactors, not to pin every count.
+    #[test]
+    fn signal_report_json_schema_is_stable() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let report = analyzer.analyze(&messages);
+        let value = serde_json::to_value(&report).expect("serialize report");
+
+        // Top-level keys must be exactly these, in any order.
+        let top_level: std::collections::BTreeSet<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.as_str())
+            .collect();
+        let expected_top: std::collections::BTreeSet<&str> = [
+            "turn_count",
+            "follow_up",
+            "frustration",
+            "repetition",
+            "positive_feedback",
+            "escalation",
+            "overall_quality",
+            "summary",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            top_level, expected_top,
+            "SignalReport top-level schema drifted"
+        );
+
+        // Per-signal keys — these are the public contract for aggregators.
+        let keys = |path: &str| -> std::collections::BTreeSet<String> {
+            value
+                .pointer(path)
+                .and_then(|v| v.as_object())
+                .map(|o| o.keys().cloned().collect())
+                .unwrap_or_default()
+        };
+
+        assert_eq!(
+            keys("/turn_count"),
+            [
+                "total_turns",
+                "user_turns",
+                "assistant_turns",
+                "is_concerning",
+                "is_excessive",
+                "efficiency_score",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+        );
+        assert_eq!(
+            keys("/follow_up"),
+            [
+                "repair_count",
+                "repair_ratio",
+                "is_concerning",
+                "repair_phrases",
+                "repair_indicators",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+            "FollowUpSignal schema drifted (repair_indicators must be present)"
+        );
+        assert_eq!(
+            keys("/frustration"),
+            [
+                "frustration_count",
+                "has_frustration",
+                "severity",
+                "indicators"
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+        );
+        assert_eq!(
+            keys("/repetition"),
+            ["repetition_count", "has_looping", "severity", "repetitions"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        );
+        assert_eq!(
+            keys("/positive_feedback"),
+            [
+                "positive_count",
+                "has_positive_feedback",
+                "confidence",
+                "indicators"
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+        );
+        assert_eq!(
+            keys("/escalation"),
+            ["escalation_requested", "escalation_count", "requests"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        );
+    }
+
+    /// Pins the aggregate numbers for the canonical frustrated fixture so a
+    /// future refactor catches any value drift in the fold/aggregate path.
+    #[test]
+    fn signal_report_aggregates_are_stable_for_frustrated_fixture() {
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = sample_frustrated_conversation();
+        let report = analyzer.analyze(&messages);
+
+        assert_eq!(report.turn_count.user_turns, 3);
+        assert_eq!(report.turn_count.assistant_turns, 2);
+        assert!(report.frustration.has_frustration);
+        assert!(report.frustration.frustration_count >= 2);
+        assert!(report.escalation.escalation_requested);
+        assert_eq!(report.escalation.escalation_count, 1);
+        assert!(
+            matches!(
+                report.overall_quality,
+                InteractionQuality::Poor | InteractionQuality::Severe
+            ),
+            "frustrated+escalated fixture should be Poor or Severe, got {:?}",
+            report.overall_quality
+        );
+    }
+
+    #[test]
+    fn absolute_indices_survive_message_truncation() {
+        // Use a tight analyzer window so we can exercise the offset path
+        // without building a 100+ message fixture.
+        let analyzer = TextBasedSignalAnalyzer::with_full_settings(5, 0.50, 0.60, 2000, 4, 20);
+
+        // First two messages are filler; the last four contain detectable
+        // frustration and an escalation request. With max_messages=4 the
+        // analyzer will drop the filler and start at original index 2.
+        let messages = vec![
+            create_message(Role::User, "Hi there"),
+            create_message(Role::Assistant, "Hello! How can I help?"),
+            create_message(
+                Role::User,
+                "THIS IS NOT WORKING AT ALL!!! I've tried everything!",
+            ),
+            create_message(Role::Assistant, "I'm sorry to hear that."),
+            create_message(Role::User, "Can I speak to a human agent please?"),
+            create_message(Role::Assistant, "Let me connect you."),
+        ];
+
+        let (_report, events) = analyzer.analyze_with_events(&messages);
+        assert!(!events.is_empty(), "fixture should produce events");
+
+        for event in &events {
+            // Every event must point at one of the last 4 messages
+            // (indices 2..=5), proving the abs_offset was applied.
+            assert!(
+                event.source_message_idx >= 2 && event.source_message_idx < messages.len(),
+                "event idx {} not in expected absolute range [2,{}) for subtype {:?}",
+                event.source_message_idx,
+                messages.len(),
+                event.signal_subtype
+            );
+            // And it must align with the correct role.
+            let role = &messages[event.source_message_idx].role;
+            match event.signal_subtype {
+                SignalSubtype::Repetition => assert_eq!(*role, Role::Assistant),
+                SignalSubtype::Repair
+                | SignalSubtype::Frustration
+                | SignalSubtype::PositiveFeedback
+                | SignalSubtype::Escalation => assert_eq!(*role, Role::User),
+                _ => panic!("unexpected subtype in Phase 1"),
+            }
+        }
     }
 }

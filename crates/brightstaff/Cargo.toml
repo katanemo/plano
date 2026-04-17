@@ -7,7 +7,7 @@ edition = "2021"
 async-openai = "0.30.1"
 async-trait = "0.1"
 bytes = "1.10.1"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 common = { version = "0.1.0", path = "../common" }
 eventsource-client = "0.15.0"
 eventsource-stream = "0.2.3"
@@ -42,6 +42,7 @@ time = { version = "0.3", features = ["formatting", "macros"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ulid = { version = "1.1", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 [dev-dependencies]

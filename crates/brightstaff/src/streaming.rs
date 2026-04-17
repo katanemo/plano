@@ -127,7 +127,7 @@ impl StreamProcessor for ObservableStreamProcessor {
         // Analyze signals if messages are available and record as span attributes
         if let Some(ref messages) = self.messages {
             let analyzer: Box<dyn SignalAnalyzer> = Box::new(TextBasedSignalAnalyzer::new());
-            let report = analyzer.analyze(messages);
+            let (report, events) = analyzer.analyze_with_events(messages);
 
             // Get the current OTel span to set signal attributes
             let span = tracing::Span::current();
@@ -197,6 +197,14 @@ impl StreamProcessor for ObservableStreamProcessor {
 
             if should_flag {
                 otel_span.update_name(format!("{} {}", self.operation_name, FLAG_MARKER));
+            }
+
+            // Emit one OTel span event per detected SignalEvent, providing the
+            // drill-down path from aggregate attributes to the triggering
+            // message. Existing aggregate attributes above remain unchanged so
+            // dashboards keep working.
+            for event in &events {
+                otel_span.add_event(event.otel_event_name(), event.to_otel_attributes());
             }
         }
 

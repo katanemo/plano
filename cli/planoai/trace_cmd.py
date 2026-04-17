@@ -428,6 +428,27 @@ def _anyvalue_to_python(value_obj: Any) -> Any:
     return None
 
 
+def _kv_to_attr_dict(kv: Any) -> dict[str, Any] | None:
+    """Convert a protobuf KeyValue into the {"key", "value"} dict shape used
+    internally. Returns None if the value type is unsupported."""
+    py_val = _anyvalue_to_python(kv.value)
+    if py_val is None:
+        return None
+    value_dict: dict[str, Any] = {}
+    if isinstance(py_val, bool):
+        # bool check must come before int, since bool is a subclass of int.
+        value_dict["boolValue"] = py_val
+    elif isinstance(py_val, str):
+        value_dict["stringValue"] = py_val
+    elif isinstance(py_val, int):
+        value_dict["intValue"] = str(py_val)
+    elif isinstance(py_val, float):
+        value_dict["doubleValue"] = py_val
+    else:
+        return None
+    return {"key": kv.key, "value": value_dict}
+
+
 def _proto_span_to_dict(span: Any, service_name: str) -> dict[str, Any]:
     """Convert a protobuf Span message to the dict format used internally."""
     span_dict: dict[str, Any] = {
@@ -439,20 +460,29 @@ def _proto_span_to_dict(span: Any, service_name: str) -> dict[str, Any]:
         "endTimeUnixNano": str(span.end_time_unix_nano),
         "service": service_name,
         "attributes": [],
+        "events": [],
     }
     for kv in span.attributes:
-        py_val = _anyvalue_to_python(kv.value)
-        if py_val is not None:
-            value_dict: dict[str, Any] = {}
-            if isinstance(py_val, str):
-                value_dict["stringValue"] = py_val
-            elif isinstance(py_val, bool):
-                value_dict["boolValue"] = py_val
-            elif isinstance(py_val, int):
-                value_dict["intValue"] = str(py_val)
-            elif isinstance(py_val, float):
-                value_dict["doubleValue"] = py_val
-            span_dict["attributes"].append({"key": kv.key, "value": value_dict})
+        attr = _kv_to_attr_dict(kv)
+        if attr is not None:
+            span_dict["attributes"].append(attr)
+
+    # Preserve span events (name, timestamp, attributes). OTel span events are
+    # the drill-down channel for granular signals that aggregate span
+    # attributes summarize. Dropping them here would make every
+    # per-detection `SignalEvent` emitted by brightstaff invisible to
+    # `planoai trace`.
+    for event in span.events:
+        event_dict: dict[str, Any] = {
+            "name": event.name,
+            "timeUnixNano": str(event.time_unix_nano),
+            "attributes": [],
+        }
+        for kv in event.attributes:
+            attr = _kv_to_attr_dict(kv)
+            if attr is not None:
+                event_dict["attributes"].append(attr)
+        span_dict["events"].append(event_dict)
     return span_dict
 
 

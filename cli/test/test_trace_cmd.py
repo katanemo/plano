@@ -75,6 +75,89 @@ class _FakeGrpcServer:
         return None
 
 
+def test_proto_span_to_dict_preserves_span_events():
+    """Span events are the drill-down channel for granular signals. The OTLP
+    store must preserve them so `planoai trace` can surface per-detection
+    SignalEvent payloads alongside aggregate signals.* attributes."""
+    from opentelemetry.proto.common.v1 import common_pb2
+    from opentelemetry.proto.trace.v1 import trace_pb2
+
+    span = trace_pb2.Span(
+        trace_id=bytes.fromhex("0123456789abcdef0123456789abcdef"),
+        span_id=bytes.fromhex("1111111111111111"),
+        parent_span_id=b"",
+        name="POST /v1/chat/completions gpt-4",
+        start_time_unix_nano=1_700_000_000_000_000_000,
+        end_time_unix_nano=1_700_000_000_500_000_000,
+        attributes=[
+            common_pb2.KeyValue(
+                key="signals.quality",
+                value=common_pb2.AnyValue(string_value="Neutral"),
+            ),
+        ],
+        events=[
+            trace_pb2.Span.Event(
+                time_unix_nano=1_700_000_000_100_000_000,
+                name="signal.interaction.frustration",
+                attributes=[
+                    common_pb2.KeyValue(
+                        key="signal.event_id",
+                        value=common_pb2.AnyValue(
+                            string_value="01HF4ZABCDEF0123456789ABCD"
+                        ),
+                    ),
+                    common_pb2.KeyValue(
+                        key="signal.source_message_idx",
+                        value=common_pb2.AnyValue(int_value=3),
+                    ),
+                    common_pb2.KeyValue(
+                        key="signal.evidence.snippet",
+                        value=common_pb2.AnyValue(string_value="WHY"),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    span_dict = trace_cmd._proto_span_to_dict(span, "plano(llm)")
+
+    assert span_dict["name"] == "POST /v1/chat/completions gpt-4"
+    assert span_dict["attributes"] == [
+        {"key": "signals.quality", "value": {"stringValue": "Neutral"}}
+    ]
+
+    assert "events" in span_dict, "span events must be preserved"
+    assert len(span_dict["events"]) == 1
+    event = span_dict["events"][0]
+    assert event["name"] == "signal.interaction.frustration"
+    assert event["timeUnixNano"] == "1700000000100000000"
+
+    event_attrs = {a["key"]: a["value"] for a in event["attributes"]}
+    assert event_attrs["signal.event_id"] == {
+        "stringValue": "01HF4ZABCDEF0123456789ABCD"
+    }
+    assert event_attrs["signal.source_message_idx"] == {"intValue": "3"}
+    assert event_attrs["signal.evidence.snippet"] == {"stringValue": "WHY"}
+
+
+def test_proto_span_to_dict_no_events_yields_empty_list():
+    """Spans without events should still produce an `events: []` key so
+    downstream code can treat it as always present."""
+    from opentelemetry.proto.trace.v1 import trace_pb2
+
+    span = trace_pb2.Span(
+        trace_id=bytes.fromhex("0123456789abcdef0123456789abcdef"),
+        span_id=bytes.fromhex("2222222222222222"),
+        parent_span_id=b"",
+        name="POST /v1/chat/completions",
+        start_time_unix_nano=1_700_000_000_000_000_000,
+        end_time_unix_nano=1_700_000_000_100_000_000,
+    )
+
+    span_dict = trace_cmd._proto_span_to_dict(span, "plano(llm)")
+    assert span_dict["events"] == []
+
+
 def test_start_trace_server_raises_bind_error(monkeypatch):
     monkeypatch.setattr(
         trace_cmd.grpc, "server", lambda *_args, **_kwargs: _FakeGrpcServer()
