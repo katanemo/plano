@@ -328,7 +328,53 @@ providers:
   - xiaomi/mimo-v2-flash
   - xiaomi/mimo-v2-omni
   - xiaomi/mimo-v2-pro
+  do:
+  - do/openai-gpt-4.1
+  - do/openai-gpt-4o
+  - do/openai-gpt-4o-mini
+  - do/openai-gpt-5
+  - do/openai-gpt-5-mini
+  - do/openai-gpt-5-nano
+  - do/openai-gpt-5.1-codex-max
+  - do/openai-gpt-5.2
+  - do/openai-gpt-5.2-pro
+  - do/openai-gpt-5.3-codex
+  - do/openai-gpt-5.4
+  - do/openai-gpt-5.4-mini
+  - do/openai-gpt-5.4-nano
+  - do/openai-gpt-5.4-pro
+  - do/openai-gpt-oss-120b
+  - do/openai-gpt-oss-20b
+  - do/openai-o1
+  - do/openai-o3
+  - do/openai-o3-mini
+  - do/anthropic-claude-4.1-opus
+  - do/anthropic-claude-4.5-sonnet
+  - do/anthropic-claude-4.6-sonnet
+  - do/anthropic-claude-haiku-4.5
+  - do/anthropic-claude-opus-4
+  - do/anthropic-claude-opus-4.5
+  - do/anthropic-claude-opus-4.6
+  - do/anthropic-claude-opus-4.7
+  - do/anthropic-claude-sonnet-4
+  - do/alibaba-qwen3-32b
+  - do/arcee-trinity-large-thinking
+  - do/deepseek-3.2
+  - do/deepseek-r1-distill-llama-70b
+  - do/gemma-4-31B-it
+  - do/glm-5
+  - do/kimi-k2.5
+  - do/llama3.3-70b-instruct
+  - do/minimax-m2.5
+  - do/nvidia-nemotron-3-super-120b
+  - do/qwen3-coder-flash
+  - do/qwen3.5-397b-a17b
+  - do/all-mini-lm-l6-v2
+  - do/gte-large-en-v1.5
+  - do/multi-qa-mpnet-base-dot-v1
+  - do/qwen3-embedding-0.6b
+  - do/router:software-engineering
 metadata:
-  total_providers: 11
-  total_models: 316
-  last_updated: 2026-04-03T23:14:46.956158+00:00
+  total_providers: 12
+  total_models: 361
+  last_updated: 2026-04-16T00:00:00.000000+00:00
