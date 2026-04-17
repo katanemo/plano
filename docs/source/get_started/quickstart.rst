@@ -340,6 +340,42 @@ And to get the list of supported currencies:
    "Here is a list of the currencies that are supported for conversion from USD, along with their symbols:\n\n1. AUD - Australian Dollar\n2. BGN - Bulgarian Lev\n3. BRL - Brazilian Real\n4. CAD - Canadian Dollar\n5. CHF - Swiss Franc\n6. CNY - Chinese Renminbi Yuan\n7. CZK - Czech Koruna\n8. DKK - Danish Krone\n9. EUR - Euro\n10. GBP - British Pound\n11. HKD - Hong Kong Dollar\n12. HUF - Hungarian Forint\n13. IDR - Indonesian Rupiah\n14. ILS - Israeli New Sheqel\n15. INR - Indian Rupee\n16. ISK - Icelandic Króna\n17. JPY - Japanese Yen\n18. KRW - South Korean Won\n19. MXN - Mexican Peso\n20. MYR - Malaysian Ringgit\n21. NOK - Norwegian Krone\n22. NZD - New Zealand Dollar\n23. PHP - Philippine Peso\n24. PLN - Polish Złoty\n25. RON - Romanian Leu\n26. SEK - Swedish Krona\n27. SGD - Singapore Dollar\n28. THB - Thai Baht\n29. TRY - Turkish Lira\n30. USD - United States Dollar\n31. ZAR - South African Rand\n\nIf you want to convert USD to any of these currencies, you can select the one you are interested in."
 
 
+Observability Console
+---------------------
+
+Run ``planoai obs`` in a second terminal for a live, in-memory view of LLM traffic: per-request tokens, cached/cache-creation/reasoning tokens, TTFT, latency, cost (when DO Gradient pricing is available), session grouping, and route distribution.
+
+.. code-block:: console
+
+   $ planoai obs
+   # In another terminal, start the proxy — with no config, planoai synthesizes
+   # a pass-through config for all known providers and auto-wires OTel export
+   # to localhost:4317 so the console receives spans automatically.
+   $ planoai up
+
+With no API keys set, every provider runs in pass-through mode — supply the ``Authorization`` header yourself on each request. For example, using DigitalOcean Gradient:
+
+.. code-block:: console
+
+   $ curl localhost:12000/v1/chat/completions \
+       -H "Content-Type: application/json" \
+       -H "Authorization: Bearer $DO_API_KEY" \
+       -d '{"model":"do/router:software-engineering",
+            "messages":[{"role":"user","content":"write code to print prime numbers in python"}],
+            "stream":false}'
+
+When you do export ``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY`` / ``DO_API_KEY`` / etc. before ``planoai up``, Plano picks them up automatically and clients no longer need to send ``Authorization``.
+
+If you already use your own ``plano_config.yaml``, add this block so spans flow to the console:
+
+.. code-block:: yaml
+
+   tracing:
+     random_sampling: 100
+     opentracing_grpc_endpoint: http://localhost:4317
+
+Press ``Ctrl-C`` in the obs terminal to exit. Data lives in memory only — nothing is persisted to disk.
+
 Next Steps
 ==========
 

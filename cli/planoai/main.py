@@ -37,6 +37,7 @@ from planoai.core import (
 )
 from planoai.init_cmd import init as init_cmd
 from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
+from planoai.obs_cmd import obs as obs_cmd
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
@@ -714,6 +715,7 @@ main.add_command(cli_agent)
 main.add_command(generate_prompt_targets)
 main.add_command(init_cmd, name="init")
 main.add_command(trace_cmd, name="trace")
+main.add_command(obs_cmd, name="obs")
 
 if __name__ == "__main__":
     main()

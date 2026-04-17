@@ -435,6 +435,12 @@ impl TokenUsage for MessagesResponse {
     fn total_tokens(&self) -> usize {
         (self.usage.input_tokens + self.usage.output_tokens) as usize
     }
+    fn cached_input_tokens(&self) -> Option<usize> {
+        self.usage.cache_read_input_tokens.map(|t| t as usize)
+    }
+    fn cache_creation_tokens(&self) -> Option<usize> {
+        self.usage.cache_creation_input_tokens.map(|t| t as usize)
+    }
 }
 
 impl ProviderResponse for MessagesResponse {

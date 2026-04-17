@@ -80,6 +80,18 @@ pub mod llm {
     /// Total tokens used (prompt + completion)
     pub const TOTAL_TOKENS: &str = "llm.usage.total_tokens";
 
+    /// Tokens served from a prompt cache read
+    /// (OpenAI `prompt_tokens_details.cached_tokens`, Anthropic `cache_read_input_tokens`,
+    /// Google `cached_content_token_count`)
+    pub const CACHED_INPUT_TOKENS: &str = "llm.usage.cached_input_tokens";
+
+    /// Tokens used to write a prompt cache entry (Anthropic `cache_creation_input_tokens`)
+    pub const CACHE_CREATION_TOKENS: &str = "llm.usage.cache_creation_tokens";
+
+    /// Reasoning tokens for reasoning models
+    /// (OpenAI `completion_tokens_details.reasoning_tokens`, Google `thoughts_token_count`)
+    pub const REASONING_TOKENS: &str = "llm.usage.reasoning_tokens";
+
     /// Temperature parameter used
     pub const TEMPERATURE: &str = "llm.temperature";
 
@@ -117,6 +129,22 @@ pub mod routing {
 
     /// Reason for route selection
     pub const SELECTION_REASON: &str = "routing.selection_reason";
+}
+
+// =============================================================================
+// Span Attributes - Plano-specific
+// =============================================================================
+
+/// Attributes specific to Plano (session affinity, routing decisions).
+pub mod plano {
+    /// Session identifier propagated via the `x-model-affinity` header.
+    /// Absent when the client did not send the header.
+    pub const SESSION_ID: &str = "plano.session_id";
+
+    /// Matched route name from routing (e.g. "code", "summarization",
+    /// "software-engineering"). Absent when the client routed directly
+    /// to a concrete model.
+    pub const ROUTE_NAME: &str = "plano.route.name";
 }
 
 // =============================================================================

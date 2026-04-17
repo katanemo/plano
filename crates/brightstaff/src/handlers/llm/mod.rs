@@ -33,7 +33,8 @@ use crate::streaming::{
     ObservableStreamProcessor, StreamProcessor,
 };
 use crate::tracing::{
-    collect_custom_trace_attributes, llm as tracing_llm, operation_component, set_service_name,
+    collect_custom_trace_attributes, llm as tracing_llm, operation_component,
+    plano as tracing_plano, set_service_name,
 };
 use model_selection::router_chat_get_upstream_model;
 
@@ -102,15 +103,36 @@ async fn llm_chat_inner(
         .and_then(|hdr| request_headers.get(hdr))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let pinned_model: Option<String> = if let Some(ref sid) = session_id {
+    let cached_route = if let Some(ref sid) = session_id {
         state
             .orchestrator_service
             .get_cached_route(sid, tenant_id.as_deref())
             .await
-            .map(|c| c.model_name)
     } else {
         None
     };
+    let (pinned_model, pinned_route_name): (Option<String>, Option<String>) = match cached_route {
+        Some(c) => (Some(c.model_name), c.route_name),
+        None => (None, None),
+    };
+
+    // Record session id on the LLM span for the observability console.
+    if let Some(ref sid) = session_id {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::SESSION_ID,
+                sid.clone(),
+            ));
+        });
+    }
+    if let Some(ref route_name) = pinned_route_name {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::ROUTE_NAME,
+                route_name.clone(),
+            ));
+        });
+    }
 
     let full_qualified_llm_provider_url = format!("{}{}", state.llm_provider_url, request_path);
 
@@ -310,6 +332,18 @@ async fn llm_chat_inner(
         } else {
             alias_resolved_model.clone()
         };
+
+        // Record route name on the LLM span (only when the orchestrator produced one).
+        if let Some(ref rn) = route_name {
+            if !rn.is_empty() && rn != "none" {
+                get_active_span(|span| {
+                    span.set_attribute(opentelemetry::KeyValue::new(
+                        tracing_plano::ROUTE_NAME,
+                        rn.clone(),
+                    ));
+                });
+            }
+        }
 
         if let Some(ref sid) = session_id {
             state
@@ -671,6 +705,36 @@ async fn send_upstream(
     // Propagate upstream headers and status
     let response_headers = llm_response.headers().clone();
     let upstream_status = llm_response.status();
+
+    // Upstream routers (e.g. DigitalOcean Gradient) may return an
+    // `x-model-router-selected-route` header indicating which task-level
+    // route the request was classified into (e.g. "Code Generation"). Surface
+    // it as `plano.route.name` so the obs console's Route hit % panel can
+    // show the breakdown even when Plano's own orchestrator wasn't in the
+    // routing path. Any value from Plano's orchestrator already set earlier
+    // takes precedence — this only fires when the span doesn't already have
+    // a route name.
+    if let Some(upstream_route) = response_headers
+        .get("x-model-router-selected-route")
+        .and_then(|v| v.to_str().ok())
+    {
+        if !upstream_route.is_empty() {
+            get_active_span(|span| {
+                span.set_attribute(opentelemetry::KeyValue::new(
+                    crate::tracing::plano::ROUTE_NAME,
+                    upstream_route.to_string(),
+                ));
+            });
+        }
+    }
+    // Record the upstream HTTP status on the span for the obs console.
+    get_active_span(|span| {
+        span.set_attribute(opentelemetry::KeyValue::new(
+            crate::tracing::http::STATUS_CODE,
+            upstream_status.as_u16() as i64,
+        ));
+    });
+
     let mut response = Response::builder().status(upstream_status);
     if let Some(headers) = response.headers_mut() {
         for (name, value) in response_headers.iter() {
