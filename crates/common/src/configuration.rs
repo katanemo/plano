@@ -391,6 +391,8 @@ pub enum LlmProviderType {
     AmazonBedrock,
     #[serde(rename = "plano")]
     Plano,
+    #[serde(rename = "digitalocean")]
+    DigitalOcean,
 }
 
 impl Display for LlmProviderType {
@@ -412,6 +414,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Qwen => write!(f, "qwen"),
             LlmProviderType::AmazonBedrock => write!(f, "amazon_bedrock"),
             LlmProviderType::Plano => write!(f, "plano"),
+            LlmProviderType::DigitalOcean => write!(f, "digitalocean"),
         }
     }
 }

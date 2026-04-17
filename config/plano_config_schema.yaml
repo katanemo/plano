@@ -190,6 +190,7 @@ properties:
             - openai
             - xiaomi
             - gemini
+            - digitalocean
         routing_preferences:
           type: array
           items:
@@ -238,6 +239,7 @@ properties:
             - openai
             - xiaomi
             - gemini
+            - digitalocean
         routing_preferences:
           type: array
           items:
