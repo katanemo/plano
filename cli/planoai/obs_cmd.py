@@ -63,7 +63,7 @@ def obs(port: int, host: str, capacity: int, refresh_ms: int) -> None:
     else:
         console.print(
             " [yellow]no pricing loaded[/] — "
-            "[dim]set DIGITALOCEAN_TOKEN (DO Personal Access Token) to enable cost[/]"
+            "[dim]cost column will be blank (DO catalog unreachable)[/]"
         )
 
     store = LLMCallStore(capacity=capacity)

@@ -94,25 +94,9 @@ class LLMCallStore:
             return len(self._calls)
 
 
-# Attribute keys mirror crates/brightstaff/src/tracing/constants.rs.
-_LLM_MODEL = "llm.model"
-_LLM_PROVIDER = "llm.provider"
-_LLM_IS_STREAMING = "llm.is_streaming"
-_LLM_DURATION_MS = "llm.duration_ms"
-_LLM_TTFT_MS = "llm.time_to_first_token"
-_LLM_PROMPT_TOKENS = "llm.usage.prompt_tokens"
-_LLM_COMPLETION_TOKENS = "llm.usage.completion_tokens"
-_LLM_TOTAL_TOKENS = "llm.usage.total_tokens"
-_LLM_CACHED_INPUT_TOKENS = "llm.usage.cached_input_tokens"
-_LLM_CACHE_CREATION_TOKENS = "llm.usage.cache_creation_tokens"
-_LLM_REASONING_TOKENS = "llm.usage.reasoning_tokens"
-_HTTP_STATUS = "http.status_code"
-_MODEL_REQUESTED = "model.requested"
-_PLANO_SESSION_ID = "plano.session_id"
-_PLANO_ROUTE_NAME = "plano.route.name"
-_ROUTING_STRATEGY = "routing.strategy"
-_ROUTING_SELECTION_REASON = "routing.selection_reason"
-_REQUEST_ID_KEYS = ("request_id", "http.request_id")
+# Span attribute keys used below are the canonical OTel / Plano keys emitted by
+# brightstaff — see crates/brightstaff/src/tracing/constants.rs for the source
+# of truth.
 
 
 def _anyvalue_to_python(value: Any) -> Any:  # AnyValue from OTLP
@@ -163,7 +147,7 @@ def span_to_llm_call(
     A span is considered an LLM call iff it carries the ``llm.model`` attribute.
     """
     attrs = _attrs_to_dict(span.attributes)
-    model = attrs.get(_LLM_MODEL)
+    model = attrs.get("llm.model")
     if not model:
         return None
 
@@ -171,7 +155,7 @@ def span_to_llm_call(
     request_id = next(
         (
             str(attrs[key])
-            for key in _REQUEST_ID_KEYS
+            for key in ("request_id", "http.request_id")
             if key in attrs and attrs[key] is not None
         ),
         span.span_id.hex() if span.span_id else "",
@@ -187,34 +171,36 @@ def span_to_llm_call(
         request_id=str(request_id),
         timestamp=ts,
         model=str(model),
-        provider=str(attrs[_LLM_PROVIDER]) if _LLM_PROVIDER in attrs else service_name,
+        provider=(
+            str(attrs["llm.provider"]) if "llm.provider" in attrs else service_name
+        ),
         request_model=(
-            str(attrs[_MODEL_REQUESTED]) if _MODEL_REQUESTED in attrs else None
+            str(attrs["model.requested"]) if "model.requested" in attrs else None
         ),
         session_id=(
-            str(attrs[_PLANO_SESSION_ID]) if _PLANO_SESSION_ID in attrs else None
+            str(attrs["plano.session_id"]) if "plano.session_id" in attrs else None
         ),
         route_name=(
-            str(attrs[_PLANO_ROUTE_NAME]) if _PLANO_ROUTE_NAME in attrs else None
+            str(attrs["plano.route.name"]) if "plano.route.name" in attrs else None
         ),
         is_streaming=(
-            bool(attrs[_LLM_IS_STREAMING]) if _LLM_IS_STREAMING in attrs else None
+            bool(attrs["llm.is_streaming"]) if "llm.is_streaming" in attrs else None
         ),
-        status_code=_maybe_int(attrs.get(_HTTP_STATUS)),
-        prompt_tokens=_maybe_int(attrs.get(_LLM_PROMPT_TOKENS)),
-        completion_tokens=_maybe_int(attrs.get(_LLM_COMPLETION_TOKENS)),
-        total_tokens=_maybe_int(attrs.get(_LLM_TOTAL_TOKENS)),
-        cached_input_tokens=_maybe_int(attrs.get(_LLM_CACHED_INPUT_TOKENS)),
-        cache_creation_tokens=_maybe_int(attrs.get(_LLM_CACHE_CREATION_TOKENS)),
-        reasoning_tokens=_maybe_int(attrs.get(_LLM_REASONING_TOKENS)),
-        ttft_ms=_maybe_float(attrs.get(_LLM_TTFT_MS)),
-        duration_ms=_maybe_float(attrs.get(_LLM_DURATION_MS)),
+        status_code=_maybe_int(attrs.get("http.status_code")),
+        prompt_tokens=_maybe_int(attrs.get("llm.usage.prompt_tokens")),
+        completion_tokens=_maybe_int(attrs.get("llm.usage.completion_tokens")),
+        total_tokens=_maybe_int(attrs.get("llm.usage.total_tokens")),
+        cached_input_tokens=_maybe_int(attrs.get("llm.usage.cached_input_tokens")),
+        cache_creation_tokens=_maybe_int(attrs.get("llm.usage.cache_creation_tokens")),
+        reasoning_tokens=_maybe_int(attrs.get("llm.usage.reasoning_tokens")),
+        ttft_ms=_maybe_float(attrs.get("llm.time_to_first_token")),
+        duration_ms=_maybe_float(attrs.get("llm.duration_ms")),
         routing_strategy=(
-            str(attrs[_ROUTING_STRATEGY]) if _ROUTING_STRATEGY in attrs else None
+            str(attrs["routing.strategy"]) if "routing.strategy" in attrs else None
         ),
         routing_reason=(
-            str(attrs[_ROUTING_SELECTION_REASON])
-            if _ROUTING_SELECTION_REASON in attrs
+            str(attrs["routing.selection_reason"])
+            if "routing.selection_reason" in attrs
             else None
         ),
     )
@@ -269,7 +255,7 @@ class ObsCollector:
         if bound == 0:
             raise OSError(
                 f"Failed to bind OTLP listener on {address}: port already in use. "
-                "Stop `planoai trace listen` or pick another port with --port."
+                "Stop tracing via `planoai trace down` or pick another port with --port."
             )
         server.start()
         self._server = server

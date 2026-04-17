@@ -50,40 +50,20 @@ class PricingCatalog:
             return list(self._prices.keys())[:n]
 
     @classmethod
-    def fetch(
-        cls,
-        url: str = DEFAULT_PRICING_URL,
-        api_key: str | None = None,
-    ) -> "PricingCatalog":
+    def fetch(cls, url: str = DEFAULT_PRICING_URL) -> "PricingCatalog":
         """Fetch pricing from DO's catalog endpoint. On failure, returns an
         empty catalog (cost column will be blank).
 
-        The catalog endpoint requires a DigitalOcean Personal Access Token —
-        this is *not* the same as the inference ``MODEL_ACCESS_KEY`` used at
-        runtime. We check ``DIGITALOCEAN_TOKEN`` first (standard DO CLI env
-        var), then ``DO_PAT``, then fall back to ``DO_API_KEY``.
+        The catalog endpoint is public — no auth required, no signup — so
+        ``planoai obs`` gets cost data on first run out of the box.
         """
-        import os
-
-        headers = {}
-        token = (
-            api_key
-            or os.environ.get("DIGITALOCEAN_TOKEN")
-            or os.environ.get("DO_PAT")
-            or os.environ.get("DO_API_KEY")
-        )
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
         try:
-            resp = requests.get(url, headers=headers, timeout=FETCH_TIMEOUT_SECS)
+            resp = requests.get(url, timeout=FETCH_TIMEOUT_SECS)
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:  # noqa: BLE001 — best-effort; never fatal
             logger.warning(
-                "DO pricing fetch failed: %s; cost column will be blank. "
-                "Set DIGITALOCEAN_TOKEN with a DO Personal Access Token to "
-                "enable cost.",
+                "DO pricing fetch failed: %s; cost column will be blank.",
                 exc,
             )
             return cls()
