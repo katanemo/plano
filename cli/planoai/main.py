@@ -328,12 +328,30 @@ def up(file, path, foreground, with_tracing, tracing_port, docker, verbose):
         # Use the utility function to find config file
         plano_config_file = find_config_file(path, file)
 
-        # Check if the file exists
+        # Zero-config fallback: when no user config is present, synthesize a
+        # pass-through config that covers the common LLM providers and
+        # auto-wires OTel export to ``planoai obs``. See cli/planoai/defaults.py.
         if not os.path.exists(plano_config_file):
-            console.print(
-                f"[red]✗[/red] Config file not found: [dim]{plano_config_file}[/dim]"
+            import yaml
+
+            from planoai.defaults import (
+                detect_providers,
+                synthesize_default_config,
             )
-            sys.exit(1)
+
+            detection = detect_providers()
+            cfg_dict = synthesize_default_config()
+
+            default_dir = os.path.expanduser("~/.plano")
+            os.makedirs(default_dir, exist_ok=True)
+            synthesized_path = os.path.join(default_dir, "default_config.yaml")
+            with open(synthesized_path, "w") as fh:
+                yaml.safe_dump(cfg_dict, fh, sort_keys=False)
+            plano_config_file = synthesized_path
+            console.print(
+                f"[dim]No plano config found; using defaults ({detection.summary}). "
+                f"Listening on :12000, tracing -> http://localhost:4317.[/dim]"
+            )
 
         if not docker:
             from planoai.native_runner import native_validate_config
