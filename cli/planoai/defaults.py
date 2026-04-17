@@ -16,7 +16,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-
 DEFAULT_LLM_LISTENER_PORT = 12000
 # plano_config validation requires an http:// scheme on the OTLP endpoint.
 DEFAULT_OTLP_ENDPOINT = "http://localhost:4317"
@@ -94,13 +93,9 @@ class DetectionResult:
     def summary(self) -> str:
         parts = []
         if self.with_keys:
-            parts.append(
-                "env-keyed: " + ", ".join(p.name for p in self.with_keys)
-            )
+            parts.append("env-keyed: " + ", ".join(p.name for p in self.with_keys))
         if self.passthrough:
-            parts.append(
-                "pass-through: " + ", ".join(p.name for p in self.passthrough)
-            )
+            parts.append("pass-through: " + ", ".join(p.name for p in self.passthrough))
         return " | ".join(parts) if parts else "no providers"
 
 

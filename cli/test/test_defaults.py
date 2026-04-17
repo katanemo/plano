@@ -9,7 +9,6 @@ from planoai.defaults import (
     synthesize_default_config,
 )
 
-
 _SCHEMA_PATH = Path(__file__).parents[2] / "config" / "plano_config_schema.yaml"
 
 
