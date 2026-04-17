@@ -177,24 +177,33 @@ impl StreamContext {
     }
 
     fn modify_auth_headers(&mut self) -> Result<(), ServerError> {
-        if self.llm_provider().passthrough_auth == Some(true) {
-            // Check if client provided an Authorization header
-            if self.get_http_request_header("Authorization").is_none() {
-                warn!(
-                    "request_id={}: passthrough_auth enabled but no authorization header present in client request",
-                    self.request_identifier()
-                );
-            } else {
-                debug!(
-                    "request_id={}: preserving client authorization header for provider '{}'",
-                    self.request_identifier(),
-                    self.llm_provider().name
-                );
+        // Determine the credential to forward upstream. Either the client
+        // supplied one (passthrough_auth) or it's configured on the provider.
+        let credential: String = if self.llm_provider().passthrough_auth == Some(true) {
+            // Client auth may arrive in either Anthropic-style (`x-api-key`)
+            // or OpenAI-style (`Authorization: Bearer ...`). Accept both so
+            // clients using Anthropic SDKs (which default to `x-api-key`)
+            // work when the upstream is OpenAI-compatible, and vice versa.
+            let authorization = self.get_http_request_header("Authorization");
+            let x_api_key = self.get_http_request_header("x-api-key");
+            match extract_client_credential(authorization.as_deref(), x_api_key.as_deref()) {
+                Some(key) => {
+                    debug!(
+                        "request_id={}: forwarding client credential to provider '{}'",
+                        self.request_identifier(),
+                        self.llm_provider().name
+                    );
+                    key
+                }
+                None => {
+                    warn!(
+                        "request_id={}: passthrough_auth enabled but no Authorization / x-api-key header present in client request",
+                        self.request_identifier()
+                    );
+                    return Ok(());
+                }
             }
-            return Ok(());
-        }
-
-        let llm_provider_api_key_value =
+        } else {
             self.llm_provider()
                 .access_key
                 .as_ref()
@@ -203,15 +212,19 @@ impl StreamContext {
                         "No access key configured for selected LLM Provider \"{}\"",
                         self.llm_provider()
                     ),
-                })?;
+                })?
+                .clone()
+        };
 
-        // Set API-specific headers based on the resolved upstream API
+        // Normalize the credential into whichever header the upstream expects.
+        // This lets an Anthropic-SDK client reach an OpenAI-compatible upstream
+        // (and vice versa) without the caller needing to know what format the
+        // upstream uses.
         match self.resolved_api.as_ref() {
             Some(SupportedUpstreamAPIs::AnthropicMessagesAPI(_)) => {
-                // Anthropic API requires x-api-key and anthropic-version headers
-                // Remove any existing Authorization header since Anthropic doesn't use it
+                // Anthropic expects `x-api-key` + `anthropic-version`.
                 self.remove_http_request_header("Authorization");
-                self.set_http_request_header("x-api-key", Some(llm_provider_api_key_value));
+                self.set_http_request_header("x-api-key", Some(&credential));
                 self.set_http_request_header("anthropic-version", Some("2023-06-01"));
             }
             Some(
@@ -221,10 +234,9 @@ impl StreamContext {
                 | SupportedUpstreamAPIs::OpenAIResponsesAPI(_),
             )
             | None => {
-                // OpenAI and default: use Authorization Bearer token
-                // Remove any existing x-api-key header since OpenAI doesn't use it
+                // OpenAI (and default): `Authorization: Bearer ...`.
                 self.remove_http_request_header("x-api-key");
-                let authorization_header_value = format!("Bearer {}", llm_provider_api_key_value);
+                let authorization_header_value = format!("Bearer {}", credential);
                 self.set_http_request_header("Authorization", Some(&authorization_header_value));
             }
         }
@@ -1235,3 +1247,86 @@ fn current_time_ns() -> u128 {
 }
 
 impl Context for StreamContext {}
+
+/// Extract the credential a client sent in either an OpenAI-style
+/// `Authorization` header or an Anthropic-style `x-api-key` header.
+///
+/// Returns `None` when neither header is present or both are empty/whitespace.
+/// The `Bearer ` prefix on the `Authorization` value is stripped if present;
+/// otherwise the value is taken verbatim (some clients send a raw token).
+fn extract_client_credential(
+    authorization: Option<&str>,
+    x_api_key: Option<&str>,
+) -> Option<String> {
+    // Strip the optional "Bearer " / "Bearer" prefix (case-sensitive, matches
+    // OpenAI SDK behavior) and trim surrounding whitespace before validating
+    // non-empty.
+    let from_authorization = authorization
+        .map(|v| {
+            v.strip_prefix("Bearer ")
+                .or_else(|| v.strip_prefix("Bearer"))
+                .unwrap_or(v)
+                .trim()
+                .to_string()
+        })
+        .filter(|s| !s.is_empty());
+    if from_authorization.is_some() {
+        return from_authorization;
+    }
+    x_api_key
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_client_credential;
+
+    #[test]
+    fn authorization_bearer_strips_prefix() {
+        assert_eq!(
+            extract_client_credential(Some("Bearer sk-abc"), None),
+            Some("sk-abc".to_string())
+        );
+    }
+
+    #[test]
+    fn authorization_raw_token_preserved() {
+        // Some clients send the raw token without "Bearer " — accept it.
+        assert_eq!(
+            extract_client_credential(Some("sk-abc"), None),
+            Some("sk-abc".to_string())
+        );
+    }
+
+    #[test]
+    fn x_api_key_used_when_authorization_absent() {
+        assert_eq!(
+            extract_client_credential(None, Some("sk-ant-api-key")),
+            Some("sk-ant-api-key".to_string())
+        );
+    }
+
+    #[test]
+    fn authorization_wins_when_both_present() {
+        // If a client is particularly exotic and sends both, prefer the
+        // OpenAI-style Authorization header.
+        assert_eq!(
+            extract_client_credential(Some("Bearer openai-key"), Some("anthropic-key")),
+            Some("openai-key".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_when_neither_present() {
+        assert!(extract_client_credential(None, None).is_none());
+    }
+
+    #[test]
+    fn empty_and_whitespace_headers_are_ignored() {
+        assert!(extract_client_credential(Some(""), None).is_none());
+        assert!(extract_client_credential(Some("Bearer "), None).is_none());
+        assert!(extract_client_credential(Some("   "), Some("   ")).is_none());
+    }
+}
