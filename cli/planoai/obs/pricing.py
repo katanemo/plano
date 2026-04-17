@@ -13,7 +13,6 @@ from typing import Any
 
 import requests
 
-
 DEFAULT_PRICING_URL = "https://api.digitalocean.com/v2/gen-ai/models/catalog"
 FETCH_TIMEOUT_SECS = 5.0
 

@@ -4,7 +4,17 @@ from planoai.obs.collector import LLMCall
 from planoai.obs.render import aggregates, model_rollups, route_hits
 
 
-def _call(model: str, ts: datetime, prompt=0, completion=0, cost=None, route=None, session=None, cache_read=0, cache_write=0):
+def _call(
+    model: str,
+    ts: datetime,
+    prompt=0,
+    completion=0,
+    cost=None,
+    route=None,
+    session=None,
+    cache_read=0,
+    cache_write=0,
+):
     return LLMCall(
         request_id="r",
         timestamp=ts,
@@ -22,9 +32,30 @@ def _call(model: str, ts: datetime, prompt=0, completion=0, cost=None, route=Non
 def test_aggregates_sum_and_session_counts():
     now = datetime.now(tz=timezone.utc).astimezone()
     calls = [
-        _call("m1", now - timedelta(seconds=50), prompt=10, completion=5, cost=0.001, session="s1"),
-        _call("m2", now - timedelta(seconds=40), prompt=20, completion=10, cost=0.002, session="s1"),
-        _call("m1", now - timedelta(seconds=30), prompt=30, completion=15, cost=0.003, session="s2"),
+        _call(
+            "m1",
+            now - timedelta(seconds=50),
+            prompt=10,
+            completion=5,
+            cost=0.001,
+            session="s1",
+        ),
+        _call(
+            "m2",
+            now - timedelta(seconds=40),
+            prompt=20,
+            completion=10,
+            cost=0.002,
+            session="s1",
+        ),
+        _call(
+            "m1",
+            now - timedelta(seconds=30),
+            prompt=30,
+            completion=15,
+            cost=0.003,
+            session="s2",
+        ),
     ]
     stats = aggregates(calls)
     assert stats.count == 3
@@ -38,7 +69,9 @@ def test_aggregates_sum_and_session_counts():
 def test_rollups_split_by_model_and_cache():
     now = datetime.now(tz=timezone.utc).astimezone()
     calls = [
-        _call("m1", now, prompt=10, completion=5, cost=0.001, cache_write=3, cache_read=7),
+        _call(
+            "m1", now, prompt=10, completion=5, cost=0.001, cache_write=3, cache_read=7
+        ),
         _call("m1", now, prompt=20, completion=10, cost=0.002, cache_read=1),
         _call("m2", now, prompt=30, completion=15, cost=0.004),
     ]

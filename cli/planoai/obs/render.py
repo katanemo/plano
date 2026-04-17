@@ -271,7 +271,11 @@ def _recent_table(calls: list[LLMCall], limit: int = 15) -> Table:
 
     recent = list(reversed(calls))[:limit]
     for c in recent:
-        status_cell = "ok" if c.status_code and 200 <= c.status_code < 400 else str(c.status_code or "—")
+        status_cell = (
+            "ok"
+            if c.status_code and 200 <= c.status_code < 400
+            else str(c.status_code or "—")
+        )
         row = [
             c.timestamp.strftime("%H:%M:%S"),
             c.model,

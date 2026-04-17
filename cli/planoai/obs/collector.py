@@ -15,7 +15,6 @@ from opentelemetry.proto.collector.trace.v1 import (
     trace_service_pb2_grpc,
 )
 
-
 DEFAULT_GRPC_PORT = 4317
 DEFAULT_CAPACITY = 1000
 
@@ -198,9 +197,9 @@ def span_to_llm_call(
         route_name=(
             str(attrs[_PLANO_ROUTE_NAME]) if _PLANO_ROUTE_NAME in attrs else None
         ),
-        is_streaming=bool(attrs[_LLM_IS_STREAMING])
-        if _LLM_IS_STREAMING in attrs
-        else None,
+        is_streaming=(
+            bool(attrs[_LLM_IS_STREAMING]) if _LLM_IS_STREAMING in attrs else None
+        ),
         status_code=_maybe_int(attrs.get(_HTTP_STATUS)),
         prompt_tokens=_maybe_int(attrs.get(_LLM_PROMPT_TOKENS)),
         completion_tokens=_maybe_int(attrs.get(_LLM_COMPLETION_TOKENS)),

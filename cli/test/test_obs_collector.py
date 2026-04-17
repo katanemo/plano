@@ -28,7 +28,9 @@ def _mk_attr(key: str, value):
     return kv
 
 
-def _mk_span(attrs: dict, start_ns: int | None = None, span_id_hex: str = "ab") -> MagicMock:
+def _mk_span(
+    attrs: dict, start_ns: int | None = None, span_id_hex: str = "ab"
+) -> MagicMock:
     span = MagicMock()
     span.attributes = [_mk_attr(k, v) for k, v in attrs.items()]
     span.start_time_unix_nano = start_ns or int(time.time() * 1_000_000_000)
@@ -84,7 +86,9 @@ def test_pricing_lookup_attaches_cost():
     class StubPricing:
         def cost_for_call(self, call):
             # Simple: 2 * prompt + 3 * completion, in cents
-            return 0.02 * (call.prompt_tokens or 0) + 0.03 * (call.completion_tokens or 0)
+            return 0.02 * (call.prompt_tokens or 0) + 0.03 * (
+                call.completion_tokens or 0
+            )
 
     span = _mk_span(
         {
