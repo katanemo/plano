@@ -72,9 +72,9 @@ impl TryFrom<&str> for ProviderId {
             "qwen" => Ok(ProviderId::Qwen),
             "amazon_bedrock" => Ok(ProviderId::AmazonBedrock),
             "amazon" => Ok(ProviderId::AmazonBedrock), // alias
-            "do" => Ok(ProviderId::DigitalOcean),
-            "digitalocean" => Ok(ProviderId::DigitalOcean), // alias
-            "do_ai" => Ok(ProviderId::DigitalOcean),        // alias
+            "digitalocean" => Ok(ProviderId::DigitalOcean),
+            "do" => Ok(ProviderId::DigitalOcean),    // alias
+            "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -99,7 +99,7 @@ impl ProviderId {
             ProviderId::Moonshotai => "moonshotai",
             ProviderId::Zhipu => "z-ai",
             ProviderId::Qwen => "qwen",
-            ProviderId::DigitalOcean => "do",
+            ProviderId::DigitalOcean => "digitalocean",
             _ => return Vec::new(),
         };
 
@@ -241,7 +241,7 @@ impl Display for ProviderId {
             ProviderId::Zhipu => write!(f, "zhipu"),
             ProviderId::Qwen => write!(f, "qwen"),
             ProviderId::AmazonBedrock => write!(f, "amazon_bedrock"),
-            ProviderId::DigitalOcean => write!(f, "do"),
+            ProviderId::DigitalOcean => write!(f, "digitalocean"),
         }
     }
 }
