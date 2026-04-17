@@ -452,6 +452,48 @@
 </section>
 </section>
 </section>
+<section id="observability">
+<h2>Observability<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#observability" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#observability'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Plano ships two CLI tools for visibility into LLM traffic. Both consume the same OTLP/gRPC span stream from brightstaff; they just slice it differently — use whichever (or both) fits the question you’re answering.</p>
+<p>Both require brightstaff to be exporting spans. If you’re running the zero-config path (<code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">up</span></code> with no config file), tracing is auto-wired to <code class="docutils literal notranslate"><span class="pre">http://localhost:4317</span></code>. If you have your own <code class="docutils literal notranslate"><span class="pre">plano_config.yaml</span></code>, add:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">tracing</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="nt">random_sampling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="line-3"><span class="w">  </span><span class="nt">opentracing_grpc_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:4317</span>
+</span></code></pre></div>
+</div>
+<section id="live-console-planoai-obs">
+<h3>Live console — <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">obs</span></code><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#live-console-planoai-obs" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#live-console-planoai-obs'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>obs
+</span><span id="line-2"><span class="gp"># </span>In<span class="w"> </span>another<span class="w"> </span>terminal:
+</span><span id="line-3"><span class="gp">$ </span>planoai<span class="w"> </span>up
+</span></code></pre></div>
+</div>
+<p>Cost is populated automatically from DigitalOcean’s public pricing catalog — no signup or token required.</p>
+<p>With no API keys set, every provider runs in pass-through mode — supply the <code class="docutils literal notranslate"><span class="pre">Authorization</span></code> header yourself on each request:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>curl<span class="w"> </span>localhost:12000/v1/chat/completions<span class="w"> </span><span class="se">\</span>
+</span><span id="line-2"><span class="w">    </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="line-3"><span class="w">    </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$DO_API_KEY</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+</span><span id="line-4"><span class="w">    </span>-d<span class="w"> </span><span class="err">'</span><span class="o">{</span><span class="s2">"model"</span>:<span class="s2">"digitalocean/router:software-engineering"</span>,
+</span><span id="line-5"><span class="go">         "messages":[{"role":"user","content":"write code to print prime numbers in python"}],</span>
+</span><span id="line-6"><span class="go">         "stream":false}'</span>
+</span></code></pre></div>
+</div>
+<p>When you export <code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code> / <code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code> / <code class="docutils literal notranslate"><span class="pre">DO_API_KEY</span></code> / etc. before <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">up</span></code>, Plano picks them up and clients no longer need to send <code class="docutils literal notranslate"><span class="pre">Authorization</span></code>.</p>
+<p>Press <code class="docutils literal notranslate"><span class="pre">Ctrl-C</span></code> in the obs terminal to exit. Data lives in memory only — nothing is persisted to disk.</p>
+</section>
+<section id="single-request-traces-planoai-trace">
+<h3>Single-request traces — <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">trace</span></code><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#single-request-traces-planoai-trace" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#single-request-traces-planoai-trace'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>When you need to understand what happened on one specific request (which model was picked, how long each hop took, what an upstream returned), use <code class="docutils literal notranslate"><span class="pre">trace</span></code>:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>trace<span class="w"> </span>listen<span class="w">                 </span><span class="c1"># start the OTLP listener (daemon)</span>
+</span><span id="line-2"><span class="gp"># </span>drive<span class="w"> </span>some<span class="w"> </span>traffic<span class="w"> </span>through<span class="w"> </span>localhost:12000<span class="w"> </span>...
+</span><span id="line-3"><span class="gp">$ </span>planoai<span class="w"> </span>trace<span class="w">                        </span><span class="c1"># show the most recent trace</span>
+</span><span id="line-4"><span class="gp">$ </span>planoai<span class="w"> </span>trace<span class="w"> </span>&lt;trace-id&gt;<span class="w">             </span><span class="c1"># show a specific trace by id</span>
+</span><span id="line-5"><span class="gp">$ </span>planoai<span class="w"> </span>trace<span class="w"> </span>--list<span class="w">                 </span><span class="c1"># list the last 50 trace ids</span>
+</span></code></pre></div>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">obs</span></code> to spot that p95 latency spiked for <code class="docutils literal notranslate"><span class="pre">openai-gpt-5.4</span></code>; switch to <code class="docutils literal notranslate"><span class="pre">trace</span></code> on one of those slow request ids to see which hop burned the time.</p>
+</section>
+</section>
 </section>
 <section id="next-steps">
 <h1>Next Steps<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#next-steps"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h1>
@@ -508,6 +550,11 @@
 <li><a :data-current="activeSection === '#step-3-interacting-with-gateway-using-curl-command'" class="reference internal" href="#step-3-interacting-with-gateway-using-curl-command">Step 3. Interacting with gateway using curl command</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a :data-current="activeSection === '#observability'" class="reference internal" href="#observability">Observability</a><ul>
+<li><a :data-current="activeSection === '#live-console-planoai-obs'" class="reference internal" href="#live-console-planoai-obs">Live console — <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">obs</span></code></a></li>
+<li><a :data-current="activeSection === '#single-request-traces-planoai-trace'" class="reference internal" href="#single-request-traces-planoai-trace">Single-request traces — <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">trace</span></code></a></li>
 </ul>
 </li>
 </ul>
