@@ -328,7 +328,53 @@ providers:
   - xiaomi/mimo-v2-flash
   - xiaomi/mimo-v2-omni
   - xiaomi/mimo-v2-pro
+  digitalocean:
+  - digitalocean/openai-gpt-4.1
+  - digitalocean/openai-gpt-4o
+  - digitalocean/openai-gpt-4o-mini
+  - digitalocean/openai-gpt-5
+  - digitalocean/openai-gpt-5-mini
+  - digitalocean/openai-gpt-5-nano
+  - digitalocean/openai-gpt-5.1-codex-max
+  - digitalocean/openai-gpt-5.2
+  - digitalocean/openai-gpt-5.2-pro
+  - digitalocean/openai-gpt-5.3-codex
+  - digitalocean/openai-gpt-5.4
+  - digitalocean/openai-gpt-5.4-mini
+  - digitalocean/openai-gpt-5.4-nano
+  - digitalocean/openai-gpt-5.4-pro
+  - digitalocean/openai-gpt-oss-120b
+  - digitalocean/openai-gpt-oss-20b
+  - digitalocean/openai-o1
+  - digitalocean/openai-o3
+  - digitalocean/openai-o3-mini
+  - digitalocean/anthropic-claude-4.1-opus
+  - digitalocean/anthropic-claude-4.5-sonnet
+  - digitalocean/anthropic-claude-4.6-sonnet
+  - digitalocean/anthropic-claude-haiku-4.5
+  - digitalocean/anthropic-claude-opus-4
+  - digitalocean/anthropic-claude-opus-4.5
+  - digitalocean/anthropic-claude-opus-4.6
+  - digitalocean/anthropic-claude-opus-4.7
+  - digitalocean/anthropic-claude-sonnet-4
+  - digitalocean/alibaba-qwen3-32b
+  - digitalocean/arcee-trinity-large-thinking
+  - digitalocean/deepseek-3.2
+  - digitalocean/deepseek-r1-distill-llama-70b
+  - digitalocean/gemma-4-31B-it
+  - digitalocean/glm-5
+  - digitalocean/kimi-k2.5
+  - digitalocean/llama3.3-70b-instruct
+  - digitalocean/minimax-m2.5
+  - digitalocean/nvidia-nemotron-3-super-120b
+  - digitalocean/qwen3-coder-flash
+  - digitalocean/qwen3.5-397b-a17b
+  - digitalocean/all-mini-lm-l6-v2
+  - digitalocean/gte-large-en-v1.5
+  - digitalocean/multi-qa-mpnet-base-dot-v1
+  - digitalocean/qwen3-embedding-0.6b
+  - digitalocean/router:software-engineering
 metadata:
-  total_providers: 11
-  total_models: 316
-  last_updated: 2026-04-03T23:14:46.956158+00:00
+  total_providers: 12
+  total_models: 361
+  last_updated: 2026-04-16T00:00:00.000000+00:00
