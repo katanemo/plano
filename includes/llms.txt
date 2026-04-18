@@ -1,6 +1,6 @@
 Plano Docs v0.4.20
 llms.txt (auto-generated)
-Generated (UTC): 2026-04-18T22:57:59.955551+00:00
+Generated (UTC): 2026-04-18T23:24:30.649143+00:00
 
 Table of contents
 - Agents (concepts/agents)
