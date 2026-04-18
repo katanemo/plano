@@ -192,32 +192,57 @@ impl OrchestratorModel for OrchestratorModelV1 {
         // Following code is to ensure that the conversation does not exceed max token length
         // Note: we use a simple heuristic to estimate token count based on character length to optimize for performance
         let mut token_count = ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT.len() / TOKEN_LENGTH_DIVISOR;
-        let mut selected_messages_list_reversed: Vec<&Message> = vec![];
+        let mut selected_messages_list_reversed: Vec<Message> = vec![];
         for (selected_messsage_count, message) in messages_vec.iter().rev().enumerate() {
-            let message_token_count = message.content.extract_text().len() / TOKEN_LENGTH_DIVISOR;
-            token_count += message_token_count;
-            if token_count > self.max_token_length {
+            let message_text = message.content.extract_text();
+            let message_token_count = message_text.len() / TOKEN_LENGTH_DIVISOR;
+            if token_count + message_token_count > self.max_token_length {
+                let remaining_tokens = self.max_token_length.saturating_sub(token_count);
                 debug!(
-                    token_count = token_count,
+                    attempted_total_tokens = token_count + message_token_count,
                     max_tokens = self.max_token_length,
+                    remaining_tokens,
                     selected = selected_messsage_count,
                     total = messages_vec.len(),
                     "token count exceeds max, truncating conversation"
                 );
-                if message.role == Role::User {
-                    // If message that exceeds max token length is from user, we need to keep it
-                    selected_messages_list_reversed.push(message);
+                // If the message that overflows the budget is from the user we need
+                // to keep at least some of it so the orchestrator sees the latest
+                // user intent. Trim from the end of the message toward the
+                // beginning until we fit in the remaining token budget.
+                if message.role == Role::User && remaining_tokens > 0 {
+                    let max_bytes = remaining_tokens.saturating_mul(TOKEN_LENGTH_DIVISOR);
+                    let truncated = truncate_to_utf8_boundary(&message_text, max_bytes);
+                    selected_messages_list_reversed.push(Message {
+                        role: Role::User,
+                        content: Some(MessageContent::Text(truncated.to_string())),
+                        name: None,
+                        tool_calls: None,
+                        tool_call_id: None,
+                    });
                 }
                 break;
             }
-            // If we are here, it means that the message is within the max token length
-            selected_messages_list_reversed.push(message);
+            token_count += message_token_count;
+            selected_messages_list_reversed.push(Message {
+                role: message.role.clone(),
+                content: Some(MessageContent::Text(message_text)),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            });
         }
 
         if selected_messages_list_reversed.is_empty() {
             debug!("no messages selected, using last message");
             if let Some(last_message) = messages_vec.last() {
-                selected_messages_list_reversed.push(last_message);
+                selected_messages_list_reversed.push(Message {
+                    role: last_message.role.clone(),
+                    content: Some(MessageContent::Text(last_message.content.extract_text())),
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                });
             }
         }
 
@@ -237,22 +262,8 @@ impl OrchestratorModel for OrchestratorModelV1 {
         }
 
         // Reverse the selected messages to maintain the conversation order
-        let selected_conversation_list = selected_messages_list_reversed
-            .iter()
-            .rev()
-            .map(|message| Message {
-                role: message.role.clone(),
-                content: Some(MessageContent::Text(
-                    message
-                        .content
-                        .as_ref()
-                        .map_or(String::new(), |c| c.to_string()),
-                )),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
-            })
-            .collect::<Vec<Message>>();
+        let selected_conversation_list: Vec<Message> =
+            selected_messages_list_reversed.into_iter().rev().collect();
 
         // Generate the orchestrator request message based on the usage preferences.
         // If preferences are passed in request then we use them;
@@ -403,6 +414,20 @@ fn convert_to_orchestrator_preferences(
 
 fn fix_json_response(body: &str) -> String {
     body.replace("'", "\"").replace("\\n", "")
+}
+
+/// Truncate `s` so that the returned slice is at most `max_bytes` bytes long
+/// and ends on a UTF-8 character boundary. Keeps the beginning of the string
+/// and drops characters from the end.
+fn truncate_to_utf8_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 impl std::fmt::Debug for dyn OrchestratorModel {
@@ -777,6 +802,10 @@ If no routes are needed, return an empty list for `route`.
 
     #[test]
     fn test_conversation_trim_upto_user_message() {
+        // With max_token_length=230 the older user message "given the image In
+        // style of Andy Warhol" overflows the remaining budget and is
+        // truncated from the end (chars dropped from the end of the string)
+        // until it fits. The newer assistant/user turns are preserved in full.
         let expected_prompt = r#"
 You are a helpful assistant that selects the most suitable routes based on user intent.
 You are provided with a list of available routes enclosed within <routes></routes> XML tags:
@@ -789,7 +818,7 @@ You are also given the conversation context enclosed within <conversation></conv
 [
     {
         "role": "user",
-        "content": "given the image In style of Andy Warhol"
+        "content": "given the im"
     },
     {
         "role": "assistant",
@@ -860,6 +889,78 @@ If no routes are needed, return an empty list for `route`.
         let prompt = req.messages[0].content.extract_text();
 
         assert_eq!(expected_prompt, prompt);
+    }
+
+    #[test]
+    fn test_huge_single_user_message_is_truncated() {
+        // Regression test for the case where a single, extremely large user
+        // message was being passed through to the orchestrator verbatim,
+        // blowing past the upstream model's context window. The trimmer must
+        // now truncate the oversized user message from the end until it fits
+        // within the configured budget.
+        let orchestrations_str = r#"
+          {
+            "gpt-4o": [
+              {"name": "Image generation", "description": "generating image"}
+            ]
+        }
+        "#;
+        let agent_orchestrations = serde_json::from_str::<
+            HashMap<String, Vec<OrchestrationPreference>>,
+        >(orchestrations_str)
+        .unwrap();
+
+        let max_token_length = 2048;
+        let orchestrator = OrchestratorModelV1::new(
+            agent_orchestrations,
+            "test-model".to_string(),
+            max_token_length,
+        );
+
+        // ~500KB of content — similar in scale to the real payload that
+        // triggered the upstream 400 "context length exceeded".
+        let huge_user_content = "A".repeat(500_000);
+        let conversation = vec![Message {
+            role: Role::User,
+            content: Some(MessageContent::Text(huge_user_content.clone())),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+
+        let req = orchestrator.generate_request(&conversation, &None);
+        let prompt = req.messages[0].content.extract_text();
+
+        // Final prompt must be bounded. Use a generous ceiling: the configured
+        // budget converted to bytes (tokens * divisor) plus the system prompt
+        // and routes JSON overhead. In practice the result should be well
+        // under this ceiling.
+        let byte_ceiling = max_token_length * TOKEN_LENGTH_DIVISOR
+            + ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT.len()
+            + 512;
+        assert!(
+            prompt.len() < byte_ceiling,
+            "prompt length {} exceeded ceiling {} — truncation did not apply",
+            prompt.len(),
+            byte_ceiling,
+        );
+
+        // The oversized user message must have been truncated — i.e. not all
+        // 500k "A" characters made it through.
+        let a_count = prompt.chars().filter(|c| *c == 'A').count();
+        assert!(
+            a_count < huge_user_content.len(),
+            "expected user message to be truncated, but all {} 'A' chars survived",
+            a_count
+        );
+        assert!(
+            a_count > 0,
+            "expected at least some of the user message to survive truncation"
+        );
+
+        // Sanity: the prompt still includes the routing prompt scaffolding.
+        assert!(prompt.contains("<conversation>"));
+        assert!(prompt.contains("<routes>"));
     }
 
     #[test]
