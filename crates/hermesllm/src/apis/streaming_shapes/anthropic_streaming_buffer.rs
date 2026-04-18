@@ -3,6 +3,7 @@ use crate::apis::anthropic::{
 };
 use crate::apis::streaming_shapes::sse::{SseEvent, SseStreamBufferTrait};
 use crate::providers::streaming_response::ProviderStreamResponseType;
+use log::warn;
 use std::collections::HashSet;
 
 /// SSE Stream Buffer for Anthropic Messages API streaming.
@@ -225,7 +226,22 @@ impl SseStreamBufferTrait for AnthropicMessagesStreamBuffer {
             Some(ProviderStreamResponseType::MessagesStreamEvent(evt)) => {
                 // If the message has already been closed, drop any trailing events
                 // to avoid emitting data after `message_stop` (protocol violation).
+                // This typically indicates a duplicate `[DONE]` from upstream or a
+                // replay of previously-buffered bytes — worth surfacing so we can
+                // spot misbehaving providers.
                 if self.message_stopped {
+                    warn!(
+                        "anthropic stream buffer: dropping event after message_stop (variant={})",
+                        match evt {
+                            MessagesStreamEvent::MessageStart { .. } => "message_start",
+                            MessagesStreamEvent::ContentBlockStart { .. } => "content_block_start",
+                            MessagesStreamEvent::ContentBlockDelta { .. } => "content_block_delta",
+                            MessagesStreamEvent::ContentBlockStop { .. } => "content_block_stop",
+                            MessagesStreamEvent::MessageDelta { .. } => "message_delta",
+                            MessagesStreamEvent::MessageStop => "message_stop",
+                            MessagesStreamEvent::Ping => "ping",
+                        }
+                    );
                     return;
                 }
 
