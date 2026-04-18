@@ -17,7 +17,7 @@ from sphinxawesome_theme.postprocess import Icons
 project = "Plano Docs"
 copyright = "2026, Katanemo Labs, a DigitalOcean Company"
 author = "Katanemo Labs, Inc"
-release = " v0.4.19"
+release = " v0.4.20"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
