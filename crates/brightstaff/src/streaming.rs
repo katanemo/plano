@@ -100,12 +100,6 @@ impl ExtractedUsage {
 /// Try to pull usage out of an accumulated response body.
 /// Handles both a single JSON object (non-streaming) and SSE streams where the
 /// final `data: {...}` event carries the `usage` field.
-///
-/// Resolved model is captured independently from usage: many providers (DO
-/// Inference Cloud, OpenAI in some modes) emit `model` on every SSE chunk but
-/// `usage` only on the terminal one — and that terminal chunk may omit the
-/// model field entirely. Scanning both fields separately means we still
-/// surface the real upstream model even when usage extraction fails.
 fn extract_usage_from_bytes(buf: &[u8]) -> ExtractedUsage {
     if buf.is_empty() {
         return ExtractedUsage::default();
@@ -119,14 +113,11 @@ fn extract_usage_from_bytes(buf: &[u8]) -> ExtractedUsage {
         }
     }
 
+    // SSE path: scan from the end for a `data:` line containing a usage object.
     let text = match std::str::from_utf8(buf) {
         Ok(t) => t,
         Err(_) => return ExtractedUsage::default(),
     };
-
-    let mut out = ExtractedUsage::default();
-    let mut found_usage = false;
-
     for line in text.lines().rev() {
         let trimmed = line.trim_start();
         let payload = match trimmed.strip_prefix("data:") {
@@ -136,50 +127,18 @@ fn extract_usage_from_bytes(buf: &[u8]) -> ExtractedUsage {
         if payload == "[DONE]" || payload.is_empty() {
             continue;
         }
-
-        let has_model_field = out.resolved_model.is_none() && payload.contains("\"model\"");
-        let has_usage_field = !found_usage && payload.contains("\"usage\"");
-        if !has_model_field && !has_usage_field {
+        if !payload.contains("\"usage\"") {
             continue;
         }
-
-        let value = match serde_json::from_str::<serde_json::Value>(payload) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        if has_usage_field {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) {
             let u = ExtractedUsage::from_json(&value);
-            if u.prompt_tokens.is_some()
-                || u.completion_tokens.is_some()
-                || u.total_tokens.is_some()
-            {
-                let prior_model = out.resolved_model.take();
-                out = u;
-                if out.resolved_model.is_none() {
-                    out.resolved_model = prior_model;
-                }
-                found_usage = true;
-                if out.resolved_model.is_some() {
-                    break;
-                }
-                continue;
-            }
-        }
-
-        if out.resolved_model.is_none() {
-            if let Some(model) = value.get("model").and_then(|v| v.as_str()) {
-                if !model.is_empty() {
-                    out.resolved_model = Some(model.to_string());
-                    if found_usage {
-                        break;
-                    }
-                }
+            if !u.is_empty() {
+                return u;
             }
         }
     }
 
-    out
+    ExtractedUsage::default()
 }
 
 /// Trait for processing streaming chunks
@@ -674,37 +633,5 @@ data: [DONE]
     #[test]
     fn no_usage_in_body_returns_default() {
         assert!(extract_usage_from_bytes(br#"{"ok":true}"#).is_empty());
-    }
-
-    #[test]
-    fn streaming_resolved_model_from_chunk_without_usage() {
-        // DO Inference Cloud often emits model on every chunk and usage only on
-        // the last — and the usage chunk itself omits the model field.
-        let sse = b"data: {\"id\":\"x\",\"model\":\"openai-gpt-5.4\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}
-
-data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10}}
-
-data: [DONE]
-
-";
-        let u = extract_usage_from_bytes(sse);
-        assert_eq!(u.prompt_tokens, Some(7));
-        assert_eq!(u.completion_tokens, Some(3));
-        assert_eq!(u.resolved_model.as_deref(), Some("openai-gpt-5.4"));
-    }
-
-    #[test]
-    fn streaming_resolved_model_when_usage_missing() {
-        // Even without any usage chunk, we should still surface the upstream
-        // model so the obs view doesn't fall back to the router alias.
-        let sse = b"data: {\"id\":\"x\",\"model\":\"openai-gpt-5.4\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}
-
-data: [DONE]
-
-";
-        let u = extract_usage_from_bytes(sse);
-        assert_eq!(u.prompt_tokens, None);
-        assert_eq!(u.resolved_model.as_deref(), Some("openai-gpt-5.4"));
-        assert!(!u.is_empty());
     }
 }

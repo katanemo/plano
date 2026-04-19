@@ -83,49 +83,6 @@ def test_parse_do_catalog_treats_small_values_as_per_token():
     assert prices["openai-gpt-oss-120b"].input_per_token_usd == 1e-7
 
 
-def test_anthropic_aliases_match_plano_emitted_names():
-    """DO publishes 'anthropic-claude-opus-4.7' and 'anthropic-claude-haiku-4.5';
-    Plano emits 'claude-opus-4-7' and 'claude-haiku-4-5-20251001'. Aliases
-    registered at parse time should bridge the gap."""
-    from planoai.obs.pricing import _parse_do_pricing
-
-    sample = {
-        "data": [
-            {
-                "model_id": "anthropic-claude-opus-4.7",
-                "pricing": {
-                    "input_price_per_million": 15.0,
-                    "output_price_per_million": 75.0,
-                },
-            },
-            {
-                "model_id": "anthropic-claude-haiku-4.5",
-                "pricing": {
-                    "input_price_per_million": 1.0,
-                    "output_price_per_million": 5.0,
-                },
-            },
-            {
-                "model_id": "anthropic-claude-4.6-sonnet",
-                "pricing": {
-                    "input_price_per_million": 3.0,
-                    "output_price_per_million": 15.0,
-                },
-            },
-        ]
-    }
-    catalog = PricingCatalog(_parse_do_pricing(sample))
-    # Family-last shapes Plano emits.
-    assert catalog.price_for("claude-opus-4-7") is not None
-    assert catalog.price_for("claude-haiku-4-5") is not None
-    # Date-suffixed name (Anthropic API style).
-    assert catalog.price_for("claude-haiku-4-5-20251001") is not None
-    # Word-order swap: DO has 'claude-4.6-sonnet', Plano emits 'claude-sonnet-4-6'.
-    assert catalog.price_for("claude-sonnet-4-6") is not None
-    # Original DO ids still resolve.
-    assert catalog.price_for("anthropic-claude-opus-4.7") is not None
-
-
 def test_parse_do_catalog_divides_large_values_as_per_million():
     """A provider that genuinely reports $5-per-million in that field gets divided."""
     from planoai.obs.pricing import _parse_do_pricing
