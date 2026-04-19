@@ -304,9 +304,7 @@ def _summary_panel(last: LLMCall | None, stats: AggregateStats) -> Panel:
         timing.append(_fmt_ms(last.ttft_ms), style=_ttft_style(last.ttft_ms))
         timing.append("  ·  ", style="dim")
         timing.append("lat ", style="dim")
-        timing.append(
-            _fmt_ms(last.duration_ms), style=_latency_style(last.duration_ms)
-        )
+        timing.append(_fmt_ms(last.duration_ms), style=_latency_style(last.duration_ms))
         tps = last.tokens_per_sec
         if tps:
             timing.append("  ·  ", style="dim")
@@ -344,13 +342,19 @@ def _summary_panel(last: LLMCall | None, stats: AggregateStats) -> Panel:
     right.add_row("tokens", tokens_total)
     lat_text = Text()
     lat_text.append("p50 ", style="dim")
-    lat_text.append(_fmt_ms(stats.p50_latency_ms), style=_latency_style(stats.p50_latency_ms))
+    lat_text.append(
+        _fmt_ms(stats.p50_latency_ms), style=_latency_style(stats.p50_latency_ms)
+    )
     lat_text.append("  ·  ", style="dim")
     lat_text.append("p95 ", style="dim")
-    lat_text.append(_fmt_ms(stats.p95_latency_ms), style=_latency_style(stats.p95_latency_ms))
+    lat_text.append(
+        _fmt_ms(stats.p95_latency_ms), style=_latency_style(stats.p95_latency_ms)
+    )
     lat_text.append("  ·  ", style="dim")
     lat_text.append("p99 ", style="dim")
-    lat_text.append(_fmt_ms(stats.p99_latency_ms), style=_latency_style(stats.p99_latency_ms))
+    lat_text.append(
+        _fmt_ms(stats.p99_latency_ms), style=_latency_style(stats.p99_latency_ms)
+    )
     right.add_row("latency", lat_text)
     ttft_text = Text()
     ttft_text.append("p50 ", style="dim")
@@ -504,9 +508,11 @@ def _recent_table(calls: list[LLMCall], limit: int = 15) -> Table:
         time_style = "bold white" if is_newest else None
         model_style = "bold cyan" if is_newest else "cyan"
         row: list[object] = [
-            Text(c.timestamp.strftime("%H:%M:%S"), style=time_style)
-            if time_style
-            else c.timestamp.strftime("%H:%M:%S"),
+            (
+                Text(c.timestamp.strftime("%H:%M:%S"), style=time_style)
+                if time_style
+                else c.timestamp.strftime("%H:%M:%S")
+            ),
             Text(_truncate_model(c.model), style=model_style),
         ]
         if show_route:
