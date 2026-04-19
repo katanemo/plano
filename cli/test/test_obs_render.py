@@ -94,10 +94,10 @@ def test_route_hits_only_for_routed_calls():
     ]
     hits = route_hits(calls)
     # Only calls with route names are counted.
-    assert sum(n for _, n, _ in hits) == 3
-    hits_by_name = {name: (n, pct) for name, n, pct in hits}
-    assert hits_by_name["code"][0] == 2
-    assert hits_by_name["summarization"][0] == 1
+    assert sum(h.hits for h in hits) == 3
+    hits_by_name = {h.route: h for h in hits}
+    assert hits_by_name["code"].hits == 2
+    assert hits_by_name["summarization"].hits == 1
 
 
 def test_route_hits_empty_when_no_routes():
