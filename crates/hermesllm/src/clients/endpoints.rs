@@ -175,7 +175,9 @@ impl SupportedAPIsFromClient {
         match self {
             SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages) => {
                 match provider_id {
-                    ProviderId::Anthropic => build_endpoint("/v1", "/messages"),
+                    ProviderId::Anthropic | ProviderId::Vercel => {
+                        build_endpoint("/v1", "/messages")
+                    }
                     ProviderId::AmazonBedrock => {
                         if request_path.starts_with("/v1/") && !is_streaming {
                             build_endpoint("", &format!("/model/{}/converse", model_id))
@@ -192,7 +194,9 @@ impl SupportedAPIsFromClient {
                 // For Responses API, check if provider supports it, otherwise translate to chat/completions
                 match provider_id {
                     // Providers that support /v1/responses natively
-                    ProviderId::OpenAI | ProviderId::XAI => route_by_provider("/responses"),
+                    ProviderId::OpenAI | ProviderId::XAI | ProviderId::Vercel => {
+                        route_by_provider("/responses")
+                    }
                     // All other providers: translate to /chat/completions
                     _ => route_by_provider("/chat/completions"),
                 }

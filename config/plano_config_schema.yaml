@@ -191,6 +191,8 @@ properties:
             - xiaomi
             - gemini
             - digitalocean
+            - vercel
+            - openrouter
         routing_preferences:
           type: array
           items:
@@ -240,6 +242,8 @@ properties:
             - xiaomi
             - gemini
             - digitalocean
+            - vercel
+            - openrouter
         routing_preferences:
           type: array
           items:
