@@ -45,6 +45,7 @@ pub enum ProviderId {
     Qwen,
     AmazonBedrock,
     ChatGPT,
+    DigitalOcean,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -73,6 +74,9 @@ impl TryFrom<&str> for ProviderId {
             "amazon_bedrock" => Ok(ProviderId::AmazonBedrock),
             "amazon" => Ok(ProviderId::AmazonBedrock), // alias
             "chatgpt" => Ok(ProviderId::ChatGPT),
+            "digitalocean" => Ok(ProviderId::DigitalOcean),
+            "do" => Ok(ProviderId::DigitalOcean),    // alias
+            "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -98,6 +102,7 @@ impl ProviderId {
             ProviderId::Zhipu => "z-ai",
             ProviderId::Qwen => "qwen",
             ProviderId::ChatGPT => "chatgpt",
+            ProviderId::DigitalOcean => "digitalocean",
             _ => return Vec::new(),
         };
 
@@ -152,7 +157,8 @@ impl ProviderId {
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
                 | ProviderId::Qwen
-                | ProviderId::ChatGPT,
+                | ProviderId::ChatGPT
+                | ProviderId::DigitalOcean,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -172,7 +178,8 @@ impl ProviderId {
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
                 | ProviderId::Qwen
-                | ProviderId::ChatGPT,
+                | ProviderId::ChatGPT
+                | ProviderId::DigitalOcean,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -240,6 +247,7 @@ impl Display for ProviderId {
             ProviderId::Qwen => write!(f, "qwen"),
             ProviderId::AmazonBedrock => write!(f, "amazon_bedrock"),
             ProviderId::ChatGPT => write!(f, "chatgpt"),
+            ProviderId::DigitalOcean => write!(f, "digitalocean"),
         }
     }
 }

@@ -177,6 +177,7 @@ mod tests {
             "http://localhost:8080".to_string(),
             "test-model".to_string(),
             "plano-orchestrator".to_string(),
+            crate::router::orchestrator_model_v1::MAX_TOKEN_LEN,
         ))
     }
 

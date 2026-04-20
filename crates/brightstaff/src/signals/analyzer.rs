@@ -1250,7 +1250,7 @@ impl TextBasedSignalAnalyzer {
         let mut repair_phrases = Vec::new();
         let mut user_turn_count = 0;
 
-        for (i, role, norm_msg) in normalized_messages {
+        for (pos, (i, role, norm_msg)) in normalized_messages.iter().enumerate() {
             if *role != Role::User {
                 continue;
             }
@@ -1274,10 +1274,13 @@ impl TextBasedSignalAnalyzer {
                 }
             }
 
-            // Only check for semantic similarity if no pattern matched
-            if !found_in_turn && *i >= 2 {
-                // Find previous user message
-                for j in (0..*i).rev() {
+            // Only check for semantic similarity if no pattern matched. Walk
+            // backwards through the *normalized* list (not the original
+            // conversation indices, which may be non-contiguous because
+            // messages without extractable text are filtered out) to find the
+            // most recent prior user message.
+            if !found_in_turn && pos >= 1 {
+                for j in (0..pos).rev() {
                     let (_, prev_role, prev_norm_msg) = &normalized_messages[j];
                     if *prev_role == Role::User {
                         if self.is_similar_rephrase(norm_msg, prev_norm_msg) {
@@ -2197,6 +2200,68 @@ mod tests {
         assert_eq!(signal.repair_count, 1);
         assert!(signal.repair_ratio > 0.0);
         println!("test_follow_up_detection took: {:?}", start.elapsed());
+    }
+
+    #[test]
+    fn test_follow_up_does_not_panic_with_filtered_messages() {
+        // Regression test: the preprocessing pipeline filters out messages
+        // without extractable text (tool calls, tool results, empty content).
+        // The stored tuple index `i` is the ORIGINAL-conversation index, so
+        // once anything is filtered out, `i` no longer matches the position
+        // inside `normalized_messages`. The old code used `*i` to index into
+        // `normalized_messages`, which panicked with "index out of bounds"
+        // when a user message appeared after filtered entries.
+        let analyzer = TextBasedSignalAnalyzer::new();
+        let messages = vec![
+            Message {
+                role: Role::User,
+                content: Some(hermesllm::apis::openai::MessageContent::Text(
+                    "first question".to_string(),
+                )),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            // Assistant message with no text content (e.g. tool call) — filtered out.
+            Message {
+                role: Role::Assistant,
+                content: None,
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            // Tool-role message with no extractable text — filtered out.
+            Message {
+                role: Role::Tool,
+                content: None,
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: Role::Assistant,
+                content: Some(hermesllm::apis::openai::MessageContent::Text(
+                    "some answer".to_string(),
+                )),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            // Rephrased user turn — original index 4, but after filtering
+            // only 3 messages remain in `normalized_messages` before it.
+            Message {
+                role: Role::User,
+                content: Some(hermesllm::apis::openai::MessageContent::Text(
+                    "first question please".to_string(),
+                )),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ];
+
+        // Must not panic — exercises the full analyze pipeline.
+        let _report = analyzer.analyze(&messages);
     }
 
     #[test]

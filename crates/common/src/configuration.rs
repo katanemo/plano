@@ -7,12 +7,32 @@ use crate::api::open_ai::{
     ChatCompletionTool, FunctionDefinition, FunctionParameter, FunctionParameters, ParameterType,
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionCacheType {
+    #[default]
+    Memory,
+    Redis,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionCacheConfig {
+    #[serde(rename = "type", default)]
+    pub cache_type: SessionCacheType,
+    /// Redis URL, e.g. `redis://localhost:6379`. Required when `type` is `redis`.
+    pub url: Option<String>,
+    /// Optional HTTP header name whose value is used as a tenant prefix in the cache key.
+    /// When set, keys are scoped as `plano:affinity:{tenant_id}:{session_id}`.
+    pub tenant_header: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Routing {
     pub llm_provider: Option<String>,
     pub model: Option<String>,
     pub session_ttl_seconds: Option<u64>,
     pub session_max_entries: Option<usize>,
+    pub session_cache: Option<SessionCacheConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,6 +233,7 @@ pub struct Overrides {
     pub use_agent_orchestrator: Option<bool>,
     pub llm_routing_model: Option<String>,
     pub agent_orchestration_model: Option<String>,
+    pub orchestrator_model_context_length: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -372,6 +393,8 @@ pub enum LlmProviderType {
     Plano,
     #[serde(rename = "chatgpt")]
     ChatGPT,
+    #[serde(rename = "digitalocean")]
+    DigitalOcean,
 }
 
 impl Display for LlmProviderType {
@@ -394,6 +417,7 @@ impl Display for LlmProviderType {
             LlmProviderType::AmazonBedrock => write!(f, "amazon_bedrock"),
             LlmProviderType::Plano => write!(f, "plano"),
             LlmProviderType::ChatGPT => write!(f, "chatgpt"),
+            LlmProviderType::DigitalOcean => write!(f, "digitalocean"),
         }
     }
 }
@@ -715,13 +739,6 @@ mod test {
                 ..Default::default()
             },
             LlmProvider {
-                name: "arch-router".to_string(),
-                provider_interface: LlmProviderType::Plano,
-                model: Some("Arch-Router".to_string()),
-                internal: Some(true),
-                ..Default::default()
-            },
-            LlmProvider {
                 name: "plano-orchestrator".to_string(),
                 provider_interface: LlmProviderType::Plano,
                 model: Some("Plano-Orchestrator".to_string()),
@@ -732,13 +749,10 @@ mod test {
 
         let models = providers.into_models();
 
-        // Should only have 1 model: openai-gpt4
         assert_eq!(models.data.len(), 1);
 
-        // Verify internal models are excluded from /v1/models
         let model_ids: Vec<String> = models.data.iter().map(|m| m.id.clone()).collect();
         assert!(model_ids.contains(&"openai-gpt4".to_string()));
-        assert!(!model_ids.contains(&"arch-router".to_string()));
         assert!(!model_ids.contains(&"plano-orchestrator".to_string()));
     }
 }

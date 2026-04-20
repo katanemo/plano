@@ -596,6 +596,18 @@ impl TokenUsage for Usage {
     fn total_tokens(&self) -> usize {
         self.total_tokens as usize
     }
+
+    fn cached_input_tokens(&self) -> Option<usize> {
+        self.prompt_tokens_details
+            .as_ref()
+            .and_then(|d| d.cached_tokens.map(|t| t as usize))
+    }
+
+    fn reasoning_tokens(&self) -> Option<usize> {
+        self.completion_tokens_details
+            .as_ref()
+            .and_then(|d| d.reasoning_tokens.map(|t| t as usize))
+    }
 }
 
 /// Implementation of ProviderRequest for ChatCompletionsRequest

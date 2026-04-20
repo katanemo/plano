@@ -3,7 +3,7 @@ This demo shows how you can use user preferences to route user prompts to approp
 
 ## How to start the demo
 
-Make sure you have Plano CLI installed (`pip install planoai==0.4.18` or `uv tool install planoai==0.4.18`).
+Make sure you have Plano CLI installed (`pip install planoai==0.4.20` or `uv tool install planoai==0.4.20`).
 
 ```bash
 cd demos/llm_routing/preference_based_routing
@@ -32,9 +32,9 @@ planoai up config.yaml
 
 3. Test with curl or open AnythingLLM http://localhost:3001/
 
-## Running with local Arch-Router (via Ollama)
+## Running with local routing model (via Ollama)
 
-By default, Plano uses a hosted Arch-Router endpoint. To self-host Arch-Router locally using Ollama:
+By default, Plano uses a hosted Plano-Orchestrator endpoint. To self-host a routing model locally using Ollama:
 
 1. Install [Ollama](https://ollama.ai) and pull the model:
 ```bash

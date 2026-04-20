@@ -191,6 +191,7 @@ properties:
             - xiaomi
             - gemini
             - chatgpt
+            - digitalocean
         headers:
           type: object
           additionalProperties:
@@ -245,6 +246,7 @@ properties:
             - xiaomi
             - gemini
             - chatgpt
+            - digitalocean
         headers:
           type: object
           additionalProperties:
@@ -296,10 +298,13 @@ properties:
         description: "Path to the trusted CA bundle for upstream TLS verification. Default is '/etc/ssl/certs/ca-certificates.crt'."
       llm_routing_model:
         type: string
-        description: "Model name for the LLM router (e.g., 'Arch-Router'). Must match a model in model_providers."
+        description: "Model name for the LLM router (e.g., 'Plano-Orchestrator'). Must match a model in model_providers."
       agent_orchestration_model:
         type: string
         description: "Model name for the agent orchestrator (e.g., 'Plano-Orchestrator'). Must match a model in model_providers."
+      orchestrator_model_context_length:
+        type: integer
+        description: "Maximum token length for the orchestrator/routing model context window. Default is 8192."
   system_prompt:
     type: string
   prompt_targets:
@@ -453,6 +458,25 @@ properties:
         minimum: 1
         maximum: 10000
         description: Maximum number of session-pinned routing cache entries. Default 10000.
+      session_cache:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - memory
+              - redis
+            default: memory
+            description: Session cache backend. "memory" (default) is in-process; "redis" is shared across replicas.
+          url:
+            type: string
+            description: Redis URL, e.g. redis://localhost:6379. Required when type is redis.
+          tenant_header:
+            type: string
+            description: >
+              Optional HTTP header name whose value is used as a tenant prefix in the cache key.
+              When set, keys are scoped as plano:affinity:{tenant_id}:{session_id}.
+        additionalProperties: false
     additionalProperties: false
   state_storage:
     type: object

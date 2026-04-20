@@ -22,11 +22,11 @@ Content-Type: application/json
 
 ### get model list from arch-function
 GET https://archfc.katanemo.dev/v1/models HTTP/1.1
-model: Arch-Router
+model: Plano-Orchestrator
 
-### get model list from Arch-Router (notice model header)
+### get model list from Plano-Orchestrator (notice model header)
 GET https://archfc.katanemo.dev/v1/models HTTP/1.1
-model: Arch-Router
+model: Plano-Orchestrator
 
 
 ### test try code generating

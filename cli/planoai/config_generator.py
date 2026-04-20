@@ -30,6 +30,7 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "moonshotai",
     "zhipu",
     "chatgpt",
+    "digitalocean",
 ]
 
 CHATGPT_API_BASE = "https://chatgpt.com/backend-api/codex"
@@ -395,16 +396,15 @@ def validate_and_render_schema():
     # Build lookup of model names (already prefix-stripped by config processing)
     model_name_set = {mp.get("model") for mp in updated_model_providers}
 
-    # Auto-add arch-router provider if routing preferences exist and no provider matches the router model
-    router_model = overrides_config.get("llm_routing_model", "Arch-Router")
-    # Strip provider prefix for comparison since config processing strips prefixes from model names
+    # Auto-add plano-orchestrator provider if routing preferences exist and no provider matches the routing model
+    router_model = overrides_config.get("llm_routing_model", "Plano-Orchestrator")
     router_model_id = (
         router_model.split("/", 1)[1] if "/" in router_model else router_model
     )
     if len(model_usage_name_keys) > 0 and router_model_id not in model_name_set:
         updated_model_providers.append(
             {
-                "name": "arch-router",
+                "name": "plano-orchestrator",
                 "provider_interface": "plano",
                 "model": router_model_id,
                 "internal": True,

@@ -157,8 +157,8 @@ model_providers:
   protocol: https
   provider_interface: openai
 - internal: true
-  model: Arch-Router
-  name: arch-router
+  model: Plano-Orchestrator
+  name: plano-orchestrator
   provider_interface: plano
 - internal: true
   model: Arch-Function
@@ -170,7 +170,7 @@ model_providers:
   provider_interface: plano
 overrides:
   agent_orchestration_model: Plano-Orchestrator
-  llm_routing_model: Arch-Router
+  llm_routing_model: Plano-Orchestrator
   optimize_context_window: true
   prompt_target_intent_matching_threshold: 0.7
   upstream_connect_timeout: 10s
@@ -216,6 +216,8 @@ ratelimits:
     key: x-org-id
     value: acme-corp
 routing:
+  session_cache:
+    type: memory
   session_max_entries: 10000
   session_ttl_seconds: 600
 state_storage:

@@ -5,9 +5,9 @@ use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
 use brightstaff::handlers::routing_service::routing_decision;
-use brightstaff::router::llm::RouterService;
 use brightstaff::router::model_metrics::ModelMetricsService;
 use brightstaff::router::orchestrator::OrchestratorService;
+use brightstaff::session_cache::init_session_cache;
 use brightstaff::state::memory::MemoryConversationalStorage;
 use brightstaff::state::postgresql::PostgreSQLConversationStorage;
 use brightstaff::state::StateStorage;
@@ -36,8 +36,6 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 const BIND_ADDRESS: &str = "0.0.0.0:9091";
-const DEFAULT_ROUTING_LLM_PROVIDER: &str = "arch-router";
-const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
 const DEFAULT_ORCHESTRATOR_LLM_PROVIDER: &str = "plano-orchestrator";
 const DEFAULT_ORCHESTRATOR_MODEL_NAME: &str = "Plano-Orchestrator";
 
@@ -160,22 +158,8 @@ async fn init_app_state(
 
     let overrides = config.overrides.clone().unwrap_or_default();
 
-    let routing_model_name: String = overrides
-        .llm_routing_model
-        .as_deref()
-        .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
-        .unwrap_or(DEFAULT_ROUTING_MODEL_NAME)
-        .to_string();
-
-    let routing_llm_provider = config
-        .model_providers
-        .iter()
-        .find(|p| p.model.as_deref() == Some(routing_model_name.as_str()))
-        .map(|p| p.name.clone())
-        .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
-
     let session_ttl_seconds = config.routing.as_ref().and_then(|r| r.session_ttl_seconds);
-    let session_max_entries = config.routing.as_ref().and_then(|r| r.session_max_entries);
+    let session_cache = init_session_cache(config).await?;
 
     // Validate that top-level routing_preferences requires v0.4.0+.
     let config_version = parse_semver(&config.version);
@@ -297,31 +281,17 @@ async fn init_app_state(
         }
     }
 
-    let router_service = Arc::new(RouterService::new(
-        config.routing_preferences.clone(),
-        metrics_service,
-        format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
-        routing_model_name,
-        routing_llm_provider,
-        session_ttl_seconds,
-        session_max_entries,
-    ));
+    let session_tenant_header = config
+        .routing
+        .as_ref()
+        .and_then(|r| r.session_cache.as_ref())
+        .and_then(|c| c.tenant_header.clone());
 
-    // Spawn background task to clean up expired session cache entries every 5 minutes
-    {
-        let router_service = Arc::clone(&router_service);
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
-            loop {
-                interval.tick().await;
-                router_service.cleanup_expired_sessions().await;
-            }
-        });
-    }
-
+    // Resolve model name: prefer llm_routing_model override, then agent_orchestration_model, then default.
     let orchestrator_model_name: String = overrides
-        .agent_orchestration_model
+        .llm_routing_model
         .as_deref()
+        .or(overrides.agent_orchestration_model.as_deref())
         .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
         .unwrap_or(DEFAULT_ORCHESTRATOR_MODEL_NAME)
         .to_string();
@@ -333,10 +303,20 @@ async fn init_app_state(
         .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_LLM_PROVIDER.to_string());
 
-    let orchestrator_service = Arc::new(OrchestratorService::new(
+    let orchestrator_max_tokens = overrides
+        .orchestrator_model_context_length
+        .unwrap_or(brightstaff::router::orchestrator_model_v1::MAX_TOKEN_LEN);
+
+    let orchestrator_service = Arc::new(OrchestratorService::with_routing(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         orchestrator_model_name,
         orchestrator_llm_provider,
+        config.routing_preferences.clone(),
+        metrics_service,
+        session_ttl_seconds,
+        session_cache,
+        session_tenant_header,
+        orchestrator_max_tokens,
     ));
 
     let state_storage = init_state_storage(config).await?;
@@ -347,7 +327,6 @@ async fn init_app_state(
         .and_then(|tracing| tracing.span_attributes.clone());
 
     Ok(AppState {
-        router_service,
         orchestrator_service,
         model_aliases: config.model_aliases.clone(),
         llm_providers: Arc::new(RwLock::new(llm_providers)),
@@ -434,7 +413,7 @@ async fn route(
         ) {
             return routing_decision(
                 req,
-                Arc::clone(&state.router_service),
+                Arc::clone(&state.orchestrator_service),
                 stripped,
                 &state.span_attributes,
             )
