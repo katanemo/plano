@@ -375,14 +375,16 @@ mod tests {
     fn test_vercel_compatible_api() {
         use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
-        let openai_client = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let openai_client =
+            SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
         let upstream = ProviderId::Vercel.compatible_api_for_client(&openai_client, false);
         assert!(
             matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
             "Vercel should map OpenAI client to OpenAIChatCompletions upstream"
         );
 
-        let anthropic_client = SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
+        let anthropic_client =
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
         let upstream = ProviderId::Vercel.compatible_api_for_client(&anthropic_client, false);
         assert!(
             matches!(upstream, SupportedUpstreamAPIs::AnthropicMessagesAPI(_)),
@@ -401,14 +403,16 @@ mod tests {
     fn test_openrouter_compatible_api() {
         use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
-        let openai_client = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let openai_client =
+            SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
         let upstream = ProviderId::OpenRouter.compatible_api_for_client(&openai_client, false);
         assert!(
             matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
             "OpenRouter should map OpenAI client to OpenAIChatCompletions upstream"
         );
 
-        let anthropic_client = SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
+        let anthropic_client =
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
         let upstream = ProviderId::OpenRouter.compatible_api_for_client(&anthropic_client, false);
         assert!(
             matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
