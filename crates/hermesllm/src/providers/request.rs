@@ -77,7 +77,7 @@ impl ProviderRequestType {
         &mut self,
         provider_id: ProviderId,
         upstream_api: &SupportedUpstreamAPIs,
-    ) {
+    ) -> Result<(), ProviderRequestError> {
         if provider_id == ProviderId::XAI
             && matches!(
                 upstream_api,
@@ -110,6 +110,12 @@ impl ProviderRequestType {
                     }
                 }
                 req.store = Some(false);
+                if req.stream == Some(false) {
+                    return Err(ProviderRequestError {
+                        message: "Non-streaming requests are not supported for the ChatGPT Codex provider. Set stream=true or omit the stream field.".to_string(),
+                        source: None,
+                    });
+                }
                 req.stream = Some(true);
 
                 // ChatGPT backend requires input to be a list, not a plain string
@@ -124,6 +130,7 @@ impl ProviderRequestType {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -859,10 +866,12 @@ mod tests {
             ..Default::default()
         });
 
-        request.normalize_for_upstream(
-            ProviderId::XAI,
-            &SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
-        );
+        request
+            .normalize_for_upstream(
+                ProviderId::XAI,
+                &SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
+            )
+            .unwrap();
 
         let ProviderRequestType::ChatCompletionsRequest(req) = request else {
             panic!("expected chat request");
@@ -887,10 +896,12 @@ mod tests {
             ..Default::default()
         });
 
-        request.normalize_for_upstream(
-            ProviderId::OpenAI,
-            &SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
-        );
+        request
+            .normalize_for_upstream(
+                ProviderId::OpenAI,
+                &SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
+            )
+            .unwrap();
 
         let ProviderRequestType::ChatCompletionsRequest(req) = request else {
             panic!("expected chat request");

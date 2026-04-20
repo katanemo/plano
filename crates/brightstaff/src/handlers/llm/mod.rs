@@ -228,7 +228,15 @@ async fn llm_chat_inner(
     if let Some(ref client_api_kind) = client_api {
         let upstream_api =
             provider_id.compatible_api_for_client(client_api_kind, is_streaming_request);
-        client_request.normalize_for_upstream(provider_id, &upstream_api);
+        if let Err(e) = client_request.normalize_for_upstream(provider_id, &upstream_api) {
+            warn!(
+                "request_id={}: normalize_for_upstream failed: {}",
+                request_id, e
+            );
+            let mut bad_request = Response::new(full(e.message));
+            *bad_request.status_mut() = StatusCode::BAD_REQUEST;
+            return Ok(bad_request);
+        }
     }
 
     // --- Phase 2: Resolve conversation state (v1/responses API) ---

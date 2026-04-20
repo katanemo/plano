@@ -1056,7 +1056,20 @@ impl HttpContext for StreamContext {
 
                 match ProviderRequestType::try_from((deserialized_client_request, upstream)) {
                     Ok(mut request) => {
-                        request.normalize_for_upstream(self.get_provider_id(), upstream);
+                        if let Err(e) =
+                            request.normalize_for_upstream(self.get_provider_id(), upstream)
+                        {
+                            warn!(
+                                "request_id={}: normalize_for_upstream failed: {}",
+                                self.request_identifier(),
+                                e
+                            );
+                            self.send_server_error(
+                                ServerError::LogicError(e.message),
+                                Some(StatusCode::BAD_REQUEST),
+                            );
+                            return Action::Pause;
+                        }
                         debug!(
                             "request_id={}: upstream request payload: {}",
                             self.request_identifier(),
