@@ -1,0 +1,14 @@
+# Auto-provision the Prometheus datasource so the bundled dashboard wires up
+# without any clicks. The `uid: DS_PROMETHEUS` matches the templated input in
+# brightstaff_dashboard.json.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: DS_PROMETHEUS
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

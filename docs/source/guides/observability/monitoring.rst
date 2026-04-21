@@ -75,3 +75,34 @@ are some sample configuration files for both, respectively.
         isDefault: true
         access: proxy
         editable: true
+
+Brightstaff metrics
+~~~~~~~~~~~~~~~~~~~
+
+In addition to Envoy's stats on ``:9901``, the brightstaff dataplane
+process exposes its own Prometheus endpoint on ``0.0.0.0:9092`` (override
+with ``METRICS_BIND_ADDRESS``). It publishes:
+
+* HTTP RED — ``brightstaff_http_requests_total``,
+  ``brightstaff_http_request_duration_seconds``,
+  ``brightstaff_http_in_flight_requests`` (labels: ``handler``, ``method``,
+  ``status_class``).
+* LLM upstream — ``brightstaff_llm_upstream_requests_total``,
+  ``brightstaff_llm_upstream_duration_seconds``,
+  ``brightstaff_llm_time_to_first_token_seconds``,
+  ``brightstaff_llm_tokens_total`` (labels: ``provider``, ``model``,
+  ``error_class``, ``kind``).
+* Routing — ``brightstaff_router_decisions_total``,
+  ``brightstaff_router_decision_duration_seconds``,
+  ``brightstaff_routing_service_requests_total``,
+  ``brightstaff_session_cache_events_total``.
+* Process & build — ``process_resident_memory_bytes``,
+  ``process_cpu_seconds_total``, ``brightstaff_build_info``.
+
+A drop-in Prometheus scrape config and a Grafana dashboard JSON are
+shipped under ``config/grafana/``:
+
+* ``config/grafana/prometheus_scrape.yaml`` — adds ``envoy`` and
+  ``brightstaff`` scrape jobs.
+* ``config/grafana/brightstaff_dashboard.json`` — import via *Dashboards →
+  New → Import* in Grafana; pick your Prometheus datasource when prompted.

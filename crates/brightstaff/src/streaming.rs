@@ -20,6 +20,8 @@ const STREAM_BUFFER_SIZE: usize = 16;
 /// Most chat responses are well under this; pathological ones are dropped without
 /// affecting pass-through streaming to the client.
 const USAGE_BUFFER_MAX: usize = 2 * 1024 * 1024;
+use crate::metrics as bs_metrics;
+use crate::metrics::labels as metric_labels;
 use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
 use crate::tracing::{llm, set_service_name, signals as signal_constants};
 use hermesllm::apis::openai::Message;
@@ -172,6 +174,18 @@ impl StreamProcessor for Box<dyn StreamProcessor> {
     }
 }
 
+/// Optional Prometheus-metric context for an LLM upstream call. When present,
+/// [`ObservableStreamProcessor`] emits `brightstaff_llm_*` metrics at
+/// first-byte / complete / error callbacks.
+#[derive(Debug, Clone)]
+pub struct LlmMetricsCtx {
+    pub provider: String,
+    pub model: String,
+    /// HTTP status of the upstream response. Used to pick `status_class` and
+    /// `error_class` on `on_complete`.
+    pub upstream_status: u16,
+}
+
 /// A processor that tracks streaming metrics
 pub struct ObservableStreamProcessor {
     service_name: String,
@@ -185,6 +199,8 @@ pub struct ObservableStreamProcessor {
     /// on `on_complete`. Capped at `USAGE_BUFFER_MAX`; excess chunks are dropped
     /// from the buffer (they still pass through to the client).
     response_buffer: Vec<u8>,
+    llm_metrics: Option<LlmMetricsCtx>,
+    metrics_recorded: bool,
 }
 
 impl ObservableStreamProcessor {
@@ -219,7 +235,16 @@ impl ObservableStreamProcessor {
             time_to_first_token: None,
             messages,
             response_buffer: Vec::new(),
+            llm_metrics: None,
+            metrics_recorded: false,
         }
+    }
+
+    /// Attach LLM upstream metric context so the processor emits
+    /// `brightstaff_llm_*` metrics on first-byte / complete / error.
+    pub fn with_llm_metrics(mut self, ctx: LlmMetricsCtx) -> Self {
+        self.llm_metrics = Some(ctx);
+        self
     }
 }
 
@@ -240,7 +265,11 @@ impl StreamProcessor for ObservableStreamProcessor {
     fn on_first_bytes(&mut self) {
         // Record time to first token (only for streaming)
         if self.time_to_first_token.is_none() {
-            self.time_to_first_token = Some(self.start_time.elapsed().as_millis());
+            let elapsed = self.start_time.elapsed();
+            self.time_to_first_token = Some(elapsed.as_millis());
+            if let Some(ref ctx) = self.llm_metrics {
+                bs_metrics::record_llm_ttft(&ctx.provider, &ctx.model, elapsed);
+            }
         }
     }
 
@@ -298,6 +327,39 @@ impl StreamProcessor for ObservableStreamProcessor {
             if let Some(resolved) = usage.resolved_model.clone() {
                 otel_span.set_attribute(KeyValue::new(llm::MODEL_NAME, resolved));
             }
+        }
+
+        // Emit LLM upstream prometheus metrics (duration + tokens) if wired.
+        // The upstream responded (we have a status), so status_class alone
+        // carries the non-2xx signal — error_class stays "none".
+        if let Some(ref ctx) = self.llm_metrics {
+            bs_metrics::record_llm_upstream(
+                &ctx.provider,
+                &ctx.model,
+                ctx.upstream_status,
+                metric_labels::LLM_ERR_NONE,
+                self.start_time.elapsed(),
+            );
+            if let Some(v) = usage.prompt_tokens {
+                bs_metrics::record_llm_tokens(
+                    &ctx.provider,
+                    &ctx.model,
+                    metric_labels::TOKEN_KIND_PROMPT,
+                    v.max(0) as u64,
+                );
+            }
+            if let Some(v) = usage.completion_tokens {
+                bs_metrics::record_llm_tokens(
+                    &ctx.provider,
+                    &ctx.model,
+                    metric_labels::TOKEN_KIND_COMPLETION,
+                    v.max(0) as u64,
+                );
+            }
+            if usage.prompt_tokens.is_none() && usage.completion_tokens.is_none() {
+                bs_metrics::record_llm_tokens_usage_missing(&ctx.provider, &ctx.model);
+            }
+            self.metrics_recorded = true;
         }
         // Release the buffered bytes early; nothing downstream needs them.
         self.response_buffer.clear();
@@ -396,6 +458,18 @@ impl StreamProcessor for ObservableStreamProcessor {
             duration_ms = self.start_time.elapsed().as_millis(),
             "stream error"
         );
+        if let Some(ref ctx) = self.llm_metrics {
+            if !self.metrics_recorded {
+                bs_metrics::record_llm_upstream(
+                    &ctx.provider,
+                    &ctx.model,
+                    ctx.upstream_status,
+                    metric_labels::LLM_ERR_STREAM,
+                    self.start_time.elapsed(),
+                );
+                self.metrics_recorded = true;
+            }
+        }
     }
 }
 

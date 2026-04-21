@@ -1,0 +1,43 @@
+# One-command Prometheus + Grafana stack for observing a locally-running
+# Plano (Envoy admin :9901 + brightstaff :9092 on the host).
+#
+#   cd config/grafana
+#   docker compose up -d
+#   open http://localhost:3000  (admin / admin)
+#
+# Grafana is preloaded with:
+#   - Prometheus datasource (uid=DS_PROMETHEUS) → http://prometheus:9090
+#   - Brightstaff dashboard (auto-imported from brightstaff_dashboard.json)
+#
+# Prometheus scrapes the host's :9092 and :9901 via host.docker.internal.
+# On Linux this works because of the `extra_hosts: host-gateway` mapping
+# below. On Mac/Win it works natively.
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: plano-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus_scrape.yaml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: plano-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./brightstaff_dashboard.json:/var/lib/grafana/dashboards/brightstaff_dashboard.json:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped

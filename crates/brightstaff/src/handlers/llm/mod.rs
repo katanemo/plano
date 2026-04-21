@@ -24,13 +24,14 @@ use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
 use crate::handlers::extract_request_id;
 use crate::handlers::full;
+use crate::metrics as bs_metrics;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
 use crate::streaming::{
     create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
-    ObservableStreamProcessor, StreamProcessor,
+    LlmMetricsCtx, ObservableStreamProcessor, StreamProcessor,
 };
 use crate::tracing::{
     collect_custom_trace_attributes, llm as tracing_llm, operation_component,
@@ -686,6 +687,13 @@ async fn send_upstream(
 
     let request_start_time = std::time::Instant::now();
 
+    // Labels for LLM upstream metrics. We prefer `resolved_model` (post-routing)
+    // and derive the provider from its `provider/model` prefix. This matches the
+    // same model id the cost/latency router keys off.
+    let (metric_provider_raw, metric_model_raw) = bs_metrics::split_provider_model(resolved_model);
+    let metric_provider = metric_provider_raw.to_string();
+    let metric_model = metric_model_raw.to_string();
+
     let llm_response = match http_client
         .post(upstream_url)
         .headers(request_headers.clone())
@@ -695,6 +703,14 @@ async fn send_upstream(
     {
         Ok(res) => res,
         Err(err) => {
+            let err_class = bs_metrics::llm_error_class_from_reqwest(&err);
+            bs_metrics::record_llm_upstream(
+                &metric_provider,
+                &metric_model,
+                0,
+                err_class,
+                request_start_time.elapsed(),
+            );
             let err_msg = format!("Failed to send request: {}", err);
             let mut internal_error = Response::new(full(err_msg));
             *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
@@ -750,7 +766,12 @@ async fn send_upstream(
         span_name,
         request_start_time,
         messages_for_signals,
-    );
+    )
+    .with_llm_metrics(LlmMetricsCtx {
+        provider: metric_provider.clone(),
+        model: metric_model.clone(),
+        upstream_status: upstream_status.as_u16(),
+    });
 
     let output_filter_request_headers = if filter_pipeline.has_output_filters() {
         Some(request_headers.clone())
