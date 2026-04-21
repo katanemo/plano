@@ -22,8 +22,9 @@ const STREAM_BUFFER_SIZE: usize = 16;
 const USAGE_BUFFER_MAX: usize = 2 * 1024 * 1024;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
-use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
-use crate::tracing::{llm, set_service_name, signals as signal_constants};
+use crate::signals::otel::emit_signals_to_span;
+use crate::signals::{SignalAnalyzer, FLAG_MARKER};
+use crate::tracing::{llm, set_service_name};
 use hermesllm::apis::openai::Message;
 
 /// Parsed usage + resolved-model details from a provider response.
@@ -365,77 +366,19 @@ impl StreamProcessor for ObservableStreamProcessor {
         self.response_buffer.clear();
         self.response_buffer.shrink_to_fit();
 
-        // Analyze signals if messages are available and record as span attributes
+        // Analyze signals if messages are available and record as span
+        // attributes + per-signal events. We dual-emit legacy aggregate keys
+        // and the new layered taxonomy so existing dashboards keep working
+        // while new consumers can opt into the richer hierarchy.
         if let Some(ref messages) = self.messages {
-            let analyzer: Box<dyn SignalAnalyzer> = Box::new(TextBasedSignalAnalyzer::new());
-            let report = analyzer.analyze(messages);
+            let analyzer = SignalAnalyzer::default();
+            let report = analyzer.analyze_openai(messages);
 
-            // Get the current OTel span to set signal attributes
             let span = tracing::Span::current();
             let otel_context = span.context();
             let otel_span = otel_context.span();
 
-            // Add overall quality
-            otel_span.set_attribute(KeyValue::new(
-                signal_constants::QUALITY,
-                format!("{:?}", report.overall_quality),
-            ));
-
-            // Add repair/follow-up metrics if concerning
-            if report.follow_up.is_concerning || report.follow_up.repair_count > 0 {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::REPAIR_COUNT,
-                    report.follow_up.repair_count as i64,
-                ));
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::REPAIR_RATIO,
-                    format!("{:.3}", report.follow_up.repair_ratio),
-                ));
-            }
-
-            // Add frustration metrics
-            if report.frustration.has_frustration {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::FRUSTRATION_COUNT,
-                    report.frustration.frustration_count as i64,
-                ));
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::FRUSTRATION_SEVERITY,
-                    report.frustration.severity as i64,
-                ));
-            }
-
-            // Add repetition metrics
-            if report.repetition.has_looping {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::REPETITION_COUNT,
-                    report.repetition.repetition_count as i64,
-                ));
-            }
-
-            // Add escalation metrics
-            if report.escalation.escalation_requested {
-                otel_span
-                    .set_attribute(KeyValue::new(signal_constants::ESCALATION_REQUESTED, true));
-            }
-
-            // Add positive feedback metrics
-            if report.positive_feedback.has_positive_feedback {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::POSITIVE_FEEDBACK_COUNT,
-                    report.positive_feedback.positive_count as i64,
-                ));
-            }
-
-            // Flag the span name if any concerning signal is detected
-            let should_flag = report.frustration.has_frustration
-                || report.repetition.has_looping
-                || report.escalation.escalation_requested
-                || matches!(
-                    report.overall_quality,
-                    InteractionQuality::Poor | InteractionQuality::Severe
-                );
-
+            let should_flag = emit_signals_to_span(&otel_span, &report);
             if should_flag {
                 otel_span.update_name(format!("{} {}", self.operation_name, FLAG_MARKER));
             }
