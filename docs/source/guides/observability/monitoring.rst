@@ -99,10 +99,30 @@ with ``METRICS_BIND_ADDRESS``). It publishes:
 * Process & build — ``process_resident_memory_bytes``,
   ``process_cpu_seconds_total``, ``brightstaff_build_info``.
 
-A drop-in Prometheus scrape config and a Grafana dashboard JSON are
-shipped under ``config/grafana/``:
+A self-contained Prometheus + Grafana stack is shipped under
+``config/grafana/``. With Plano already running on the host, bring it up
+with one command:
 
-* ``config/grafana/prometheus_scrape.yaml`` — adds ``envoy`` and
-  ``brightstaff`` scrape jobs.
-* ``config/grafana/brightstaff_dashboard.json`` — import via *Dashboards →
-  New → Import* in Grafana; pick your Prometheus datasource when prompted.
+.. code-block:: bash
+
+    cd config/grafana
+    docker compose up -d
+    open http://localhost:3000   # admin / admin (anonymous viewer also enabled)
+
+Grafana auto-loads the Prometheus datasource and the brightstaff
+dashboard (look under the *Plano* folder). Prometheus scrapes the host's
+``:9092`` and ``:9901`` via ``host.docker.internal``.
+
+Files:
+
+* ``config/grafana/docker-compose.yaml`` — one-command Prom + Grafana
+  stack with provisioning.
+* ``config/grafana/prometheus_scrape.yaml`` — complete Prometheus config
+  with ``envoy`` and ``brightstaff`` scrape jobs (mounted by the
+  compose).
+* ``config/grafana/brightstaff_dashboard.json`` — 19-panel dashboard
+  across HTTP RED, LLM upstream, Routing service, and Process & Envoy
+  link rows. Auto-provisioned by the compose; can also be imported by
+  hand via *Dashboards → New → Import*.
+* ``config/grafana/provisioning/`` — Grafana provisioning files for the
+  datasource and dashboard provider.
