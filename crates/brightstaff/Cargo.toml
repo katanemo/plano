@@ -3,6 +3,14 @@ name = "brightstaff"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "brightstaff"
+path = "src/main.rs"
+
+[[bin]]
+name = "signals_replay"
+path = "src/bin/signals_replay.rs"
+
 [dependencies]
 async-openai = "0.30.1"
 async-trait = "0.1"

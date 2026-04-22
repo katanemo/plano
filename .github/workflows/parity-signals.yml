@@ -1,0 +1,97 @@
+name: parity-signals
+
+# On-demand parity validation of the Rust signals port against the Python
+# reference (https://github.com/katanemo/signals). Not run on every PR
+# because it downloads several GB of dataset content.
+
+on:
+  workflow_dispatch:
+    inputs:
+      num_samples:
+        description: "Number of conversations to sample from lmsys-chat-1m"
+        required: true
+        default: "2000"
+      seed:
+        description: "Sampling seed (use the same value for reproducibility)"
+        required: true
+        default: "42"
+      dataset_revision:
+        description: "HF dataset revision (commit SHA). Empty = latest (NOT pinned)."
+        required: false
+        default: ""
+      signals_ref:
+        description: "Git ref of katanemo/signals to install"
+        required: true
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Build signals_replay
+        working-directory: crates
+        run: cargo build --release -p brightstaff --bin signals_replay
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install harness deps
+        working-directory: tests/parity/signals
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install "signals @ git+https://github.com/katanemo/signals@${{ inputs.signals_ref }}"
+
+      - name: Authenticate Hugging Face (lmsys-chat-1m is gated)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is required to download lmsys-chat-1m"
+            exit 1
+          fi
+          mkdir -p ~/.cache/huggingface
+          echo -n "$HF_TOKEN" > ~/.cache/huggingface/token
+
+      - name: Run parity harness
+        working-directory: tests/parity/signals
+        env:
+          DATASET_REV: ${{ inputs.dataset_revision }}
+        run: |
+          ARGS=(
+            --num-samples "${{ inputs.num_samples }}"
+            --seed "${{ inputs.seed }}"
+            --rust-binary "${GITHUB_WORKSPACE}/crates/target/release/signals_replay"
+            --output-dir out/
+          )
+          if [ -n "$DATASET_REV" ]; then
+            ARGS+=(--dataset-revision "$DATASET_REV")
+          fi
+          python run_parity.py "${ARGS[@]}"
+
+      - name: Compare reports
+        working-directory: tests/parity/signals
+        run: python compare.py --output-dir out/
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signals-parity-out
+          path: tests/parity/signals/out/
+          if-no-files-found: warn
