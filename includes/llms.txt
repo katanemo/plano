@@ -1,6 +1,6 @@
 Plano Docs v0.4.20
 llms.txt (auto-generated)
-Generated (UTC): 2026-04-19T04:21:44.790991+00:00
+Generated (UTC): 2026-04-22T18:19:37.841645+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -4317,6 +4317,60 @@ datasources:
     isDefault: true
     access: proxy
     editable: true
+
+Brightstaff metrics
+
+In addition to Envoy’s stats on :9901, the brightstaff dataplane
+process exposes its own Prometheus endpoint on 0.0.0.0:9092 (override
+with METRICS_BIND_ADDRESS). It publishes:
+
+HTTP RED — brightstaff_http_requests_total,
+brightstaff_http_request_duration_seconds,
+brightstaff_http_in_flight_requests (labels: handler, method,
+status_class).
+
+LLM upstream — brightstaff_llm_upstream_requests_total,
+brightstaff_llm_upstream_duration_seconds,
+brightstaff_llm_time_to_first_token_seconds,
+brightstaff_llm_tokens_total (labels: provider, model,
+error_class, kind).
+
+Routing — brightstaff_router_decisions_total,
+brightstaff_router_decision_duration_seconds,
+brightstaff_routing_service_requests_total,
+brightstaff_session_cache_events_total.
+
+Process & build — process_resident_memory_bytes,
+process_cpu_seconds_total, brightstaff_build_info.
+
+A self-contained Prometheus + Grafana stack is shipped under
+config/grafana/. With Plano already running on the host, bring it up
+with one command:
+
+cd config/grafana
+docker compose up -d
+open http://localhost:3000   # admin / admin (anonymous viewer also enabled)
+
+Grafana auto-loads the Prometheus datasource and the brightstaff
+dashboard (look under the Plano folder). Prometheus scrapes the host’s
+:9092 and :9901 via host.docker.internal.
+
+Files:
+
+config/grafana/docker-compose.yaml — one-command Prom + Grafana
+stack with provisioning.
+
+config/grafana/prometheus_scrape.yaml — complete Prometheus config
+with envoy and brightstaff scrape jobs (mounted by the
+compose).
+
+config/grafana/brightstaff_dashboard.json — 19-panel dashboard
+across HTTP RED, LLM upstream, Routing service, and Process & Envoy
+link rows. Auto-provisioned by the compose; can also be imported by
+hand via Dashboards → New → Import.
+
+config/grafana/provisioning/ — Grafana provisioning files for the
+datasource and dashboard provider.
 
 ---
 
