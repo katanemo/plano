@@ -339,12 +339,14 @@ def validate_and_render_schema():
                 model_provider["provider_interface"] = provider
                 del model_provider["provider"]
 
-            # Auto-wire ChatGPT provider: inject base_url, access_key, and extra headers
+            # Auto-wire ChatGPT provider: inject base_url, passthrough_auth, and extra headers
             if provider == "chatgpt":
                 if not model_provider.get("base_url"):
                     model_provider["base_url"] = CHATGPT_API_BASE
-                if not model_provider.get("access_key"):
-                    model_provider["access_key"] = "$CHATGPT_ACCESS_TOKEN"
+                if not model_provider.get("access_key") and not model_provider.get(
+                    "passthrough_auth"
+                ):
+                    model_provider["passthrough_auth"] = True
                 headers = model_provider.get("headers", {})
                 headers.setdefault(
                     "ChatGPT-Account-Id",
