@@ -15,8 +15,6 @@ PLANO_BIN_DIR = os.path.join(PLANO_HOME, "bin")
 PLANO_PLUGINS_DIR = os.path.join(PLANO_HOME, "plugins")
 ENVOY_VERSION = "v1.37.0"  # keep in sync with Dockerfile ARG ENVOY_VERSION
 NATIVE_PID_FILE = os.path.join(PLANO_RUN_DIR, "plano.pid")
-PLANO_WATCHDOG_STATE_FILE = os.path.join(PLANO_RUN_DIR, "watchdog_state.json")
-PLANO_WATCHDOG_LOG_FILE = os.path.join(PLANO_RUN_DIR, "watchdog.log")
 DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT = "http://localhost:4317"
 
 PLANO_GITHUB_REPO = "katanemo/archgw"
