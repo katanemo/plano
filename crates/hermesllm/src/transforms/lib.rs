@@ -188,14 +188,13 @@ pub fn convert_openai_message_to_anthropic_content(
 
     // Handle regular content
     match &message.content {
-        Some(MessageContent::Text(text)) => {
-            if !text.is_empty() {
-                blocks.push(MessagesContentBlock::Text {
-                    text: text.clone(),
-                    cache_control: None,
-                });
-            }
+        Some(MessageContent::Text(text)) if !text.is_empty() => {
+            blocks.push(MessagesContentBlock::Text {
+                text: text.clone(),
+                cache_control: None,
+            });
         }
+        Some(MessageContent::Text(_)) => {}
         Some(MessageContent::Parts(parts)) => {
             for part in parts {
                 match part {
