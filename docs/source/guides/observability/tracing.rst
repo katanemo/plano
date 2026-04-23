@@ -101,45 +101,59 @@ This creates a complete end-to-end trace showing the full request lifecycle thro
 Behavioral Signals in Traces
 ----------------------------
 
-Plano automatically enriches OpenTelemetry traces with :doc:`../../concepts/signals` — behavioral quality indicators computed from conversation patterns. These signals are attached as span attributes, providing immediate visibility into interaction quality.
+Plano automatically enriches OpenTelemetry traces with :doc:`../../concepts/signals` — lightweight, model-free behavioral indicators organized into three layers (interaction, execution, environment) per `Chen et al., 2026 <https://arxiv.org/abs/2604.00356>`_. Signals are attached as span attributes and per-instance span events, providing immediate visibility into interaction quality.
 
 **What Signals Provide**
 
 Signals act as early warning indicators embedded in your traces:
 
-- **Quality Assessment**: Overall interaction quality (Excellent/Good/Neutral/Poor/Severe)
-- **Efficiency Metrics**: Turn count, efficiency scores, repair frequency
-- **User Sentiment**: Frustration indicators, positive feedback, escalation requests
-- **Agent Behavior**: Repetition detection, looping patterns
+- **Quality Assessment**: Overall interaction quality (``excellent`` / ``good`` / ``neutral`` / ``poor`` / ``severe``) and numeric score
+- **Interaction layer**: misalignment, stagnation, disengagement, satisfaction
+- **Execution layer**: tool failures and loop patterns (from ``function_call`` / ``observation`` traces)
+- **Environment layer**: exhaustion (API errors, timeouts, rate limits, context overflow)
 
 **Visual Flag Markers**
 
-When concerning signals are detected (frustration, looping, escalation, or poor/severe quality), Plano automatically appends a flag marker **🚩** to the span's operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.
+When concerning signals are detected (disengagement, execution failures / loops, stagnation > 2, or ``poor`` / ``severe`` quality), Plano automatically appends a ``[!]`` marker to the span's operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.
 
 **Example Span with Signals**::
 
-    # Span name: "POST /v1/chat/completions gpt-4 🚩"
+    # Span name: "POST /v1/chat/completions gpt-4 [!]"
     # Standard LLM attributes:
     llm.model = "gpt-4"
     llm.usage.total_tokens = 225
 
-    # Behavioral signal attributes:
-    signals.quality = "Severe"
-    signals.turn_count = 15
-    signals.efficiency_score = 0.234
-    signals.frustration.severity = 3
-    signals.escalation.requested = "true"
+    # Top-level signal attributes:
+    signals.quality            = "severe"
+    signals.quality_score      = 0.0
+    signals.turn_count         = 15
+    signals.efficiency_score   = 0.234
+
+    # Layered attributes (only non-zero categories are emitted):
+    signals.interaction.misalignment.count     = 4
+    signals.interaction.misalignment.severity  = 2
+    signals.interaction.disengagement.count    = 5
+    signals.interaction.disengagement.severity = 3
+
+    # Per-instance span event:
+    event: signal.interaction.disengagement.escalation
+      signal.type          = "interaction.disengagement.escalation"
+      signal.message_index = 14
+      signal.confidence    = 1.0
+      signal.snippet       = "get me a human"
 
 **Querying Signal Data**
 
 In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter traces by signal attributes:
 
-- Find severe interactions: ``signals.quality = "Severe"``
-- Find frustrated users: ``signals.frustration.severity >= 2``
+- Find severe interactions: ``signals.quality = "severe"``
+- Find disengaged users: ``signals.interaction.disengagement.severity >= 2``
+- Find misaligned interactions: ``signals.interaction.misalignment.count > 3``
+- Find tool failures: ``signals.execution.failure.count > 0``
+- Find external issues: ``signals.environment.exhaustion.count > 0``
 - Find inefficient flows: ``signals.efficiency_score < 0.5``
-- Find escalations: ``signals.escalation.requested = "true"``
 
-For complete details on all available signals, detection methods, and best practices, see the :doc:`../../concepts/signals` guide.
+For complete details on all 20 leaf signal types, severity scheme, legacy attribute deprecation, and best practices, see the :doc:`../../concepts/signals` guide.
 
 
 Custom Span Attributes

@@ -4,34 +4,62 @@
 Signals™
 ========
 
-Agentic Signals are behavioral and executions quality indicators that act as early warning signs of agent performance—highlighting both brilliant successes and **severe failures**. These signals are computed directly from conversation traces without requiring manual labeling or domain expertise, making them practical for production observability at scale.
+Agentic Signals are lightweight, model-free behavioral indicators computed from
+live interaction trajectories and attached to your existing
+OpenTelemetry traces. They make it possible to triage the small fraction of
+trajectories that are most likely to be informative — brilliant successes or
+**severe failures** — without running an LLM-as-judge on every session.
+
+The framework implemented here follows the taxonomy and detector design in
+*Signals: Trajectory Sampling and Triage for Agentic Interactions* (Chen,
+Hafeez, Paracha, 2026; `arXiv:2604.00356
+<https://arxiv.org/abs/2604.00356>`_). All detectors are computed without
+model calls; the entire pipeline attaches structured attributes and span
+events to existing spans so your dashboards and alerts work unmodified.
 
 The Problem: Knowing What's "Good"
 ==================================
 
-One of the hardest parts of building agents is measuring how well they perform in the real world.
+One of the hardest parts of building agents is measuring how well they
+perform in the real world.
 
-**Offline testing** relies on hand-picked examples and happy-path scenarios, missing the messy diversity of real usage. Developers manually prompt models, evaluate responses, and tune prompts by guesswork—a slow, incomplete feedback loop.
+**Offline testing** relies on hand-picked examples and happy-path scenarios,
+missing the messy diversity of real usage. Developers manually prompt models,
+evaluate responses, and tune prompts by guesswork — a slow, incomplete
+feedback loop.
 
-**Production debugging** floods developers with traces and logs but provides little guidance on which interactions actually matter. Finding failures means painstakingly reconstructing sessions and manually labeling quality issues.
+**Production debugging** floods developers with traces and logs but provides
+little guidance on which interactions actually matter. Finding failures means
+painstakingly reconstructing sessions and manually labeling quality issues.
 
-You can't score every response with an LLM-as-judge (too expensive, too slow) or manually review every trace (doesn't scale). What you need are **behavioral signals**—fast, economical proxies that don’t label quality outright but dramatically shrink the search space, pointing to sessions most likely to be broken or brilliant.
+You can't score every response with an LLM-as-judge (too expensive, too slow)
+or manually review every trace (doesn't scale). What you need are
+**behavioral signals** — fast, economical proxies that don't label quality
+outright but dramatically shrink the search space, pointing to sessions most
+likely to be broken or brilliant.
 
 What Are Behavioral Signals?
 ============================
 
-Behavioral signals are canaries in the coal mine—early, objective indicators that something may have gone wrong (or gone exceptionally well). They don’t explain *why* an agent failed, but they reliably signal *where* attention is needed.
+Behavioral signals are canaries in the coal mine — early, objective
+indicators that something may have gone wrong (or gone exceptionally well).
+They don't explain *why* an agent failed, but they reliably signal *where*
+attention is needed.
 
 These signals emerge naturally from the rhythm of interaction:
 
-- A user rephrasing the same request
+- A user rephrasing or correcting the same request
 - Sharp increases in conversation length
-- Frustrated follow-up messages (ALL CAPS, "this doesn’t work", excessive !!!/???)
-- Agent repetition / looping
-- Expressions of gratitude or satisfaction
-- Requests to speak to a human / contact support
+- Negative stance markers ("this doesn't work", ALL CAPS, excessive !!! or ???)
+- Agent repetition or tool-call loops
+- Expressions of gratitude, confirmation, or task success
+- Requests for a human agent or explicit quit intent
+- Tool errors, timeouts, rate limits, and context-window exhaustion
 
-Individually, these clues are shallow; together, they form a fingerprint of agent performance. Embedded directly into traces, they make it easy to spot friction as it happens: where users struggle, where agents loop, and where escalations occur.
+Individually, these clues are shallow; together, they form a fingerprint of
+agent performance. Embedded directly into traces, they make it easy to spot
+friction as it happens: where users struggle, where agents loop, where tool
+failures cluster, and where escalations occur.
 
 Signals vs Response Quality
 ===========================
@@ -39,298 +67,504 @@ Signals vs Response Quality
 Behavioral signals and response quality are complementary.
 
 **Response Quality**
-    Domain-specific correctness: did the agent do the right thing given business rules, user intent, and operational context? This often requires subject-matter experts or outcome instrumentation and is time-intensive but irreplaceable.
+    Domain-specific correctness: did the agent do the right thing given
+    business rules, user intent, and operational context? This often
+    requires subject-matter experts or outcome instrumentation and is
+    time-intensive but irreplaceable.
 
 **Behavioral Signals**
-    Observable patterns that correlate with quality: high repair frequency, excessive turns, frustration markers, repetition, escalation, and positive feedback. Fast to compute and valuable for prioritizing which traces deserve inspection.
+    Observable patterns that correlate with quality: misalignment,
+    stagnation, disengagement, satisfaction, tool failures, loops, and
+    environment exhaustion. Fast to compute and valuable for prioritizing
+    which traces deserve inspection.
 
-Used together, signals tell you *where to look*, and quality evaluation tells you *what went wrong (or right)*.
+Used together, signals tell you *where to look*, and quality evaluation tells
+you *what went wrong (or right)*.
+
+Signal Taxonomy
+===============
+
+Signals are organized into three top-level **layers**, each with its own
+intent. Every detected signal belongs to exactly one leaf type under one of
+seven categories.
+
+Interaction (user ↔ agent conversational quality)
+-------------------------------------------------
+
+Covers how the discourse itself is going: is the user being understood, is
+the conversation progressing, is the user engaged, is the user satisfied?
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
+
+   * - Category
+     - Leaf signal type
+     - Meaning
+   * - **Misalignment**
+     - ``misalignment.correction``
+     - User explicitly corrects the agent ("No, I meant Paris, France").
+   * -
+     - ``misalignment.rephrase``
+     - User reformulates a previous request; semantic overlap is high.
+   * -
+     - ``misalignment.clarification``
+     - User signals confusion ("I don't understand", "what do you mean").
+   * - **Stagnation**
+     - ``stagnation.dragging``
+     - Conversation length significantly exceeds the expected baseline.
+   * -
+     - ``stagnation.repetition``
+     - Assistant near-duplicates prior turns (bigram Jaccard similarity).
+   * - **Disengagement**
+     - ``disengagement.escalation``
+     - User asks to speak to a human / supervisor / support.
+   * -
+     - ``disengagement.quit``
+     - User expresses intent to give up or abandon the session.
+   * -
+     - ``disengagement.negative_stance``
+     - User expresses frustration: complaints, ALL CAPS, excessive
+       punctuation, agent-directed profanity.
+   * - **Satisfaction**
+     - ``satisfaction.gratitude``
+     - User expresses thanks or appreciation.
+   * -
+     - ``satisfaction.confirmation``
+     - User confirms the outcome ("got it", "sounds good").
+   * -
+     - ``satisfaction.success``
+     - User confirms task success ("that worked", "perfect").
+
+Execution (agent-caused action quality)
+---------------------------------------
+
+Covers attempts to act in the world that don't yield usable outcomes.
+Requires tool-call traces (``function_call`` / ``observation``) to fire.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
+
+   * - Category
+     - Leaf signal type
+     - Meaning
+   * - **Failure**
+     - ``failure.invalid_args``
+     - Tool call rejected due to schema / argument validation failure.
+   * -
+     - ``failure.bad_query``
+     - Downstream query rejected as malformed by the tool.
+   * -
+     - ``failure.tool_not_found``
+     - Agent called a tool that doesn't exist or isn't available.
+   * -
+     - ``failure.auth_misuse``
+     - Authentication / authorization failure on a tool call.
+   * -
+     - ``failure.state_error``
+     - Call-order / state-machine violation (e.g. commit without begin).
+   * - **Loops**
+     - ``loops.retry``
+     - Same tool call repeated with near-identical arguments.
+   * -
+     - ``loops.parameter_drift``
+     - Same tool called with slowly drifting parameters (walk pattern).
+   * -
+     - ``loops.oscillation``
+     - Call A → Call B → Call A → Call B pattern across multiple turns.
+
+Environment (external system / boundary conditions)
+---------------------------------------------------
+
+Covers failures **outside** the agent's control that still break the
+interaction. Useful for separating agent-caused issues from infrastructure.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
+
+   * - Category
+     - Leaf signal type
+     - Meaning
+   * - **Exhaustion**
+     - ``exhaustion.api_error``
+     - Downstream API returned a 5xx or unexpected error.
+   * -
+     - ``exhaustion.timeout``
+     - Tool / API call timed out.
+   * -
+     - ``exhaustion.rate_limit``
+     - Rate-limit response from a tool / API.
+   * -
+     - ``exhaustion.network``
+     - Transient network failure mid-call.
+   * -
+     - ``exhaustion.malformed_response``
+     - Response received but couldn't be parsed.
+   * -
+     - ``exhaustion.context_overflow``
+     - Context window / token budget exceeded.
 
 How It Works
 ============
 
-Signals are computed automatically by the gateway and emitted as **OpenTelemetry trace attributes** to your existing observability stack (Jaeger, Honeycomb, Grafana Tempo, etc.). No additional libraries or instrumentation required—just configure your OTEL collector endpoint.
+Signals are computed automatically by the gateway after each assistant
+response and emitted as **OpenTelemetry trace attributes** and **span events**
+on your existing spans. No additional libraries or instrumentation are
+required — just configure your OTEL collector endpoint as usual.
 
-Each conversation trace is enriched with signal attributes that you can query, filter, and visualize in your observability platform. The gateway analyzes message content (performing text normalization, Unicode handling, and pattern matching) to compute behavioral signals in real-time.
+Each conversation trace is enriched with layered signal attributes
+(category-level counts and severities) plus one span event per detected
+signal instance (with confidence, snippet, and per-detector metadata).
 
-**OTEL Trace Attributes**
+.. note::
+   Signal analysis is enabled by default and runs on the request path. It
+   does **not** affect the response sent to the client. Set
+   ``overrides.disable_signals: true`` in your Plano config to skip this
+   CPU-heavy analysis (see the configuration reference).
 
-Signal data is exported as structured span attributes:
+OTel Span Attributes
+====================
 
-- ``signals.quality`` - Overall assessment (Excellent/Good/Neutral/Poor/Severe)
-- ``signals.turn_count`` - Total number of turns in the conversation
-- ``signals.efficiency_score`` - Efficiency metric (0.0-1.0)
-- ``signals.repair.count`` - Number of repair attempts detected (when present)
-- ``signals.repair.ratio`` - Ratio of repairs to user turns (when present)
-- ``signals.frustration.count`` - Number of frustration indicators detected
-- ``signals.frustration.severity`` - Frustration level (0-3)
-- ``signals.repetition.count`` - Number of repetition instances detected
-- ``signals.escalation.requested`` - Boolean escalation flag ("true" when present)
-- ``signals.positive_feedback.count`` - Number of positive feedback indicators
+Signal data is exported as structured OTel attributes. There are two tiers:
+**top-level** attributes (always emitted on spans that carry signal
+analysis) and **layered** attributes (emitted only when the corresponding
+category has at least one signal instance).
 
-**Visual Flag Marker**
+Top-level attributes
+--------------------
 
-When concerning signals are detected (frustration, looping, escalation, or poor/severe quality), the flag marker **🚩** is automatically appended to the span's operation name, making problematic traces easy to spot in your trace visualizations.
+Always emitted once signals are computed.
 
-**Querying in Your Observability Platform**
+.. list-table::
+   :header-rows: 1
+   :widths: 40 15 45
 
-Example queries:
+   * - Attribute
+     - Type
+     - Value
+   * - ``signals.quality``
+     - string
+     - One of ``excellent``, ``good``, ``neutral``, ``poor``, ``severe``.
+   * - ``signals.quality_score``
+     - float
+     - Numeric score 0.0 – 100.0 that feeds the quality bucket.
+   * - ``signals.turn_count``
+     - int
+     - Total number of user + assistant turns in the interaction.
+   * - ``signals.efficiency_score``
+     - float
+     - Efficiency metric 0.0 – 1.0 (stays at 1.0 up to baseline turns,
+       then decays: ``1 / (1 + 0.3 * (turns - baseline))``).
 
-- Find all severe interactions: ``signals.quality = "Severe"``
-- Find flagged traces: search for **🚩** in span names
-- Find long conversations: ``signals.turn_count > 10``
-- Find inefficient interactions: ``signals.efficiency_score < 0.5``
-- Find high repair rates: ``signals.repair.ratio > 0.3``
-- Find frustrated users: ``signals.frustration.severity >= 2``
-- Find looping agents: ``signals.repetition.count >= 3``
-- Find positive interactions: ``signals.positive_feedback.count >= 2``
-- Find escalations: ``signals.escalation.requested = "true"``
+Layered attributes
+------------------
+
+Emitted per category, only when ``count > 0``. One ``.count`` and one
+``.severity`` attribute per category. Severity is a 0–3 bucket (see
+`Severity levels`_ below).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 50 50
+
+   * - Attribute (emitted when fired)
+     - Source
+   * - ``signals.interaction.misalignment.count``
+     - Any ``misalignment.*`` leaf type
+   * - ``signals.interaction.misalignment.severity``
+     - "
+   * - ``signals.interaction.stagnation.count``
+     - Any ``stagnation.*`` leaf type
+   * - ``signals.interaction.stagnation.severity``
+     - "
+   * - ``signals.interaction.disengagement.count``
+     - Any ``disengagement.*`` leaf type
+   * - ``signals.interaction.disengagement.severity``
+     - "
+   * - ``signals.interaction.satisfaction.count``
+     - Any ``satisfaction.*`` leaf type
+   * - ``signals.interaction.satisfaction.severity``
+     - "
+   * - ``signals.execution.failure.count``
+     - Any ``failure.*`` leaf type
+   * - ``signals.execution.failure.severity``
+     - "
+   * - ``signals.execution.loops.count``
+     - Any ``loops.*`` leaf type
+   * - ``signals.execution.loops.severity``
+     - "
+   * - ``signals.environment.exhaustion.count``
+     - Any ``exhaustion.*`` leaf type
+   * - ``signals.environment.exhaustion.severity``
+     - "
+
+Legacy attributes (deprecated, still emitted)
+---------------------------------------------
+
+The following aggregate keys pre-date the paper taxonomy and are still
+emitted for one release so existing dashboards keep working. They are
+derived from the layered counts above and will be removed in a future
+release. Migrate to the layered keys when convenient.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 50 50
+
+   * - Legacy attribute
+     - Layered equivalent
+   * - ``signals.follow_up.repair.count``
+     - ``signals.interaction.misalignment.count``
+   * - ``signals.follow_up.repair.ratio``
+     - (computed: ``misalignment.count / max(user_turns, 1)``)
+   * - ``signals.frustration.count``
+     - Count of ``disengagement.negative_stance`` instances
+   * - ``signals.frustration.severity``
+     - Derived severity bucket of the above
+   * - ``signals.repetition.count``
+     - ``signals.interaction.stagnation.count``
+   * - ``signals.escalation.requested``
+     - True if any ``disengagement.escalation`` or ``disengagement.quit`` fired
+   * - ``signals.positive_feedback.count``
+     - ``signals.interaction.satisfaction.count``
+
+Span Events
+===========
+
+In addition to span attributes, every detected signal instance is emitted as
+a span event named ``signal.<dotted-type>`` (e.g.
+``signal.interaction.satisfaction.gratitude``). Each event carries:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 15 55
+
+   * - Event attribute
+     - Type
+     - Description
+   * - ``signal.type``
+     - string
+     - Full dotted signal type (same as the event name suffix).
+   * - ``signal.message_index``
+     - int
+     - Zero-based index of the message that triggered the signal.
+   * - ``signal.confidence``
+     - float
+     - Detector confidence in [0.0, 1.0].
+   * - ``signal.snippet``
+     - string
+     - Matched substring from the source message (when available).
+   * - ``signal.metadata``
+     - string (JSON)
+     - Per-detector metadata (pattern name, ratio values, etc.).
+
+Span events are the right surface for drill-down: attribute filters narrow
+traces, then events tell you *which messages* fired *which signals* with
+*what evidence*.
+
+Visual Flag Marker
+------------------
+
+When concerning signals are detected (disengagement present, stagnation
+count > 2, any execution failure / loop, or overall quality ``poor``/
+``severe``), the marker ``[!]`` is appended to the span's operation name.
+This makes flagged sessions immediately visible in trace UIs without
+requiring attribute filtering.
+
+Querying in Your Observability Platform
+---------------------------------------
+
+Example queries against the layered keys::
+
+    signals.quality = "severe"
+    signals.turn_count > 10
+    signals.efficiency_score < 0.5
+    signals.interaction.disengagement.severity >= 2
+    signals.interaction.misalignment.count > 3
+    signals.interaction.satisfaction.count > 0 AND signals.quality = "good"
+    signals.execution.failure.count > 0
+    signals.environment.exhaustion.count > 0
+
+For flagged sessions, search for ``[!]`` in span names.
 
 .. image:: /_static/img/signals_trace.png
    :width: 100%
    :align: center
 
+Severity Levels
+===============
 
-Core Signal Types
-=================
-
-The signals system tracks six categories of behavioral indicators.
-
-Turn Count & Efficiency
------------------------
-
-**What it measures**
-    Number of user–assistant exchanges.
-
-**Why it matters**
-    Long conversations often indicate unclear intent resolution, confusion, or inefficiency. Very short conversations can correlate with crisp resolution.
-
-**Key metrics**
-
-- Total turn count
-- Warning thresholds (concerning: >7 turns, excessive: >12 turns)
-- Efficiency score (0.0–1.0)
-
-**Efficiency scoring**
-    Baseline expectation is ~5 turns (tunable). Efficiency stays at 1.0 up to the baseline, then declines with an inverse penalty as turns exceed baseline::
-
-        efficiency = 1 / (1 + 0.3 * (turns - baseline))
-
-Follow-Up & Repair Frequency
-----------------------------
-
-**What it measures**
-    How often users clarify, correct, or rephrase requests. This is a **user signal** tracking query reformulation behavior—when users must repair or rephrase their requests because the agent didn't understand or respond appropriately.
-
-**Why it matters**
-    High repair frequency is a proxy for misunderstanding or intent drift. When users repeatedly rephrase the same request, it indicates the agent is failing to grasp or act on the user's intent.
-
-**Key metrics**
-
-- Repair count and ratio (repairs / user turns)
-- Concerning threshold: >30% repair ratio
-- Detected repair phrases (exact or fuzzy)
-
-**Common patterns detected**
-
-- Explicit corrections: "I meant", "correction"
-- Negations: "No, I...", "that's not"
-- Rephrasing: "let me rephrase", "to clarify"
-- Mistake acknowledgment: "my mistake", "I was wrong"
-- "Similar rephrase" heuristic based on token overlap (with stopwords downweighted)
-
-User Frustration
-----------------
-
-**What it measures**
-    Observable frustration indicators and emotional escalation.
-
-**Why it matters**
-    Catching frustration early enables intervention before users abandon or escalate.
-
-**Detection patterns**
-
-- **Complaints**: "this doesn't work", "not helpful", "waste of time"
-- **Confusion**: "I don't understand", "makes no sense", "I'm confused"
-- **Tone markers**:
-
-  - ALL CAPS (>=10 alphabetic chars and >=80% uppercase)
-  - Excessive punctuation (>=3 exclamation marks or >=3 question marks)
-
-- **Profanity**: token-based (avoids substring false positives like "absolute" -> "bs")
-
-**Severity levels**
-
-- **None (0)**: no indicators
-- **Mild (1)**: 1–2 indicators
-- **Moderate (2)**: 3–4 indicators
-- **Severe (3)**: 5+ indicators
-
-Repetition & Looping
---------------------
-
-**What it measures**
-    Assistant repetition / degenerative loops. This is an **assistant signal** tracking when the agent repeats itself, fails to follow instructions, or gets stuck in loops—indicating the agent is not making progress or adapting its responses.
-
-**Why it matters**
-    Often indicates missing state tracking, broken tool integration, prompt issues, or the agent ignoring user corrections. High repetition means the agent is not learning from the conversation context.
-
-**Detection method**
-
-- Compare assistant messages using **bigram Jaccard similarity**
-- Classify:
-
-  - **Exact**: similarity >= 0.85
-  - **Near-duplicate**: similarity >= 0.50
-
-- Looping is flagged when repetition instances exceed 2 in a session.
-
-**Severity levels**
+Every category aggregates its leaf signal counts into a severity bucket used
+by both the layered ``.severity`` attribute and the overall quality score.
 
 - **None (0)**: 0 instances
 - **Mild (1)**: 1–2 instances
 - **Moderate (2)**: 3–4 instances
 - **Severe (3)**: 5+ instances
 
-Positive Feedback
------------------
-
-**What it measures**
-    User expressions of satisfaction, gratitude, and success.
-
-**Why it matters**
-    Strong positive signals identify exemplar traces for prompt engineering and evaluation.
-
-**Detection patterns**
-
-- Gratitude: "thank you", "appreciate it"
-- Satisfaction: "that's great", "awesome", "love it"
-- Success confirmation: "got it", "that worked", "perfect"
-
-**Confidence scoring**
-
-- 1 indicator: 0.6
-- 2 indicators: 0.8
-- 3+ indicators: 0.95
-
-Escalation Requests
--------------------
-
-**What it measures**
-    Requests for human help/support or threats to quit.
-
-**Why it matters**
-    Escalation is a strong signal that the agent failed to resolve the interaction.
-
-**Detection patterns**
-
-- Human requests: "speak to a human", "real person", "live agent"
-- Support: "contact support", "customer service", "help desk"
-- Quit threats: "I'm done", "forget it", "I give up"
+Severity is always computed per-category. For example, three instances of
+``misalignment.rephrase`` plus two of ``misalignment.correction`` yield
+``signals.interaction.misalignment.severity = 3`` (5 instances total).
 
 Overall Quality Assessment
 ==========================
 
-Signals are aggregated into an overall interaction quality on a 5-point scale.
+Signals are aggregated into an overall interaction quality on a 5-point
+scale. The scoring model starts at 50.0 (neutral), adds positive weight for
+satisfaction, and subtracts weight for disengagement, misalignment (when
+ratio > 30% of user turns), stagnation (when count > 2), execution failures,
+execution loops, and environment exhaustion.
 
-**Excellent**
+The resulting numeric score maps to the bucket emitted in ``signals.quality``:
+
+**Excellent (75 – 100)**
     Strong positive signals, efficient resolution, low friction.
 
-**Good**
-    Mostly positive with minor clarifications; some back-and-forth but successful.
+**Good (60 – 74)**
+    Mostly positive with minor clarifications; some back-and-forth but
+    successful.
 
-**Neutral**
+**Neutral (40 – 59)**
     Mixed signals; neither clearly good nor bad.
 
-**Poor**
-    Concerning negative patterns (high friction, multiple repairs, moderate frustration). High abandonment risk.
+**Poor (25 – 39)**
+    Concerning negative patterns (high friction, multiple misalignments,
+    moderate disengagement, tool failures). High abandonment risk.
 
-**Severe**
-    Critical issues—escalation requested, severe frustration, severe looping, or excessive turns (>12). Requires immediate attention.
+**Severe (0 – 24)**
+    Critical issues — escalation requested, severe disengagement, severe
+    stagnation, or compounding failures. Requires immediate attention.
 
-This assessment uses a scoring model that weighs positive factors (efficiency, positive feedback) against negative ones (frustration, repairs, repetition, escalation).
+The raw numeric score is available under ``signals.quality_score``.
 
 Sampling and Prioritization
 ===========================
 
-In production, trace data is overwhelming. Signals provide a lightweight first layer of analysis to prioritize which sessions deserve review.
+In production, trace data is overwhelming. Signals provide a lightweight
+first layer of triage to select the small fraction of trajectories that are
+most likely to be informative. Per the paper, signal-based sampling reaches
+82% informativeness on τ-bench versus 54% for random sampling — a 1.52×
+efficiency gain per informative trajectory.
 
 Workflow:
 
 1. Gateway captures conversation messages and computes signals
-2. Signal attributes are emitted to OTEL spans automatically
+2. Signal attributes and per-instance events are emitted to OTEL spans
 3. Your observability platform ingests and indexes the attributes
-4. Query/filter by signal attributes to surface outliers (poor/severe and exemplars)
+4. Query / filter by signal attributes to surface outliers and exemplars
 5. Review high-information traces to identify improvement opportunities
 6. Update prompts, routing, or policies based on findings
 7. Redeploy and monitor signal metrics to validate improvements
 
-This creates a reinforcement loop where traces become both diagnostic data and training signal.
+This creates a reinforcement loop where traces become both diagnostic data
+and training signal for prompt engineering, routing policies, and
+preference-data construction.
 
-Trace Filtering and Telemetry
-=============================
+.. note::
+   An in-gateway triage sampler that selects informative trajectories
+   inline — with configurable per-category weights and budgets — is planned
+   as a follow-up to this release. Today, sampling is consumer-side: your
+   observability platform filters on the signal attributes described above.
 
-Signal attributes are automatically added to OpenTelemetry spans, making them immediately queryable in your observability platform.
+Example Span
+============
 
-**Visual Filtering**
+A concerning session, showing both layered attributes and a per-instance
+event::
 
-When concerning signals are detected, the flag marker **🚩** (U+1F6A9) is automatically appended to the span's operation name. This makes flagged sessions immediately visible in trace visualizations without requiring attribute filtering.
+    # Span name: "POST /v1/chat/completions gpt-5.2 [!]"
 
-**Example Span Attributes**::
+    # Top-level
+    signals.quality            = "severe"
+    signals.quality_score      = 0.0
+    signals.turn_count         = 4
+    signals.efficiency_score   = 1.0
 
-    # Span name: "POST /v1/chat/completions gpt-4 🚩"
-    signals.quality = "Severe"
-    signals.turn_count = 15
-    signals.efficiency_score = 0.234
-    signals.repair.count = 4
-    signals.repair.ratio = 0.571
-    signals.frustration.severity = 3
-    signals.frustration.count = 5
-    signals.escalation.requested = "true"
-    signals.repetition.count = 4
+    # Layered (only non-zero categories are emitted)
+    signals.interaction.disengagement.count    = 6
+    signals.interaction.disengagement.severity = 3
 
-**Building Dashboards**
+    # Legacy (deprecated, emitted while dual-emit is on)
+    signals.frustration.count     = 4
+    signals.frustration.severity  = 2
+    signals.escalation.requested  = true
 
-Use signal attributes to build monitoring dashboards in Grafana, Honeycomb, Datadog, etc.:
+    # Per-instance span events
+    event: signal.interaction.disengagement.escalation
+      signal.type          = "interaction.disengagement.escalation"
+      signal.message_index = 6
+      signal.confidence    = 1.0
+      signal.snippet       = "get me a human"
+      signal.metadata      = {"pattern_type":"escalation"}
+
+Building Dashboards
+===================
+
+Use signal attributes to build monitoring dashboards in Grafana, Honeycomb,
+Datadog, etc. Prefer the layered keys — they align with the paper taxonomy
+and will outlive the legacy keys.
 
 - **Quality distribution**: Count of traces by ``signals.quality``
 - **P95 turn count**: 95th percentile of ``signals.turn_count``
 - **Average efficiency**: Mean of ``signals.efficiency_score``
-- **High repair rate**: Percentage where ``signals.repair.ratio > 0.3``
-- **Frustration rate**: Percentage where ``signals.frustration.severity >= 2``
-- **Escalation rate**: Percentage where ``signals.escalation.requested = "true"``
-- **Looping rate**: Percentage where ``signals.repetition.count >= 3``
-- **Positive feedback rate**: Percentage where ``signals.positive_feedback.count >= 1``
+- **High misalignment rate**: Percentage where
+  ``signals.interaction.misalignment.count > 3``
+- **Disengagement rate**: Percentage where
+  ``signals.interaction.disengagement.severity >= 2``
+- **Satisfaction rate**: Percentage where
+  ``signals.interaction.satisfaction.count >= 1``
+- **Escalation rate**: Percentage where a ``disengagement.escalation`` or
+  ``disengagement.quit`` event fired (via span-event filter)
+- **Tool-failure rate**: Percentage where
+  ``signals.execution.failure.count > 0``
+- **Environment issue rate**: Percentage where
+  ``signals.environment.exhaustion.count > 0``
 
-**Creating Alerts**
+Creating Alerts
+===============
 
 Set up alerts based on signal thresholds:
 
-- Alert when severe interaction count exceeds threshold in 1-hour window
-- Alert on sudden spike in frustration rate (>2x baseline)
-- Alert when escalation rate exceeds 5% of total conversations
-- Alert on degraded efficiency (P95 turn count increases >50%)
+- Alert when ``signals.quality = "severe"`` count exceeds threshold in a
+  1-hour window
+- Alert on sudden spike in
+  ``signals.interaction.disengagement.severity >= 2`` (>2× baseline)
+- Alert on sustained ``signals.execution.failure.count > 0`` — agent-caused
+  tool issues
+- Alert on spikes in ``signals.environment.exhaustion.count`` — external
+  system degradation
+- Alert on degraded efficiency (P95 ``signals.turn_count`` up > 50%)
 
 Best Practices
 ==============
 
 Start simple:
 
-- Alert or page on **Severe** sessions (or on spikes in Severe rate)
-- Review **Poor** sessions within 24 hours
-- Sample **Excellent** sessions as exemplars
+- Alert or page on ``severe`` sessions (or on spikes in ``severe`` rate)
+- Review ``poor`` sessions within 24 hours
+- Sample ``excellent`` sessions as exemplars
 
 Combine multiple signals to infer failure modes:
 
-- Looping: repetition severity >= 2 + excessive turns
-- User giving up: frustration severity >= 2 + escalation requested
-- Misunderstood intent: repair ratio > 30% + excessive turns
-- Working well: positive feedback + high efficiency + no frustration
+- **Silent loop**: ``signals.interaction.stagnation.severity >= 2`` +
+  ``signals.turn_count`` above baseline
+- **User giving up**: ``signals.interaction.disengagement.severity >= 2`` +
+  any escalation event
+- **Misunderstood intent**:
+  ``signals.interaction.misalignment.count / user_turns > 0.3``
+- **Agent-caused friction**: ``signals.execution.failure.count > 0`` +
+  ``signals.interaction.misalignment.count > 0``
+- **External degradation, not agent fault**:
+  ``signals.environment.exhaustion.count > 0`` while
+  ``signals.execution.failure.count = 0``
+- **Working well**: ``signals.interaction.satisfaction.count >= 1`` +
+  ``signals.efficiency_score > 0.8`` + no disengagement
 
 Limitations and Considerations
 ==============================
 
-Signals don’t capture:
+Signals don't capture:
 
 - Task completion / real outcomes
 - Factual or domain correctness
@@ -339,21 +573,31 @@ Signals don’t capture:
 
 Mitigation strategies:
 
-- Periodically sample flagged sessions and measure false positives/negatives
+- Periodically sample flagged sessions and measure false positives / negatives
 - Tune baselines per use case and user population
 - Add domain-specific phrase libraries where needed
 - Combine signals with non-text metrics (tool failures, disconnects, latency)
 
 .. note::
-   Behavioral signals complement—but do not replace—domain-specific response quality evaluation. Use signals to prioritize which traces to inspect, then apply domain expertise and outcome checks to diagnose root causes.
+   Behavioral signals complement — but do not replace — domain-specific
+   response quality evaluation. Use signals to prioritize which traces to
+   inspect, then apply domain expertise and outcome checks to diagnose root
+   causes.
 
 .. tip::
-   The flag marker in the span name provides instant visual feedback in trace UIs, while the structured attributes (``signals.quality``, ``signals.frustration.severity``, etc.) enable powerful querying and aggregation in your observability platform.
+   The ``[!]`` marker in the span name provides instant visual feedback in
+   trace UIs, while the structured attributes (``signals.quality``,
+   ``signals.interaction.disengagement.severity``, etc.) and per-instance
+   span events enable powerful querying and drill-down in your observability
+   platform.
 
 See Also
 ========
 
-- :doc:`../guides/observability/tracing` - Distributed tracing for agent systems
-- :doc:`../guides/observability/monitoring` - Metrics and dashboards
-- :doc:`../guides/observability/access_logging` - Request/response logging
-- :doc:`../guides/observability/observability` - Complete observability guide
+- `Signals: Trajectory Sampling and Triage for Agentic Interactions
+  <https://arxiv.org/abs/2604.00356>`_ — the paper this framework implements
+- :doc:`../guides/observability/tracing` — Distributed tracing for agent
+  systems
+- :doc:`../guides/observability/monitoring` — Metrics and dashboards
+- :doc:`../guides/observability/access_logging` — Request / response logging
+- :doc:`../guides/observability/observability` — Complete observability guide
