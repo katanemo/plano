@@ -278,6 +278,9 @@ properties:
         type: boolean
       use_agent_orchestrator:
         type: boolean
+      disable_signals:
+        type: boolean
+        description: "Disable agentic signal analysis (frustration, repetition, escalation, etc.) on LLM responses to save CPU. Default false."
       upstream_connect_timeout:
         type: string
         description: "Connect timeout for upstream provider clusters (e.g., '5s', '10s'). Default is '5s'."

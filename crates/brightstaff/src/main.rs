@@ -333,6 +333,8 @@ async fn init_app_state(
         .as_ref()
         .and_then(|tracing| tracing.span_attributes.clone());
 
+    let signals_enabled = !overrides.disable_signals.unwrap_or(false);
+
     Ok(AppState {
         orchestrator_service,
         model_aliases: config.model_aliases.clone(),
@@ -344,6 +346,7 @@ async fn init_app_state(
         span_attributes,
         http_client: reqwest::Client::new(),
         filter_pipeline,
+        signals_enabled,
     })
 }
 

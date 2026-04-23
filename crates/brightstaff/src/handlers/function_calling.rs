@@ -441,10 +441,8 @@ impl ArchFunctionHandler {
                 }
             }
             // Handle str/string conversions
-            "str" | "string" => {
-                if !value.is_string() {
-                    return Ok(json!(value.to_string()));
-                }
+            "str" | "string" if !value.is_string() => {
+                return Ok(json!(value.to_string()));
             }
             _ => {}
         }
