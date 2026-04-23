@@ -367,7 +367,10 @@ mod tests {
     fn test_vercel_and_openrouter_parsing() {
         assert_eq!(ProviderId::try_from("vercel"), Ok(ProviderId::Vercel));
         assert!(ProviderId::try_from("vercel_ai").is_err());
-        assert_eq!(ProviderId::try_from("openrouter"), Ok(ProviderId::OpenRouter));
+        assert_eq!(
+            ProviderId::try_from("openrouter"),
+            Ok(ProviderId::OpenRouter)
+        );
         assert!(ProviderId::try_from("open_router").is_err());
     }
 
