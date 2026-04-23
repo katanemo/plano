@@ -234,6 +234,7 @@ pub struct Overrides {
     pub llm_routing_model: Option<String>,
     pub agent_orchestration_model: Option<String>,
     pub orchestrator_model_context_length: Option<usize>,
+    pub disable_signals: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -391,6 +392,8 @@ pub enum LlmProviderType {
     AmazonBedrock,
     #[serde(rename = "plano")]
     Plano,
+    #[serde(rename = "chatgpt")]
+    ChatGPT,
     #[serde(rename = "digitalocean")]
     DigitalOcean,
 }
@@ -414,6 +417,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Qwen => write!(f, "qwen"),
             LlmProviderType::AmazonBedrock => write!(f, "amazon_bedrock"),
             LlmProviderType::Plano => write!(f, "plano"),
+            LlmProviderType::ChatGPT => write!(f, "chatgpt"),
             LlmProviderType::DigitalOcean => write!(f, "digitalocean"),
         }
     }
@@ -481,6 +485,7 @@ pub struct LlmProvider {
     pub base_url_path_prefix: Option<String>,
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
+    pub headers: Option<HashMap<String, String>>,
 }
 
 pub trait IntoModels {
@@ -524,6 +529,7 @@ impl Default for LlmProvider {
             base_url_path_prefix: None,
             internal: None,
             passthrough_auth: None,
+            headers: None,
         }
     }
 }
@@ -749,5 +755,30 @@ mod test {
         let model_ids: Vec<String> = models.data.iter().map(|m| m.id.clone()).collect();
         assert!(model_ids.contains(&"openai-gpt4".to_string()));
         assert!(!model_ids.contains(&"plano-orchestrator".to_string()));
+    }
+
+    #[test]
+    fn test_overrides_disable_signals_default_none() {
+        let overrides = super::Overrides::default();
+        assert_eq!(overrides.disable_signals, None);
+    }
+
+    #[test]
+    fn test_overrides_disable_signals_deserialize() {
+        let yaml = r#"
+disable_signals: true
+"#;
+        let overrides: super::Overrides = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(overrides.disable_signals, Some(true));
+
+        let yaml_false = r#"
+disable_signals: false
+"#;
+        let overrides: super::Overrides = serde_yaml::from_str(yaml_false).unwrap();
+        assert_eq!(overrides.disable_signals, Some(false));
+
+        let yaml_missing = "{}";
+        let overrides: super::Overrides = serde_yaml::from_str(yaml_missing).unwrap();
+        assert_eq!(overrides.disable_signals, None);
     }
 }

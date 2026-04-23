@@ -37,6 +37,7 @@ from planoai.core import (
 )
 from planoai.init_cmd import init as init_cmd
 from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
+from planoai.chatgpt_cmd import chatgpt as chatgpt_cmd
 from planoai.obs_cmd import obs as obs_cmd
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
@@ -123,6 +124,28 @@ def _temporary_cli_log_level(level: str | None):
         yield
     finally:
         set_log_level(current_level)
+
+
+def _inject_chatgpt_tokens_if_needed(config, env, console):
+    """If config uses chatgpt providers, resolve tokens from ~/.plano/chatgpt/auth.json."""
+    providers = config.get("model_providers") or config.get("llm_providers") or []
+    has_chatgpt = any(str(p.get("model", "")).startswith("chatgpt/") for p in providers)
+    if not has_chatgpt:
+        return
+
+    try:
+        from planoai.chatgpt_auth import get_access_token
+
+        access_token, account_id = get_access_token()
+        env["CHATGPT_ACCESS_TOKEN"] = access_token
+        if account_id:
+            env["CHATGPT_ACCOUNT_ID"] = account_id
+    except Exception as e:
+        console.print(
+            f"\n[red]ChatGPT auth error:[/red] {e}\n"
+            f"[dim]Run 'planoai chatgpt login' to authenticate.[/dim]\n"
+        )
+        sys.exit(1)
 
 
 def _print_missing_keys(console, missing_keys: list[str]) -> None:
@@ -417,6 +440,14 @@ def up(
         }
         env = os.environ.copy()
         env.pop("PATH", None)
+
+        import yaml
+
+        with open(plano_config_file, "r") as f:
+            plano_config = yaml.safe_load(f)
+
+        # Inject ChatGPT tokens from ~/.plano/chatgpt/auth.json if any provider needs them
+        _inject_chatgpt_tokens_if_needed(plano_config, env, console)
 
         # Check access keys
         access_keys = get_llm_provider_access_keys(plano_config_file=plano_config_file)
@@ -715,6 +746,7 @@ main.add_command(cli_agent)
 main.add_command(generate_prompt_targets)
 main.add_command(init_cmd, name="init")
 main.add_command(trace_cmd, name="trace")
+main.add_command(chatgpt_cmd, name="chatgpt")
 main.add_command(obs_cmd, name="obs")
 
 if __name__ == "__main__":

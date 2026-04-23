@@ -12,6 +12,8 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::extract_or_generate_traceparent;
 use crate::handlers::llm::model_selection::router_chat_get_upstream_model;
+use crate::metrics as bs_metrics;
+use crate::metrics::labels as metric_labels;
 use crate::router::orchestrator::OrchestratorService;
 use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
@@ -230,6 +232,17 @@ async fn routing_decision_inner(
                 pinned: false,
             };
 
+            // Distinguish "decision served" (a concrete model picked) from
+            // "no_candidates" (the sentinel "none" returned when nothing
+            // matched). The handler still responds 200 in both cases, so RED
+            // metrics alone can't tell them apart.
+            let outcome = if response.models.first().map(|m| m == "none").unwrap_or(true) {
+                metric_labels::ROUTING_SVC_NO_CANDIDATES
+            } else {
+                metric_labels::ROUTING_SVC_DECISION_SERVED
+            };
+            bs_metrics::record_routing_service_outcome(outcome);
+
             info!(
                 primary_model = %response.models.first().map(|s| s.as_str()).unwrap_or("none"),
                 total_models = response.models.len(),
@@ -249,6 +262,7 @@ async fn routing_decision_inner(
                 .unwrap())
         }
         Err(err) => {
+            bs_metrics::record_routing_service_outcome(metric_labels::ROUTING_SVC_POLICY_ERROR);
             warn!(error = %err.message, "routing decision failed");
             Ok(BrightStaffError::InternalServerError(err.message).into_response())
         }

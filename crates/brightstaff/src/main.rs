@@ -1,10 +1,17 @@
+#[cfg(feature = "jemalloc")]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use brightstaff::app_state::AppState;
 use brightstaff::handlers::agents::orchestrator::agent_chat;
+use brightstaff::handlers::debug;
 use brightstaff::handlers::empty;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
 use brightstaff::handlers::routing_service::routing_decision;
+use brightstaff::metrics as bs_metrics;
+use brightstaff::metrics::labels as metric_labels;
 use brightstaff::router::model_metrics::ModelMetricsService;
 use brightstaff::router::orchestrator::OrchestratorService;
 use brightstaff::session_cache::init_session_cache;
@@ -326,6 +333,8 @@ async fn init_app_state(
         .as_ref()
         .and_then(|tracing| tracing.span_attributes.clone());
 
+    let signals_enabled = !overrides.disable_signals.unwrap_or(false);
+
     Ok(AppState {
         orchestrator_service,
         model_aliases: config.model_aliases.clone(),
@@ -337,6 +346,7 @@ async fn init_app_state(
         span_attributes,
         http_client: reqwest::Client::new(),
         filter_pipeline,
+        signals_enabled,
     })
 }
 
@@ -384,8 +394,77 @@ async fn init_state_storage(
 // Request routing
 // ---------------------------------------------------------------------------
 
+/// Normalized method label — limited set so we never emit a free-form string.
+fn method_label(method: &Method) -> &'static str {
+    match *method {
+        Method::GET => "GET",
+        Method::POST => "POST",
+        Method::PUT => "PUT",
+        Method::DELETE => "DELETE",
+        Method::PATCH => "PATCH",
+        Method::HEAD => "HEAD",
+        Method::OPTIONS => "OPTIONS",
+        _ => "OTHER",
+    }
+}
+
+/// Compute the fixed `handler` metric label from the request's path+method.
+/// Returning `None` for fall-through means `route()` will hand the request to
+/// the catch-all 404 branch.
+fn handler_label_for(method: &Method, path: &str) -> &'static str {
+    if let Some(stripped) = path.strip_prefix("/agents") {
+        if matches!(
+            stripped,
+            CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH
+        ) {
+            return metric_labels::HANDLER_AGENT_CHAT;
+        }
+    }
+    if let Some(stripped) = path.strip_prefix("/routing") {
+        if matches!(
+            stripped,
+            CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH
+        ) {
+            return metric_labels::HANDLER_ROUTING_DECISION;
+        }
+    }
+    match (method, path) {
+        (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
+            metric_labels::HANDLER_LLM_CHAT
+        }
+        (&Method::POST, "/function_calling") => metric_labels::HANDLER_FUNCTION_CALLING,
+        (&Method::GET, "/v1/models" | "/agents/v1/models") => metric_labels::HANDLER_LIST_MODELS,
+        (&Method::OPTIONS, "/v1/models" | "/agents/v1/models") => {
+            metric_labels::HANDLER_CORS_PREFLIGHT
+        }
+        _ => metric_labels::HANDLER_NOT_FOUND,
+    }
+}
+
 /// Route an incoming HTTP request to the appropriate handler.
 async fn route(
+    req: Request<Incoming>,
+    state: Arc<AppState>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let handler = handler_label_for(req.method(), req.uri().path());
+    let method = method_label(req.method());
+    let started = std::time::Instant::now();
+    let _in_flight = bs_metrics::InFlightGuard::new(handler);
+
+    let result = dispatch(req, state).await;
+
+    let status = match &result {
+        Ok(resp) => resp.status().as_u16(),
+        // hyper::Error here means the body couldn't be produced; conventionally 500.
+        Err(_) => 500,
+    };
+    bs_metrics::record_http(handler, method, status, started);
+    result
+}
+
+/// Inner dispatcher split out so `route()` can wrap it with metrics without
+/// duplicating the match tree.
+async fn dispatch(
     req: Request<Incoming>,
     state: Arc<AppState>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -439,6 +518,7 @@ async fn route(
             Ok(list_models(Arc::clone(&state.llm_providers)).await)
         }
         (&Method::OPTIONS, "/v1/models" | "/agents/v1/models") => cors_preflight(),
+        (&Method::GET, "/debug/memstats") => debug::memstats().await,
         _ => {
             debug!(method = %req.method(), path = %path, "no route found");
             let mut not_found = Response::new(empty());
@@ -503,6 +583,7 @@ async fn run_server(state: Arc<AppState>) -> Result<(), Box<dyn std::error::Erro
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = load_config()?;
     let _tracer_provider = init_tracer(config.tracing.as_ref());
+    bs_metrics::init();
     info!("loaded plano_config.yaml");
     let state = Arc::new(init_app_state(&config).await?);
     run_server(state).await

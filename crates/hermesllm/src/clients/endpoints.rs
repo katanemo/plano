@@ -194,9 +194,10 @@ impl SupportedAPIsFromClient {
                 // For Responses API, check if provider supports it, otherwise translate to chat/completions
                 match provider_id {
                     // Providers that support /v1/responses natively
-                    ProviderId::OpenAI | ProviderId::XAI | ProviderId::Vercel => {
-                        route_by_provider("/responses")
-                    }
+                    ProviderId::OpenAI
+                    | ProviderId::XAI
+                    | ProviderId::ChatGPT
+                    | ProviderId::Vercel => route_by_provider("/responses"),
                     // All other providers: translate to /chat/completions
                     _ => route_by_provider("/chat/completions"),
                 }
@@ -715,6 +716,38 @@ mod tests {
                 &ProviderId::XAI,
                 "/v1/responses",
                 "grok-4-1-fast-reasoning",
+                false,
+                None,
+                false
+            ),
+            "/v1/responses"
+        );
+    }
+
+    #[test]
+    fn test_responses_api_targets_chatgpt_native_responses_endpoint() {
+        let api = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        assert_eq!(
+            api.target_endpoint_for_provider(
+                &ProviderId::ChatGPT,
+                "/v1/responses",
+                "gpt-5.4",
+                false,
+                None,
+                false
+            ),
+            "/v1/responses"
+        );
+    }
+
+    #[test]
+    fn test_responses_api_targets_vercel_native_responses_endpoint() {
+        let api = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        assert_eq!(
+            api.target_endpoint_for_provider(
+                &ProviderId::Vercel,
+                "/v1/responses",
+                "gpt-5.4",
                 false,
                 None,
                 false

@@ -253,6 +253,7 @@ def start_native(
             log.info("Plano is running (native mode)")
             for port in gateway_ports:
                 log.info(f"  http://localhost:{port}")
+
             break
 
         # Check if processes are still alive
@@ -367,8 +368,11 @@ def _kill_pid(pid):
         pass
 
 
-def stop_native():
-    """Stop natively-running Envoy and brightstaff processes.
+def stop_native(skip_pids: set | None = None):
+    """Stop natively-running Envoy, brightstaff, and watchdog processes.
+
+    Args:
+        skip_pids: Set of PIDs to skip (used by the watchdog to avoid self-termination).
 
     Returns:
         bool: True if at least one process was running and received a stop signal,
@@ -385,7 +389,12 @@ def stop_native():
     brightstaff_pid = pids.get("brightstaff_pid")
 
     had_running_process = False
-    for name, pid in [("envoy", envoy_pid), ("brightstaff", brightstaff_pid)]:
+    for name, pid in [
+        ("envoy", envoy_pid),
+        ("brightstaff", brightstaff_pid),
+    ]:
+        if skip_pids and pid in skip_pids:
+            continue
         if pid is None:
             continue
         try:

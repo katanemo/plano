@@ -190,9 +190,15 @@ properties:
             - openai
             - xiaomi
             - gemini
+            - chatgpt
             - digitalocean
             - vercel
             - openrouter
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Additional headers to send with upstream requests (e.g., ChatGPT-Account-Id, originator)."
         routing_preferences:
           type: array
           items:
@@ -241,9 +247,15 @@ properties:
             - openai
             - xiaomi
             - gemini
+            - chatgpt
             - digitalocean
             - vercel
             - openrouter
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Additional headers to send with upstream requests (e.g., ChatGPT-Account-Id, originator)."
         routing_preferences:
           type: array
           items:
@@ -282,6 +294,9 @@ properties:
         type: boolean
       use_agent_orchestrator:
         type: boolean
+      disable_signals:
+        type: boolean
+        description: "Disable agentic signal analysis (frustration, repetition, escalation, etc.) on LLM responses to save CPU. Default false."
       upstream_connect_timeout:
         type: string
         description: "Connect timeout for upstream provider clusters (e.g., '5s', '10s'). Default is '5s'."

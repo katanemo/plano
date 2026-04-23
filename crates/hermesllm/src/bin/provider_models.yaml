@@ -329,6 +329,10 @@ providers:
   - xiaomi/mimo-v2-flash
   - xiaomi/mimo-v2-omni
   - xiaomi/mimo-v2-pro
+  chatgpt:
+  - chatgpt/gpt-5.4
+  - chatgpt/gpt-5.3-codex
+  - chatgpt/gpt-5.2
   digitalocean:
   - digitalocean/openai-gpt-4.1
   - digitalocean/openai-gpt-4o
@@ -376,6 +380,6 @@ providers:
   - digitalocean/qwen3-embedding-0.6b
   - digitalocean/router:software-engineering
 metadata:
-  total_providers: 12
-  total_models: 361
-  last_updated: 2026-04-16T00:00:00.000000+00:00
+  total_providers: 13
+  total_models: 364
+  last_updated: 2026-04-20T00:00:00.000000+00:00

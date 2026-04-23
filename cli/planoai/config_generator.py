@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from planoai.utils import convert_legacy_listeners
 from jinja2 import Environment, FileSystemLoader
 import yaml
@@ -28,8 +29,13 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "xai",
     "moonshotai",
     "zhipu",
+    "chatgpt",
     "digitalocean",
 ]
+
+CHATGPT_API_BASE = "https://chatgpt.com/backend-api/codex"
+CHATGPT_DEFAULT_ORIGINATOR = "codex_cli_rs"
+CHATGPT_DEFAULT_USER_AGENT = "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
 
 SUPPORTED_PROVIDERS = (
     SUPPORTED_PROVIDERS_WITHOUT_BASE_URL + SUPPORTED_PROVIDERS_WITH_BASE_URL
@@ -332,6 +338,25 @@ def validate_and_render_schema():
                 provider = model_provider["provider"]
                 model_provider["provider_interface"] = provider
                 del model_provider["provider"]
+
+            # Auto-wire ChatGPT provider: inject base_url, passthrough_auth, and extra headers
+            if provider == "chatgpt":
+                if not model_provider.get("base_url"):
+                    model_provider["base_url"] = CHATGPT_API_BASE
+                if not model_provider.get("access_key") and not model_provider.get(
+                    "passthrough_auth"
+                ):
+                    model_provider["passthrough_auth"] = True
+                headers = model_provider.get("headers", {})
+                headers.setdefault(
+                    "ChatGPT-Account-Id",
+                    os.environ.get("CHATGPT_ACCOUNT_ID", ""),
+                )
+                headers.setdefault("originator", CHATGPT_DEFAULT_ORIGINATOR)
+                headers.setdefault("user-agent", CHATGPT_DEFAULT_USER_AGENT)
+                headers.setdefault("session_id", str(uuid.uuid4()))
+                model_provider["headers"] = headers
+
             updated_model_providers.append(model_provider)
 
             if model_provider.get("base_url", None):

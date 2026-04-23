@@ -24,13 +24,14 @@ use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
 use crate::handlers::extract_request_id;
 use crate::handlers::full;
+use crate::metrics as bs_metrics;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
 use crate::streaming::{
     create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
-    ObservableStreamProcessor, StreamProcessor,
+    LlmMetricsCtx, ObservableStreamProcessor, StreamProcessor,
 };
 use crate::tracing::{
     collect_custom_trace_attributes, llm as tracing_llm, operation_component,
@@ -142,6 +143,7 @@ async fn llm_chat_inner(
         &request_path,
         &state.model_aliases,
         &state.llm_providers,
+        state.signals_enabled,
     )
     .await
     {
@@ -253,7 +255,15 @@ async fn llm_chat_inner(
     if let Some(ref client_api_kind) = client_api {
         let upstream_api =
             provider_id.compatible_api_for_client(client_api_kind, is_streaming_request);
-        client_request.normalize_for_upstream(provider_id, &upstream_api);
+        if let Err(e) = client_request.normalize_for_upstream(provider_id, &upstream_api) {
+            warn!(
+                "request_id={}: normalize_for_upstream failed: {}",
+                request_id, e
+            );
+            let mut bad_request = Response::new(full(e.message));
+            *bad_request.status_mut() = StatusCode::BAD_REQUEST;
+            return Ok(bad_request);
+        }
     }
 
     // --- Phase 2: Resolve conversation state (v1/responses API) ---
@@ -407,6 +417,7 @@ async fn parse_and_validate_request(
     request_path: &str,
     model_aliases: &Option<HashMap<String, ModelAlias>>,
     llm_providers: &Arc<RwLock<LlmProviders>>,
+    signals_enabled: bool,
 ) -> Result<PreparedRequest, Response<BoxBody<Bytes, hyper::Error>>> {
     let raw_bytes = request
         .collect()
@@ -485,7 +496,11 @@ async fn parse_and_validate_request(
     let user_message_preview = client_request
         .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
-    let messages_for_signals = Some(client_request.get_messages());
+    let messages_for_signals = if signals_enabled {
+        Some(client_request.get_messages())
+    } else {
+        None
+    };
 
     // Set the upstream model name and strip routing metadata
     client_request.set_model(model_name_only.clone());
@@ -686,6 +701,13 @@ async fn send_upstream(
 
     let request_start_time = std::time::Instant::now();
 
+    // Labels for LLM upstream metrics. We prefer `resolved_model` (post-routing)
+    // and derive the provider from its `provider/model` prefix. This matches the
+    // same model id the cost/latency router keys off.
+    let (metric_provider_raw, metric_model_raw) = bs_metrics::split_provider_model(resolved_model);
+    let metric_provider = metric_provider_raw.to_string();
+    let metric_model = metric_model_raw.to_string();
+
     let llm_response = match http_client
         .post(upstream_url)
         .headers(request_headers.clone())
@@ -695,6 +717,14 @@ async fn send_upstream(
     {
         Ok(res) => res,
         Err(err) => {
+            let err_class = bs_metrics::llm_error_class_from_reqwest(&err);
+            bs_metrics::record_llm_upstream(
+                &metric_provider,
+                &metric_model,
+                0,
+                err_class,
+                request_start_time.elapsed(),
+            );
             let err_msg = format!("Failed to send request: {}", err);
             let mut internal_error = Response::new(full(err_msg));
             *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
@@ -750,7 +780,12 @@ async fn send_upstream(
         span_name,
         request_start_time,
         messages_for_signals,
-    );
+    )
+    .with_llm_metrics(LlmMetricsCtx {
+        provider: metric_provider.clone(),
+        model: metric_model.clone(),
+        upstream_status: upstream_status.as_u16(),
+    });
 
     let output_filter_request_headers = if filter_pipeline.has_output_filters() {
         Some(request_headers.clone())
