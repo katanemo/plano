@@ -6,6 +6,7 @@ hand-picked set of conversations without touching the lmsys dataset.
 Run from this directory:
     python _smoke_test.py --rust-binary <path>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,7 +39,10 @@ SAMPLES = [
         "messages": [
             {"from": "human", "value": "Book me a flight to NYC for tomorrow"},
             {"from": "gpt", "value": "Sure, here are flights to NYC for Friday."},
-            {"from": "human", "value": "No, I meant flights for Saturday, not tomorrow"},
+            {
+                "from": "human",
+                "value": "No, I meant flights for Saturday, not tomorrow",
+            },
         ],
     },
     {
@@ -75,7 +79,9 @@ def main() -> int:
             f.write(json.dumps(s) + "\n")
 
     with conv_path.open("rb") as fin, rust_path.open("wb") as fout:
-        proc = subprocess.run([str(args.rust_binary)], stdin=fin, stdout=fout, stderr=subprocess.PIPE)
+        proc = subprocess.run(
+            [str(args.rust_binary)], stdin=fin, stdout=fout, stderr=subprocess.PIPE
+        )
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr.decode("utf-8", errors="replace"))
         return 2

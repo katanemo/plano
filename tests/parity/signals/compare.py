@@ -5,6 +5,7 @@ Diff Rust vs Python signal reports produced by run_parity.py.
 See README.md for the tier definitions. Exits non-zero iff any Tier-A
 divergence is found.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -15,7 +16,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 CATEGORIES_BY_LAYER = {
-    "interaction_signals": ["misalignment", "stagnation", "disengagement", "satisfaction"],
+    "interaction_signals": [
+        "misalignment",
+        "stagnation",
+        "disengagement",
+        "satisfaction",
+    ],
     "execution_signals": ["failure", "loops"],
     "environment_signals": ["exhaustion"],
 }
@@ -69,9 +75,7 @@ def per_type_indices(report: Dict[str, Any]) -> Dict[str, List[int]]:
     return dict(out)
 
 
-def diff_counts(
-    a: Dict[str, int], b: Dict[str, int]
-) -> List[Tuple[str, int, int]]:
+def diff_counts(a: Dict[str, int], b: Dict[str, int]) -> List[Tuple[str, int, int]]:
     """Return [(signal_type, a_count, b_count)] for entries that differ."""
     keys = set(a) | set(b)
     out = []
@@ -242,7 +246,12 @@ def main() -> int:
 
     write_summary_md(out_dir / "summary.md", metrics, diffs[:20])
 
-    print(json.dumps({k: v for k, v in metrics.items() if k != "quality_confusion_matrix"}, indent=2))
+    print(
+        json.dumps(
+            {k: v for k, v in metrics.items() if k != "quality_confusion_matrix"},
+            indent=2,
+        )
+    )
     print(f"\ndiffs: {out_dir / 'diffs.jsonl'}  metrics: {out_dir / 'metrics.json'}")
     print(f"summary: {out_dir / 'summary.md'}")
 
@@ -252,7 +261,9 @@ def main() -> int:
     return 0
 
 
-def write_summary_md(path: Path, metrics: Dict[str, Any], sample_diffs: List[Dict[str, Any]]) -> None:
+def write_summary_md(
+    path: Path, metrics: Dict[str, Any], sample_diffs: List[Dict[str, Any]]
+) -> None:
     lines: List[str] = []
     lines.append("# Signals Parity Report")
     lines.append("")
@@ -299,7 +310,9 @@ def write_summary_md(path: Path, metrics: Dict[str, Any], sample_diffs: List[Dic
     lines.append("| | " + " | ".join(labels) + " |")
     lines.append("|---|" + "|".join(["---:"] * len(labels)) + "|")
     for r in labels:
-        lines.append(f"| {r} | " + " | ".join(str(cm[r].get(c, 0)) for c in labels) + " |")
+        lines.append(
+            f"| {r} | " + " | ".join(str(cm[r].get(c, 0)) for c in labels) + " |"
+        )
     lines.append("")
 
     if sample_diffs:
