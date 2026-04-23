@@ -30,6 +30,7 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "zhipu",
     "vercel",
     "openrouter",
+    "digitalocean",
 ]
 
 SUPPORTED_PROVIDERS = (

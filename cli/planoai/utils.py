@@ -91,7 +91,12 @@ def convert_legacy_listeners(
         "type": "model",
         "port": 12000,
         "address": "0.0.0.0",
-        "timeout": "30s",
+        # LLM streaming responses routinely exceed 30s (extended thinking,
+        # long tool reasoning, large completions). Match the 300s ceiling
+        # used by the direct upstream-provider routes so Envoy doesn't
+        # abort streams with UT mid-response. Users can override via their
+        # plano_config.yaml `listeners.timeout` field.
+        "timeout": "300s",
         "model_providers": model_providers or [],
     }
 
@@ -100,7 +105,7 @@ def convert_legacy_listeners(
         "type": "prompt",
         "port": 10000,
         "address": "0.0.0.0",
-        "timeout": "30s",
+        "timeout": "300s",
     }
 
     # Handle None case

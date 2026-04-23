@@ -15,6 +15,8 @@ use super::http::{self, post_and_extract_content};
 use super::model_metrics::ModelMetricsService;
 use super::orchestrator_model::OrchestratorModel;
 
+use crate::metrics as bs_metrics;
+use crate::metrics::labels as metric_labels;
 use crate::router::orchestrator_model_v1;
 use crate::session_cache::SessionCache;
 
@@ -130,7 +132,13 @@ impl OrchestratorService {
         tenant_id: Option<&str>,
     ) -> Option<CachedRoute> {
         let cache = self.session_cache.as_ref()?;
-        cache.get(&Self::session_key(tenant_id, session_id)).await
+        let result = cache.get(&Self::session_key(tenant_id, session_id)).await;
+        bs_metrics::record_session_cache_event(if result.is_some() {
+            metric_labels::SESSION_CACHE_HIT
+        } else {
+            metric_labels::SESSION_CACHE_MISS
+        });
+        result
     }
 
     pub async fn cache_route(
@@ -151,6 +159,7 @@ impl OrchestratorService {
                     self.session_ttl,
                 )
                 .await;
+            bs_metrics::record_session_cache_event(metric_labels::SESSION_CACHE_STORE);
         }
     }
 

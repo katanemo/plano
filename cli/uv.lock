@@ -337,7 +337,7 @@ wheels = [
 
 [[package]]
 name = "planoai"
-version = "0.4.18"
+version = "0.4.20"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

@@ -43,7 +43,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
 .. code-block:: console
 
-   $ uv tool install planoai==0.4.19
+   $ uv tool install planoai==0.4.20
 
 **Option 2: Install with pip (Traditional)**
 
@@ -51,7 +51,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
    $ python -m venv venv
    $ source venv/bin/activate   # On Windows, use: venv\Scripts\activate
-   $ pip install planoai==0.4.19
+   $ pip install planoai==0.4.20
 
 
 .. _llm_routing_quickstart:
@@ -339,6 +339,67 @@ And to get the list of supported currencies:
 
    "Here is a list of the currencies that are supported for conversion from USD, along with their symbols:\n\n1. AUD - Australian Dollar\n2. BGN - Bulgarian Lev\n3. BRL - Brazilian Real\n4. CAD - Canadian Dollar\n5. CHF - Swiss Franc\n6. CNY - Chinese Renminbi Yuan\n7. CZK - Czech Koruna\n8. DKK - Danish Krone\n9. EUR - Euro\n10. GBP - British Pound\n11. HKD - Hong Kong Dollar\n12. HUF - Hungarian Forint\n13. IDR - Indonesian Rupiah\n14. ILS - Israeli New Sheqel\n15. INR - Indian Rupee\n16. ISK - Icelandic Króna\n17. JPY - Japanese Yen\n18. KRW - South Korean Won\n19. MXN - Mexican Peso\n20. MYR - Malaysian Ringgit\n21. NOK - Norwegian Krone\n22. NZD - New Zealand Dollar\n23. PHP - Philippine Peso\n24. PLN - Polish Złoty\n25. RON - Romanian Leu\n26. SEK - Swedish Krona\n27. SGD - Singapore Dollar\n28. THB - Thai Baht\n29. TRY - Turkish Lira\n30. USD - United States Dollar\n31. ZAR - South African Rand\n\nIf you want to convert USD to any of these currencies, you can select the one you are interested in."
 
+
+Observability
+-------------
+
+Plano ships two CLI tools for visibility into LLM traffic. Both consume the same OTLP/gRPC span stream from brightstaff; they just slice it differently — use whichever (or both) fits the question you're answering.
+
+=====================  ============================================  =============================================================
+Command                When to use                                   Shows
+=====================  ============================================  =============================================================
+``planoai obs``        Live view while you drive traffic              Per-request rows + aggregates: tokens (prompt / completion / cached / cache-creation / reasoning), TTFT, latency, cost, session id, route name, totals by model
+``planoai trace``      Deep-dive into a single request after the fact  Full span tree for a trace id: brightstaff → routing → upstream LLM, attributes on every span, status codes, errors
+=====================  ============================================  =============================================================
+
+Both require brightstaff to be exporting spans. If you're running the zero-config path (``planoai up`` with no config file), tracing is auto-wired to ``http://localhost:4317``. If you have your own ``plano_config.yaml``, add:
+
+.. code-block:: yaml
+
+   tracing:
+     random_sampling: 100
+     opentracing_grpc_endpoint: http://localhost:4317
+
+Live console — ``planoai obs``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   $ planoai obs
+   # In another terminal:
+   $ planoai up
+
+Cost is populated automatically from DigitalOcean's public pricing catalog — no signup or token required.
+
+With no API keys set, every provider runs in pass-through mode — supply the ``Authorization`` header yourself on each request:
+
+.. code-block:: console
+
+   $ curl localhost:12000/v1/chat/completions \
+       -H "Content-Type: application/json" \
+       -H "Authorization: Bearer $DO_API_KEY" \
+       -d '{"model":"digitalocean/router:software-engineering",
+            "messages":[{"role":"user","content":"write code to print prime numbers in python"}],
+            "stream":false}'
+
+When you export ``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY`` / ``DO_API_KEY`` / etc. before ``planoai up``, Plano picks them up and clients no longer need to send ``Authorization``.
+
+Press ``Ctrl-C`` in the obs terminal to exit. Data lives in memory only — nothing is persisted to disk.
+
+Single-request traces — ``planoai trace``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When you need to understand what happened on one specific request (which model was picked, how long each hop took, what an upstream returned), use ``trace``:
+
+.. code-block:: console
+
+   $ planoai trace listen                 # start the OTLP listener (daemon)
+   # drive some traffic through localhost:12000 ...
+   $ planoai trace                        # show the most recent trace
+   $ planoai trace <trace-id>             # show a specific trace by id
+   $ planoai trace --list                 # list the last 50 trace ids
+
+Use ``obs`` to spot that p95 latency spiked for ``openai-gpt-5.4``; switch to ``trace`` on one of those slow request ids to see which hop burned the time.
 
 Next Steps
 ==========

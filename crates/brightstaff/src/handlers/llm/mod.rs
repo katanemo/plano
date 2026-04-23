@@ -24,16 +24,18 @@ use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
 use crate::handlers::extract_request_id;
 use crate::handlers::full;
+use crate::metrics as bs_metrics;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
 use crate::streaming::{
     create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
-    ObservableStreamProcessor, StreamProcessor,
+    LlmMetricsCtx, ObservableStreamProcessor, StreamProcessor,
 };
 use crate::tracing::{
-    collect_custom_trace_attributes, llm as tracing_llm, operation_component, set_service_name,
+    collect_custom_trace_attributes, llm as tracing_llm, operation_component,
+    plano as tracing_plano, set_service_name,
 };
 use model_selection::router_chat_get_upstream_model;
 
@@ -102,15 +104,36 @@ async fn llm_chat_inner(
         .and_then(|hdr| request_headers.get(hdr))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let pinned_model: Option<String> = if let Some(ref sid) = session_id {
+    let cached_route = if let Some(ref sid) = session_id {
         state
             .orchestrator_service
             .get_cached_route(sid, tenant_id.as_deref())
             .await
-            .map(|c| c.model_name)
     } else {
         None
     };
+    let (pinned_model, pinned_route_name): (Option<String>, Option<String>) = match cached_route {
+        Some(c) => (Some(c.model_name), c.route_name),
+        None => (None, None),
+    };
+
+    // Record session id on the LLM span for the observability console.
+    if let Some(ref sid) = session_id {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::SESSION_ID,
+                sid.clone(),
+            ));
+        });
+    }
+    if let Some(ref route_name) = pinned_route_name {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::ROUTE_NAME,
+                route_name.clone(),
+            ));
+        });
+    }
 
     let full_qualified_llm_provider_url = format!("{}{}", state.llm_provider_url, request_path);
 
@@ -120,6 +143,7 @@ async fn llm_chat_inner(
         &request_path,
         &state.model_aliases,
         &state.llm_providers,
+        state.signals_enabled,
     )
     .await
     {
@@ -311,6 +335,18 @@ async fn llm_chat_inner(
             alias_resolved_model.clone()
         };
 
+        // Record route name on the LLM span (only when the orchestrator produced one).
+        if let Some(ref rn) = route_name {
+            if !rn.is_empty() && rn != "none" {
+                get_active_span(|span| {
+                    span.set_attribute(opentelemetry::KeyValue::new(
+                        tracing_plano::ROUTE_NAME,
+                        rn.clone(),
+                    ));
+                });
+            }
+        }
+
         if let Some(ref sid) = session_id {
             state
                 .orchestrator_service
@@ -373,6 +409,7 @@ async fn parse_and_validate_request(
     request_path: &str,
     model_aliases: &Option<HashMap<String, ModelAlias>>,
     llm_providers: &Arc<RwLock<LlmProviders>>,
+    signals_enabled: bool,
 ) -> Result<PreparedRequest, Response<BoxBody<Bytes, hyper::Error>>> {
     let raw_bytes = request
         .collect()
@@ -451,7 +488,11 @@ async fn parse_and_validate_request(
     let user_message_preview = client_request
         .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
-    let messages_for_signals = Some(client_request.get_messages());
+    let messages_for_signals = if signals_enabled {
+        Some(client_request.get_messages())
+    } else {
+        None
+    };
 
     // Set the upstream model name and strip routing metadata
     client_request.set_model(model_name_only.clone());
@@ -652,6 +693,13 @@ async fn send_upstream(
 
     let request_start_time = std::time::Instant::now();
 
+    // Labels for LLM upstream metrics. We prefer `resolved_model` (post-routing)
+    // and derive the provider from its `provider/model` prefix. This matches the
+    // same model id the cost/latency router keys off.
+    let (metric_provider_raw, metric_model_raw) = bs_metrics::split_provider_model(resolved_model);
+    let metric_provider = metric_provider_raw.to_string();
+    let metric_model = metric_model_raw.to_string();
+
     let llm_response = match http_client
         .post(upstream_url)
         .headers(request_headers.clone())
@@ -661,6 +709,14 @@ async fn send_upstream(
     {
         Ok(res) => res,
         Err(err) => {
+            let err_class = bs_metrics::llm_error_class_from_reqwest(&err);
+            bs_metrics::record_llm_upstream(
+                &metric_provider,
+                &metric_model,
+                0,
+                err_class,
+                request_start_time.elapsed(),
+            );
             let err_msg = format!("Failed to send request: {}", err);
             let mut internal_error = Response::new(full(err_msg));
             *internal_error.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
@@ -671,6 +727,36 @@ async fn send_upstream(
     // Propagate upstream headers and status
     let response_headers = llm_response.headers().clone();
     let upstream_status = llm_response.status();
+
+    // Upstream routers (e.g. DigitalOcean Gradient) may return an
+    // `x-model-router-selected-route` header indicating which task-level
+    // route the request was classified into (e.g. "Code Generation"). Surface
+    // it as `plano.route.name` so the obs console's Route hit % panel can
+    // show the breakdown even when Plano's own orchestrator wasn't in the
+    // routing path. Any value from Plano's orchestrator already set earlier
+    // takes precedence — this only fires when the span doesn't already have
+    // a route name.
+    if let Some(upstream_route) = response_headers
+        .get("x-model-router-selected-route")
+        .and_then(|v| v.to_str().ok())
+    {
+        if !upstream_route.is_empty() {
+            get_active_span(|span| {
+                span.set_attribute(opentelemetry::KeyValue::new(
+                    crate::tracing::plano::ROUTE_NAME,
+                    upstream_route.to_string(),
+                ));
+            });
+        }
+    }
+    // Record the upstream HTTP status on the span for the obs console.
+    get_active_span(|span| {
+        span.set_attribute(opentelemetry::KeyValue::new(
+            crate::tracing::http::STATUS_CODE,
+            upstream_status.as_u16() as i64,
+        ));
+    });
+
     let mut response = Response::builder().status(upstream_status);
     if let Some(headers) = response.headers_mut() {
         for (name, value) in response_headers.iter() {
@@ -686,7 +772,12 @@ async fn send_upstream(
         span_name,
         request_start_time,
         messages_for_signals,
-    );
+    )
+    .with_llm_metrics(LlmMetricsCtx {
+        provider: metric_provider.clone(),
+        model: metric_model.clone(),
+        upstream_status: upstream_status.as_u16(),
+    });
 
     let output_filter_request_headers = if filter_pipeline.has_output_filters() {
         Some(request_headers.clone())

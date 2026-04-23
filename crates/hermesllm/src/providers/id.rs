@@ -46,6 +46,7 @@ pub enum ProviderId {
     AmazonBedrock,
     Vercel,
     OpenRouter,
+    DigitalOcean,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -75,6 +76,9 @@ impl TryFrom<&str> for ProviderId {
             "amazon" => Ok(ProviderId::AmazonBedrock), // alias
             "vercel" => Ok(ProviderId::Vercel),
             "openrouter" => Ok(ProviderId::OpenRouter),
+            "digitalocean" => Ok(ProviderId::DigitalOcean),
+            "do" => Ok(ProviderId::DigitalOcean),    // alias
+            "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -99,6 +103,7 @@ impl ProviderId {
             ProviderId::Moonshotai => "moonshotai",
             ProviderId::Zhipu => "z-ai",
             ProviderId::Qwen => "qwen",
+            ProviderId::DigitalOcean => "digitalocean",
             // Vercel and OpenRouter are open-ended gateways; model lists are unbounded.
             // Users configure these with wildcards (e.g. vercel/*); no static expansion needed.
             ProviderId::Vercel | ProviderId::OpenRouter => return Vec::new(),
@@ -157,7 +162,8 @@ impl ProviderId {
                 | ProviderId::Zhipu
                 | ProviderId::Qwen
                 | ProviderId::Vercel
-                | ProviderId::OpenRouter,
+                | ProviderId::OpenRouter
+                | ProviderId::DigitalOcean,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -178,7 +184,8 @@ impl ProviderId {
                 | ProviderId::Zhipu
                 | ProviderId::Qwen
                 | ProviderId::Vercel
-                | ProviderId::OpenRouter,
+                | ProviderId::OpenRouter
+                | ProviderId::DigitalOcean,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -247,6 +254,7 @@ impl Display for ProviderId {
             ProviderId::AmazonBedrock => write!(f, "amazon_bedrock"),
             ProviderId::Vercel => write!(f, "vercel"),
             ProviderId::OpenRouter => write!(f, "openrouter"),
+            ProviderId::DigitalOcean => write!(f, "digitalocean"),
         }
     }
 }

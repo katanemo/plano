@@ -317,11 +317,10 @@ impl TryFrom<Message> for BedrockMessage {
             Role::User => {
                 // Convert user message content to content blocks
                 match message.content {
-                    Some(MessageContent::Text(text)) => {
-                        if !text.is_empty() {
-                            content_blocks.push(ContentBlock::Text { text });
-                        }
+                    Some(MessageContent::Text(text)) if !text.is_empty() => {
+                        content_blocks.push(ContentBlock::Text { text });
                     }
+                    Some(MessageContent::Text(_)) => {}
                     Some(MessageContent::Parts(parts)) => {
                         // Convert OpenAI content parts to Bedrock ContentBlocks
                         for part in parts {

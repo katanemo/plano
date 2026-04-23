@@ -23,6 +23,31 @@ pub trait TokenUsage {
     fn completion_tokens(&self) -> usize;
     fn prompt_tokens(&self) -> usize;
     fn total_tokens(&self) -> usize;
+    /// Tokens served from a prompt cache read (OpenAI `prompt_tokens_details.cached_tokens`,
+    /// Anthropic `cache_read_input_tokens`, Google `cached_content_token_count`).
+    fn cached_input_tokens(&self) -> Option<usize> {
+        None
+    }
+    /// Tokens used to write a cache entry (Anthropic `cache_creation_input_tokens`).
+    fn cache_creation_tokens(&self) -> Option<usize> {
+        None
+    }
+    /// Reasoning tokens for reasoning models (OpenAI `completion_tokens_details.reasoning_tokens`,
+    /// Google `thoughts_token_count`).
+    fn reasoning_tokens(&self) -> Option<usize> {
+        None
+    }
+}
+
+/// Rich usage breakdown extracted from a provider response.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UsageDetails {
+    pub prompt_tokens: usize,
+    pub completion_tokens: usize,
+    pub total_tokens: usize,
+    pub cached_input_tokens: Option<usize>,
+    pub cache_creation_tokens: Option<usize>,
+    pub reasoning_tokens: Option<usize>,
 }
 
 pub trait ProviderResponse: Send + Sync {
@@ -33,6 +58,18 @@ pub trait ProviderResponse: Send + Sync {
     fn extract_usage_counts(&self) -> Option<(usize, usize, usize)> {
         self.usage()
             .map(|u| (u.prompt_tokens(), u.completion_tokens(), u.total_tokens()))
+    }
+
+    /// Extract a rich usage breakdown including cached/cache-creation/reasoning tokens.
+    fn extract_usage_details(&self) -> Option<UsageDetails> {
+        self.usage().map(|u| UsageDetails {
+            prompt_tokens: u.prompt_tokens(),
+            completion_tokens: u.completion_tokens(),
+            total_tokens: u.total_tokens(),
+            cached_input_tokens: u.cached_input_tokens(),
+            cache_creation_tokens: u.cache_creation_tokens(),
+            reasoning_tokens: u.reasoning_tokens(),
+        })
     }
 }
 

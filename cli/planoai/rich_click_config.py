@@ -61,7 +61,7 @@ def configure_rich_click(plano_color: str) -> None:
             },
             {
                 "name": "Observability",
-                "commands": ["trace"],
+                "commands": ["trace", "obs"],
             },
             {
                 "name": "Utilities",
