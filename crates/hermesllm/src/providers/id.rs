@@ -44,6 +44,8 @@ pub enum ProviderId {
     Zhipu,
     Qwen,
     AmazonBedrock,
+    Vercel,
+    OpenRouter,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -71,6 +73,8 @@ impl TryFrom<&str> for ProviderId {
             "qwen" => Ok(ProviderId::Qwen),
             "amazon_bedrock" => Ok(ProviderId::AmazonBedrock),
             "amazon" => Ok(ProviderId::AmazonBedrock), // alias
+            "vercel" => Ok(ProviderId::Vercel),
+            "openrouter" => Ok(ProviderId::OpenRouter),
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -95,6 +99,9 @@ impl ProviderId {
             ProviderId::Moonshotai => "moonshotai",
             ProviderId::Zhipu => "z-ai",
             ProviderId::Qwen => "qwen",
+            // Vercel and OpenRouter are open-ended gateways; model lists are unbounded.
+            // Users configure these with wildcards (e.g. vercel/*); no static expansion needed.
+            ProviderId::Vercel | ProviderId::OpenRouter => return Vec::new(),
             _ => return Vec::new(),
         };
 
@@ -148,7 +155,9 @@ impl ProviderId {
                 | ProviderId::Ollama
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
-                | ProviderId::Qwen,
+                | ProviderId::Qwen
+                | ProviderId::Vercel
+                | ProviderId::OpenRouter,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -167,7 +176,9 @@ impl ProviderId {
                 | ProviderId::Ollama
                 | ProviderId::Moonshotai
                 | ProviderId::Zhipu
-                | ProviderId::Qwen,
+                | ProviderId::Qwen
+                | ProviderId::Vercel
+                | ProviderId::OpenRouter,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -234,6 +245,8 @@ impl Display for ProviderId {
             ProviderId::Zhipu => write!(f, "zhipu"),
             ProviderId::Qwen => write!(f, "qwen"),
             ProviderId::AmazonBedrock => write!(f, "amazon_bedrock"),
+            ProviderId::Vercel => write!(f, "vercel"),
+            ProviderId::OpenRouter => write!(f, "openrouter"),
         }
     }
 }
@@ -334,6 +347,42 @@ mod tests {
             !amazon_models.is_empty(),
             "AmazonBedrock should have models (mapped to amazon)"
         );
+    }
+
+    #[test]
+    fn test_vercel_openrouter_parsing() {
+        assert_eq!(ProviderId::try_from("vercel"), Ok(ProviderId::Vercel));
+        assert_eq!(
+            ProviderId::try_from("openrouter"),
+            Ok(ProviderId::OpenRouter)
+        );
+    }
+
+    #[test]
+    fn test_vercel_openrouter_models_empty() {
+        // Vercel and OpenRouter are open-ended gateways; users configure them with wildcards
+        // (e.g. vercel/*) so no static model list is maintained.
+        assert!(ProviderId::Vercel.models().is_empty());
+        assert!(ProviderId::OpenRouter.models().is_empty());
+    }
+
+    #[test]
+    fn test_vercel_openrouter_use_chat_completions() {
+        use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
+
+        let client_api = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let vercel_upstream = ProviderId::Vercel.compatible_api_for_client(&client_api, false);
+        assert!(matches!(
+            vercel_upstream,
+            SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
+        ));
+
+        let openrouter_upstream =
+            ProviderId::OpenRouter.compatible_api_for_client(&client_api, false);
+        assert!(matches!(
+            openrouter_upstream,
+            SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
+        ));
     }
 
     #[test]

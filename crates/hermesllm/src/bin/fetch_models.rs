@@ -36,8 +36,10 @@ fn main() {
             eprintln!("Error fetching models: {}", e);
             eprintln!("\nMake sure required tools are set up:");
             eprintln!("  AWS CLI configured for Bedrock (for Amazon models)");
-            eprintln!("  export OPENAI_API_KEY=your-key-here      # Optional");
-            eprintln!("  export DEEPSEEK_API_KEY=your-key-here    # Optional");
+            eprintln!("  export OPENAI_API_KEY=your-key-here           # Optional");
+            eprintln!("  export DEEPSEEK_API_KEY=your-key-here         # Optional");
+            eprintln!("  export VERCEL_AI_GATEWAY_KEY=your-key-here    # Optional");
+            eprintln!("  export OPENROUTER_API_KEY=your-key-here       # Optional");
             eprintln!("  cargo run --bin fetch_models");
             std::process::exit(1);
         }
@@ -321,6 +323,18 @@ fn fetch_all_models() -> Result<ProviderModels, Box<dyn std::error::Error>> {
             "MIMO_API_KEY",
             "https://api.xiaomimimo.com/v1/models",
             "xiaomi",
+        ),
+        (
+            "vercel",
+            "VERCEL_AI_GATEWAY_KEY",
+            "https://ai-gateway.vercel.sh/v1/models",
+            "vercel",
+        ),
+        (
+            "openrouter",
+            "OPENROUTER_API_KEY",
+            "https://openrouter.ai/api/v1/models",
+            "openrouter",
         ),
     ];
 

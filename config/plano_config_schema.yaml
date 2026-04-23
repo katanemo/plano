@@ -190,6 +190,8 @@ properties:
             - openai
             - xiaomi
             - gemini
+            - vercel
+            - openrouter
         routing_preferences:
           type: array
           items:
@@ -238,6 +240,8 @@ properties:
             - openai
             - xiaomi
             - gemini
+            - vercel
+            - openrouter
         routing_preferences:
           type: array
           items:

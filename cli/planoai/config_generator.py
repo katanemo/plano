@@ -28,6 +28,8 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "xai",
     "moonshotai",
     "zhipu",
+    "vercel",
+    "openrouter",
 ]
 
 SUPPORTED_PROVIDERS = (

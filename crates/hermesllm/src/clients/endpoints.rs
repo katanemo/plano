@@ -151,6 +151,13 @@ impl SupportedAPIsFromClient {
                         build_endpoint("/v1", endpoint_suffix)
                     }
                 }
+                ProviderId::OpenRouter => {
+                    if request_path.starts_with("/v1/") {
+                        build_endpoint("/api/v1", endpoint_suffix)
+                    } else {
+                        build_endpoint("/v1", endpoint_suffix)
+                    }
+                }
                 ProviderId::AmazonBedrock => {
                     if request_path.starts_with("/v1/") {
                         if !is_streaming {
@@ -700,6 +707,23 @@ mod tests {
                 false
             ),
             "/custom/azure/path/gpt-4-deployment/chat/completions?api-version=2025-01-01-preview"
+        );
+    }
+
+    #[test]
+    fn test_openrouter_endpoint() {
+        let api = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+
+        assert_eq!(
+            api.target_endpoint_for_provider(
+                &ProviderId::OpenRouter,
+                "/v1/chat/completions",
+                "openai/gpt-4o",
+                false,
+                None,
+                false
+            ),
+            "/api/v1/chat/completions"
         );
     }
 
