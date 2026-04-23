@@ -170,6 +170,7 @@ model_providers:
   provider_interface: plano
 overrides:
   agent_orchestration_model: Plano-Orchestrator
+  disable_signals: false
   llm_routing_model: Plano-Orchestrator
   optimize_context_window: true
   prompt_target_intent_matching_threshold: 0.7

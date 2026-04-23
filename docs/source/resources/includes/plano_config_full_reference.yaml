@@ -173,6 +173,9 @@ overrides:
   llm_routing_model: Plano-Orchestrator
   # Model used for agent orchestration (must be listed in model_providers)
   agent_orchestration_model: Plano-Orchestrator
+  # Disable agentic signal analysis (frustration, repetition, escalation, etc.)
+  # on LLM responses to save CPU. Default: false.
+  disable_signals: false
 
 # Model affinity — pin routing decisions for agentic loops
 routing:

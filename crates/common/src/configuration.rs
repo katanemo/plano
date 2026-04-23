@@ -234,6 +234,7 @@ pub struct Overrides {
     pub llm_routing_model: Option<String>,
     pub agent_orchestration_model: Option<String>,
     pub orchestrator_model_context_length: Option<usize>,
+    pub disable_signals: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -754,5 +755,30 @@ mod test {
         let model_ids: Vec<String> = models.data.iter().map(|m| m.id.clone()).collect();
         assert!(model_ids.contains(&"openai-gpt4".to_string()));
         assert!(!model_ids.contains(&"plano-orchestrator".to_string()));
+    }
+
+    #[test]
+    fn test_overrides_disable_signals_default_none() {
+        let overrides = super::Overrides::default();
+        assert_eq!(overrides.disable_signals, None);
+    }
+
+    #[test]
+    fn test_overrides_disable_signals_deserialize() {
+        let yaml = r#"
+disable_signals: true
+"#;
+        let overrides: super::Overrides = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(overrides.disable_signals, Some(true));
+
+        let yaml_false = r#"
+disable_signals: false
+"#;
+        let overrides: super::Overrides = serde_yaml::from_str(yaml_false).unwrap();
+        assert_eq!(overrides.disable_signals, Some(false));
+
+        let yaml_missing = "{}";
+        let overrides: super::Overrides = serde_yaml::from_str(yaml_missing).unwrap();
+        assert_eq!(overrides.disable_signals, None);
     }
 }

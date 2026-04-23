@@ -354,10 +354,10 @@ impl TryFrom<MessagesMessage> for BedrockMessage {
             MessagesMessageContent::Blocks(blocks) => {
                 for block in blocks {
                     match block {
-                        crate::apis::anthropic::MessagesContentBlock::Text { text, .. } => {
-                            if !text.is_empty() {
-                                content_blocks.push(ContentBlock::Text { text });
-                            }
+                        crate::apis::anthropic::MessagesContentBlock::Text { text, .. }
+                            if !text.is_empty() =>
+                        {
+                            content_blocks.push(ContentBlock::Text { text });
                         }
                         crate::apis::anthropic::MessagesContentBlock::ToolUse {
                             id,

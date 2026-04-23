@@ -346,12 +346,10 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
                 (
                     SupportedAPIsFromClient::OpenAIChatCompletions(_),
                     SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
-                ) => {
+                ) if transformed_event.is_event_only() && transformed_event.event.is_some() => {
                     // OpenAI clients don't expect separate event: lines
                     // Suppress upstream Anthropic event-only lines
-                    if transformed_event.is_event_only() && transformed_event.event.is_some() {
-                        transformed_event.sse_transformed_lines = "\n".to_string();
-                    }
+                    transformed_event.sse_transformed_lines = "\n".to_string();
                 }
                 _ => {
                     // Other cross-API combinations can be handled here as needed
@@ -371,12 +369,10 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
                 | (
                     SupportedAPIsFromClient::OpenAIResponsesAPI(_),
                     SupportedUpstreamAPIs::OpenAIResponsesAPI(_),
-                ) => {
-                    if transformed_event.is_event_only() && transformed_event.event.is_some() {
-                        // Mark as should-skip by clearing sse_transformed_lines
-                        // The event line is already included when the data line is transformed
-                        transformed_event.sse_transformed_lines = String::new();
-                    }
+                ) if transformed_event.is_event_only() && transformed_event.event.is_some() => {
+                    // Mark as should-skip by clearing sse_transformed_lines
+                    // The event line is already included when the data line is transformed
+                    transformed_event.sse_transformed_lines = String::new();
                 }
                 _ => {
                     // Other passthrough combinations (OpenAI ChatCompletions, etc.) don't have this issue

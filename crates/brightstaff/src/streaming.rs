@@ -20,8 +20,11 @@ const STREAM_BUFFER_SIZE: usize = 16;
 /// Most chat responses are well under this; pathological ones are dropped without
 /// affecting pass-through streaming to the client.
 const USAGE_BUFFER_MAX: usize = 2 * 1024 * 1024;
-use crate::signals::{InteractionQuality, SignalAnalyzer, TextBasedSignalAnalyzer, FLAG_MARKER};
-use crate::tracing::{llm, set_service_name, signals as signal_constants};
+use crate::metrics as bs_metrics;
+use crate::metrics::labels as metric_labels;
+use crate::signals::otel::emit_signals_to_span;
+use crate::signals::{SignalAnalyzer, FLAG_MARKER};
+use crate::tracing::{llm, set_service_name};
 use hermesllm::apis::openai::Message;
 
 /// Parsed usage + resolved-model details from a provider response.
@@ -172,6 +175,18 @@ impl StreamProcessor for Box<dyn StreamProcessor> {
     }
 }
 
+/// Optional Prometheus-metric context for an LLM upstream call. When present,
+/// [`ObservableStreamProcessor`] emits `brightstaff_llm_*` metrics at
+/// first-byte / complete / error callbacks.
+#[derive(Debug, Clone)]
+pub struct LlmMetricsCtx {
+    pub provider: String,
+    pub model: String,
+    /// HTTP status of the upstream response. Used to pick `status_class` and
+    /// `error_class` on `on_complete`.
+    pub upstream_status: u16,
+}
+
 /// A processor that tracks streaming metrics
 pub struct ObservableStreamProcessor {
     service_name: String,
@@ -185,6 +200,8 @@ pub struct ObservableStreamProcessor {
     /// on `on_complete`. Capped at `USAGE_BUFFER_MAX`; excess chunks are dropped
     /// from the buffer (they still pass through to the client).
     response_buffer: Vec<u8>,
+    llm_metrics: Option<LlmMetricsCtx>,
+    metrics_recorded: bool,
 }
 
 impl ObservableStreamProcessor {
@@ -219,7 +236,16 @@ impl ObservableStreamProcessor {
             time_to_first_token: None,
             messages,
             response_buffer: Vec::new(),
+            llm_metrics: None,
+            metrics_recorded: false,
         }
+    }
+
+    /// Attach LLM upstream metric context so the processor emits
+    /// `brightstaff_llm_*` metrics on first-byte / complete / error.
+    pub fn with_llm_metrics(mut self, ctx: LlmMetricsCtx) -> Self {
+        self.llm_metrics = Some(ctx);
+        self
     }
 }
 
@@ -240,7 +266,11 @@ impl StreamProcessor for ObservableStreamProcessor {
     fn on_first_bytes(&mut self) {
         // Record time to first token (only for streaming)
         if self.time_to_first_token.is_none() {
-            self.time_to_first_token = Some(self.start_time.elapsed().as_millis());
+            let elapsed = self.start_time.elapsed();
+            self.time_to_first_token = Some(elapsed.as_millis());
+            if let Some(ref ctx) = self.llm_metrics {
+                bs_metrics::record_llm_ttft(&ctx.provider, &ctx.model, elapsed);
+            }
         }
     }
 
@@ -299,81 +329,56 @@ impl StreamProcessor for ObservableStreamProcessor {
                 otel_span.set_attribute(KeyValue::new(llm::MODEL_NAME, resolved));
             }
         }
+
+        // Emit LLM upstream prometheus metrics (duration + tokens) if wired.
+        // The upstream responded (we have a status), so status_class alone
+        // carries the non-2xx signal — error_class stays "none".
+        if let Some(ref ctx) = self.llm_metrics {
+            bs_metrics::record_llm_upstream(
+                &ctx.provider,
+                &ctx.model,
+                ctx.upstream_status,
+                metric_labels::LLM_ERR_NONE,
+                self.start_time.elapsed(),
+            );
+            if let Some(v) = usage.prompt_tokens {
+                bs_metrics::record_llm_tokens(
+                    &ctx.provider,
+                    &ctx.model,
+                    metric_labels::TOKEN_KIND_PROMPT,
+                    v.max(0) as u64,
+                );
+            }
+            if let Some(v) = usage.completion_tokens {
+                bs_metrics::record_llm_tokens(
+                    &ctx.provider,
+                    &ctx.model,
+                    metric_labels::TOKEN_KIND_COMPLETION,
+                    v.max(0) as u64,
+                );
+            }
+            if usage.prompt_tokens.is_none() && usage.completion_tokens.is_none() {
+                bs_metrics::record_llm_tokens_usage_missing(&ctx.provider, &ctx.model);
+            }
+            self.metrics_recorded = true;
+        }
         // Release the buffered bytes early; nothing downstream needs them.
         self.response_buffer.clear();
         self.response_buffer.shrink_to_fit();
 
-        // Analyze signals if messages are available and record as span attributes
+        // Analyze signals if messages are available and record as span
+        // attributes + per-signal events. We dual-emit legacy aggregate keys
+        // and the new layered taxonomy so existing dashboards keep working
+        // while new consumers can opt into the richer hierarchy.
         if let Some(ref messages) = self.messages {
-            let analyzer: Box<dyn SignalAnalyzer> = Box::new(TextBasedSignalAnalyzer::new());
-            let report = analyzer.analyze(messages);
+            let analyzer = SignalAnalyzer::default();
+            let report = analyzer.analyze_openai(messages);
 
-            // Get the current OTel span to set signal attributes
             let span = tracing::Span::current();
             let otel_context = span.context();
             let otel_span = otel_context.span();
 
-            // Add overall quality
-            otel_span.set_attribute(KeyValue::new(
-                signal_constants::QUALITY,
-                format!("{:?}", report.overall_quality),
-            ));
-
-            // Add repair/follow-up metrics if concerning
-            if report.follow_up.is_concerning || report.follow_up.repair_count > 0 {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::REPAIR_COUNT,
-                    report.follow_up.repair_count as i64,
-                ));
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::REPAIR_RATIO,
-                    format!("{:.3}", report.follow_up.repair_ratio),
-                ));
-            }
-
-            // Add frustration metrics
-            if report.frustration.has_frustration {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::FRUSTRATION_COUNT,
-                    report.frustration.frustration_count as i64,
-                ));
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::FRUSTRATION_SEVERITY,
-                    report.frustration.severity as i64,
-                ));
-            }
-
-            // Add repetition metrics
-            if report.repetition.has_looping {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::REPETITION_COUNT,
-                    report.repetition.repetition_count as i64,
-                ));
-            }
-
-            // Add escalation metrics
-            if report.escalation.escalation_requested {
-                otel_span
-                    .set_attribute(KeyValue::new(signal_constants::ESCALATION_REQUESTED, true));
-            }
-
-            // Add positive feedback metrics
-            if report.positive_feedback.has_positive_feedback {
-                otel_span.set_attribute(KeyValue::new(
-                    signal_constants::POSITIVE_FEEDBACK_COUNT,
-                    report.positive_feedback.positive_count as i64,
-                ));
-            }
-
-            // Flag the span name if any concerning signal is detected
-            let should_flag = report.frustration.has_frustration
-                || report.repetition.has_looping
-                || report.escalation.escalation_requested
-                || matches!(
-                    report.overall_quality,
-                    InteractionQuality::Poor | InteractionQuality::Severe
-                );
-
+            let should_flag = emit_signals_to_span(&otel_span, &report);
             if should_flag {
                 otel_span.update_name(format!("{} {}", self.operation_name, FLAG_MARKER));
             }
@@ -396,6 +401,18 @@ impl StreamProcessor for ObservableStreamProcessor {
             duration_ms = self.start_time.elapsed().as_millis(),
             "stream error"
         );
+        if let Some(ref ctx) = self.llm_metrics {
+            if !self.metrics_recorded {
+                bs_metrics::record_llm_upstream(
+                    &ctx.provider,
+                    &ctx.model,
+                    ctx.upstream_status,
+                    metric_labels::LLM_ERR_STREAM,
+                    self.start_time.elapsed(),
+                );
+                self.metrics_recorded = true;
+            }
+        }
     }
 }
 

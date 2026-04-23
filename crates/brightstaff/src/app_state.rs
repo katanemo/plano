@@ -24,4 +24,7 @@ pub struct AppState {
     /// Shared HTTP client for upstream LLM requests (connection pooling / keep-alive).
     pub http_client: reqwest::Client,
     pub filter_pipeline: Arc<FilterPipeline>,
+    /// When false, agentic signal analysis is skipped on LLM responses to save CPU.
+    /// Controlled by `overrides.disable_signals` in plano config.
+    pub signals_enabled: bool,
 }
