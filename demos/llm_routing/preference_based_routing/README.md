@@ -3,7 +3,7 @@ This demo shows how you can use user preferences to route user prompts to approp
 
 ## How to start the demo
 
-Make sure you have Plano CLI installed (`pip install planoai==0.4.20` or `uv tool install planoai==0.4.20`).
+Make sure you have Plano CLI installed (`pip install planoai==0.4.21` or `uv tool install planoai==0.4.21`).
 
 ```bash
 cd demos/llm_routing/preference_based_routing
