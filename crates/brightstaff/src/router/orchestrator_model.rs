@@ -11,8 +11,7 @@ pub enum OrchestratorModelError {
 pub type Result<T> = std::result::Result<T, OrchestratorModelError>;
 
 /// OrchestratorModel trait for handling orchestration requests.
-/// Unlike RouterModel which returns a single route, OrchestratorModel
-/// can return multiple routes as the model output format is:
+/// Returns multiple routes as the model output format is:
 /// {"route": ["route_name_1", "route_name_2", ...]}
 pub trait OrchestratorModel: Send + Sync {
     fn generate_request(

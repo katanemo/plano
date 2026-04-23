@@ -5,7 +5,6 @@ use common::configuration::{Agent, FilterPipeline, Listener, ModelAlias, SpanAtt
 use common::llm_providers::LlmProviders;
 use tokio::sync::RwLock;
 
-use crate::router::llm::RouterService;
 use crate::router::orchestrator::OrchestratorService;
 use crate::state::StateStorage;
 
@@ -14,7 +13,6 @@ use crate::state::StateStorage;
 /// Instead of cloning 8+ individual `Arc`s per connection, a single
 /// `Arc<AppState>` is cloned once and passed to the request handler.
 pub struct AppState {
-    pub router_service: Arc<RouterService>,
     pub orchestrator_service: Arc<OrchestratorService>,
     pub model_aliases: Option<HashMap<String, ModelAlias>>,
     pub llm_providers: Arc<RwLock<LlmProviders>>,

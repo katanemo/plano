@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: arch-router
+  name: plano-orchestrator
   labels:
-    app: arch-router
+    app: plano-orchestrator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: arch-router
+      app: plano-orchestrator
   template:
     metadata:
       labels:
-        app: arch-router
+        app: plano-orchestrator
     spec:
       tolerations:
         - key: nvidia.com/gpu
@@ -53,7 +53,7 @@ spec:
             - "--tokenizer"
             - "katanemo/Arch-Router-1.5B"
             - "--served-model-name"
-            - "Arch-Router"
+            - "Plano-Orchestrator"
             - "--gpu-memory-utilization"
             - "0.3"
             - "--tensor-parallel-size"
@@ -94,10 +94,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: arch-router
+  name: plano-orchestrator
 spec:
   selector:
-    app: arch-router
+    app: plano-orchestrator
   ports:
     - name: http
       port: 10000

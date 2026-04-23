@@ -10,7 +10,8 @@ use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
 use brightstaff::handlers::routing_service::routing_decision;
-use brightstaff::router::llm::RouterService;
+use brightstaff::metrics as bs_metrics;
+use brightstaff::metrics::labels as metric_labels;
 use brightstaff::router::model_metrics::ModelMetricsService;
 use brightstaff::router::orchestrator::OrchestratorService;
 use brightstaff::session_cache::init_session_cache;
@@ -42,8 +43,6 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 const BIND_ADDRESS: &str = "0.0.0.0:9091";
-const DEFAULT_ROUTING_LLM_PROVIDER: &str = "arch-router";
-const DEFAULT_ROUTING_MODEL_NAME: &str = "Arch-Router";
 const DEFAULT_ORCHESTRATOR_LLM_PROVIDER: &str = "plano-orchestrator";
 const DEFAULT_ORCHESTRATOR_MODEL_NAME: &str = "Plano-Orchestrator";
 
@@ -165,20 +164,6 @@ async fn init_app_state(
     });
 
     let overrides = config.overrides.clone().unwrap_or_default();
-
-    let routing_model_name: String = overrides
-        .llm_routing_model
-        .as_deref()
-        .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
-        .unwrap_or(DEFAULT_ROUTING_MODEL_NAME)
-        .to_string();
-
-    let routing_llm_provider = config
-        .model_providers
-        .iter()
-        .find(|p| p.model.as_deref() == Some(routing_model_name.as_str()))
-        .map(|p| p.name.clone())
-        .unwrap_or_else(|| DEFAULT_ROUTING_LLM_PROVIDER.to_string());
 
     let session_ttl_seconds = config.routing.as_ref().and_then(|r| r.session_ttl_seconds);
     let session_cache = init_session_cache(config).await?;
@@ -309,20 +294,11 @@ async fn init_app_state(
         .and_then(|r| r.session_cache.as_ref())
         .and_then(|c| c.tenant_header.clone());
 
-    let router_service = Arc::new(RouterService::new(
-        config.routing_preferences.clone(),
-        metrics_service,
-        format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
-        routing_model_name,
-        routing_llm_provider,
-        session_ttl_seconds,
-        session_cache,
-        session_tenant_header,
-    ));
-
+    // Resolve model name: prefer llm_routing_model override, then agent_orchestration_model, then default.
     let orchestrator_model_name: String = overrides
-        .agent_orchestration_model
+        .llm_routing_model
         .as_deref()
+        .or(overrides.agent_orchestration_model.as_deref())
         .map(|m| m.split_once('/').map(|(_, id)| id).unwrap_or(m))
         .unwrap_or(DEFAULT_ORCHESTRATOR_MODEL_NAME)
         .to_string();
@@ -334,10 +310,20 @@ async fn init_app_state(
         .map(|p| p.name.clone())
         .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_LLM_PROVIDER.to_string());
 
-    let orchestrator_service = Arc::new(OrchestratorService::new(
+    let orchestrator_max_tokens = overrides
+        .orchestrator_model_context_length
+        .unwrap_or(brightstaff::router::orchestrator_model_v1::MAX_TOKEN_LEN);
+
+    let orchestrator_service = Arc::new(OrchestratorService::with_routing(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         orchestrator_model_name,
         orchestrator_llm_provider,
+        config.routing_preferences.clone(),
+        metrics_service,
+        session_ttl_seconds,
+        session_cache,
+        session_tenant_header,
+        orchestrator_max_tokens,
     ));
 
     let state_storage = init_state_storage(config).await?;
@@ -348,7 +334,6 @@ async fn init_app_state(
         .and_then(|tracing| tracing.span_attributes.clone());
 
     Ok(AppState {
-        router_service,
         orchestrator_service,
         model_aliases: config.model_aliases.clone(),
         llm_providers: Arc::new(RwLock::new(llm_providers)),
@@ -410,8 +395,77 @@ async fn init_state_storage(
 // Request routing
 // ---------------------------------------------------------------------------
 
+/// Normalized method label — limited set so we never emit a free-form string.
+fn method_label(method: &Method) -> &'static str {
+    match *method {
+        Method::GET => "GET",
+        Method::POST => "POST",
+        Method::PUT => "PUT",
+        Method::DELETE => "DELETE",
+        Method::PATCH => "PATCH",
+        Method::HEAD => "HEAD",
+        Method::OPTIONS => "OPTIONS",
+        _ => "OTHER",
+    }
+}
+
+/// Compute the fixed `handler` metric label from the request's path+method.
+/// Returning `None` for fall-through means `route()` will hand the request to
+/// the catch-all 404 branch.
+fn handler_label_for(method: &Method, path: &str) -> &'static str {
+    if let Some(stripped) = path.strip_prefix("/agents") {
+        if matches!(
+            stripped,
+            CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH
+        ) {
+            return metric_labels::HANDLER_AGENT_CHAT;
+        }
+    }
+    if let Some(stripped) = path.strip_prefix("/routing") {
+        if matches!(
+            stripped,
+            CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH
+        ) {
+            return metric_labels::HANDLER_ROUTING_DECISION;
+        }
+    }
+    match (method, path) {
+        (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
+            metric_labels::HANDLER_LLM_CHAT
+        }
+        (&Method::POST, "/function_calling") => metric_labels::HANDLER_FUNCTION_CALLING,
+        (&Method::GET, "/v1/models" | "/agents/v1/models") => metric_labels::HANDLER_LIST_MODELS,
+        (&Method::OPTIONS, "/v1/models" | "/agents/v1/models") => {
+            metric_labels::HANDLER_CORS_PREFLIGHT
+        }
+        _ => metric_labels::HANDLER_NOT_FOUND,
+    }
+}
+
 /// Route an incoming HTTP request to the appropriate handler.
 async fn route(
+    req: Request<Incoming>,
+    state: Arc<AppState>,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+    let handler = handler_label_for(req.method(), req.uri().path());
+    let method = method_label(req.method());
+    let started = std::time::Instant::now();
+    let _in_flight = bs_metrics::InFlightGuard::new(handler);
+
+    let result = dispatch(req, state).await;
+
+    let status = match &result {
+        Ok(resp) => resp.status().as_u16(),
+        // hyper::Error here means the body couldn't be produced; conventionally 500.
+        Err(_) => 500,
+    };
+    bs_metrics::record_http(handler, method, status, started);
+    result
+}
+
+/// Inner dispatcher split out so `route()` can wrap it with metrics without
+/// duplicating the match tree.
+async fn dispatch(
     req: Request<Incoming>,
     state: Arc<AppState>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -439,7 +493,7 @@ async fn route(
         ) {
             return routing_decision(
                 req,
-                Arc::clone(&state.router_service),
+                Arc::clone(&state.orchestrator_service),
                 stripped,
                 &state.span_attributes,
             )
@@ -531,6 +585,7 @@ async fn run_server(state: Arc<AppState>) -> Result<(), Box<dyn std::error::Erro
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = load_config()?;
     let _tracer_provider = init_tracer(config.tracing.as_ref());
+    bs_metrics::init();
     info!("loaded plano_config.yaml");
     let state = Arc::new(init_app_state(&config).await?);
     run_server(state).await

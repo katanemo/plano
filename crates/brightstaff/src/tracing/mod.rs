@@ -4,7 +4,7 @@ mod init;
 mod service_name_exporter;
 
 pub use constants::{
-    error, http, llm, operation_component, routing, signals, OperationNameBuilder,
+    error, http, llm, operation_component, plano, routing, signals, OperationNameBuilder,
 };
 pub use custom_attributes::collect_custom_trace_attributes;
 pub use init::init_tracer;

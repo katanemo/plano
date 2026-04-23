@@ -12,7 +12,9 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::extract_or_generate_traceparent;
 use crate::handlers::llm::model_selection::router_chat_get_upstream_model;
-use crate::router::llm::RouterService;
+use crate::metrics as bs_metrics;
+use crate::metrics::labels as metric_labels;
+use crate::router::orchestrator::OrchestratorService;
 use crate::tracing::{collect_custom_trace_attributes, operation_component, set_service_name};
 
 /// Extracts `routing_preferences` from a JSON body, returning the cleaned body bytes
@@ -60,7 +62,7 @@ struct RoutingDecisionResponse {
 
 pub async fn routing_decision(
     request: Request<hyper::body::Incoming>,
-    router_service: Arc<RouterService>,
+    orchestrator_service: Arc<OrchestratorService>,
     request_path: String,
     span_attributes: &Option<SpanAttributes>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
@@ -76,7 +78,7 @@ pub async fn routing_decision(
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
 
-    let tenant_id: Option<String> = router_service
+    let tenant_id: Option<String> = orchestrator_service
         .tenant_header()
         .and_then(|hdr| request_headers.get(hdr))
         .and_then(|v| v.to_str().ok())
@@ -94,7 +96,7 @@ pub async fn routing_decision(
 
     routing_decision_inner(
         request,
-        router_service,
+        orchestrator_service,
         request_id,
         request_path,
         request_headers,
@@ -109,7 +111,7 @@ pub async fn routing_decision(
 #[allow(clippy::too_many_arguments)]
 async fn routing_decision_inner(
     request: Request<hyper::body::Incoming>,
-    router_service: Arc<RouterService>,
+    orchestrator_service: Arc<OrchestratorService>,
     request_id: String,
     request_path: String,
     request_headers: hyper::HeaderMap,
@@ -133,9 +135,8 @@ async fn routing_decision_inner(
         .unwrap_or("unknown")
         .to_string();
 
-    // Session pinning: check cache before doing any routing work
     if let Some(ref sid) = session_id {
-        if let Some(cached) = router_service
+        if let Some(cached) = orchestrator_service
             .get_cached_route(sid, tenant_id.as_deref())
             .await
         {
@@ -202,9 +203,8 @@ async fn routing_decision_inner(
     };
 
     let routing_result = router_chat_get_upstream_model(
-        Arc::clone(&router_service),
+        Arc::clone(&orchestrator_service),
         client_request,
-        &traceparent,
         &request_path,
         &request_id,
         inline_routing_preferences,
@@ -213,9 +213,8 @@ async fn routing_decision_inner(
 
     match routing_result {
         Ok(result) => {
-            // Cache the result if session_id is present
             if let Some(ref sid) = session_id {
-                router_service
+                orchestrator_service
                     .cache_route(
                         sid.clone(),
                         tenant_id.as_deref(),
@@ -232,6 +231,17 @@ async fn routing_decision_inner(
                 session_id,
                 pinned: false,
             };
+
+            // Distinguish "decision served" (a concrete model picked) from
+            // "no_candidates" (the sentinel "none" returned when nothing
+            // matched). The handler still responds 200 in both cases, so RED
+            // metrics alone can't tell them apart.
+            let outcome = if response.models.first().map(|m| m == "none").unwrap_or(true) {
+                metric_labels::ROUTING_SVC_NO_CANDIDATES
+            } else {
+                metric_labels::ROUTING_SVC_DECISION_SERVED
+            };
+            bs_metrics::record_routing_service_outcome(outcome);
 
             info!(
                 primary_model = %response.models.first().map(|s| s.as_str()).unwrap_or("none"),
@@ -252,6 +262,7 @@ async fn routing_decision_inner(
                 .unwrap())
         }
         Err(err) => {
+            bs_metrics::record_routing_service_outcome(metric_labels::ROUTING_SVC_POLICY_ERROR);
             warn!(error = %err.message, "routing decision failed");
             Ok(BrightStaffError::InternalServerError(err.message).into_response())
         }

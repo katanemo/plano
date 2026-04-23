@@ -31,6 +31,9 @@ opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 pretty_assertions = "1.4.1"
 rand = "0.9.2"
 lru = "0.12"
+metrics = "0.23"
+metrics-exporter-prometheus = { version = "0.15", default-features = false, features = ["http-listener"] }
+metrics-process = "2.1"
 redis = { version = "0.27", features = ["tokio-comp"] }
 reqwest = { version = "0.12.15", features = ["stream"] }
 serde = { version = "1.0.219", features = ["derive"] }

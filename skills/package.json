@@ -1,0 +1,31 @@
+{
+  "name": "plano-agent-skills",
+  "version": "1.0.0",
+  "description": "Best practices for building agents and agentic applications with Plano — installable via npx skills add",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsx src/build.ts",
+    "validate": "tsx src/validate.ts",
+    "extract-tests": "tsx src/extract-tests.ts",
+    "dev": "npm run typecheck && npm run validate && npm run build && npm run extract-tests"
+  },
+  "keywords": [
+    "plano",
+    "archgw",
+    "ai-gateway",
+    "agent",
+    "llm",
+    "skills",
+    "best-practices"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

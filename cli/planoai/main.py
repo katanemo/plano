@@ -6,7 +6,13 @@ import sys
 import contextlib
 import logging
 import rich_click as click
+import yaml
 from planoai import targets
+from planoai.defaults import (
+    DEFAULT_LLM_LISTENER_PORT,
+    detect_providers,
+    synthesize_default_config,
+)
 
 # Brand color - Plano purple
 PLANO_COLOR = "#969FF4"
@@ -31,6 +37,7 @@ from planoai.core import (
 )
 from planoai.init_cmd import init as init_cmd
 from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
+from planoai.obs_cmd import obs as obs_cmd
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
@@ -317,7 +324,23 @@ def build(docker):
     help="Show detailed startup logs with timestamps.",
     is_flag=True,
 )
-def up(file, path, foreground, with_tracing, tracing_port, docker, verbose):
+@click.option(
+    "--listener-port",
+    default=DEFAULT_LLM_LISTENER_PORT,
+    type=int,
+    show_default=True,
+    help="Override the LLM listener port when running without a config file. Ignored when a config file is present.",
+)
+def up(
+    file,
+    path,
+    foreground,
+    with_tracing,
+    tracing_port,
+    docker,
+    verbose,
+    listener_port,
+):
     """Starts Plano."""
     from rich.status import Status
 
@@ -328,12 +351,23 @@ def up(file, path, foreground, with_tracing, tracing_port, docker, verbose):
         # Use the utility function to find config file
         plano_config_file = find_config_file(path, file)
 
-        # Check if the file exists
+        # Zero-config fallback: when no user config is present, synthesize a
+        # pass-through config that covers the common LLM providers and
+        # auto-wires OTel export to ``planoai obs``. See cli/planoai/defaults.py.
         if not os.path.exists(plano_config_file):
+            detection = detect_providers()
+            cfg_dict = synthesize_default_config(listener_port=listener_port)
+
+            default_dir = os.path.expanduser("~/.plano")
+            os.makedirs(default_dir, exist_ok=True)
+            synthesized_path = os.path.join(default_dir, "default_config.yaml")
+            with open(synthesized_path, "w") as fh:
+                yaml.safe_dump(cfg_dict, fh, sort_keys=False)
+            plano_config_file = synthesized_path
             console.print(
-                f"[red]✗[/red] Config file not found: [dim]{plano_config_file}[/dim]"
+                f"[dim]No plano config found; using defaults ({detection.summary}). "
+                f"Listening on :{listener_port}, tracing -> http://localhost:4317.[/dim]"
             )
-            sys.exit(1)
 
         if not docker:
             from planoai.native_runner import native_validate_config
@@ -681,6 +715,7 @@ main.add_command(cli_agent)
 main.add_command(generate_prompt_targets)
 main.add_command(init_cmd, name="init")
 main.add_command(trace_cmd, name="trace")
+main.add_command(obs_cmd, name="obs")
 
 if __name__ == "__main__":
     main()

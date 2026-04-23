@@ -5,9 +5,23 @@ use hyper::StatusCode;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use crate::router::llm::RouterService;
+use crate::metrics as bs_metrics;
+use crate::metrics::labels as metric_labels;
+use crate::router::orchestrator::OrchestratorService;
 use crate::streaming::truncate_message;
 use crate::tracing::routing;
+
+/// Classify a request path (already stripped of `/agents` or `/routing` by
+/// the caller) into the fixed `route` label used on routing metrics.
+fn route_label_for_path(request_path: &str) -> &'static str {
+    if request_path.starts_with("/agents") {
+        metric_labels::ROUTE_AGENT
+    } else if request_path.starts_with("/routing") {
+        metric_labels::ROUTE_ROUTING
+    } else {
+        metric_labels::ROUTE_LLM
+    }
+}
 
 pub struct RoutingResult {
     /// Primary model to use (first in the ranked list).
@@ -37,9 +51,8 @@ impl RoutingError {
 /// * `Ok(RoutingResult)` - Contains the selected model name and span ID
 /// * `Err(RoutingError)` - Contains error details and optional span ID
 pub async fn router_chat_get_upstream_model(
-    router_service: Arc<RouterService>,
+    orchestrator_service: Arc<OrchestratorService>,
     client_request: ProviderRequestType,
-    traceparent: &str,
     request_path: &str,
     request_id: &str,
     inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
@@ -99,25 +112,31 @@ pub async fn router_chat_get_upstream_model(
     // Capture start time for routing span
     let routing_start_time = std::time::Instant::now();
 
-    // Attempt to determine route using the router service
-    let routing_result = router_service
+    let routing_result = orchestrator_service
         .determine_route(
             &chat_request.messages,
-            traceparent,
             inline_routing_preferences,
             request_id,
         )
         .await;
 
-    let determination_ms = routing_start_time.elapsed().as_millis() as i64;
+    let determination_elapsed = routing_start_time.elapsed();
+    let determination_ms = determination_elapsed.as_millis() as i64;
     let current_span = tracing::Span::current();
     current_span.record(routing::ROUTE_DETERMINATION_MS, determination_ms);
+    let route_label = route_label_for_path(request_path);
 
     match routing_result {
         Ok(route) => match route {
             Some((route_name, ranked_models)) => {
                 let model_name = ranked_models.first().cloned().unwrap_or_default();
                 current_span.record("route.selected_model", model_name.as_str());
+                bs_metrics::record_router_decision(
+                    route_label,
+                    &model_name,
+                    false,
+                    determination_elapsed,
+                );
                 Ok(RoutingResult {
                     model_name,
                     models: ranked_models,
@@ -129,6 +148,12 @@ pub async fn router_chat_get_upstream_model(
                 // This signals to llm.rs to use the original validated request model
                 current_span.record("route.selected_model", "none");
                 info!("no route determined, using default model");
+                bs_metrics::record_router_decision(
+                    route_label,
+                    "none",
+                    true,
+                    determination_elapsed,
+                );
 
                 Ok(RoutingResult {
                     model_name: "none".to_string(),
@@ -139,6 +164,7 @@ pub async fn router_chat_get_upstream_model(
         },
         Err(err) => {
             current_span.record("route.selected_model", "unknown");
+            bs_metrics::record_router_decision(route_label, "unknown", true, determination_elapsed);
             Err(RoutingError::internal_error(format!(
                 "Failed to determine route: {}",
                 err

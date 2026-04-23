@@ -710,6 +710,18 @@ impl crate::providers::response::TokenUsage for ResponseUsage {
     fn total_tokens(&self) -> usize {
         self.total_tokens as usize
     }
+
+    fn cached_input_tokens(&self) -> Option<usize> {
+        self.input_tokens_details
+            .as_ref()
+            .map(|d| d.cached_tokens.max(0) as usize)
+    }
+
+    fn reasoning_tokens(&self) -> Option<usize> {
+        self.output_tokens_details
+            .as_ref()
+            .map(|d| d.reasoning_tokens.max(0) as usize)
+    }
 }
 
 /// Token details

@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::router::llm::RouterService;
+    use crate::router::orchestrator::OrchestratorService;
+    use crate::session_cache::memory::MemorySessionCache;
     use common::configuration::{SelectionPolicy, SelectionPreference, TopLevelRoutingPreference};
     use hermesllm::apis::openai::{Message, MessageContent, Role};
     use std::sync::Arc;
@@ -56,7 +57,7 @@ mod tests {
     /// This catches:
     /// - Memory leaks in generate_request / parse_response
     /// - Leaks in reqwest connection handling
-    /// - String accumulation in the router model
+    /// - String accumulation in the orchestrator model
     /// - Fragmentation (jemalloc allocated vs resident)
     #[tokio::test]
     async fn stress_test_routing_determine_route() {
@@ -67,7 +68,7 @@ mod tests {
             "id": "chatcmpl-mock",
             "object": "chat.completion",
             "created": 1234567890,
-            "model": "arch-router",
+            "model": "plano-orchestrator",
             "choices": [{
                 "index": 0,
                 "message": {
@@ -89,19 +90,24 @@ mod tests {
             .await;
 
         let prefs = make_routing_prefs();
-        let router_service = Arc::new(RouterService::new(
+        let session_cache = Arc::new(MemorySessionCache::new(1000));
+        let orchestrator_service = Arc::new(OrchestratorService::with_routing(
+            router_url,
+            "Plano-Orchestrator".to_string(),
+            "plano-orchestrator".to_string(),
             Some(prefs.clone()),
             None,
-            router_url,
-            "Arch-Router".to_string(),
-            "arch-router".to_string(),
+            None,
+            session_cache,
+            None,
+            2048,
         ));
 
         // Warm up: a few requests to stabilize allocator state
         for _ in 0..10 {
             let msgs = make_messages(5);
-            let _ = router_service
-                .determine_route(&msgs, "00-trace-span-01", None, "warmup")
+            let _ = orchestrator_service
+                .determine_route(&msgs, None, "warmup")
                 .await;
         }
 
@@ -117,8 +123,8 @@ mod tests {
             } else {
                 None
             };
-            let _ = router_service
-                .determine_route(&msgs, "00-trace-span-01", inline, &format!("req-{i}"))
+            let _ = orchestrator_service
+                .determine_route(&msgs, inline, &format!("req-{i}"))
                 .await;
         }
 
@@ -157,7 +163,7 @@ mod tests {
             "id": "chatcmpl-mock",
             "object": "chat.completion",
             "created": 1234567890,
-            "model": "arch-router",
+            "model": "plano-orchestrator",
             "choices": [{
                 "index": 0,
                 "message": {
@@ -179,19 +185,24 @@ mod tests {
             .await;
 
         let prefs = make_routing_prefs();
-        let router_service = Arc::new(RouterService::new(
+        let session_cache = Arc::new(MemorySessionCache::new(1000));
+        let orchestrator_service = Arc::new(OrchestratorService::with_routing(
+            router_url,
+            "Plano-Orchestrator".to_string(),
+            "plano-orchestrator".to_string(),
             Some(prefs),
             None,
-            router_url,
-            "Arch-Router".to_string(),
-            "arch-router".to_string(),
+            None,
+            session_cache,
+            None,
+            2048,
         ));
 
         // Warm up
         for _ in 0..20 {
             let msgs = make_messages(3);
-            let _ = router_service
-                .determine_route(&msgs, "00-trace-span-01", None, "warmup")
+            let _ = orchestrator_service
+                .determine_route(&msgs, None, "warmup")
                 .await;
         }
 
@@ -203,12 +214,12 @@ mod tests {
 
         let mut handles = vec![];
         for t in 0..concurrency {
-            let svc = Arc::clone(&router_service);
+            let svc = Arc::clone(&orchestrator_service);
             let handle = tokio::spawn(async move {
                 for r in 0..requests_per_task {
                     let msgs = make_messages(3 + (r % 8));
                     let _ = svc
-                        .determine_route(&msgs, "00-trace-span-01", None, &format!("req-{t}-{r}"))
+                        .determine_route(&msgs, None, &format!("req-{t}-{r}"))
                         .await;
                 }
             });

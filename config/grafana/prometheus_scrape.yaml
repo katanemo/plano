@@ -1,0 +1,44 @@
+# Prometheus config that scrapes Plano (Envoy admin + brightstaff). This is
+# a complete Prometheus config — mount it directly at
+# /etc/prometheus/prometheus.yml. The included docker-compose.yaml does this
+# for you.
+#
+# Targets:
+# - envoy:9901      Envoy admin → envoy_cluster_*, envoy_http_*, envoy_server_*.
+# - brightstaff:9092  Native dataplane → brightstaff_http_*, brightstaff_llm_*,
+#                     brightstaff_router_*, process_*.
+#
+# Hostname `host.docker.internal` works on Docker Desktop (Mac/Win) and on
+# Linux when the container is started with `--add-host=host.docker.internal:
+# host-gateway` (the included compose does this). If Plano runs *inside*
+# Docker on the same network as Prometheus, replace it with the container
+# name (e.g. `plano:9092`).
+#
+# This file is unrelated to demos/llm_routing/model_routing_service/prometheus.yaml,
+# which scrapes a fake metrics service to feed the routing engine.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: envoy
+    honor_timestamps: true
+    metrics_path: /stats
+    params:
+      format: ["prometheus"]
+    static_configs:
+      - targets:
+          - host.docker.internal:9901
+        labels:
+          service: plano
+
+  - job_name: brightstaff
+    honor_timestamps: true
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:9092
+        labels:
+          service: plano

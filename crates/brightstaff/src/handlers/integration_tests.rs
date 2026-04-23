@@ -23,6 +23,7 @@ mod tests {
             "http://localhost:8080".to_string(),
             "test-model".to_string(),
             "plano-orchestrator".to_string(),
+            crate::router::orchestrator_model_v1::MAX_TOKEN_LEN,
         ))
     }
 
@@ -147,8 +148,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_handling_flow() {
-        let router_service = create_test_orchestrator_service();
-        let agent_selector = AgentSelector::new(router_service);
+        let orchestrator_service = create_test_orchestrator_service();
+        let agent_selector = AgentSelector::new(orchestrator_service);
 
         // Test listener not found
         let result = agent_selector.find_listener(Some("nonexistent"), &[]);

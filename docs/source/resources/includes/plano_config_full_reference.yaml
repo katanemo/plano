@@ -34,7 +34,7 @@ model_providers:
 
   # routing_preferences: tags a model with named capabilities so Plano's LLM router
   # can select the best model for each request based on intent. Requires the
-  # Arch-Router model (or equivalent) to be configured in overrides.llm_routing_model.
+  # Plano-Orchestrator model (or equivalent) to be configured in overrides.llm_routing_model.
   # Each preference has a name (short label) and a description (used for intent matching).
   - model: groq/llama-3.3-70b-versatile
     access_key: $GROQ_API_KEY
@@ -170,7 +170,7 @@ overrides:
   # Path to the trusted CA bundle for upstream TLS verification
   upstream_tls_ca_path: /etc/ssl/certs/ca-certificates.crt
   # Model used for intent-based LLM routing (must be listed in model_providers)
-  llm_routing_model: Arch-Router
+  llm_routing_model: Plano-Orchestrator
   # Model used for agent orchestration (must be listed in model_providers)
   agent_orchestration_model: Plano-Orchestrator
 
