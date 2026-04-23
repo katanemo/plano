@@ -265,11 +265,8 @@ fn assess_quality(
     if interaction.disengagement.count > 0 {
         score -= interaction.disengagement.severity as f32 * 10.0;
     }
-    if interaction.misalignment.severity > 0 {
-        let denom = user_turns.max(1) as f32;
-        if interaction.misalignment.count as f32 / denom > 0.3 {
-            score -= 15.0;
-        }
+    if interaction.misalignment.severity > 0 && interaction.misalignment_ratio(user_turns) > 0.3 {
+        score -= 15.0;
     }
     if interaction.stagnation.count > 2 {
         score -= interaction.stagnation.severity as f32 * 8.0;
@@ -301,6 +298,24 @@ fn assess_quality(
     (quality, score)
 }
 
+/// Render the per-conversation summary string.
+///
+/// Output is structurally grouped by the paper taxonomy so a reader can see
+/// at a glance which layer fired:
+///
+/// ```text
+/// Overall Quality: severe | Turns: 7 (efficiency: 71.4%)
+///  | Interaction — misalignment: 2 (sev 1), stagnation: 0, disengagement: 2 (sev 1), satisfaction: 0
+///  | Execution — failure: 0, loops: 0
+///  | Environment — exhaustion: 0
+///  | High misalignment rate: 50.0% of user turns
+///  | Escalation requested: 1
+/// ```
+///
+/// Layer headers are always present (even when their counts are all zero) so
+/// the taxonomy is visible by inspection. Quality-driving callouts —
+/// "high misalignment rate", "looping detected", "escalation requested" —
+/// are appended after the layer summary as a separate "alerts" tail.
 fn generate_summary(
     turn_metrics: &TurnMetrics,
     interaction: &InteractionSignals,
@@ -311,57 +326,43 @@ fn generate_summary(
     let mut parts: Vec<String> = Vec::new();
     parts.push(format!("Overall Quality: {}", quality.as_str()));
     parts.push(format!(
-        "Turn Count: {} turns (efficiency: {:.1}%)",
+        "Turns: {} (efficiency: {:.1}%)",
         turn_metrics.total_turns,
         turn_metrics.efficiency_score * 100.0
     ));
 
+    parts.push(format!(
+        "Interaction \u{2014} {}, {}, {}, {}",
+        fmt_group("misalignment", &interaction.misalignment),
+        fmt_group("stagnation", &interaction.stagnation),
+        fmt_group("disengagement", &interaction.disengagement),
+        fmt_group("satisfaction", &interaction.satisfaction),
+    ));
+    parts.push(format!(
+        "Execution \u{2014} {}, {}",
+        fmt_group("failure", &execution.failure),
+        fmt_group("loops", &execution.loops),
+    ));
+    parts.push(format!(
+        "Environment \u{2014} {}",
+        fmt_group("exhaustion", &environment.exhaustion),
+    ));
+
     if interaction.misalignment.count > 0 {
-        let denom = turn_metrics.user_turns.max(1) as f32;
-        let repair_ratio = interaction.misalignment.count as f32 / denom;
-        if repair_ratio > 0.3 {
+        let misalignment_ratio = interaction.misalignment_ratio(turn_metrics.user_turns);
+        if misalignment_ratio > 0.3 {
             parts.push(format!(
                 "High misalignment rate: {:.1}% of user turns",
-                repair_ratio * 100.0
+                misalignment_ratio * 100.0
             ));
         }
     }
-
-    if interaction.disengagement.count > 0 {
-        parts.push(format!(
-            "Disengagement detected: {} indicators (severity: {})",
-            interaction.disengagement.count, interaction.disengagement.severity
-        ));
-    }
-
     if interaction.stagnation.count > 2 {
         parts.push(format!(
             "Looping detected: {} repetitions",
             interaction.stagnation.count
         ));
     }
-
-    if interaction.satisfaction.count > 0 {
-        parts.push(format!(
-            "Positive feedback: {} indicators",
-            interaction.satisfaction.count
-        ));
-    }
-
-    if execution.failure.count > 0 {
-        parts.push(format!(
-            "Execution failures: {} (agent-caused)",
-            execution.failure.count
-        ));
-    }
-
-    if environment.exhaustion.count > 0 {
-        parts.push(format!(
-            "Environment issues: {} (external)",
-            environment.exhaustion.count
-        ));
-    }
-
     let escalation_count = interaction
         .disengagement
         .signals
@@ -369,13 +370,20 @@ fn generate_summary(
         .filter(|s| matches!(s.signal_type, SignalType::DisengagementEscalation))
         .count();
     if escalation_count > 0 {
-        parts.push(format!(
-            "Escalation requested: {} requests",
-            escalation_count
-        ));
+        parts.push(format!("Escalation requested: {}", escalation_count));
     }
 
     parts.join(" | ")
+}
+
+/// Render `"<name>: <count> (sev <severity>)"`, dropping the severity suffix
+/// when the count is zero (keeps the summary readable for clean conversations).
+fn fmt_group(name: &str, group: &super::schemas::SignalGroup) -> String {
+    if group.count == 0 {
+        format!("{}: 0", name)
+    } else {
+        format!("{}: {} (sev {})", name, group.count, group.severity)
+    }
 }
 
 #[cfg(test)]
@@ -471,6 +479,59 @@ mod tests {
             "a pure gratitude message should not trigger repair/misalignment"
         );
         assert!(r.interaction.satisfaction.count > 0);
+    }
+
+    #[test]
+    fn summary_groups_signals_by_taxonomy() {
+        // Even on a clean conversation the summary should expose the three
+        // layer headers so the taxonomy is visible.
+        let msgs = vec![
+            user("Hello"),
+            assistant("Hi! How can I help?"),
+            user("What's 2 + 2?"),
+            assistant("4"),
+        ];
+        let r = SignalAnalyzer::default().analyze_openai(&msgs);
+        assert!(
+            r.summary.contains("Interaction \u{2014}"),
+            "missing Interaction header in: {}",
+            r.summary
+        );
+        assert!(
+            r.summary.contains("Execution \u{2014}"),
+            "missing Execution header in: {}",
+            r.summary
+        );
+        assert!(
+            r.summary.contains("Environment \u{2014}"),
+            "missing Environment header in: {}",
+            r.summary
+        );
+        assert!(r.summary.contains("misalignment: 0"));
+        assert!(r.summary.contains("loops: 0"));
+        assert!(r.summary.contains("exhaustion: 0"));
+    }
+
+    #[test]
+    fn summary_includes_severity_when_signals_fire() {
+        let msgs = vec![
+            user("This isn't helpful at all"),
+            assistant("I'm sorry, can you tell me more?"),
+            user("Get me a human, this is useless"),
+        ];
+        let r = SignalAnalyzer::default().analyze_openai(&msgs);
+        // Disengagement fires; should render with `(sev N)` and the
+        // escalation-requested alert tail.
+        assert!(
+            r.summary.contains("disengagement:") && r.summary.contains("(sev "),
+            "expected severity rendered for disengagement: {}",
+            r.summary
+        );
+        assert!(
+            r.summary.contains("Escalation requested:"),
+            "expected escalation alert in: {}",
+            r.summary
+        );
     }
 
     #[test]

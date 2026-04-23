@@ -272,6 +272,17 @@ impl Default for InteractionSignals {
     }
 }
 
+impl InteractionSignals {
+    /// Ratio of misalignment instances to user turns. Used as a quality
+    /// scoring input and as a threshold for the "high misalignment rate"
+    /// summary callout. Mirrors `misalignment.count / max(user_turns, 1)`
+    /// from the Python reference's `_assess_quality` and `_generate_summary`.
+    pub fn misalignment_ratio(&self, user_turns: usize) -> f32 {
+        let denom = user_turns.max(1) as f32;
+        self.misalignment.count as f32 / denom
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionSignals {
     pub failure: SignalGroup,
