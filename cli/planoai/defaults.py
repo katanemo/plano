@@ -81,6 +81,21 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         base_url="https://inference.do-ai.run/v1",
         model_pattern="digitalocean/*",
     ),
+    ProviderDefault(
+        name="vercel",
+        env_var="AI_GATEWAY_API_KEY",
+        base_url="https://ai-gateway.vercel.sh/v1",
+        model_pattern="vercel/*",
+    ),
+    # OpenRouter is a first-class provider — the `openrouter/` model prefix is
+    # accepted by the schema and brightstaff's ProviderId parser, so no
+    # provider_interface override is needed.
+    ProviderDefault(
+        name="openrouter",
+        env_var="OPENROUTER_API_KEY",
+        base_url="https://openrouter.ai/api/v1",
+        model_pattern="openrouter/*",
+    ),
 ]
 
 

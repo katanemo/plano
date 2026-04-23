@@ -31,6 +31,8 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "zhipu",
     "chatgpt",
     "digitalocean",
+    "vercel",
+    "openrouter",
 ]
 
 CHATGPT_API_BASE = "https://chatgpt.com/backend-api/codex"

@@ -28,6 +28,8 @@ def test_zero_env_vars_produces_pure_passthrough():
     # All known providers should be listed.
     names = {p["name"] for p in cfg["model_providers"]}
     assert "digitalocean" in names
+    assert "vercel" in names
+    assert "openrouter" in names
     assert "openai" in names
     assert "anthropic" in names
 
@@ -84,3 +86,26 @@ def test_provider_defaults_digitalocean_is_configured():
     assert by_name["digitalocean"].env_var == "DO_API_KEY"
     assert by_name["digitalocean"].base_url == "https://inference.do-ai.run/v1"
     assert by_name["digitalocean"].model_pattern == "digitalocean/*"
+
+
+def test_provider_defaults_vercel_is_configured():
+    by_name = {p.name: p for p in PROVIDER_DEFAULTS}
+    assert "vercel" in by_name
+    assert by_name["vercel"].env_var == "AI_GATEWAY_API_KEY"
+    assert by_name["vercel"].base_url == "https://ai-gateway.vercel.sh/v1"
+    assert by_name["vercel"].model_pattern == "vercel/*"
+
+
+def test_provider_defaults_openrouter_is_configured():
+    by_name = {p.name: p for p in PROVIDER_DEFAULTS}
+    assert "openrouter" in by_name
+    assert by_name["openrouter"].env_var == "OPENROUTER_API_KEY"
+    assert by_name["openrouter"].base_url == "https://openrouter.ai/api/v1"
+    assert by_name["openrouter"].model_pattern == "openrouter/*"
+
+
+def test_openrouter_env_key_promotes_to_env_keyed():
+    cfg = synthesize_default_config(env={"OPENROUTER_API_KEY": "or-1"})
+    by_name = {p["name"]: p for p in cfg["model_providers"]}
+    assert by_name["openrouter"].get("access_key") == "$OPENROUTER_API_KEY"
+    assert by_name["openrouter"].get("passthrough_auth") is None

@@ -256,6 +256,42 @@ llm_providers:
 """,
     },
     {
+        "id": "vercel_is_supported_provider",
+        "expected_error": None,
+        "plano_config": """
+version: v0.4.0
+
+listeners:
+  - name: llm
+    type: model
+    port: 12000
+
+model_providers:
+  - model: vercel/*
+    base_url: https://ai-gateway.vercel.sh/v1
+    passthrough_auth: true
+
+""",
+    },
+    {
+        "id": "openrouter_is_supported_provider",
+        "expected_error": None,
+        "plano_config": """
+version: v0.4.0
+
+listeners:
+  - name: llm
+    type: model
+    port: 12000
+
+model_providers:
+  - model: openrouter/*
+    base_url: https://openrouter.ai/api/v1
+    passthrough_auth: true
+
+""",
+    },
+    {
         "id": "duplicate_routeing_preference_name",
         "expected_error": "Duplicate routing preference name",
         "plano_config": """
