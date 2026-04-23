@@ -75,12 +75,6 @@ pub trait StateStorage: Send + Sync {
     /// Delete state for a response_id (optional, for cleanup)
     async fn delete(&self, response_id: &str) -> Result<(), StateStorageError>;
 
-    /// Return (entry_count, estimated_bytes) for observability.
-    /// Backends that cannot cheaply compute this may return (0, 0).
-    async fn entry_stats(&self) -> Result<(usize, usize), StateStorageError> {
-        Ok((0, 0))
-    }
-
     fn merge(
         &self,
         prev_state: &OpenAIConversationState,

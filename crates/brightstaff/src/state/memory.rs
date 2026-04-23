@@ -3,97 +3,20 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
-const DEFAULT_TTL_SECS: u64 = 1800; // 30 minutes
-const DEFAULT_MAX_ENTRIES: usize = 10_000;
-const EVICTION_INTERVAL_SECS: u64 = 60;
-
-/// In-memory storage backend for conversation state.
-///
-/// Entries are evicted when they exceed `ttl_secs` or when the store grows
-/// beyond `max_entries` (oldest-first by `created_at`).  A background task
-/// runs every 60 s to sweep expired entries.
+/// In-memory storage backend for conversation state
+/// Uses a HashMap wrapped in Arc<RwLock<>> for thread-safe access
 #[derive(Clone)]
 pub struct MemoryConversationalStorage {
     storage: Arc<RwLock<HashMap<String, OpenAIConversationState>>>,
-    max_entries: usize,
 }
 
 impl MemoryConversationalStorage {
     pub fn new() -> Self {
-        Self::with_limits(DEFAULT_TTL_SECS, DEFAULT_MAX_ENTRIES)
-    }
-
-    pub fn with_limits(ttl_secs: u64, max_entries: usize) -> Self {
-        let storage = Arc::new(RwLock::new(HashMap::new()));
-
-        let bg_storage = Arc::clone(&storage);
-        tokio::spawn(async move {
-            Self::eviction_loop(bg_storage, ttl_secs, max_entries).await;
-        });
-
         Self {
-            storage,
-            max_entries,
+            storage: Arc::new(RwLock::new(HashMap::new())),
         }
-    }
-
-    async fn eviction_loop(
-        storage: Arc<RwLock<HashMap<String, OpenAIConversationState>>>,
-        ttl_secs: u64,
-        max_entries: usize,
-    ) {
-        let interval = std::time::Duration::from_secs(EVICTION_INTERVAL_SECS);
-        loop {
-            tokio::time::sleep(interval).await;
-
-            let now = chrono::Utc::now().timestamp();
-            let cutoff = now - ttl_secs as i64;
-
-            let mut map = storage.write().await;
-            let before = map.len();
-
-            // Phase 1: remove expired entries
-            map.retain(|_, state| state.created_at > cutoff);
-
-            // Phase 2: if still over capacity, drop oldest entries
-            if map.len() > max_entries {
-                let mut entries: Vec<(String, i64)> =
-                    map.iter().map(|(k, v)| (k.clone(), v.created_at)).collect();
-                entries.sort_by_key(|(_, ts)| *ts);
-
-                let to_remove = map.len() - max_entries;
-                for (key, _) in entries.into_iter().take(to_remove) {
-                    map.remove(&key);
-                }
-            }
-
-            let evicted = before.saturating_sub(map.len());
-            if evicted > 0 {
-                info!(
-                    evicted,
-                    remaining = map.len(),
-                    "memory state store eviction sweep"
-                );
-            }
-        }
-    }
-
-    fn estimate_entry_bytes(state: &OpenAIConversationState) -> usize {
-        let base = std::mem::size_of::<OpenAIConversationState>()
-            + state.response_id.len()
-            + state.model.len()
-            + state.provider.len();
-        let items: usize = state
-            .input_items
-            .iter()
-            .map(|item| {
-                // Rough estimate: serialize to JSON and use its length as a proxy
-                serde_json::to_string(item).map(|s| s.len()).unwrap_or(64)
-            })
-            .sum();
-        base + items
     }
 }
 
@@ -115,26 +38,6 @@ impl StateStorage for MemoryConversationalStorage {
         );
 
         storage.insert(response_id, state);
-
-        // Inline cap check so we don't wait for the background sweep
-        if storage.len() > self.max_entries {
-            let mut entries: Vec<(String, i64)> = storage
-                .iter()
-                .map(|(k, v)| (k.clone(), v.created_at))
-                .collect();
-            entries.sort_by_key(|(_, ts)| *ts);
-
-            let to_remove = storage.len() - self.max_entries;
-            for (key, _) in entries.into_iter().take(to_remove) {
-                storage.remove(&key);
-            }
-            info!(
-                evicted = to_remove,
-                remaining = storage.len(),
-                "memory state store cap eviction on put"
-            );
-        }
-
         Ok(())
     }
 
@@ -176,13 +79,6 @@ impl StateStorage for MemoryConversationalStorage {
         } else {
             Err(StateStorageError::NotFound(response_id.to_string()))
         }
-    }
-
-    async fn entry_stats(&self) -> Result<(usize, usize), StateStorageError> {
-        let storage = self.storage.read().await;
-        let count = storage.len();
-        let bytes: usize = storage.values().map(Self::estimate_entry_bytes).sum();
-        Ok((count, bytes))
     }
 }
 
@@ -738,138 +634,5 @@ mod tests {
             },
             _ => panic!("Expected MessageContent::Items"),
         }
-    }
-
-    // -----------------------------------------------------------------------
-    // Stress / eviction tests
-    // -----------------------------------------------------------------------
-
-    fn create_test_state_with_ts(
-        response_id: &str,
-        num_messages: usize,
-        created_at: i64,
-    ) -> OpenAIConversationState {
-        let mut state = create_test_state(response_id, num_messages);
-        state.created_at = created_at;
-        state
-    }
-
-    #[tokio::test]
-    async fn test_max_entries_cap_evicts_oldest() {
-        let max = 100;
-        let storage = MemoryConversationalStorage::with_limits(3600, max);
-
-        let now = chrono::Utc::now().timestamp();
-        for i in 0..(max + 50) {
-            let state =
-                create_test_state_with_ts(&format!("resp_{i}"), 2, now - (max as i64) + i as i64);
-            storage.put(state).await.unwrap();
-        }
-
-        let (count, _) = storage.entry_stats().await.unwrap();
-        assert_eq!(count, max, "store should be capped at max_entries");
-
-        // The oldest entries should have been evicted
-        assert!(
-            storage.get("resp_0").await.is_err(),
-            "oldest entry should be evicted"
-        );
-        // The newest entry should still be present
-        let newest = format!("resp_{}", max + 49);
-        assert!(
-            storage.get(&newest).await.is_ok(),
-            "newest entry should be present"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_ttl_eviction_removes_expired() {
-        let ttl_secs = 2;
-        let storage = MemoryConversationalStorage::with_limits(ttl_secs, 100_000);
-
-        let now = chrono::Utc::now().timestamp();
-
-        // Insert entries that are already "old" (created_at in the past beyond TTL)
-        for i in 0..20 {
-            let state =
-                create_test_state_with_ts(&format!("old_{i}"), 1, now - (ttl_secs as i64) - 10);
-            storage.put(state).await.unwrap();
-        }
-
-        // Insert fresh entries
-        for i in 0..10 {
-            let state = create_test_state_with_ts(&format!("new_{i}"), 1, now);
-            storage.put(state).await.unwrap();
-        }
-
-        let (count_before, _) = storage.entry_stats().await.unwrap();
-        assert_eq!(count_before, 30);
-
-        // Wait for the eviction sweep (interval is 60s in prod, but the old
-        // entries are already past TTL so a manual trigger would clean them).
-        // For unit testing we directly call the eviction logic instead of waiting.
-        {
-            let bg_storage = storage.storage.clone();
-            let cutoff = now - ttl_secs as i64;
-            let mut map = bg_storage.write().await;
-            map.retain(|_, state| state.created_at > cutoff);
-        }
-
-        let (count_after, _) = storage.entry_stats().await.unwrap();
-        assert_eq!(
-            count_after, 10,
-            "expired entries should be evicted, only fresh ones remain"
-        );
-
-        // Verify fresh entries are still present
-        for i in 0..10 {
-            assert!(storage.get(&format!("new_{i}")).await.is_ok());
-        }
-    }
-
-    #[tokio::test]
-    async fn test_entry_stats_reports_reasonable_size() {
-        let storage = MemoryConversationalStorage::with_limits(3600, 10_000);
-
-        let now = chrono::Utc::now().timestamp();
-        for i in 0..50 {
-            let state = create_test_state_with_ts(&format!("resp_{i}"), 5, now);
-            storage.put(state).await.unwrap();
-        }
-
-        let (count, bytes) = storage.entry_stats().await.unwrap();
-        assert_eq!(count, 50);
-        assert!(bytes > 0, "estimated bytes should be positive");
-        assert!(
-            bytes > 50 * 100,
-            "50 entries with 5 messages each should be at least a few KB"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_high_concurrency_with_cap() {
-        let max = 500;
-        let storage = MemoryConversationalStorage::with_limits(3600, max);
-        let now = chrono::Utc::now().timestamp();
-
-        let mut handles = vec![];
-        for i in 0..1000 {
-            let s = storage.clone();
-            let handle = tokio::spawn(async move {
-                let state = create_test_state_with_ts(&format!("conc_{i}"), 3, now + i as i64);
-                s.put(state).await.unwrap();
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        let (count, _) = storage.entry_stats().await.unwrap();
-        assert!(
-            count <= max,
-            "store should never exceed max_entries, got {count}"
-        );
     }
 }
