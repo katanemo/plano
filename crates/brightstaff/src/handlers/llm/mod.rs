@@ -143,6 +143,7 @@ async fn llm_chat_inner(
         &request_path,
         &state.model_aliases,
         &state.llm_providers,
+        state.signals_enabled,
     )
     .await
     {
@@ -408,6 +409,7 @@ async fn parse_and_validate_request(
     request_path: &str,
     model_aliases: &Option<HashMap<String, ModelAlias>>,
     llm_providers: &Arc<RwLock<LlmProviders>>,
+    signals_enabled: bool,
 ) -> Result<PreparedRequest, Response<BoxBody<Bytes, hyper::Error>>> {
     let raw_bytes = request
         .collect()
@@ -486,7 +488,11 @@ async fn parse_and_validate_request(
     let user_message_preview = client_request
         .get_recent_user_message()
         .map(|msg| truncate_message(&msg, 50));
-    let messages_for_signals = Some(client_request.get_messages());
+    let messages_for_signals = if signals_enabled {
+        Some(client_request.get_messages())
+    } else {
+        None
+    };
 
     // Set the upstream model name and strip routing metadata
     client_request.set_model(model_name_only.clone());
