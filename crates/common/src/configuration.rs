@@ -656,7 +656,7 @@ mod test {
         .expect("reference config file not found");
 
         let config: super::Configuration = serde_yaml::from_str(&ref_config).unwrap();
-        assert_eq!(config.version, "v0.3.0");
+        assert_eq!(config.version, "v0.4.0");
 
         if let Some(prompt_targets) = &config.prompt_targets {
             assert!(
