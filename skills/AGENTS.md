@@ -312,20 +312,24 @@ When a request does not match any routing preference, Plano forwards it to the `
 **Incorrect (no default provider set):**
 
 ```yaml
-version: v0.3.0
+version: v0.4.0
 
 model_providers:
   - model: openai/gpt-4o-mini     # No default: true anywhere
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: summarization
-        description: Summarizing documents and extracting key points
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: code_generation
-        description: Writing new functions and implementing algorithms
+
+routing_preferences:
+  - name: summarization
+    description: Summarizing documents and extracting key points
+    models:
+      - openai/gpt-4o-mini
+  - name: code_generation
+    description: Writing new functions and implementing algorithms
+    models:
+      - openai/gpt-4o
 ```
 
 **Incorrect (multiple defaults — ambiguous):**
@@ -344,25 +348,35 @@ model_providers:
 **Correct (exactly one default, covering unmatched requests):**
 
 ```yaml
-version: v0.3.0
+version: v0.4.0
 
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true               # Handles general/unclassified requests
-    routing_preferences:
-      - name: summarization
-        description: Summarizing documents, articles, and meeting notes
-      - name: classification
-        description: Categorizing inputs, labeling, and intent detection
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: code_generation
-        description: Writing, debugging, and reviewing code
-      - name: complex_reasoning
-        description: Multi-step math, logical analysis, research synthesis
+
+routing_preferences:
+  - name: summarization
+    description: Summarizing documents, articles, and meeting notes
+    models:
+      - openai/gpt-4o-mini
+      - openai/gpt-4o
+  - name: classification
+    description: Categorizing inputs, labeling, and intent detection
+    models:
+      - openai/gpt-4o-mini
+  - name: code_generation
+    description: Writing, debugging, and reviewing code
+    models:
+      - openai/gpt-4o
+      - openai/gpt-4o-mini
+  - name: complex_reasoning
+    description: Multi-step math, logical analysis, research synthesis
+    models:
+      - openai/gpt-4o
 ```
 
 Choose your most cost-effective capable model as the default — it handles all traffic that doesn't match specialized preferences.
@@ -498,21 +512,27 @@ model_providers:
 **Combined: proxy for some models, Plano-managed for others:**
 
 ```yaml
+version: v0.4.0
+
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY    # Plano manages this key
     default: true
-    routing_preferences:
-      - name: quick tasks
-        description: Short answers, simple lookups, fast completions
 
   - model: custom/vllm-llama
     base_url: http://gpu-server:8000
     provider_interface: openai
     passthrough_auth: true         # vLLM cluster handles its own auth
-    routing_preferences:
-      - name: long context
-        description: Processing very long documents, multi-document analysis
+
+routing_preferences:
+  - name: quick tasks
+    description: Short answers, simple lookups, fast completions
+    models:
+      - openai/gpt-4o-mini
+  - name: long context
+    description: Processing very long documents, multi-document analysis
+    models:
+      - custom/vllm-llama
 ```
 
 Reference: https://github.com/katanemo/archgw
@@ -526,67 +546,100 @@ Reference: https://github.com/katanemo/archgw
 
 ## Write Task-Specific Routing Preference Descriptions
 
-Plano's `plano_orchestrator_v1` router uses a 1.5B preference-aligned LLM to classify incoming requests against your `routing_preferences` descriptions. It routes the request to the first provider whose preferences match. Description quality directly determines routing accuracy.
+Plano's `plano_orchestrator_v1` router uses a 1.5B preference-aligned LLM to classify incoming requests against your `routing_preferences` descriptions. It returns an ordered `models` list for the matched route; the client uses `models[0]` as primary and falls back to `models[1]`, `models[2]`... on `429`/`5xx` errors. Description quality directly determines routing accuracy.
+
+Starting in `v0.4.0`, `routing_preferences` lives at the **top level** of the config and each entry carries its own `models: [...]` candidate pool. Listing multiple models under a single route gives you automatic provider fallback without extra client logic. Configs still using the legacy v0.3.0 inline shape (under each `model_provider`) are auto-migrated with a deprecation warning — prefer the top-level form below.
 
 **Incorrect (vague, overlapping descriptions):**
 
 ```yaml
+version: v0.4.0
+
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true
-    routing_preferences:
-      - name: simple
-        description: easy tasks      # Too vague — what is "easy"?
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: hard
-        description: hard tasks      # Too vague — overlaps with "easy"
+
+routing_preferences:
+  - name: simple
+    description: easy tasks      # Too vague — what is "easy"?
+    models:
+      - openai/gpt-4o-mini
+  - name: hard
+    description: hard tasks      # Too vague — overlaps with "easy"
+    models:
+      - openai/gpt-4o
 ```
 
-**Correct (specific, distinct task descriptions):**
+**Correct (specific, distinct task descriptions, multi-model fallbacks):**
 
 ```yaml
+version: v0.4.0
+
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true
-    routing_preferences:
-      - name: summarization
-        description: >
-          Summarizing documents, articles, emails, or meeting transcripts.
-          Extracting key points, generating TL;DR sections, condensing long text.
-      - name: classification
-        description: >
-          Categorizing inputs, sentiment analysis, spam detection,
-          intent classification, labeling structured data fields.
-      - name: translation
-        description: >
-          Translating text between languages, localization tasks.
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: code_generation
-        description: >
-          Writing new functions, classes, or modules from scratch.
-          Implementing algorithms, boilerplate generation, API integrations.
-      - name: code_review
-        description: >
-          Reviewing code for bugs, security vulnerabilities, performance issues.
-          Suggesting refactors, explaining complex code, debugging errors.
-      - name: complex_reasoning
-        description: >
-          Multi-step math problems, logical deduction, strategic planning,
-          research synthesis requiring chain-of-thought reasoning.
+
+  - model: anthropic/claude-sonnet-4-5
+    access_key: $ANTHROPIC_API_KEY
+
+routing_preferences:
+  - name: summarization
+    description: >
+      Summarizing documents, articles, emails, or meeting transcripts.
+      Extracting key points, generating TL;DR sections, condensing long text.
+    models:
+      - openai/gpt-4o-mini
+      - openai/gpt-4o
+  - name: classification
+    description: >
+      Categorizing inputs, sentiment analysis, spam detection,
+      intent classification, labeling structured data fields.
+    models:
+      - openai/gpt-4o-mini
+  - name: translation
+    description: >
+      Translating text between languages, localization tasks.
+    models:
+      - openai/gpt-4o-mini
+      - anthropic/claude-sonnet-4-5
+  - name: code_generation
+    description: >
+      Writing new functions, classes, or modules from scratch.
+      Implementing algorithms, boilerplate generation, API integrations.
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-sonnet-4-5
+  - name: code_review
+    description: >
+      Reviewing code for bugs, security vulnerabilities, performance issues.
+      Suggesting refactors, explaining complex code, debugging errors.
+    models:
+      - anthropic/claude-sonnet-4-5
+      - openai/gpt-4o
+  - name: complex_reasoning
+    description: >
+      Multi-step math problems, logical deduction, strategic planning,
+      research synthesis requiring chain-of-thought reasoning.
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-sonnet-4-5
 ```
 
 **Key principles for good preference descriptions:**
 - Use concrete action verbs: "writing", "reviewing", "translating", "summarizing"
 - List 3–5 specific sub-tasks or synonyms for each preference
-- Ensure preferences across providers are mutually exclusive in scope
+- Ensure preferences across routes are mutually exclusive in scope
+- Order `models` from most preferred to least — the client falls back in order on `429`/`5xx`
+- List multiple models under one route for automatic provider fallback without extra client logic
+- Every model listed in `models` must be declared in `model_providers`
 - Test with representative queries using `planoai trace` and `--where` filters to verify routing decisions
 
 Reference: https://github.com/katanemo/archgw
@@ -1451,7 +1504,7 @@ planoai cli_agent claude --path /path/to/project
 **Recommended config for Claude Code routing:**
 
 ```yaml
-version: v0.3.0
+version: v0.4.0
 
 listeners:
   - type: model
@@ -1462,19 +1515,25 @@ model_providers:
   - model: anthropic/claude-sonnet-4-20250514
     access_key: $ANTHROPIC_API_KEY
     default: true
-    routing_preferences:
-      - name: general coding
-        description: >
-          Writing code, debugging, code review, explaining concepts,
-          answering programming questions, general development tasks.
 
   - model: anthropic/claude-opus-4-6
     access_key: $ANTHROPIC_API_KEY
-    routing_preferences:
-      - name: complex architecture
-        description: >
-          System design, complex refactoring across many files,
-          architectural decisions, performance optimization, security audits.
+
+routing_preferences:
+  - name: general coding
+    description: >
+      Writing code, debugging, code review, explaining concepts,
+      answering programming questions, general development tasks.
+    models:
+      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-opus-4-6
+  - name: complex architecture
+    description: >
+      System design, complex refactoring across many files,
+      architectural decisions, performance optimization, security audits.
+    models:
+      - anthropic/claude-opus-4-6
+      - anthropic/claude-sonnet-4-20250514
 
 model_aliases:
   claude.fast.v1:
@@ -1861,28 +1920,36 @@ listeners:
 **Multi-listener architecture (serves all client types):**
 
 ```yaml
-version: v0.3.0
+version: v0.4.0
 
 # --- Shared model providers ---
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true
-    routing_preferences:
-      - name: quick tasks
-        description: Short answers, formatting, classification, simple generation
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: complex reasoning
-        description: Multi-step analysis, code generation, research synthesis
 
   - model: anthropic/claude-sonnet-4-20250514
     access_key: $ANTHROPIC_API_KEY
-    routing_preferences:
-      - name: long documents
-        description: Summarizing or analyzing very long documents, PDFs, transcripts
+
+# --- Shared routing_preferences (top-level, v0.4.0+) ---
+routing_preferences:
+  - name: quick tasks
+    description: Short answers, formatting, classification, simple generation
+    models:
+      - openai/gpt-4o-mini
+  - name: complex reasoning
+    description: Multi-step analysis, code generation, research synthesis
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-sonnet-4-20250514
+  - name: long documents
+    description: Summarizing or analyzing very long documents, PDFs, transcripts
+    models:
+      - anthropic/claude-sonnet-4-20250514
+      - openai/gpt-4o
 
 # --- Listener 1: OpenAI-compatible API gateway ---
 # For: SDK clients, Claude Code, LangChain, etc.

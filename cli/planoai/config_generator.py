@@ -58,6 +58,104 @@ def get_endpoint_and_port(endpoint, protocol):
         return endpoint, port
 
 
+def migrate_inline_routing_preferences(config_yaml):
+    """Lift v0.3.0-style inline ``routing_preferences`` under each
+    ``model_providers`` entry to the v0.4.0 top-level ``routing_preferences``
+    list with ``models: [...]``.
+
+    Preferences with the same ``name`` across multiple providers are merged
+    into a single top-level entry whose ``models`` list contains every
+    provider's full ``<provider>/<model>`` string in declaration order. The
+    first ``description`` encountered wins; conflicts are warned, not
+    errored, so existing v0.3.0 configs keep compiling. Any top-level
+    preference already defined by the user is preserved as-is.
+
+    Also bumps ``version`` to ``v0.4.0`` when migration produced any entry,
+    so brightstaff's v0.4.0 gate for top-level ``routing_preferences``
+    accepts the rendered config.
+    """
+    model_providers = config_yaml.get("model_providers") or []
+    if not model_providers:
+        return
+
+    migrated = {}
+    for model_provider in model_providers:
+        inline_prefs = model_provider.get("routing_preferences")
+        if not inline_prefs:
+            continue
+
+        full_model_name = model_provider.get("model")
+        if not full_model_name:
+            continue
+
+        if "/" in full_model_name and full_model_name.split("/")[-1].strip() == "*":
+            raise Exception(
+                f"Model {full_model_name} has routing_preferences but uses wildcard (*). Models with routing preferences cannot be wildcards."
+            )
+
+        for pref in inline_prefs:
+            name = pref.get("name")
+            description = pref.get("description", "")
+            if not name:
+                continue
+            if name in migrated:
+                entry = migrated[name]
+                if description and description != entry["description"]:
+                    print(
+                        f"WARNING: routing preference '{name}' has conflicting descriptions across providers; keeping the first one."
+                    )
+                if full_model_name not in entry["models"]:
+                    entry["models"].append(full_model_name)
+            else:
+                migrated[name] = {
+                    "name": name,
+                    "description": description,
+                    "models": [full_model_name],
+                }
+
+    if not migrated:
+        return
+
+    for model_provider in model_providers:
+        if "routing_preferences" in model_provider:
+            del model_provider["routing_preferences"]
+
+    existing_top_level = config_yaml.get("routing_preferences") or []
+    existing_names = {entry.get("name") for entry in existing_top_level}
+    merged = list(existing_top_level)
+    for name, entry in migrated.items():
+        if name in existing_names:
+            continue
+        merged.append(entry)
+    config_yaml["routing_preferences"] = merged
+
+    current_version = str(config_yaml.get("version", ""))
+    if _version_tuple(current_version) < (0, 4, 0):
+        config_yaml["version"] = "v0.4.0"
+
+    print(
+        "WARNING: inline routing_preferences under model_providers is deprecated "
+        "and has been auto-migrated to top-level routing_preferences. Update your "
+        "config to v0.4.0 top-level form. See docs/routing-api.md"
+    )
+
+
+def _version_tuple(version_string):
+    stripped = version_string.strip().lstrip("vV")
+    if not stripped:
+        return (0, 0, 0)
+    parts = stripped.split("-", 1)[0].split(".")
+    out = []
+    for part in parts[:3]:
+        try:
+            out.append(int(part))
+        except ValueError:
+            out.append(0)
+    while len(out) < 3:
+        out.append(0)
+    return tuple(out)
+
+
 def validate_and_render_schema():
     ENVOY_CONFIG_TEMPLATE_FILE = os.getenv(
         "ENVOY_CONFIG_TEMPLATE_FILE", "envoy.template.yaml"
@@ -100,6 +198,8 @@ def validate_and_render_schema():
             )
         config_yaml["model_providers"] = config_yaml["llm_providers"]
         del config_yaml["llm_providers"]
+
+    migrate_inline_routing_preferences(config_yaml)
 
     listeners, llm_gateway, prompt_gateway = convert_legacy_listeners(
         config_yaml.get("listeners"), config_yaml.get("model_providers")
@@ -200,7 +300,16 @@ def validate_and_render_schema():
     model_provider_name_set = set()
     llms_with_usage = []
     model_name_keys = set()
-    model_usage_name_keys = set()
+
+    top_level_preferences = config_yaml.get("routing_preferences") or []
+    seen_pref_names = set()
+    for pref in top_level_preferences:
+        pref_name = pref.get("name")
+        if pref_name in seen_pref_names:
+            raise Exception(
+                f'Duplicate routing preference name "{pref_name}", please provide unique name for each routing preference'
+            )
+        seen_pref_names.add(pref_name)
 
     print("listeners: ", listeners)
 
@@ -259,10 +368,6 @@ def validate_and_render_schema():
                     raise Exception(
                         f"Model {model_name} is configured as default but uses wildcard (*). Default models cannot be wildcards."
                     )
-                if model_provider.get("routing_preferences"):
-                    raise Exception(
-                        f"Model {model_name} has routing_preferences but uses wildcard (*). Models with routing preferences cannot be wildcards."
-                    )
 
             # Validate azure_openai and ollama provider requires base_url
             if (provider in SUPPORTED_PROVIDERS_WITH_BASE_URL) and model_provider.get(
@@ -310,13 +415,6 @@ def validate_and_render_schema():
                         f"Duplicate model_id {model_id}, please provide unique model_id for each model_provider"
                     )
                 model_name_keys.add(model_id)
-
-            for routing_preference in model_provider.get("routing_preferences", []):
-                if routing_preference.get("name") in model_usage_name_keys:
-                    raise Exception(
-                        f'Duplicate routing preference name "{routing_preference.get("name")}", please provide unique name for each routing preference'
-                    )
-                model_usage_name_keys.add(routing_preference.get("name"))
 
             # Warn if both passthrough_auth and access_key are configured
             if model_provider.get("passthrough_auth") and model_provider.get(
@@ -405,7 +503,7 @@ def validate_and_render_schema():
     router_model_id = (
         router_model.split("/", 1)[1] if "/" in router_model else router_model
     )
-    if len(model_usage_name_keys) > 0 and router_model_id not in model_name_set:
+    if len(seen_pref_names) > 0 and router_model_id not in model_name_set:
         updated_model_providers.append(
             {
                 "name": "plano-orchestrator",

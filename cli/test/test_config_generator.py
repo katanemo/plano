@@ -1,7 +1,11 @@
 import json
 import pytest
+import yaml
 from unittest import mock
-from planoai.config_generator import validate_and_render_schema
+from planoai.config_generator import (
+    validate_and_render_schema,
+    migrate_inline_routing_preferences,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -295,32 +299,30 @@ model_providers:
         "id": "duplicate_routeing_preference_name",
         "expected_error": "Duplicate routing preference name",
         "plano_config": """
-version: v0.1.0
+version: v0.4.0
 
 listeners:
-  egress_traffic:
-    address: 0.0.0.0
+  - name: llm
+    type: model
     port: 12000
-    message_format: openai
-    timeout: 30s
 
-llm_providers:
-
+model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: code understanding
-        description: understand and explain existing code snippets, functions, or libraries
 
-  - model: openai/gpt-4.1
-    access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: code understanding
-        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+routing_preferences:
+  - name: code understanding
+    description: understand and explain existing code snippets, functions, or libraries
+    models:
+      - openai/gpt-4o
+  - name: code understanding
+    description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+    models:
+      - openai/gpt-4o-mini
 
 tracing:
   random_sampling: 100
@@ -501,3 +503,190 @@ def test_convert_legacy_llm_providers_no_prompt_gateway():
         "port": 12000,
         "timeout": "30s",
     }
+
+
+def test_inline_routing_preferences_migrated_to_top_level():
+    plano_config = """
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    routing_preferences:
+      - name: code understanding
+        description: understand and explain existing code snippets, functions, or libraries
+
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
+    routing_preferences:
+      - name: code generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    migrate_inline_routing_preferences(config_yaml)
+
+    assert config_yaml["version"] == "v0.4.0"
+    for provider in config_yaml["model_providers"]:
+        assert "routing_preferences" not in provider
+
+    top_level = config_yaml["routing_preferences"]
+    by_name = {entry["name"]: entry for entry in top_level}
+    assert set(by_name) == {"code understanding", "code generation"}
+    assert by_name["code understanding"]["models"] == ["openai/gpt-4o"]
+    assert by_name["code generation"]["models"] == [
+        "anthropic/claude-sonnet-4-20250514"
+    ]
+    assert (
+        by_name["code understanding"]["description"]
+        == "understand and explain existing code snippets, functions, or libraries"
+    )
+
+
+def test_inline_same_name_across_providers_merges_models():
+    plano_config = """
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    routing_preferences:
+      - name: code generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
+    routing_preferences:
+      - name: code generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    migrate_inline_routing_preferences(config_yaml)
+
+    top_level = config_yaml["routing_preferences"]
+    assert len(top_level) == 1
+    entry = top_level[0]
+    assert entry["name"] == "code generation"
+    assert entry["models"] == [
+        "openai/gpt-4o",
+        "anthropic/claude-sonnet-4-20250514",
+    ]
+    assert config_yaml["version"] == "v0.4.0"
+
+
+def test_existing_top_level_routing_preferences_preserved():
+    plano_config = """
+version: v0.4.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
+
+routing_preferences:
+  - name: code generation
+    description: generating new code snippets or boilerplate
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-sonnet-4-20250514
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    before = yaml.safe_dump(config_yaml, sort_keys=True)
+    migrate_inline_routing_preferences(config_yaml)
+    after = yaml.safe_dump(config_yaml, sort_keys=True)
+
+    assert before == after
+
+
+def test_existing_top_level_wins_over_inline_migration():
+    plano_config = """
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    routing_preferences:
+      - name: code generation
+        description: inline description should lose
+
+routing_preferences:
+  - name: code generation
+    description: user-defined top-level description wins
+    models:
+      - openai/gpt-4o
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    migrate_inline_routing_preferences(config_yaml)
+
+    top_level = config_yaml["routing_preferences"]
+    assert len(top_level) == 1
+    entry = top_level[0]
+    assert entry["description"] == "user-defined top-level description wins"
+    assert entry["models"] == ["openai/gpt-4o"]
+
+
+def test_wildcard_with_inline_routing_preferences_errors():
+    plano_config = """
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openrouter/*
+    base_url: https://openrouter.ai/api/v1
+    passthrough_auth: true
+    routing_preferences:
+      - name: code generation
+        description: generating code
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    with pytest.raises(Exception) as excinfo:
+        migrate_inline_routing_preferences(config_yaml)
+    assert "wildcard" in str(excinfo.value).lower()
+
+
+def test_migration_noop_when_no_inline_preferences():
+    plano_config = """
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    migrate_inline_routing_preferences(config_yaml)
+
+    assert "routing_preferences" not in config_yaml
+    assert config_yaml["version"] == "v0.3.0"

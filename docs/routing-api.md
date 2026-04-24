@@ -34,11 +34,13 @@ POST /v1/chat/completions
 
 ### `routing_preferences` fields
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `name` | string | yes | Route identifier. Must match the LLM router's route classification. |
-| `description` | string | yes | Natural language description used by the router to match user intent. |
-| `models` | string[] | yes | Ordered candidate pool. At least one entry required. Must be declared in `model_providers`. |
+
+| Field         | Type     | Required | Description                                                                                 |
+| ------------- | -------- | -------- | ------------------------------------------------------------------------------------------- |
+| `name`        | string   | yes      | Route identifier. Must match the LLM router's route classification.                         |
+| `description` | string   | yes      | Natural language description used by the router to match user intent.                       |
+| `models`      | string[] | yes      | Ordered candidate pool. At least one entry required. Must be declared in `model_providers`. |
+
 
 ### Notes
 
@@ -64,11 +66,13 @@ POST /v1/chat/completions
 
 ### Fields
 
-| Field | Type | Description |
-|---|---|---|
-| `models` | string[] | Ranked model list. Use `models[0]` as primary; retry with `models[1]` on 429/5xx, and so on. |
-| `route` | string \| null | Name of the matched route. `null` if no route matched — client should use the original request `model`. |
-| `trace_id` | string | Trace ID for distributed tracing and observability. |
+
+| Field      | Type          | Description                                                                                             |
+| ---------- | ------------- | ------------------------------------------------------------------------------------------------------- |
+| `models`   | string[]      | Ranked model list. Use `models[0]` as primary; retry with `models[1]` on 429/5xx, and so on.            |
+| `route`    | string | null | Name of the matched route. `null` if no route matched — client should use the original request `model`. |
+| `trace_id` | string        | Trace ID for distributed tracing and observability.                                                     |
+
 
 ---
 
@@ -142,6 +146,7 @@ X-Model-Affinity: a1b2c3d4-5678-...
 ```
 
 Response when pinned:
+
 ```json
 {
   "models": ["anthropic/claude-sonnet-4-20250514"],
@@ -155,6 +160,7 @@ Response when pinned:
 Without the header, routing runs fresh every time (no breaking change).
 
 Configure TTL and cache size:
+
 ```yaml
 routing:
   session_ttl_seconds: 600    # default: 10 min
@@ -165,7 +171,8 @@ routing:
 
 ## Version Requirements
 
-| Version | Top-level `routing_preferences` |
-|---|---|
+
+| Version    | Top-level `routing_preferences`        |
+| ---------- | -------------------------------------- |
 | `< v0.4.0` | Not allowed — startup error if present |
-| `v0.4.0+` | Supported (required for model routing) |
+| `v0.4.0+`  | Supported (required for model routing) |

@@ -158,7 +158,9 @@ Anthropic
 
 .. code-block:: yaml
 
-    llm_providers:
+    version: v0.4.0
+
+    model_providers:
       # Configure all Anthropic models with wildcard
       - model: anthropic/*
         access_key: $ANTHROPIC_API_KEY
@@ -179,8 +181,12 @@ Anthropic
 
       - model: anthropic/claude-sonnet-4-20250514
         access_key: $ANTHROPIC_PROD_API_KEY
-        routing_preferences:
-          - name: code_generation
+
+    routing_preferences:
+      - name: code_generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+        models:
+          - anthropic/claude-sonnet-4-20250514
 
 DeepSeek
 ~~~~~~~~
@@ -798,7 +804,9 @@ You can configure specific models with custom settings even when using wildcards
 
 .. code-block:: yaml
 
-    llm_providers:
+    version: v0.4.0
+
+    model_providers:
       # Expand to all Anthropic models
       - model: anthropic/*
         access_key: $ANTHROPIC_API_KEY
@@ -807,13 +815,16 @@ You can configure specific models with custom settings even when using wildcards
       # This model will NOT be included in the wildcard expansion above
       - model: anthropic/claude-sonnet-4-20250514
         access_key: $ANTHROPIC_PROD_API_KEY
-        routing_preferences:
-          - name: code_generation
-            priority: 1
 
       # Another specific override
       - model: anthropic/claude-3-haiku-20240307
         access_key: $ANTHROPIC_DEV_API_KEY
+
+    routing_preferences:
+      - name: code_generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+        models:
+          - anthropic/claude-sonnet-4-20250514
 
 **Custom Provider Wildcards:**
 
@@ -856,24 +867,36 @@ Mark one model as the default for fallback scenarios:
 Routing Preferences
 ~~~~~~~~~~~~~~~~~~~
 
-Configure routing preferences for dynamic model selection:
+Starting in ``v0.4.0``, configure routing preferences at the top level of the config. Each preference declares an ordered ``models`` candidate pool; the first entry is primary and the rest are fallbacks the client tries on ``429``/``5xx`` errors. Multiple providers can serve the same route — just list them all under ``models``. See :doc:`/guides/llm_router` for the full routing model.
 
 .. code-block:: yaml
 
-    llm_providers:
+    version: v0.4.0
+
+    model_providers:
       - model: openai/gpt-5.2
         access_key: $OPENAI_API_KEY
-        routing_preferences:
-          - name: complex_reasoning
-            description: deep analysis, mathematical problem solving, and logical reasoning
-          - name: code_review
-            description: reviewing and analyzing existing code for bugs and improvements
 
       - model: anthropic/claude-sonnet-4-5
         access_key: $ANTHROPIC_API_KEY
-        routing_preferences:
-          - name: creative_writing
-            description: creative content generation, storytelling, and writing assistance
+
+    routing_preferences:
+      - name: complex_reasoning
+        description: deep analysis, mathematical problem solving, and logical reasoning
+        models:
+          - openai/gpt-5.2
+          - anthropic/claude-sonnet-4-5
+      - name: code_review
+        description: reviewing and analyzing existing code for bugs and improvements
+        models:
+          - openai/gpt-5.2
+      - name: creative_writing
+        description: creative content generation, storytelling, and writing assistance
+        models:
+          - anthropic/claude-sonnet-4-5
+
+.. note::
+   ``v0.3.0`` configs that declare ``routing_preferences`` inline under each ``model_provider`` are auto-migrated to this top-level shape by the Plano CLI at compile time, with a deprecation warning. Update to the form above to silence the warning and gain the multi-model fallback behavior.
 
 .. _passthrough_auth:
 

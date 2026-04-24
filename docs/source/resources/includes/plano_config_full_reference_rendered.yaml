@@ -69,12 +69,6 @@ listeners:
     model: llama-3.3-70b-versatile
     name: groq/llama-3.3-70b-versatile
     provider_interface: groq
-    routing_preferences:
-    - description: generating new code snippets, functions, or boilerplate based on
-        user prompts or requirements
-      name: code generation
-    - description: reviewing, analyzing, and suggesting improvements to existing code
-      name: code review
   - base_url: https://litellm.example.com
     cluster_name: openai_litellm.example.com
     endpoint: litellm.example.com
@@ -131,12 +125,6 @@ model_providers:
   model: llama-3.3-70b-versatile
   name: groq/llama-3.3-70b-versatile
   provider_interface: groq
-  routing_preferences:
-  - description: generating new code snippets, functions, or boilerplate based on
-      user prompts or requirements
-    name: code generation
-  - description: reviewing, analyzing, and suggesting improvements to existing code
-    name: code review
 - base_url: https://litellm.example.com
   cluster_name: openai_litellm.example.com
   endpoint: litellm.example.com
@@ -221,6 +209,21 @@ routing:
     type: memory
   session_max_entries: 10000
   session_ttl_seconds: 600
+routing_preferences:
+- description: generating new code snippets, functions, or boilerplate based on user
+    prompts or requirements
+  models:
+  - anthropic/claude-sonnet-4-0
+  - openai/gpt-4o
+  - groq/llama-3.3-70b-versatile
+  name: code generation
+- description: reviewing, analyzing, and suggesting improvements to existing code
+  models:
+  - anthropic/claude-sonnet-4-0
+  - groq/llama-3.3-70b-versatile
+  name: code review
+  selection_policy:
+    prefer: cheapest
 state_storage:
   type: memory
 system_prompt: 'You are a helpful assistant. Always respond concisely and accurately.
@@ -237,4 +240,4 @@ tracing:
       environment: production
       service.team: platform
   trace_arch_internal: false
-version: v0.3.0
+version: v0.4.0

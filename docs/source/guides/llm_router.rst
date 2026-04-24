@@ -147,38 +147,53 @@ Plano-Orchestrator analyzes each prompt to infer domain and action, then applies
 Configuration
 ^^^^^^^^^^^^^
 
-To configure preference-aligned dynamic routing, define routing preferences that map domains and actions to specific models:
+To configure preference-aligned dynamic routing, declare a top-level ``routing_preferences`` list and attach an ordered ``models`` candidate pool to each route. Starting in ``v0.4.0``, ``routing_preferences`` lives at the root of the config (not inline under ``model_providers``), which lets multiple models serve the same route — the first entry in ``models`` is primary, the rest are fallbacks that the client tries on ``429``/``5xx`` errors.
 
 .. code-block:: yaml
     :caption: Preference-Aligned Dynamic Routing Configuration
 
+    version: v0.4.0
+
     listeners:
-      egress_traffic:
+      - name: egress_traffic
+        type: model
         address: 0.0.0.0
         port: 12000
-        message_format: openai
         timeout: 30s
 
-    llm_providers:
+    model_providers:
       - model: openai/gpt-5.2
         access_key: $OPENAI_API_KEY
         default: true
 
       - model: openai/gpt-5
         access_key: $OPENAI_API_KEY
-        routing_preferences:
-          - name: code understanding
-            description: understand and explain existing code snippets, functions, or libraries
-          - name: complex reasoning
-            description: deep analysis, mathematical problem solving, and logical reasoning
 
       - model: anthropic/claude-sonnet-4-5
         access_key: $ANTHROPIC_API_KEY
-        routing_preferences:
-          - name: creative writing
-            description: creative content generation, storytelling, and writing assistance
-          - name: code generation
-            description: generating new code snippets, functions, or boilerplate based on user prompts
+
+    routing_preferences:
+      - name: code understanding
+        description: understand and explain existing code snippets, functions, or libraries
+        models:
+          - openai/gpt-5
+          - anthropic/claude-sonnet-4-5
+      - name: complex reasoning
+        description: deep analysis, mathematical problem solving, and logical reasoning
+        models:
+          - openai/gpt-5
+      - name: creative writing
+        description: creative content generation, storytelling, and writing assistance
+        models:
+          - anthropic/claude-sonnet-4-5
+      - name: code generation
+        description: generating new code snippets, functions, or boilerplate based on user prompts
+        models:
+          - anthropic/claude-sonnet-4-5
+          - openai/gpt-5
+
+.. note::
+   Configs still using the ``v0.3.0`` inline style (``routing_preferences`` nested under each ``model_provider``) are auto-migrated to this top-level shape by the Plano CLI at compile time, with a deprecation warning. Update your config to the form above to silence the warning.
 
 Client usage
 ^^^^^^^^^^^^
@@ -253,6 +268,8 @@ Using Ollama (recommended for local development)
 
    .. code-block:: yaml
 
+       version: v0.4.0
+
        overrides:
          llm_routing_model: plano/hf.co/katanemo/Arch-Router-1.5B.gguf:Q4_K_M
 
@@ -266,9 +283,12 @@ Using Ollama (recommended for local development)
 
          - model: anthropic/claude-sonnet-4-5
            access_key: $ANTHROPIC_API_KEY
-           routing_preferences:
-             - name: creative writing
-               description: creative content generation, storytelling, and writing assistance
+
+       routing_preferences:
+         - name: creative writing
+           description: creative content generation, storytelling, and writing assistance
+           models:
+             - anthropic/claude-sonnet-4-5
 
 4. **Verify the model is running**
 
@@ -322,6 +342,8 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
 
    .. code-block:: yaml
 
+       version: v0.4.0
+
        overrides:
          llm_routing_model: plano/Plano-Orchestrator
 
@@ -335,9 +357,12 @@ vLLM provides higher throughput and GPU optimizations suitable for production de
 
          - model: anthropic/claude-sonnet-4-5
            access_key: $ANTHROPIC_API_KEY
-           routing_preferences:
-             - name: creative writing
-               description: creative content generation, storytelling, and writing assistance
+
+       routing_preferences:
+         - name: creative writing
+           description: creative content generation, storytelling, and writing assistance
+           models:
+             - anthropic/claude-sonnet-4-5
 
 5. **Verify the server is running**
 
@@ -468,22 +493,30 @@ You can combine static model selection with dynamic routing preferences for maxi
 .. code-block:: yaml
     :caption: Hybrid Routing Configuration
 
-    llm_providers:
+    version: v0.4.0
+
+    model_providers:
       - model: openai/gpt-5.2
         access_key: $OPENAI_API_KEY
         default: true
 
       - model: openai/gpt-5
         access_key: $OPENAI_API_KEY
-        routing_preferences:
-          - name: complex_reasoning
-            description: deep analysis and complex problem solving
 
       - model: anthropic/claude-sonnet-4-5
         access_key: $ANTHROPIC_API_KEY
-        routing_preferences:
-          - name: creative_tasks
-            description: creative writing and content generation
+
+    routing_preferences:
+      - name: complex_reasoning
+        description: deep analysis and complex problem solving
+        models:
+          - openai/gpt-5
+          - anthropic/claude-sonnet-4-5
+      - name: creative_tasks
+        description: creative writing and content generation
+        models:
+          - anthropic/claude-sonnet-4-5
+          - openai/gpt-5
 
     model_aliases:
       # Model aliases - friendly names that map to actual provider names

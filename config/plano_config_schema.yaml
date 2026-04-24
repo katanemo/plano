@@ -201,6 +201,7 @@ properties:
           description: "Additional headers to send with upstream requests (e.g., ChatGPT-Account-Id, originator)."
         routing_preferences:
           type: array
+          description: "[DEPRECATED] Inline routing_preferences under a model_provider are auto-migrated to the top-level routing_preferences list by the config generator. New configs should declare routing_preferences at the top level with an explicit models: [...] list. See docs/routing-api.md."
           items:
             type: object
             properties:
@@ -258,6 +259,7 @@ properties:
           description: "Additional headers to send with upstream requests (e.g., ChatGPT-Account-Id, originator)."
         routing_preferences:
           type: array
+          description: "[DEPRECATED] Inline routing_preferences under an llm_provider are auto-migrated to the top-level routing_preferences list by the config generator. New configs should declare routing_preferences at the top level with an explicit models: [...] list. See docs/routing-api.md."
           items:
             type: object
             properties:

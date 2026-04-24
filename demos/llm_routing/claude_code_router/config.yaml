@@ -19,7 +19,7 @@ model_providers:
       - name: code understanding
         description: understand and explain existing code snippets, functions, or libraries
   # Anthropic Models
-  - model: anthropic/claude-sonnet-4-5
+  - model: anthropic/claude-sonnet-4-6
     default: true
     access_key: $ANTHROPIC_API_KEY
 
