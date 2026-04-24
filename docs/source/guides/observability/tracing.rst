@@ -114,11 +114,11 @@ Signals act as early warning indicators embedded in your traces:
 
 **Visual Flag Markers**
 
-When concerning signals are detected (disengagement, execution failures / loops, stagnation > 2, or ``poor`` / ``severe`` quality), Plano automatically appends a ``[!]`` marker to the span's operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.
+When concerning signals are detected (disengagement, execution failures / loops, stagnation > 2, or ``poor`` / ``severe`` quality), Plano automatically appends a 🚩 marker to the span's operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.
 
 **Example Span with Signals**::
 
-    # Span name: "POST /v1/chat/completions gpt-4 [!]"
+    # Span name: "POST /v1/chat/completions gpt-4 🚩"
     # Standard LLM attributes:
     llm.model = "gpt-4"
     llm.usage.total_tokens = 225

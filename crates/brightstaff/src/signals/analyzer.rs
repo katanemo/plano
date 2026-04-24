@@ -21,9 +21,10 @@ use super::schemas::{
 use super::text_processing::NormalizedMessage;
 
 /// Marker appended to the span operation name when concerning signals are
-/// detected. Kept in sync with the previous implementation for backward
-/// compatibility with downstream consumers.
-pub const FLAG_MARKER: &str = "[!]";
+/// detected. The 🚩 emoji (U+1F6A9) matches the pre-port implementation so
+/// downstream consumers that search for flagged traces by span-name emoji
+/// keep working.
+pub const FLAG_MARKER: &str = "\u{1F6A9}";
 
 /// ShareGPT-shaped row used as the canonical input to the analyzer's
 /// detectors. `from` is one of `"human"`, `"gpt"`, `"function_call"`,
