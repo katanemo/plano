@@ -33,6 +33,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.extlinks",
+    "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx_sitemap",
     "sphinx_design",
@@ -40,6 +41,7 @@ extensions = [
     "llms_txt",
     "provider_models",
 ]
+
 
 # Paths that contain templates, relative to this directory.
 templates_path = ["_templates"]

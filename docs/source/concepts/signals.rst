@@ -12,49 +12,56 @@ prioritized data that can drive prompt, routing, and model updates without
 running an LLM-as-judge on every session.
 
 The framework implemented here follows the taxonomy and detector design in
-*Signals: Trajectory Sampling and Triage for Agentic Interactions* (Chen,
-Hafeez, Paracha, 2026; `arXiv:2604.00356
-<https://arxiv.org/abs/2604.00356>`_). All detectors are computed without
-model calls; the entire pipeline attaches structured attributes and span
-events to existing spans so your dashboards and alerts work unmodified.
+*Signals: Trajectory Sampling and Triage for Agentic Interactions*
+(`Chen et al., 2026 <https://arxiv.org/abs/2604.00356>`_). All detectors
+are computed without model calls; the entire pipeline attaches structured
+attributes and span events to existing spans so your dashboards and alerts
+work unmodified.
 
 Why Signals Matter: The Improvement Flywheel
 ============================================
 
-Agentic applications are now deployed at scale, but improving them
-post-deployment is still hard. Trajectories are voluminous and
-non-deterministic; reviewing each one with humans or auxiliary LLMs is slow
-and cost-prohibitive. You can't score every response (too expensive) or
-eyeball every trace (doesn't scale). Without a triage layer, the loop from
-production back to model or policy updates stays broken.
+Agentic applications are increasingly deployed at scale, yet improving them
+after deployment remains difficult. Production trajectories are long,
+numerous, and non-deterministic, making exhaustive human review infeasible
+and auxiliary LLM evaluation expensive. As a result, teams face a
+bottleneck: they cannot score every response, inspect every trace, or
+reliably identify which failures and successes should inform the next model
+update. Without a low-cost triage layer, the feedback loop from production
+behavior to model improvement remains incomplete.
 
-Signals close that loop by making it cheap to find out which of the
-millions of interactions are actually worth looking at:
+Signals close this loop by cheaply identifying which interactions among
+millions are worth inspecting:
 
-1. **Instrument.** Every live interaction is scored along a fixed
-   taxonomy (interaction / execution / environment) and tagged as
-   structured attributes on its existing OTel span. No model calls, no
-   extra infrastructure.
-2. **Sample & triage.** Signal attributes act as filters — surface
-   severe sessions, sample exemplars, exclude the boring middle. Per the
-   paper, signal-based sampling reaches 82% informativeness on
-   :math:`\tau`-bench versus 54% for random sampling, a 1.52× efficiency
-   gain per informative trajectory.
-3. **Construct data.** The triaged subset becomes the input to
-   preference-data construction, prompt-ablation studies, routing
-   decisions, or fine-tuning corpora — whichever optimization pathway
-   you're running.
-4. **Optimize the model.** Whatever artifact drives your agent —
-   system prompts, router rules, LoRA adapters, full fine-tunes — is
-   updated against that targeted data, not against noise.
-5. **Deploy and repeat.** New versions ship behind Plano and are
-   immediately re-instrumented with the same signals, so you can
-   measure whether your change actually moved the needle and feed the
-   next iteration.
+1. **Instrument.** Live trajectories are scored with model-free signals
+   attached as structured attributes on existing OpenTelemetry spans,
+   organized under a fixed taxonomy of interaction, execution, and
+   environment signals. This requires no additional model calls,
+   infrastructure, or changes to online agent behavior.
+2. **Sample & triage.** Signal attributes act as filters: they surface
+   severe failures, retrieve representative exemplars, and exclude the
+   uninformative middle. In our experiments, signal-based sampling
+   achieves 82% informativeness on :math:`\tau`-bench, compared with 54%
+   for random sampling, yielding a 1.52× efficiency gain per informative
+   trajectory.
+3. **Data Construction.** The triaged subset becomes targeted input for
+   constructing preference datasets or supervised fine-tuning datasets
+   from production trajectories.
+4. **Model Optimization.** The resulting preference or supervised
+   fine-tuning data is used to update the model through methods such as
+   DPO, RLHF, or supervised fine-tuning, so optimization is driven by
+   targeted production behavior rather than undifferentiated trace noise.
+5. **Deploy.** The improved model is deployed and immediately
+   re-instrumented with the same signals, enabling teams to measure
+   whether the change improved production behavior and to feed the next
+   iteration.
 
-The loop only works if step 1 is nearly free. That's the design
-constraint this framework is built around: model-free detectors, fixed
-taxonomy, O(messages) cost, no online behavior change.
+This loop depends on the first step being nearly free. The framework is
+therefore designed around fixed-taxonomy, model-free detectors with
+:math:`O(\text{messages})` cost, no online behavior change, and no
+dependence on expensive evaluator models. By making production traces
+searchable and sampleable at scale, signals turn raw agent telemetry into a
+practical model-optimization flywheel.
 
 What Are Behavioral Signals?
 ============================
