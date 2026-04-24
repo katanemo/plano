@@ -692,6 +692,35 @@ model_providers:
     assert config_yaml["version"] == "v0.4.0"
 
 
+def test_migration_is_noop_on_v040_config_with_stray_inline_preferences():
+    # v0.4.0 configs are assumed to be on the canonical top-level shape.
+    # The migration intentionally does not rescue stray inline preferences
+    # at v0.4.0+ so that the deprecation boundary is a clean version gate.
+    plano_config = """
+version: v0.4.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    routing_preferences:
+      - name: code generation
+        description: generating new code
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    migrate_inline_routing_preferences(config_yaml)
+
+    assert config_yaml["version"] == "v0.4.0"
+    assert "routing_preferences" not in config_yaml
+    assert config_yaml["model_providers"][0]["routing_preferences"] == [
+        {"name": "code generation", "description": "generating new code"}
+    ]
+
+
 def test_migration_does_not_downgrade_newer_versions():
     plano_config = """
 version: v0.5.0

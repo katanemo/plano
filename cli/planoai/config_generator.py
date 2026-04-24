@@ -63,22 +63,26 @@ def migrate_inline_routing_preferences(config_yaml):
     ``model_providers`` entry to the v0.4.0 top-level ``routing_preferences``
     list with ``models: [...]``.
 
-    Preferences with the same ``name`` across multiple providers are merged
-    into a single top-level entry whose ``models`` list contains every
-    provider's full ``<provider>/<model>`` string in declaration order. The
-    first ``description`` encountered wins; conflicts are warned, not
-    errored, so existing v0.3.0 configs keep compiling. Any top-level
-    preference already defined by the user is preserved as-is.
+    This function is a no-op for configs whose ``version`` is already
+    ``v0.4.0`` or newer — those are assumed to be on the canonical
+    top-level shape and are passed through untouched.
 
-    Also bumps ``version`` to ``v0.4.0`` up front (when the config is
-    ``v0.3.0`` or older) so brightstaff's v0.4.0 gate for top-level
-    ``routing_preferences`` accepts the rendered config, including configs
-    that already declare top-level ``routing_preferences`` on a v0.3.0
-    version string.
+    For older configs, the version is bumped to ``v0.4.0`` up front so
+    brightstaff's v0.4.0 gate for top-level ``routing_preferences``
+    accepts the rendered config, then inline preferences under each
+    provider are lifted into the top-level list. Preferences with the
+    same ``name`` across multiple providers are merged into a single
+    top-level entry whose ``models`` list contains every provider's
+    full ``<provider>/<model>`` string in declaration order. The first
+    ``description`` encountered wins; conflicts are warned, not errored,
+    so existing v0.3.0 configs keep compiling. Any top-level preference
+    already defined by the user is preserved as-is.
     """
     current_version = str(config_yaml.get("version", ""))
-    if _version_tuple(current_version) < (0, 4, 0):
-        config_yaml["version"] = "v0.4.0"
+    if _version_tuple(current_version) >= (0, 4, 0):
+        return
+
+    config_yaml["version"] = "v0.4.0"
 
     model_providers = config_yaml.get("model_providers") or []
     if not model_providers:
