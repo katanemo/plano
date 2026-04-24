@@ -107,6 +107,37 @@ jobs:
         if: always()
         run: planoai down || true
 
+      # ── Zero-config path: `planoai up` with no args, no plano.yaml in cwd.
+      # Exercises the synthesize_default_config branch in cli/planoai/main.py
+      # which is otherwise never hit by the smoke test above.
+      - name: Zero-config smoke test
+        env:
+          OPENAI_API_KEY: test-key-not-used
+        run: |
+          empty_dir="$(mktemp -d)"
+          cd "$empty_dir"
+          test ! -f plano.yaml
+          planoai up
+          test -f "$HOME/.plano/default_config.yaml"
+
+      - name: Zero-config health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:12000/healthz > /dev/null 2>&1; then
+              echo "Zero-config health check passed"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Zero-config health check failed after 30s"
+          cat ~/.plano/run/logs/envoy.log || true
+          cat ~/.plano/run/logs/brightstaff.log || true
+          exit 1
+
+      - name: Stop plano (zero-config)
+        if: always()
+        run: planoai down || true
+
   # ──────────────────────────────────────────────
   # Single Docker build — shared by all downstream jobs
   # ──────────────────────────────────────────────
@@ -133,13 +164,13 @@ jobs:
           load: true
           tags: |
             ${{ env.PLANO_DOCKER_IMAGE }}
-            ${{ env.DOCKER_IMAGE }}:0.4.21
+            ${{ env.DOCKER_IMAGE }}:0.4.22
             ${{ env.DOCKER_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Save image as artifact
-        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.21 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
+        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.22 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v6
@@ -528,3 +559,4 @@ jobs:
         run: |
           source venv/bin/activate
           cd demos/shared/test_runner && bash run_demo_tests.sh advanced/currency_exchange
+
