@@ -4,11 +4,12 @@
 Signals™
 ========
 
-Agentic Signals are lightweight, model-free behavioral indicators computed from
-live interaction trajectories and attached to your existing
-OpenTelemetry traces. They make it possible to triage the small fraction of
-trajectories that are most likely to be informative — brilliant successes or
-**severe failures** — without running an LLM-as-judge on every session.
+Agentic Signals are lightweight, model-free behavioral indicators computed
+from live interaction trajectories and attached to your existing
+OpenTelemetry traces. They are the instrumentation layer of a closed-loop
+improvement flywheel for agents — turning raw production traffic into
+prioritized data that can drive prompt, routing, and model updates without
+running an LLM-as-judge on every session.
 
 The framework implemented here follows the taxonomy and detector design in
 *Signals: Trajectory Sampling and Triage for Agentic Interactions* (Chen,
@@ -17,26 +18,43 @@ Hafeez, Paracha, 2026; `arXiv:2604.00356
 model calls; the entire pipeline attaches structured attributes and span
 events to existing spans so your dashboards and alerts work unmodified.
 
-The Problem: Knowing What's "Good"
-==================================
+Why Signals Matter: The Improvement Flywheel
+============================================
 
-One of the hardest parts of building agents is measuring how well they
-perform in the real world.
+Agentic applications are now deployed at scale, but improving them
+post-deployment is still hard. Trajectories are voluminous and
+non-deterministic; reviewing each one with humans or auxiliary LLMs is slow
+and cost-prohibitive. You can't score every response (too expensive) or
+eyeball every trace (doesn't scale). Without a triage layer, the loop from
+production back to model or policy updates stays broken.
 
-**Offline testing** relies on hand-picked examples and happy-path scenarios,
-missing the messy diversity of real usage. Developers manually prompt models,
-evaluate responses, and tune prompts by guesswork — a slow, incomplete
-feedback loop.
+Signals close that loop by making it cheap to find out which of the
+millions of interactions are actually worth looking at:
 
-**Production debugging** floods developers with traces and logs but provides
-little guidance on which interactions actually matter. Finding failures means
-painstakingly reconstructing sessions and manually labeling quality issues.
+1. **Instrument.** Every live interaction is scored along a fixed
+   taxonomy (interaction / execution / environment) and tagged as
+   structured attributes on its existing OTel span. No model calls, no
+   extra infrastructure.
+2. **Sample & triage.** Signal attributes act as filters — surface
+   severe sessions, sample exemplars, exclude the boring middle. Per the
+   paper, signal-based sampling reaches 82% informativeness on
+   :math:`\tau`-bench versus 54% for random sampling, a 1.52× efficiency
+   gain per informative trajectory.
+3. **Construct data.** The triaged subset becomes the input to
+   preference-data construction, prompt-ablation studies, routing
+   decisions, or fine-tuning corpora — whichever optimization pathway
+   you're running.
+4. **Optimize the model.** Whatever artifact drives your agent —
+   system prompts, router rules, LoRA adapters, full fine-tunes — is
+   updated against that targeted data, not against noise.
+5. **Deploy and repeat.** New versions ship behind Plano and are
+   immediately re-instrumented with the same signals, so you can
+   measure whether your change actually moved the needle and feed the
+   next iteration.
 
-You can't score every response with an LLM-as-judge (too expensive, too slow)
-or manually review every trace (doesn't scale). What you need are
-**behavioral signals** — fast, economical proxies that don't label quality
-outright but dramatically shrink the search space, pointing to sessions most
-likely to be broken or brilliant.
+The loop only works if step 1 is nearly free. That's the design
+constraint this framework is built around: model-free detectors, fixed
+taxonomy, O(messages) cost, no online behavior change.
 
 What Are Behavioral Signals?
 ============================
@@ -61,150 +79,159 @@ agent performance. Embedded directly into traces, they make it easy to spot
 friction as it happens: where users struggle, where agents loop, where tool
 failures cluster, and where escalations occur.
 
-Signals vs Response Quality
-===========================
-
-Behavioral signals and response quality are complementary.
-
-**Response Quality**
-    Domain-specific correctness: did the agent do the right thing given
-    business rules, user intent, and operational context? This often
-    requires subject-matter experts or outcome instrumentation and is
-    time-intensive but irreplaceable.
-
-**Behavioral Signals**
-    Observable patterns that correlate with quality: misalignment,
-    stagnation, disengagement, satisfaction, tool failures, loops, and
-    environment exhaustion. Fast to compute and valuable for prioritizing
-    which traces deserve inspection.
-
-Used together, signals tell you *where to look*, and quality evaluation tells
-you *what went wrong (or right)*.
-
 Signal Taxonomy
 ===============
 
 Signals are organized into three top-level **layers**, each with its own
 intent. Every detected signal belongs to exactly one leaf type under one of
-seven categories.
+seven categories. The per-category summaries and leaf-type descriptions
+below are borrowed verbatim from the reference implementation at
+`katanemo/signals <https://github.com/katanemo/signals>`_ to keep the
+documentation and the detector contract in sync.
 
-Interaction (user ↔ agent conversational quality)
+Interaction — user ↔ agent conversational quality
 -------------------------------------------------
 
-Covers how the discourse itself is going: is the user being understood, is
-the conversation progressing, is the user engaged, is the user satisfied?
+**Misalignment** — Misalignment signals capture semantic or intent mismatch
+between the user and the agent, such as rephrasing, corrections,
+clarifications, and restated constraints. These signals do not assert that
+either party is "wrong"; they only indicate that shared understanding has
+not yet been established.
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 25 50
+   :widths: 30 70
 
-   * - Category
-     - Leaf signal type
-     - Meaning
-   * - **Misalignment**
-     - ``misalignment.correction``
-     - User explicitly corrects the agent ("No, I meant Paris, France").
-   * -
-     - ``misalignment.rephrase``
-     - User reformulates a previous request; semantic overlap is high.
-   * -
-     - ``misalignment.clarification``
-     - User signals confusion ("I don't understand", "what do you mean").
-   * - **Stagnation**
-     - ``stagnation.dragging``
-     - Conversation length significantly exceeds the expected baseline.
-   * -
-     - ``stagnation.repetition``
-     - Assistant near-duplicates prior turns (bigram Jaccard similarity).
-   * - **Disengagement**
-     - ``disengagement.escalation``
-     - User asks to speak to a human / supervisor / support.
-   * -
-     - ``disengagement.quit``
-     - User expresses intent to give up or abandon the session.
-   * -
-     - ``disengagement.negative_stance``
-     - User expresses frustration: complaints, ALL CAPS, excessive
-       punctuation, agent-directed profanity.
-   * - **Satisfaction**
-     - ``satisfaction.gratitude``
-     - User expresses thanks or appreciation.
-   * -
-     - ``satisfaction.confirmation``
-     - User confirms the outcome ("got it", "sounds good").
-   * -
-     - ``satisfaction.success``
-     - User confirms task success ("that worked", "perfect").
+   * - Leaf signal type
+     - Description
+   * - ``misalignment.correction``
+     - Explicit corrections, negations, mistake acknowledgments.
+   * - ``misalignment.rephrase``
+     - Rephrasing indicators, alternative explanations.
+   * - ``misalignment.clarification``
+     - Confusion expressions, requests for clarification.
 
-Execution (agent-caused action quality)
+**Stagnation** — Stagnation signals capture cases where the discourse
+continues but fails to make visible progress. This includes near-duplicate
+assistant responses, circular explanations, repeated scaffolding, and other
+forms of linguistic degeneration.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Leaf signal type
+     - Description
+   * - ``stagnation.dragging``
+     - Excessive turn count, conversation not progressing efficiently.
+   * - ``stagnation.repetition``
+     - Near-duplicate or repetitive assistant responses.
+
+**Disengagement** — Disengagement signals mark the withdrawal of
+cooperative intent from the interaction. These include explicit requests to
+exit the agent flow (e.g., "talk to a human"), strong negative stances, and
+abandonment markers.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Leaf signal type
+     - Description
+   * - ``disengagement.escalation``
+     - Requests for human agent or support.
+   * - ``disengagement.quit``
+     - Notification to quit or leave.
+   * - ``disengagement.negative_stance``
+     - Complaints, frustration, negative sentiment.
+
+**Satisfaction** — Satisfaction signals indicate explicit stabilization and
+completion of the interaction. These include expressions of gratitude,
+success confirmations, and closing utterances. We use these signals to
+sample exemplar traces rather than to assign quality scores.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Leaf signal type
+     - Description
+   * - ``satisfaction.gratitude``
+     - Expressions of thanks and appreciation.
+   * - ``satisfaction.confirmation``
+     - Explicit satisfaction expressions.
+   * - ``satisfaction.success``
+     - Confirmation of task completion or understanding.
+
+Execution — agent-caused action quality
 ---------------------------------------
 
-Covers attempts to act in the world that don't yield usable outcomes.
-Requires tool-call traces (``function_call`` / ``observation``) to fire.
+**Failure** — Detects agent-caused failures in tool/function usage. These
+are issues the agent is responsible for (as opposed to environment failures
+which are external system issues). Requires tool-call traces
+(``function_call`` / ``observation``) to fire.
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 25 50
+   :widths: 30 70
 
-   * - Category
-     - Leaf signal type
-     - Meaning
-   * - **Failure**
-     - ``failure.invalid_args``
-     - Tool call rejected due to schema / argument validation failure.
-   * -
-     - ``failure.bad_query``
-     - Downstream query rejected as malformed by the tool.
-   * -
-     - ``failure.tool_not_found``
-     - Agent called a tool that doesn't exist or isn't available.
-   * -
-     - ``failure.auth_misuse``
-     - Authentication / authorization failure on a tool call.
-   * -
-     - ``failure.state_error``
-     - Call-order / state-machine violation (e.g. commit without begin).
-   * - **Loops**
-     - ``loops.retry``
-     - Same tool call repeated with near-identical arguments.
-   * -
-     - ``loops.parameter_drift``
-     - Same tool called with slowly drifting parameters (walk pattern).
-   * -
-     - ``loops.oscillation``
-     - Call A → Call B → Call A → Call B pattern across multiple turns.
+   * - Leaf signal type
+     - Description
+   * - ``execution.failure.invalid_args``
+     - Wrong type, missing required field.
+   * - ``execution.failure.bad_query``
+     - Empty results due to overly narrow/wrong query.
+   * - ``execution.failure.tool_not_found``
+     - Agent called non-existent tool.
+   * - ``execution.failure.auth_misuse``
+     - Agent didn't pass credentials correctly.
+   * - ``execution.failure.state_error``
+     - Tool called in wrong state/order.
 
-Environment (external system / boundary conditions)
+**Loops** — Detects behavioral patterns where the agent gets stuck
+repeating tool calls. These are distinct from
+``interaction.stagnation`` (conversation text repetition) and
+``execution.failure`` (single tool errors) — these detect tool-level
+behavioral loops.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Leaf signal type
+     - Description
+   * - ``execution.loops.retry``
+     - Same tool with identical args ≥3 times.
+   * - ``execution.loops.parameter_drift``
+     - Same tool with varied args ≥3 times.
+   * - ``execution.loops.oscillation``
+     - Multi-tool A→B→A→B pattern ≥3 cycles.
+
+Environment — external system / boundary conditions
 ---------------------------------------------------
 
-Covers failures **outside** the agent's control that still break the
-interaction. Useful for separating agent-caused issues from infrastructure.
+**Exhaustion** — Detects failures and constraints arising from the
+surrounding system rather than the agent's internal policy or reasoning.
+These are external issues the agent cannot control.
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 25 50
+   :widths: 30 70
 
-   * - Category
-     - Leaf signal type
-     - Meaning
-   * - **Exhaustion**
-     - ``exhaustion.api_error``
-     - Downstream API returned a 5xx or unexpected error.
-   * -
-     - ``exhaustion.timeout``
-     - Tool / API call timed out.
-   * -
-     - ``exhaustion.rate_limit``
-     - Rate-limit response from a tool / API.
-   * -
-     - ``exhaustion.network``
-     - Transient network failure mid-call.
-   * -
-     - ``exhaustion.malformed_response``
-     - Response received but couldn't be parsed.
-   * -
-     - ``exhaustion.context_overflow``
-     - Context window / token budget exceeded.
+   * - Leaf signal type
+     - Description
+   * - ``environment.exhaustion.api_error``
+     - 5xx errors, service unavailable.
+   * - ``environment.exhaustion.timeout``
+     - Connection/read timeouts.
+   * - ``environment.exhaustion.rate_limit``
+     - 429, quota exceeded.
+   * - ``environment.exhaustion.network``
+     - Connection refused, DNS errors.
+   * - ``environment.exhaustion.malformed_response``
+     - Invalid JSON, unexpected schema.
+   * - ``environment.exhaustion.context_overflow``
+     - Token/context limit exceeded.
 
 How It Works
 ============
