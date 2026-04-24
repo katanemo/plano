@@ -132,11 +132,7 @@ mod tests {
 
         let growth = after.saturating_sub(baseline);
         let growth_mb = growth as f64 / (1024.0 * 1024.0);
-        let per_request = if num_iterations > 0 {
-            growth / num_iterations
-        } else {
-            0
-        };
+        let per_request = growth.checked_div(num_iterations).unwrap_or(0);
 
         eprintln!("=== Routing Stress Test Results ===");
         eprintln!("  Iterations:      {num_iterations}");
