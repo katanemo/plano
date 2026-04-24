@@ -441,8 +441,6 @@ def up(
         env = os.environ.copy()
         env.pop("PATH", None)
 
-        import yaml
-
         with open(plano_config_file, "r") as f:
             plano_config = yaml.safe_load(f)
 
