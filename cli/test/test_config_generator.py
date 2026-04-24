@@ -672,7 +672,7 @@ model_providers:
     assert "wildcard" in str(excinfo.value).lower()
 
 
-def test_migration_noop_when_no_inline_preferences():
+def test_migration_bumps_version_even_without_inline_preferences():
     plano_config = """
 version: v0.3.0
 
@@ -689,4 +689,23 @@ model_providers:
     migrate_inline_routing_preferences(config_yaml)
 
     assert "routing_preferences" not in config_yaml
-    assert config_yaml["version"] == "v0.3.0"
+    assert config_yaml["version"] == "v0.4.0"
+
+
+def test_migration_does_not_downgrade_newer_versions():
+    plano_config = """
+version: v0.5.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+"""
+    config_yaml = yaml.safe_load(plano_config)
+    migrate_inline_routing_preferences(config_yaml)
+
+    assert config_yaml["version"] == "v0.5.0"

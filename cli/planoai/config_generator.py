@@ -70,10 +70,16 @@ def migrate_inline_routing_preferences(config_yaml):
     errored, so existing v0.3.0 configs keep compiling. Any top-level
     preference already defined by the user is preserved as-is.
 
-    Also bumps ``version`` to ``v0.4.0`` when migration produced any entry,
-    so brightstaff's v0.4.0 gate for top-level ``routing_preferences``
-    accepts the rendered config.
+    Also bumps ``version`` to ``v0.4.0`` up front (when the config is
+    ``v0.3.0`` or older) so brightstaff's v0.4.0 gate for top-level
+    ``routing_preferences`` accepts the rendered config, including configs
+    that already declare top-level ``routing_preferences`` on a v0.3.0
+    version string.
     """
+    current_version = str(config_yaml.get("version", ""))
+    if _version_tuple(current_version) < (0, 4, 0):
+        config_yaml["version"] = "v0.4.0"
+
     model_providers = config_yaml.get("model_providers") or []
     if not model_providers:
         return
@@ -128,10 +134,6 @@ def migrate_inline_routing_preferences(config_yaml):
             continue
         merged.append(entry)
     config_yaml["routing_preferences"] = merged
-
-    current_version = str(config_yaml.get("version", ""))
-    if _version_tuple(current_version) < (0, 4, 0):
-        config_yaml["version"] = "v0.4.0"
 
     print(
         "WARNING: inline routing_preferences under model_providers is deprecated "
