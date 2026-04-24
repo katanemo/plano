@@ -40,6 +40,35 @@ def docker_remove_container(container: str) -> str:
     return result.returncode
 
 
+def _get_host_ip() -> str:
+    """Resolve the host machine's IP address reachable from inside Docker containers.
+
+    Docker Desktop (Mac/Windows) supports the ``host-gateway`` special keyword, but
+    Rancher Desktop and some Linux configurations do not.  As a more portable
+    alternative we read the gateway of the default Docker bridge network, which is
+    the same IP that ``host-gateway`` would resolve to on standard installations.
+
+    Falls back to ``host-gateway`` so existing Docker Desktop setups are unaffected.
+    """
+    result = subprocess.run(
+        [
+            "docker",
+            "network",
+            "inspect",
+            "bridge",
+            "--format",
+            "{{range .IPAM.Config}}{{.Gateway}}{{end}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    ip = result.stdout.strip()
+    if result.returncode == 0 and ip:
+        return ip
+    return "host-gateway"
+
+
 def _prepare_docker_config(plano_config_file: str) -> str:
     """Copy config to a temp file, replacing localhost with host.docker.internal.
 
@@ -88,6 +117,8 @@ def docker_start_plano_detached(
         item for volume in volume_mappings for item in ("-v", volume)
     ]
 
+    host_ip = _get_host_ip()
+
     options = [
         "docker",
         "run",
@@ -98,7 +129,7 @@ def docker_start_plano_detached(
         *volume_mappings_args,
         *env_args,
         "--add-host",
-        "host.docker.internal:host-gateway",
+        f"host.docker.internal:{host_ip}",
         PLANO_DOCKER_IMAGE,
     ]
 
