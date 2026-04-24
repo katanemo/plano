@@ -107,6 +107,37 @@ jobs:
         if: always()
         run: planoai down || true
 
+      # ── Zero-config path: `planoai up` with no args, no plano.yaml in cwd.
+      # Exercises the synthesize_default_config branch in cli/planoai/main.py
+      # which is otherwise never hit by the smoke test above.
+      - name: Zero-config smoke test
+        env:
+          OPENAI_API_KEY: test-key-not-used
+        run: |
+          empty_dir="$(mktemp -d)"
+          cd "$empty_dir"
+          test ! -f plano.yaml
+          planoai up
+          test -f "$HOME/.plano/default_config.yaml"
+
+      - name: Zero-config health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:12000/healthz > /dev/null 2>&1; then
+              echo "Zero-config health check passed"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Zero-config health check failed after 30s"
+          cat ~/.plano/run/logs/envoy.log || true
+          cat ~/.plano/run/logs/brightstaff.log || true
+          exit 1
+
+      - name: Stop plano (zero-config)
+        if: always()
+        run: planoai down || true
+
   # ──────────────────────────────────────────────
   # Single Docker build — shared by all downstream jobs
   # ──────────────────────────────────────────────
