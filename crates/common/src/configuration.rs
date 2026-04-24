@@ -396,6 +396,10 @@ pub enum LlmProviderType {
     ChatGPT,
     #[serde(rename = "digitalocean")]
     DigitalOcean,
+    #[serde(rename = "vercel")]
+    Vercel,
+    #[serde(rename = "openrouter")]
+    OpenRouter,
 }
 
 impl Display for LlmProviderType {
@@ -419,6 +423,8 @@ impl Display for LlmProviderType {
             LlmProviderType::Plano => write!(f, "plano"),
             LlmProviderType::ChatGPT => write!(f, "chatgpt"),
             LlmProviderType::DigitalOcean => write!(f, "digitalocean"),
+            LlmProviderType::Vercel => write!(f, "vercel"),
+            LlmProviderType::OpenRouter => write!(f, "openrouter"),
         }
     }
 }
@@ -755,6 +761,26 @@ mod test {
         let model_ids: Vec<String> = models.data.iter().map(|m| m.id.clone()).collect();
         assert!(model_ids.contains(&"openai-gpt4".to_string()));
         assert!(!model_ids.contains(&"plano-orchestrator".to_string()));
+    }
+
+    #[test]
+    fn test_llm_provider_type_vercel_and_openrouter_roundtrip() {
+        // Regression: brightstaff used to reject `provider_interface: vercel`
+        // (and `openrouter`) because these variants were missing from
+        // `LlmProviderType`, causing `planoai up` with the synthesized default
+        // config to crash on startup.
+        for (yaml_value, expected) in [
+            ("vercel", LlmProviderType::Vercel),
+            ("openrouter", LlmProviderType::OpenRouter),
+        ] {
+            let parsed: LlmProviderType =
+                serde_yaml::from_str(yaml_value).expect("variant should deserialize");
+            assert_eq!(parsed, expected);
+            assert_eq!(parsed.to_string(), yaml_value);
+            // to_provider_id() bridges into hermesllm; both providers must be
+            // recognized there as well or this panics.
+            let _ = parsed.to_provider_id();
+        }
     }
 
     #[test]
