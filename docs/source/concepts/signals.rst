@@ -402,7 +402,8 @@ Visual Flag Marker
 
 When concerning signals are detected (disengagement present, stagnation
 count > 2, any execution failure / loop, or overall quality ``poor``/
-``severe``), the marker ``[!]`` is appended to the span's operation name.
+``severe``), the marker 🚩 (U+1F6A9) is appended to the span's operation
+name.
 This makes flagged sessions immediately visible in trace UIs without
 requiring attribute filtering.
 
@@ -420,7 +421,7 @@ Example queries against the layered keys::
     signals.execution.failure.count > 0
     signals.environment.exhaustion.count > 0
 
-For flagged sessions, search for ``[!]`` in span names.
+For flagged sessions, search for 🚩 in span names.
 
 .. image:: /_static/img/signals_trace.png
    :width: 100%
@@ -507,7 +508,7 @@ Example Span
 A concerning session, showing both layered attributes and a per-instance
 event::
 
-    # Span name: "POST /v1/chat/completions gpt-5.2 [!]"
+    # Span name: "POST /v1/chat/completions gpt-5.2 🚩"
 
     # Top-level
     signals.quality            = "severe"
@@ -619,7 +620,7 @@ Mitigation strategies:
    causes.
 
 .. tip::
-   The ``[!]`` marker in the span name provides instant visual feedback in
+   The 🚩 marker in the span name provides instant visual feedback in
    trace UIs, while the structured attributes (``signals.quality``,
    ``signals.interaction.disengagement.severity``, etc.) and per-instance
    span events enable powerful querying and drill-down in your observability
