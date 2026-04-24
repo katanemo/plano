@@ -252,40 +252,54 @@ tools.</p>
 </section>
 <section id="behavioral-signals-in-traces">
 <h2>Behavioral Signals in Traces<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#behavioral-signals-in-traces" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#behavioral-signals-in-traces'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Plano automatically enriches OpenTelemetry traces with <a class="reference internal" href="../../concepts/signals.html"><span class="doc">Signals™</span></a> — behavioral quality indicators computed from conversation patterns. These signals are attached as span attributes, providing immediate visibility into interaction quality.</p>
+<p>Plano automatically enriches OpenTelemetry traces with <a class="reference internal" href="../../concepts/signals.html"><span class="doc">Signals™</span></a> — lightweight, model-free behavioral indicators organized into three layers (interaction, execution, environment) per <a class="reference external" href="https://arxiv.org/abs/2604.00356" rel="nofollow noopener">Chen et al., 2026<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>. Signals are attached as span attributes and per-instance span events, providing immediate visibility into interaction quality.</p>
 <p><strong>What Signals Provide</strong></p>
 <p>Signals act as early warning indicators embedded in your traces:</p>
 <ul class="simple">
-<li><p><strong>Quality Assessment</strong>: Overall interaction quality (Excellent/Good/Neutral/Poor/Severe)</p></li>
-<li><p><strong>Efficiency Metrics</strong>: Turn count, efficiency scores, repair frequency</p></li>
-<li><p><strong>User Sentiment</strong>: Frustration indicators, positive feedback, escalation requests</p></li>
-<li><p><strong>Agent Behavior</strong>: Repetition detection, looping patterns</p></li>
+<li><p><strong>Quality Assessment</strong>: Overall interaction quality (<code class="docutils literal notranslate"><span class="pre">excellent</span></code> / <code class="docutils literal notranslate"><span class="pre">good</span></code> / <code class="docutils literal notranslate"><span class="pre">neutral</span></code> / <code class="docutils literal notranslate"><span class="pre">poor</span></code> / <code class="docutils literal notranslate"><span class="pre">severe</span></code>) and numeric score</p></li>
+<li><p><strong>Interaction layer</strong>: misalignment, stagnation, disengagement, satisfaction</p></li>
+<li><p><strong>Execution layer</strong>: tool failures and loop patterns (from <code class="docutils literal notranslate"><span class="pre">function_call</span></code> / <code class="docutils literal notranslate"><span class="pre">observation</span></code> traces)</p></li>
+<li><p><strong>Environment layer</strong>: exhaustion (API errors, timeouts, rate limits, context overflow)</p></li>
 </ul>
 <p><strong>Visual Flag Markers</strong></p>
-<p>When concerning signals are detected (frustration, looping, escalation, or poor/severe quality), Plano automatically appends a flag marker <strong>🚩</strong> to the span’s operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.</p>
+<p>When concerning signals are detected (disengagement, execution failures / loops, stagnation &gt; 2, or <code class="docutils literal notranslate"><span class="pre">poor</span></code> / <code class="docutils literal notranslate"><span class="pre">severe</span></code> quality), Plano automatically appends a <code class="docutils literal notranslate"><span class="pre">[!]</span></code> marker to the span’s operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.</p>
 <p><strong>Example Span with Signals</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-4 🚩"</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-4 [!]"</span>
 </span><span id="line-2"><span class="c1"># Standard LLM attributes:</span>
 </span><span id="line-3"><span class="n">llm</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="s2">"gpt-4"</span>
 </span><span id="line-4"><span class="n">llm</span><span class="o">.</span><span class="n">usage</span><span class="o">.</span><span class="n">total_tokens</span> <span class="o">=</span> <span class="mi">225</span>
 </span><span id="line-5">
-</span><span id="line-6"><span class="c1"># Behavioral signal attributes:</span>
-</span><span id="line-7"><span class="n">signals</span><span class="o">.</span><span class="n">quality</span> <span class="o">=</span> <span class="s2">"Severe"</span>
-</span><span id="line-8"><span class="n">signals</span><span class="o">.</span><span class="n">turn_count</span> <span class="o">=</span> <span class="mi">15</span>
-</span><span id="line-9"><span class="n">signals</span><span class="o">.</span><span class="n">efficiency_score</span> <span class="o">=</span> <span class="mf">0.234</span>
-</span><span id="line-10"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">severity</span> <span class="o">=</span> <span class="mi">3</span>
-</span><span id="line-11"><span class="n">signals</span><span class="o">.</span><span class="n">escalation</span><span class="o">.</span><span class="n">requested</span> <span class="o">=</span> <span class="s2">"true"</span>
+</span><span id="line-6"><span class="c1"># Top-level signal attributes:</span>
+</span><span id="line-7"><span class="n">signals</span><span class="o">.</span><span class="n">quality</span>            <span class="o">=</span> <span class="s2">"severe"</span>
+</span><span id="line-8"><span class="n">signals</span><span class="o">.</span><span class="n">quality_score</span>      <span class="o">=</span> <span class="mf">0.0</span>
+</span><span id="line-9"><span class="n">signals</span><span class="o">.</span><span class="n">turn_count</span>         <span class="o">=</span> <span class="mi">15</span>
+</span><span id="line-10"><span class="n">signals</span><span class="o">.</span><span class="n">efficiency_score</span>   <span class="o">=</span> <span class="mf">0.234</span>
+</span><span id="line-11">
+</span><span id="line-12"><span class="c1"># Layered attributes (only non-zero categories are emitted):</span>
+</span><span id="line-13"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">misalignment</span><span class="o">.</span><span class="n">count</span>     <span class="o">=</span> <span class="mi">4</span>
+</span><span id="line-14"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">misalignment</span><span class="o">.</span><span class="n">severity</span>  <span class="o">=</span> <span class="mi">2</span>
+</span><span id="line-15"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">count</span>    <span class="o">=</span> <span class="mi">5</span>
+</span><span id="line-16"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">severity</span> <span class="o">=</span> <span class="mi">3</span>
+</span><span id="line-17">
+</span><span id="line-18"><span class="c1"># Per-instance span event:</span>
+</span><span id="line-19"><span class="n">event</span><span class="p">:</span> <span class="n">signal</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">escalation</span>
+</span><span id="line-20">  <span class="n">signal</span><span class="o">.</span><span class="n">type</span>          <span class="o">=</span> <span class="s2">"interaction.disengagement.escalation"</span>
+</span><span id="line-21">  <span class="n">signal</span><span class="o">.</span><span class="n">message_index</span> <span class="o">=</span> <span class="mi">14</span>
+</span><span id="line-22">  <span class="n">signal</span><span class="o">.</span><span class="n">confidence</span>    <span class="o">=</span> <span class="mf">1.0</span>
+</span><span id="line-23">  <span class="n">signal</span><span class="o">.</span><span class="n">snippet</span>       <span class="o">=</span> <span class="s2">"get me a human"</span>
 </span></code></pre></div>
 </div>
 <p><strong>Querying Signal Data</strong></p>
 <p>In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter traces by signal attributes:</p>
 <ul class="simple">
-<li><p>Find severe interactions: <code class="docutils literal notranslate"><span class="pre">signals.quality</span> <span class="pre">=</span> <span class="pre">"Severe"</span></code></p></li>
-<li><p>Find frustrated users: <code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code></p></li>
+<li><p>Find severe interactions: <code class="docutils literal notranslate"><span class="pre">signals.quality</span> <span class="pre">=</span> <span class="pre">"severe"</span></code></p></li>
+<li><p>Find disengaged users: <code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code></p></li>
+<li><p>Find misaligned interactions: <code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.count</span> <span class="pre">&gt;</span> <span class="pre">3</span></code></p></li>
+<li><p>Find tool failures: <code class="docutils literal notranslate"><span class="pre">signals.execution.failure.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code></p></li>
+<li><p>Find external issues: <code class="docutils literal notranslate"><span class="pre">signals.environment.exhaustion.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code></p></li>
 <li><p>Find inefficient flows: <code class="docutils literal notranslate"><span class="pre">signals.efficiency_score</span> <span class="pre">&lt;</span> <span class="pre">0.5</span></code></p></li>
-<li><p>Find escalations: <code class="docutils literal notranslate"><span class="pre">signals.escalation.requested</span> <span class="pre">=</span> <span class="pre">"true"</span></code></p></li>
 </ul>
-<p>For complete details on all available signals, detection methods, and best practices, see the <a class="reference internal" href="../../concepts/signals.html"><span class="doc">Signals™</span></a> guide.</p>
+<p>For complete details on all 20 leaf signal types, severity scheme, legacy attribute deprecation, and best practices, see the <a class="reference internal" href="../../concepts/signals.html"><span class="doc">Signals™</span></a> guide.</p>
 </section>
 <section id="custom-span-attributes">
 <h2>Custom Span Attributes<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#custom-span-attributes" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#custom-span-attributes'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -792,7 +806,7 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 23, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 24, 2026. </p>
 </div>
 </div>
 </footer>

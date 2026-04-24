@@ -162,300 +162,685 @@
 <div id="content" role="main">
 <section id="signals">
 <h1>Signals™<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#signals"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h1>
-<p>Agentic Signals are behavioral and executions quality indicators that act as early warning signs of agent performance—highlighting both brilliant successes and <strong>severe failures</strong>. These signals are computed directly from conversation traces without requiring manual labeling or domain expertise, making them practical for production observability at scale.</p>
-<section id="the-problem-knowing-what-s-good">
-<h2>The Problem: Knowing What’s “Good”<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#the-problem-knowing-what-s-good" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#the-problem-knowing-what-s-good'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>One of the hardest parts of building agents is measuring how well they perform in the real world.</p>
-<p><strong>Offline testing</strong> relies on hand-picked examples and happy-path scenarios, missing the messy diversity of real usage. Developers manually prompt models, evaluate responses, and tune prompts by guesswork—a slow, incomplete feedback loop.</p>
-<p><strong>Production debugging</strong> floods developers with traces and logs but provides little guidance on which interactions actually matter. Finding failures means painstakingly reconstructing sessions and manually labeling quality issues.</p>
-<p>You can’t score every response with an LLM-as-judge (too expensive, too slow) or manually review every trace (doesn’t scale). What you need are <strong>behavioral signals</strong>—fast, economical proxies that don’t label quality outright but dramatically shrink the search space, pointing to sessions most likely to be broken or brilliant.</p>
+<p>Agentic Signals are lightweight, model-free behavioral indicators computed
+from live interaction trajectories and attached to your existing
+OpenTelemetry traces. They are the instrumentation layer of a closed-loop
+improvement flywheel for agents — turning raw production traffic into
+prioritized data that can drive prompt, routing, and model updates without
+running an LLM-as-judge on every session.</p>
+<p>The framework implemented here follows the taxonomy and detector design in
+<em>Signals: Trajectory Sampling and Triage for Agentic Interactions</em>
+(<a class="reference external" href="https://arxiv.org/abs/2604.00356" rel="nofollow noopener">Chen et al., 2026<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>). All detectors
+are computed without model calls; the entire pipeline attaches structured
+attributes and span events to existing spans so your dashboards and alerts
+work unmodified.</p>
+<section id="why-signals-matter-the-improvement-flywheel">
+<h2>Why Signals Matter: The Improvement Flywheel<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#why-signals-matter-the-improvement-flywheel" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#why-signals-matter-the-improvement-flywheel'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Agentic applications are increasingly deployed at scale, yet improving them
+after deployment remains difficult. Production trajectories are long,
+numerous, and non-deterministic, making exhaustive human review infeasible
+and auxiliary LLM evaluation expensive. As a result, teams face a
+bottleneck: they cannot score every response, inspect every trace, or
+reliably identify which failures and successes should inform the next model
+update. Without a low-cost triage layer, the feedback loop from production
+behavior to model improvement remains incomplete.</p>
+<p>Signals close this loop by cheaply identifying which interactions among
+millions are worth inspecting:</p>
+<ol class="arabic simple">
+<li><p><strong>Instrument.</strong> Live trajectories are scored with model-free signals
+attached as structured attributes on existing OpenTelemetry spans,
+organized under a fixed taxonomy of interaction, execution, and
+environment signals. This requires no additional model calls,
+infrastructure, or changes to online agent behavior.</p></li>
+<li><p><strong>Sample &amp; triage.</strong> Signal attributes act as filters: they surface
+severe failures, retrieve representative exemplars, and exclude the
+uninformative middle. In our experiments, signal-based sampling
+achieves 82% informativeness on <span class="math notranslate nohighlight">\(\tau\)</span>-bench, compared with 54%
+for random sampling, yielding a 1.52× efficiency gain per informative
+trajectory.</p></li>
+<li><p><strong>Data Construction.</strong> The triaged subset becomes targeted input for
+constructing preference datasets or supervised fine-tuning datasets
+from production trajectories.</p></li>
+<li><p><strong>Model Optimization.</strong> The resulting preference or supervised
+fine-tuning data is used to update the model through methods such as
+DPO, RLHF, or supervised fine-tuning, so optimization is driven by
+targeted production behavior rather than undifferentiated trace noise.</p></li>
+<li><p><strong>Deploy.</strong> The improved model is deployed and immediately
+re-instrumented with the same signals, enabling teams to measure
+whether the change improved production behavior and to feed the next
+iteration.</p></li>
+</ol>
+<p>This loop depends on the first step being nearly free. The framework is
+therefore designed around fixed-taxonomy, model-free detectors with
+<span class="math notranslate nohighlight">\(O(\text{messages})\)</span> cost, no online behavior change, and no
+dependence on expensive evaluator models. By making production traces
+searchable and sampleable at scale, signals turn raw agent telemetry into a
+practical model-optimization flywheel.</p>
 </section>
 <section id="what-are-behavioral-signals">
 <h2>What Are Behavioral Signals?<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#what-are-behavioral-signals" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#what-are-behavioral-signals'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Behavioral signals are canaries in the coal mine—early, objective indicators that something may have gone wrong (or gone exceptionally well). They don’t explain <em>why</em> an agent failed, but they reliably signal <em>where</em> attention is needed.</p>
+<p>Behavioral signals are canaries in the coal mine — early, objective
+indicators that something may have gone wrong (or gone exceptionally well).
+They don’t explain <em>why</em> an agent failed, but they reliably signal <em>where</em>
+attention is needed.</p>
 <p>These signals emerge naturally from the rhythm of interaction:</p>
 <ul class="simple">
-<li><p>A user rephrasing the same request</p></li>
+<li><p>A user rephrasing or correcting the same request</p></li>
 <li><p>Sharp increases in conversation length</p></li>
-<li><p>Frustrated follow-up messages (ALL CAPS, “this doesn’t work”, excessive !!!/???)</p></li>
-<li><p>Agent repetition / looping</p></li>
-<li><p>Expressions of gratitude or satisfaction</p></li>
-<li><p>Requests to speak to a human / contact support</p></li>
+<li><p>Negative stance markers (“this doesn’t work”, ALL CAPS, excessive !!! or ???)</p></li>
+<li><p>Agent repetition or tool-call loops</p></li>
+<li><p>Expressions of gratitude, confirmation, or task success</p></li>
+<li><p>Requests for a human agent or explicit quit intent</p></li>
+<li><p>Tool errors, timeouts, rate limits, and context-window exhaustion</p></li>
 </ul>
-<p>Individually, these clues are shallow; together, they form a fingerprint of agent performance. Embedded directly into traces, they make it easy to spot friction as it happens: where users struggle, where agents loop, and where escalations occur.</p>
+<p>Individually, these clues are shallow; together, they form a fingerprint of
+agent performance. Embedded directly into traces, they make it easy to spot
+friction as it happens: where users struggle, where agents loop, where tool
+failures cluster, and where escalations occur.</p>
 </section>
-<section id="signals-vs-response-quality">
-<h2>Signals vs Response Quality<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#signals-vs-response-quality" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#signals-vs-response-quality'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Behavioral signals and response quality are complementary.</p>
-<dl class="simple">
-<dt><strong>Response Quality</strong></dt><dd><p>Domain-specific correctness: did the agent do the right thing given business rules, user intent, and operational context? This often requires subject-matter experts or outcome instrumentation and is time-intensive but irreplaceable.</p>
-</dd>
-<dt><strong>Behavioral Signals</strong></dt><dd><p>Observable patterns that correlate with quality: high repair frequency, excessive turns, frustration markers, repetition, escalation, and positive feedback. Fast to compute and valuable for prioritizing which traces deserve inspection.</p>
-</dd>
-</dl>
-<p>Used together, signals tell you <em>where to look</em>, and quality evaluation tells you <em>what went wrong (or right)</em>.</p>
+<section id="signal-taxonomy">
+<h2>Signal Taxonomy<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#signal-taxonomy" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#signal-taxonomy'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Signals are organized into three top-level <strong>layers</strong>, each with its own
+intent. Every detected signal belongs to exactly one leaf type under one of
+seven categories. The per-category summaries and leaf-type descriptions
+below are borrowed verbatim from the reference implementation at
+<a class="reference external" href="https://github.com/katanemo/signals" rel="nofollow noopener">katanemo/signals<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> to keep the
+documentation and the detector contract in sync.</p>
+<section id="interaction-user-agent-conversational-quality">
+<h3>Interaction — user ↔ agent conversational quality<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#interaction-user-agent-conversational-quality" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#interaction-user-agent-conversational-quality'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p><strong>Misalignment</strong> — Misalignment signals capture semantic or intent mismatch
+between the user and the agent, such as rephrasing, corrections,
+clarifications, and restated constraints. These signals do not assert that
+either party is “wrong”; they only indicate that shared understanding has
+not yet been established.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Leaf signal type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">misalignment.correction</span></code></p></td>
+<td><p>Explicit corrections, negations, mistake acknowledgments.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">misalignment.rephrase</span></code></p></td>
+<td><p>Rephrasing indicators, alternative explanations.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">misalignment.clarification</span></code></p></td>
+<td><p>Confusion expressions, requests for clarification.</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Stagnation</strong> — Stagnation signals capture cases where the discourse
+continues but fails to make visible progress. This includes near-duplicate
+assistant responses, circular explanations, repeated scaffolding, and other
+forms of linguistic degeneration.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Leaf signal type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">stagnation.dragging</span></code></p></td>
+<td><p>Excessive turn count, conversation not progressing efficiently.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stagnation.repetition</span></code></p></td>
+<td><p>Near-duplicate or repetitive assistant responses.</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Disengagement</strong> — Disengagement signals mark the withdrawal of
+cooperative intent from the interaction. These include explicit requests to
+exit the agent flow (e.g., “talk to a human”), strong negative stances, and
+abandonment markers.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Leaf signal type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">disengagement.escalation</span></code></p></td>
+<td><p>Requests for human agent or support.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">disengagement.quit</span></code></p></td>
+<td><p>Notification to quit or leave.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">disengagement.negative_stance</span></code></p></td>
+<td><p>Complaints, frustration, negative sentiment.</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Satisfaction</strong> — Satisfaction signals indicate explicit stabilization and
+completion of the interaction. These include expressions of gratitude,
+success confirmations, and closing utterances. We use these signals to
+sample exemplar traces rather than to assign quality scores.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Leaf signal type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">satisfaction.gratitude</span></code></p></td>
+<td><p>Expressions of thanks and appreciation.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">satisfaction.confirmation</span></code></p></td>
+<td><p>Explicit satisfaction expressions.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">satisfaction.success</span></code></p></td>
+<td><p>Confirmation of task completion or understanding.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="execution-agent-caused-action-quality">
+<h3>Execution — agent-caused action quality<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#execution-agent-caused-action-quality" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#execution-agent-caused-action-quality'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p><strong>Failure</strong> — Detects agent-caused failures in tool/function usage. These
+are issues the agent is responsible for (as opposed to environment failures
+which are external system issues). Requires tool-call traces
+(<code class="docutils literal notranslate"><span class="pre">function_call</span></code> / <code class="docutils literal notranslate"><span class="pre">observation</span></code>) to fire.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Leaf signal type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">execution.failure.invalid_args</span></code></p></td>
+<td><p>Wrong type, missing required field.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">execution.failure.bad_query</span></code></p></td>
+<td><p>Empty results due to overly narrow/wrong query.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">execution.failure.tool_not_found</span></code></p></td>
+<td><p>Agent called non-existent tool.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">execution.failure.auth_misuse</span></code></p></td>
+<td><p>Agent didn’t pass credentials correctly.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">execution.failure.state_error</span></code></p></td>
+<td><p>Tool called in wrong state/order.</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Loops</strong> — Detects behavioral patterns where the agent gets stuck
+repeating tool calls. These are distinct from
+<code class="docutils literal notranslate"><span class="pre">interaction.stagnation</span></code> (conversation text repetition) and
+<code class="docutils literal notranslate"><span class="pre">execution.failure</span></code> (single tool errors) — these detect tool-level
+behavioral loops.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Leaf signal type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">execution.loops.retry</span></code></p></td>
+<td><p>Same tool with identical args ≥3 times.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">execution.loops.parameter_drift</span></code></p></td>
+<td><p>Same tool with varied args ≥3 times.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">execution.loops.oscillation</span></code></p></td>
+<td><p>Multi-tool A→B→A→B pattern ≥3 cycles.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="environment-external-system-boundary-conditions">
+<h3>Environment — external system / boundary conditions<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#environment-external-system-boundary-conditions" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#environment-external-system-boundary-conditions'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p><strong>Exhaustion</strong> — Detects failures and constraints arising from the
+surrounding system rather than the agent’s internal policy or reasoning.
+These are external issues the agent cannot control.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Leaf signal type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">environment.exhaustion.api_error</span></code></p></td>
+<td><p>5xx errors, service unavailable.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">environment.exhaustion.timeout</span></code></p></td>
+<td><p>Connection/read timeouts.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">environment.exhaustion.rate_limit</span></code></p></td>
+<td><p>429, quota exceeded.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">environment.exhaustion.network</span></code></p></td>
+<td><p>Connection refused, DNS errors.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">environment.exhaustion.malformed_response</span></code></p></td>
+<td><p>Invalid JSON, unexpected schema.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">environment.exhaustion.context_overflow</span></code></p></td>
+<td><p>Token/context limit exceeded.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="how-it-works">
 <h2>How It Works<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#how-it-works" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#how-it-works'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Signals are computed automatically by the gateway and emitted as <strong>OpenTelemetry trace attributes</strong> to your existing observability stack (Jaeger, Honeycomb, Grafana Tempo, etc.). No additional libraries or instrumentation required—just configure your OTEL collector endpoint.</p>
-<p>Each conversation trace is enriched with signal attributes that you can query, filter, and visualize in your observability platform. The gateway analyzes message content (performing text normalization, Unicode handling, and pattern matching) to compute behavioral signals in real-time.</p>
-<p><strong>OTEL Trace Attributes</strong></p>
-<p>Signal data is exported as structured span attributes:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.quality</span></code> - Overall assessment (Excellent/Good/Neutral/Poor/Severe)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.turn_count</span></code> - Total number of turns in the conversation</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.efficiency_score</span></code> - Efficiency metric (0.0-1.0)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.repair.count</span></code> - Number of repair attempts detected (when present)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.repair.ratio</span></code> - Ratio of repairs to user turns (when present)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.frustration.count</span></code> - Number of frustration indicators detected</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span></code> - Frustration level (0-3)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.repetition.count</span></code> - Number of repetition instances detected</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.escalation.requested</span></code> - Boolean escalation flag (“true” when present)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">signals.positive_feedback.count</span></code> - Number of positive feedback indicators</p></li>
-</ul>
-<p><strong>Visual Flag Marker</strong></p>
-<p>When concerning signals are detected (frustration, looping, escalation, or poor/severe quality), the flag marker <strong>🚩</strong> is automatically appended to the span’s operation name, making problematic traces easy to spot in your trace visualizations.</p>
-<p><strong>Querying in Your Observability Platform</strong></p>
-<p>Example queries:</p>
-<ul class="simple">
-<li><p>Find all severe interactions: <code class="docutils literal notranslate"><span class="pre">signals.quality</span> <span class="pre">=</span> <span class="pre">"Severe"</span></code></p></li>
-<li><p>Find flagged traces: search for <strong>🚩</strong> in span names</p></li>
-<li><p>Find long conversations: <code class="docutils literal notranslate"><span class="pre">signals.turn_count</span> <span class="pre">&gt;</span> <span class="pre">10</span></code></p></li>
-<li><p>Find inefficient interactions: <code class="docutils literal notranslate"><span class="pre">signals.efficiency_score</span> <span class="pre">&lt;</span> <span class="pre">0.5</span></code></p></li>
-<li><p>Find high repair rates: <code class="docutils literal notranslate"><span class="pre">signals.repair.ratio</span> <span class="pre">&gt;</span> <span class="pre">0.3</span></code></p></li>
-<li><p>Find frustrated users: <code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code></p></li>
-<li><p>Find looping agents: <code class="docutils literal notranslate"><span class="pre">signals.repetition.count</span> <span class="pre">&gt;=</span> <span class="pre">3</span></code></p></li>
-<li><p>Find positive interactions: <code class="docutils literal notranslate"><span class="pre">signals.positive_feedback.count</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code></p></li>
-<li><p>Find escalations: <code class="docutils literal notranslate"><span class="pre">signals.escalation.requested</span> <span class="pre">=</span> <span class="pre">"true"</span></code></p></li>
-</ul>
+<p>Signals are computed automatically by the gateway after each assistant
+response and emitted as <strong>OpenTelemetry trace attributes</strong> and <strong>span events</strong>
+on your existing spans. No additional libraries or instrumentation are
+required — just configure your OTEL collector endpoint as usual.</p>
+<p>Each conversation trace is enriched with layered signal attributes
+(category-level counts and severities) plus one span event per detected
+signal instance (with confidence, snippet, and per-detector metadata).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Signal analysis is enabled by default and runs on the request path. It
+does <strong>not</strong> affect the response sent to the client. Set
+<code class="docutils literal notranslate"><span class="pre">overrides.disable_signals:</span> <span class="pre">true</span></code> in your Plano config to skip this
+CPU-heavy analysis (see the configuration reference).</p>
+</div>
+</section>
+<section id="otel-span-attributes">
+<h2>OTel Span Attributes<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#otel-span-attributes" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#otel-span-attributes'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Signal data is exported as structured OTel attributes. There are two tiers:
+<strong>top-level</strong> attributes (always emitted on spans that carry signal
+analysis) and <strong>layered</strong> attributes (emitted only when the corresponding
+category has at least one signal instance).</p>
+<section id="top-level-attributes">
+<h3>Top-level attributes<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#top-level-attributes" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#top-level-attributes'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>Always emitted once signals are computed.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 40.0%"/>
+<col style="width: 15.0%"/>
+<col style="width: 45.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Attribute</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Value</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.quality</span></code></p></td>
+<td><p>string</p></td>
+<td><p>One of <code class="docutils literal notranslate"><span class="pre">excellent</span></code>, <code class="docutils literal notranslate"><span class="pre">good</span></code>, <code class="docutils literal notranslate"><span class="pre">neutral</span></code>, <code class="docutils literal notranslate"><span class="pre">poor</span></code>, <code class="docutils literal notranslate"><span class="pre">severe</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.quality_score</span></code></p></td>
+<td><p>float</p></td>
+<td><p>Numeric score 0.0 – 100.0 that feeds the quality bucket.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.turn_count</span></code></p></td>
+<td><p>int</p></td>
+<td><p>Total number of user + assistant turns in the interaction.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.efficiency_score</span></code></p></td>
+<td><p>float</p></td>
+<td><p>Efficiency metric 0.0 – 1.0 (stays at 1.0 up to baseline turns,
+then decays: <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">0.3</span> <span class="pre">*</span> <span class="pre">(turns</span> <span class="pre">-</span> <span class="pre">baseline))</span></code>).</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="layered-attributes">
+<h3>Layered attributes<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#layered-attributes" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#layered-attributes'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>Emitted per category, only when <code class="docutils literal notranslate"><span class="pre">count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>. One <code class="docutils literal notranslate"><span class="pre">.count</span></code> and one
+<code class="docutils literal notranslate"><span class="pre">.severity</span></code> attribute per category. Severity is a 0–3 bucket (see
+<a class="reference internal" href="#severity-levels">Severity levels</a> below).</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50.0%"/>
+<col style="width: 50.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Attribute (emitted when fired)</p></th>
+<th class="head"><p>Source</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.count</span></code></p></td>
+<td><p>Any <code class="docutils literal notranslate"><span class="pre">misalignment.*</span></code> leaf type</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.severity</span></code></p></td>
+<td><p>“</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.stagnation.count</span></code></p></td>
+<td><p>Any <code class="docutils literal notranslate"><span class="pre">stagnation.*</span></code> leaf type</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.stagnation.severity</span></code></p></td>
+<td><p>“</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.count</span></code></p></td>
+<td><p>Any <code class="docutils literal notranslate"><span class="pre">disengagement.*</span></code> leaf type</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.severity</span></code></p></td>
+<td><p>“</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.satisfaction.count</span></code></p></td>
+<td><p>Any <code class="docutils literal notranslate"><span class="pre">satisfaction.*</span></code> leaf type</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.satisfaction.severity</span></code></p></td>
+<td><p>“</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.execution.failure.count</span></code></p></td>
+<td><p>Any <code class="docutils literal notranslate"><span class="pre">failure.*</span></code> leaf type</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.execution.failure.severity</span></code></p></td>
+<td><p>“</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.execution.loops.count</span></code></p></td>
+<td><p>Any <code class="docutils literal notranslate"><span class="pre">loops.*</span></code> leaf type</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.execution.loops.severity</span></code></p></td>
+<td><p>“</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.environment.exhaustion.count</span></code></p></td>
+<td><p>Any <code class="docutils literal notranslate"><span class="pre">exhaustion.*</span></code> leaf type</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.environment.exhaustion.severity</span></code></p></td>
+<td><p>“</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="legacy-attributes-deprecated-still-emitted">
+<h3>Legacy attributes (deprecated, still emitted)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#legacy-attributes-deprecated-still-emitted" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#legacy-attributes-deprecated-still-emitted'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>The following aggregate keys pre-date the paper taxonomy and are still
+emitted for one release so existing dashboards keep working. They are
+derived from the layered counts above and will be removed in a future
+release. Migrate to the layered keys when convenient.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50.0%"/>
+<col style="width: 50.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Legacy attribute</p></th>
+<th class="head"><p>Layered equivalent</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.follow_up.repair.count</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.count</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.follow_up.repair.ratio</span></code></p></td>
+<td><p>(computed: <code class="docutils literal notranslate"><span class="pre">misalignment.count</span> <span class="pre">/</span> <span class="pre">max(user_turns,</span> <span class="pre">1)</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.frustration.count</span></code></p></td>
+<td><p>Count of <code class="docutils literal notranslate"><span class="pre">disengagement.negative_stance</span></code> instances</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span></code></p></td>
+<td><p>Derived severity bucket of the above</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.repetition.count</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.stagnation.count</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.escalation.requested</span></code></p></td>
+<td><p>True if any <code class="docutils literal notranslate"><span class="pre">disengagement.escalation</span></code> or <code class="docutils literal notranslate"><span class="pre">disengagement.quit</span></code> fired</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.positive_feedback.count</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.satisfaction.count</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="span-events">
+<h2>Span Events<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#span-events" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#span-events'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>In addition to span attributes, every detected signal instance is emitted as
+a span event named <code class="docutils literal notranslate"><span class="pre">signal.&lt;dotted-type&gt;</span></code> (e.g.
+<code class="docutils literal notranslate"><span class="pre">signal.interaction.satisfaction.gratitude</span></code>). Each event carries:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 15.0%"/>
+<col style="width: 55.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Event attribute</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signal.type</span></code></p></td>
+<td><p>string</p></td>
+<td><p>Full dotted signal type (same as the event name suffix).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signal.message_index</span></code></p></td>
+<td><p>int</p></td>
+<td><p>Zero-based index of the message that triggered the signal.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signal.confidence</span></code></p></td>
+<td><p>float</p></td>
+<td><p>Detector confidence in [0.0, 1.0].</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signal.snippet</span></code></p></td>
+<td><p>string</p></td>
+<td><p>Matched substring from the source message (when available).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signal.metadata</span></code></p></td>
+<td><p>string (JSON)</p></td>
+<td><p>Per-detector metadata (pattern name, ratio values, etc.).</p></td>
+</tr>
+</tbody>
+</table>
+<p>Span events are the right surface for drill-down: attribute filters narrow
+traces, then events tell you <em>which messages</em> fired <em>which signals</em> with
+<em>what evidence</em>.</p>
+<section id="visual-flag-marker">
+<h3>Visual Flag Marker<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#visual-flag-marker" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#visual-flag-marker'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>When concerning signals are detected (disengagement present, stagnation
+count &gt; 2, any execution failure / loop, or overall quality <code class="docutils literal notranslate"><span class="pre">poor</span></code>/
+<code class="docutils literal notranslate"><span class="pre">severe</span></code>), the marker <code class="docutils literal notranslate"><span class="pre">[!]</span></code> is appended to the span’s operation name.
+This makes flagged sessions immediately visible in trace UIs without
+requiring attribute filtering.</p>
+</section>
+<section id="querying-in-your-observability-platform">
+<h3>Querying in Your Observability Platform<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#querying-in-your-observability-platform" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#querying-in-your-observability-platform'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>Example queries against the layered keys:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="n">signals</span><span class="o">.</span><span class="n">quality</span> <span class="o">=</span> <span class="s2">"severe"</span>
+</span><span id="line-2"><span class="n">signals</span><span class="o">.</span><span class="n">turn_count</span> <span class="o">&gt;</span> <span class="mi">10</span>
+</span><span id="line-3"><span class="n">signals</span><span class="o">.</span><span class="n">efficiency_score</span> <span class="o">&lt;</span> <span class="mf">0.5</span>
+</span><span id="line-4"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">severity</span> <span class="o">&gt;=</span> <span class="mi">2</span>
+</span><span id="line-5"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">misalignment</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">3</span>
+</span><span id="line-6"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">satisfaction</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="n">AND</span> <span class="n">signals</span><span class="o">.</span><span class="n">quality</span> <span class="o">=</span> <span class="s2">"good"</span>
+</span><span id="line-7"><span class="n">signals</span><span class="o">.</span><span class="n">execution</span><span class="o">.</span><span class="n">failure</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span>
+</span><span id="line-8"><span class="n">signals</span><span class="o">.</span><span class="n">environment</span><span class="o">.</span><span class="n">exhaustion</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span>
+</span></code></pre></div>
+</div>
+<p>For flagged sessions, search for <code class="docutils literal notranslate"><span class="pre">[!]</span></code> in span names.</p>
 <a class="reference internal image-reference" href="../_images/signals_trace.png"><img alt="../_images/signals_trace.png" class="align-center" src="../_images/signals_trace.png" style="width: 100%;"/>
 </a>
 </section>
-<section id="core-signal-types">
-<h2>Core Signal Types<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#core-signal-types" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#core-signal-types'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>The signals system tracks six categories of behavioral indicators.</p>
-<section id="turn-count-efficiency">
-<h3>Turn Count &amp; Efficiency<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#turn-count-efficiency" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#turn-count-efficiency'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<dl class="simple">
-<dt><strong>What it measures</strong></dt><dd><p>Number of user–assistant exchanges.</p>
-</dd>
-<dt><strong>Why it matters</strong></dt><dd><p>Long conversations often indicate unclear intent resolution, confusion, or inefficiency. Very short conversations can correlate with crisp resolution.</p>
-</dd>
-</dl>
-<p><strong>Key metrics</strong></p>
-<ul class="simple">
-<li><p>Total turn count</p></li>
-<li><p>Warning thresholds (concerning: &gt;7 turns, excessive: &gt;12 turns)</p></li>
-<li><p>Efficiency score (0.0–1.0)</p></li>
-</ul>
-<dl>
-<dt><strong>Efficiency scoring</strong></dt><dd><p>Baseline expectation is ~5 turns (tunable). Efficiency stays at 1.0 up to the baseline, then declines with an inverse penalty as turns exceed baseline:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="n">efficiency</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="p">(</span><span class="n">turns</span> <span class="o">-</span> <span class="n">baseline</span><span class="p">))</span>
-</span></code></pre></div>
-</div>
-</dd>
-</dl>
 </section>
-<section id="follow-up-repair-frequency">
-<h3>Follow-Up &amp; Repair Frequency<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#follow-up-repair-frequency" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#follow-up-repair-frequency'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<dl class="simple">
-<dt><strong>What it measures</strong></dt><dd><p>How often users clarify, correct, or rephrase requests. This is a <strong>user signal</strong> tracking query reformulation behavior—when users must repair or rephrase their requests because the agent didn’t understand or respond appropriately.</p>
-</dd>
-<dt><strong>Why it matters</strong></dt><dd><p>High repair frequency is a proxy for misunderstanding or intent drift. When users repeatedly rephrase the same request, it indicates the agent is failing to grasp or act on the user’s intent.</p>
-</dd>
-</dl>
-<p><strong>Key metrics</strong></p>
-<ul class="simple">
-<li><p>Repair count and ratio (repairs / user turns)</p></li>
-<li><p>Concerning threshold: &gt;30% repair ratio</p></li>
-<li><p>Detected repair phrases (exact or fuzzy)</p></li>
-</ul>
-<p><strong>Common patterns detected</strong></p>
-<ul class="simple">
-<li><p>Explicit corrections: “I meant”, “correction”</p></li>
-<li><p>Negations: “No, I…”, “that’s not”</p></li>
-<li><p>Rephrasing: “let me rephrase”, “to clarify”</p></li>
-<li><p>Mistake acknowledgment: “my mistake”, “I was wrong”</p></li>
-<li><p>“Similar rephrase” heuristic based on token overlap (with stopwords downweighted)</p></li>
-</ul>
-</section>
-<section id="user-frustration">
-<h3>User Frustration<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#user-frustration" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#user-frustration'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<dl class="simple">
-<dt><strong>What it measures</strong></dt><dd><p>Observable frustration indicators and emotional escalation.</p>
-</dd>
-<dt><strong>Why it matters</strong></dt><dd><p>Catching frustration early enables intervention before users abandon or escalate.</p>
-</dd>
-</dl>
-<p><strong>Detection patterns</strong></p>
-<ul class="simple">
-<li><p><strong>Complaints</strong>: “this doesn’t work”, “not helpful”, “waste of time”</p></li>
-<li><p><strong>Confusion</strong>: “I don’t understand”, “makes no sense”, “I’m confused”</p></li>
-<li><p><strong>Tone markers</strong>:</p>
-<ul>
-<li><p>ALL CAPS (&gt;=10 alphabetic chars and &gt;=80% uppercase)</p></li>
-<li><p>Excessive punctuation (&gt;=3 exclamation marks or &gt;=3 question marks)</p></li>
-</ul>
-</li>
-<li><p><strong>Profanity</strong>: token-based (avoids substring false positives like “absolute” -&gt; “bs”)</p></li>
-</ul>
-<p><strong>Severity levels</strong></p>
-<ul class="simple">
-<li><p><strong>None (0)</strong>: no indicators</p></li>
-<li><p><strong>Mild (1)</strong>: 1–2 indicators</p></li>
-<li><p><strong>Moderate (2)</strong>: 3–4 indicators</p></li>
-<li><p><strong>Severe (3)</strong>: 5+ indicators</p></li>
-</ul>
-</section>
-<section id="repetition-looping">
-<h3>Repetition &amp; Looping<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#repetition-looping" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#repetition-looping'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<dl class="simple">
-<dt><strong>What it measures</strong></dt><dd><p>Assistant repetition / degenerative loops. This is an <strong>assistant signal</strong> tracking when the agent repeats itself, fails to follow instructions, or gets stuck in loops—indicating the agent is not making progress or adapting its responses.</p>
-</dd>
-<dt><strong>Why it matters</strong></dt><dd><p>Often indicates missing state tracking, broken tool integration, prompt issues, or the agent ignoring user corrections. High repetition means the agent is not learning from the conversation context.</p>
-</dd>
-</dl>
-<p><strong>Detection method</strong></p>
-<ul class="simple">
-<li><p>Compare assistant messages using <strong>bigram Jaccard similarity</strong></p></li>
-<li><p>Classify:</p>
-<ul>
-<li><p><strong>Exact</strong>: similarity &gt;= 0.85</p></li>
-<li><p><strong>Near-duplicate</strong>: similarity &gt;= 0.50</p></li>
-</ul>
-</li>
-<li><p>Looping is flagged when repetition instances exceed 2 in a session.</p></li>
-</ul>
-<p><strong>Severity levels</strong></p>
+<section id="severity-levels">
+<h2>Severity Levels<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#severity-levels" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#severity-levels'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Every category aggregates its leaf signal counts into a severity bucket used
+by both the layered <code class="docutils literal notranslate"><span class="pre">.severity</span></code> attribute and the overall quality score.</p>
 <ul class="simple">
 <li><p><strong>None (0)</strong>: 0 instances</p></li>
 <li><p><strong>Mild (1)</strong>: 1–2 instances</p></li>
 <li><p><strong>Moderate (2)</strong>: 3–4 instances</p></li>
 <li><p><strong>Severe (3)</strong>: 5+ instances</p></li>
 </ul>
-</section>
-<section id="positive-feedback">
-<h3>Positive Feedback<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#positive-feedback" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#positive-feedback'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<dl class="simple">
-<dt><strong>What it measures</strong></dt><dd><p>User expressions of satisfaction, gratitude, and success.</p>
-</dd>
-<dt><strong>Why it matters</strong></dt><dd><p>Strong positive signals identify exemplar traces for prompt engineering and evaluation.</p>
-</dd>
-</dl>
-<p><strong>Detection patterns</strong></p>
-<ul class="simple">
-<li><p>Gratitude: “thank you”, “appreciate it”</p></li>
-<li><p>Satisfaction: “that’s great”, “awesome”, “love it”</p></li>
-<li><p>Success confirmation: “got it”, “that worked”, “perfect”</p></li>
-</ul>
-<p><strong>Confidence scoring</strong></p>
-<ul class="simple">
-<li><p>1 indicator: 0.6</p></li>
-<li><p>2 indicators: 0.8</p></li>
-<li><p>3+ indicators: 0.95</p></li>
-</ul>
-</section>
-<section id="escalation-requests">
-<h3>Escalation Requests<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#escalation-requests" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#escalation-requests'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<dl class="simple">
-<dt><strong>What it measures</strong></dt><dd><p>Requests for human help/support or threats to quit.</p>
-</dd>
-<dt><strong>Why it matters</strong></dt><dd><p>Escalation is a strong signal that the agent failed to resolve the interaction.</p>
-</dd>
-</dl>
-<p><strong>Detection patterns</strong></p>
-<ul class="simple">
-<li><p>Human requests: “speak to a human”, “real person”, “live agent”</p></li>
-<li><p>Support: “contact support”, “customer service”, “help desk”</p></li>
-<li><p>Quit threats: “I’m done”, “forget it”, “I give up”</p></li>
-</ul>
-</section>
+<p>Severity is always computed per-category. For example, three instances of
+<code class="docutils literal notranslate"><span class="pre">misalignment.rephrase</span></code> plus two of <code class="docutils literal notranslate"><span class="pre">misalignment.correction</span></code> yield
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.severity</span> <span class="pre">=</span> <span class="pre">3</span></code> (5 instances total).</p>
 </section>
 <section id="overall-quality-assessment">
 <h2>Overall Quality Assessment<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#overall-quality-assessment" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#overall-quality-assessment'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Signals are aggregated into an overall interaction quality on a 5-point scale.</p>
+<p>Signals are aggregated into an overall interaction quality on a 5-point
+scale. The scoring model starts at 50.0 (neutral), adds positive weight for
+satisfaction, and subtracts weight for disengagement, misalignment (when
+ratio &gt; 30% of user turns), stagnation (when count &gt; 2), execution failures,
+execution loops, and environment exhaustion.</p>
+<p>The resulting numeric score maps to the bucket emitted in <code class="docutils literal notranslate"><span class="pre">signals.quality</span></code>:</p>
 <dl class="simple">
-<dt><strong>Excellent</strong></dt><dd><p>Strong positive signals, efficient resolution, low friction.</p>
+<dt><strong>Excellent (75 – 100)</strong></dt><dd><p>Strong positive signals, efficient resolution, low friction.</p>
 </dd>
-<dt><strong>Good</strong></dt><dd><p>Mostly positive with minor clarifications; some back-and-forth but successful.</p>
+<dt><strong>Good (60 – 74)</strong></dt><dd><p>Mostly positive with minor clarifications; some back-and-forth but
+successful.</p>
 </dd>
-<dt><strong>Neutral</strong></dt><dd><p>Mixed signals; neither clearly good nor bad.</p>
+<dt><strong>Neutral (40 – 59)</strong></dt><dd><p>Mixed signals; neither clearly good nor bad.</p>
 </dd>
-<dt><strong>Poor</strong></dt><dd><p>Concerning negative patterns (high friction, multiple repairs, moderate frustration). High abandonment risk.</p>
+<dt><strong>Poor (25 – 39)</strong></dt><dd><p>Concerning negative patterns (high friction, multiple misalignments,
+moderate disengagement, tool failures). High abandonment risk.</p>
 </dd>
-<dt><strong>Severe</strong></dt><dd><p>Critical issues—escalation requested, severe frustration, severe looping, or excessive turns (&gt;12). Requires immediate attention.</p>
+<dt><strong>Severe (0 – 24)</strong></dt><dd><p>Critical issues — escalation requested, severe disengagement, severe
+stagnation, or compounding failures. Requires immediate attention.</p>
 </dd>
 </dl>
-<p>This assessment uses a scoring model that weighs positive factors (efficiency, positive feedback) against negative ones (frustration, repairs, repetition, escalation).</p>
+<p>The raw numeric score is available under <code class="docutils literal notranslate"><span class="pre">signals.quality_score</span></code>.</p>
 </section>
 <section id="sampling-and-prioritization">
 <h2>Sampling and Prioritization<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#sampling-and-prioritization" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#sampling-and-prioritization'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>In production, trace data is overwhelming. Signals provide a lightweight first layer of analysis to prioritize which sessions deserve review.</p>
+<p>In production, trace data is overwhelming. Signals provide a lightweight
+first layer of triage to select the small fraction of trajectories that are
+most likely to be informative. Per the paper, signal-based sampling reaches
+82% informativeness on τ-bench versus 54% for random sampling — a 1.52×
+efficiency gain per informative trajectory.</p>
 <p>Workflow:</p>
 <ol class="arabic simple">
 <li><p>Gateway captures conversation messages and computes signals</p></li>
-<li><p>Signal attributes are emitted to OTEL spans automatically</p></li>
+<li><p>Signal attributes and per-instance events are emitted to OTEL spans</p></li>
 <li><p>Your observability platform ingests and indexes the attributes</p></li>
-<li><p>Query/filter by signal attributes to surface outliers (poor/severe and exemplars)</p></li>
+<li><p>Query / filter by signal attributes to surface outliers and exemplars</p></li>
 <li><p>Review high-information traces to identify improvement opportunities</p></li>
 <li><p>Update prompts, routing, or policies based on findings</p></li>
 <li><p>Redeploy and monitor signal metrics to validate improvements</p></li>
 </ol>
-<p>This creates a reinforcement loop where traces become both diagnostic data and training signal.</p>
+<p>This creates a reinforcement loop where traces become both diagnostic data
+and training signal for prompt engineering, routing policies, and
+preference-data construction.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>An in-gateway triage sampler that selects informative trajectories
+inline — with configurable per-category weights and budgets — is planned
+as a follow-up to this release. Today, sampling is consumer-side: your
+observability platform filters on the signal attributes described above.</p>
+</div>
 </section>
-<section id="trace-filtering-and-telemetry">
-<h2>Trace Filtering and Telemetry<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#trace-filtering-and-telemetry" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#trace-filtering-and-telemetry'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Signal attributes are automatically added to OpenTelemetry spans, making them immediately queryable in your observability platform.</p>
-<p><strong>Visual Filtering</strong></p>
-<p>When concerning signals are detected, the flag marker <strong>🚩</strong> (U+1F6A9) is automatically appended to the span’s operation name. This makes flagged sessions immediately visible in trace visualizations without requiring attribute filtering.</p>
-<p><strong>Example Span Attributes</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-4 🚩"</span>
-</span><span id="line-2"><span class="n">signals</span><span class="o">.</span><span class="n">quality</span> <span class="o">=</span> <span class="s2">"Severe"</span>
-</span><span id="line-3"><span class="n">signals</span><span class="o">.</span><span class="n">turn_count</span> <span class="o">=</span> <span class="mi">15</span>
-</span><span id="line-4"><span class="n">signals</span><span class="o">.</span><span class="n">efficiency_score</span> <span class="o">=</span> <span class="mf">0.234</span>
-</span><span id="line-5"><span class="n">signals</span><span class="o">.</span><span class="n">repair</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">4</span>
-</span><span id="line-6"><span class="n">signals</span><span class="o">.</span><span class="n">repair</span><span class="o">.</span><span class="n">ratio</span> <span class="o">=</span> <span class="mf">0.571</span>
-</span><span id="line-7"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">severity</span> <span class="o">=</span> <span class="mi">3</span>
-</span><span id="line-8"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">5</span>
-</span><span id="line-9"><span class="n">signals</span><span class="o">.</span><span class="n">escalation</span><span class="o">.</span><span class="n">requested</span> <span class="o">=</span> <span class="s2">"true"</span>
-</span><span id="line-10"><span class="n">signals</span><span class="o">.</span><span class="n">repetition</span><span class="o">.</span><span class="n">count</span> <span class="o">=</span> <span class="mi">4</span>
+<section id="example-span">
+<h2>Example Span<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#example-span" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#example-span'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>A concerning session, showing both layered attributes and a per-instance
+event:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-5.2 [!]"</span>
+</span><span id="line-2">
+</span><span id="line-3"><span class="c1"># Top-level</span>
+</span><span id="line-4"><span class="n">signals</span><span class="o">.</span><span class="n">quality</span>            <span class="o">=</span> <span class="s2">"severe"</span>
+</span><span id="line-5"><span class="n">signals</span><span class="o">.</span><span class="n">quality_score</span>      <span class="o">=</span> <span class="mf">0.0</span>
+</span><span id="line-6"><span class="n">signals</span><span class="o">.</span><span class="n">turn_count</span>         <span class="o">=</span> <span class="mi">4</span>
+</span><span id="line-7"><span class="n">signals</span><span class="o">.</span><span class="n">efficiency_score</span>   <span class="o">=</span> <span class="mf">1.0</span>
+</span><span id="line-8">
+</span><span id="line-9"><span class="c1"># Layered (only non-zero categories are emitted)</span>
+</span><span id="line-10"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">count</span>    <span class="o">=</span> <span class="mi">6</span>
+</span><span id="line-11"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">severity</span> <span class="o">=</span> <span class="mi">3</span>
+</span><span id="line-12">
+</span><span id="line-13"><span class="c1"># Legacy (deprecated, emitted while dual-emit is on)</span>
+</span><span id="line-14"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">count</span>     <span class="o">=</span> <span class="mi">4</span>
+</span><span id="line-15"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">severity</span>  <span class="o">=</span> <span class="mi">2</span>
+</span><span id="line-16"><span class="n">signals</span><span class="o">.</span><span class="n">escalation</span><span class="o">.</span><span class="n">requested</span>  <span class="o">=</span> <span class="n">true</span>
+</span><span id="line-17">
+</span><span id="line-18"><span class="c1"># Per-instance span events</span>
+</span><span id="line-19"><span class="n">event</span><span class="p">:</span> <span class="n">signal</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">escalation</span>
+</span><span id="line-20">  <span class="n">signal</span><span class="o">.</span><span class="n">type</span>          <span class="o">=</span> <span class="s2">"interaction.disengagement.escalation"</span>
+</span><span id="line-21">  <span class="n">signal</span><span class="o">.</span><span class="n">message_index</span> <span class="o">=</span> <span class="mi">6</span>
+</span><span id="line-22">  <span class="n">signal</span><span class="o">.</span><span class="n">confidence</span>    <span class="o">=</span> <span class="mf">1.0</span>
+</span><span id="line-23">  <span class="n">signal</span><span class="o">.</span><span class="n">snippet</span>       <span class="o">=</span> <span class="s2">"get me a human"</span>
+</span><span id="line-24">  <span class="n">signal</span><span class="o">.</span><span class="n">metadata</span>      <span class="o">=</span> <span class="p">{</span><span class="s2">"pattern_type"</span><span class="p">:</span><span class="s2">"escalation"</span><span class="p">}</span>
 </span></code></pre></div>
 </div>
-<p><strong>Building Dashboards</strong></p>
-<p>Use signal attributes to build monitoring dashboards in Grafana, Honeycomb, Datadog, etc.:</p>
+</section>
+<section id="building-dashboards">
+<h2>Building Dashboards<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#building-dashboards" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#building-dashboards'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Use signal attributes to build monitoring dashboards in Grafana, Honeycomb,
+Datadog, etc. Prefer the layered keys — they align with the paper taxonomy
+and will outlive the legacy keys.</p>
 <ul class="simple">
 <li><p><strong>Quality distribution</strong>: Count of traces by <code class="docutils literal notranslate"><span class="pre">signals.quality</span></code></p></li>
 <li><p><strong>P95 turn count</strong>: 95th percentile of <code class="docutils literal notranslate"><span class="pre">signals.turn_count</span></code></p></li>
 <li><p><strong>Average efficiency</strong>: Mean of <code class="docutils literal notranslate"><span class="pre">signals.efficiency_score</span></code></p></li>
-<li><p><strong>High repair rate</strong>: Percentage where <code class="docutils literal notranslate"><span class="pre">signals.repair.ratio</span> <span class="pre">&gt;</span> <span class="pre">0.3</span></code></p></li>
-<li><p><strong>Frustration rate</strong>: Percentage where <code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code></p></li>
-<li><p><strong>Escalation rate</strong>: Percentage where <code class="docutils literal notranslate"><span class="pre">signals.escalation.requested</span> <span class="pre">=</span> <span class="pre">"true"</span></code></p></li>
-<li><p><strong>Looping rate</strong>: Percentage where <code class="docutils literal notranslate"><span class="pre">signals.repetition.count</span> <span class="pre">&gt;=</span> <span class="pre">3</span></code></p></li>
-<li><p><strong>Positive feedback rate</strong>: Percentage where <code class="docutils literal notranslate"><span class="pre">signals.positive_feedback.count</span> <span class="pre">&gt;=</span> <span class="pre">1</span></code></p></li>
+<li><p><strong>High misalignment rate</strong>: Percentage where
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.count</span> <span class="pre">&gt;</span> <span class="pre">3</span></code></p></li>
+<li><p><strong>Disengagement rate</strong>: Percentage where
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code></p></li>
+<li><p><strong>Satisfaction rate</strong>: Percentage where
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.satisfaction.count</span> <span class="pre">&gt;=</span> <span class="pre">1</span></code></p></li>
+<li><p><strong>Escalation rate</strong>: Percentage where a <code class="docutils literal notranslate"><span class="pre">disengagement.escalation</span></code> or
+<code class="docutils literal notranslate"><span class="pre">disengagement.quit</span></code> event fired (via span-event filter)</p></li>
+<li><p><strong>Tool-failure rate</strong>: Percentage where
+<code class="docutils literal notranslate"><span class="pre">signals.execution.failure.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code></p></li>
+<li><p><strong>Environment issue rate</strong>: Percentage where
+<code class="docutils literal notranslate"><span class="pre">signals.environment.exhaustion.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code></p></li>
 </ul>
-<p><strong>Creating Alerts</strong></p>
+</section>
+<section id="creating-alerts">
+<h2>Creating Alerts<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#creating-alerts" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#creating-alerts'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>Set up alerts based on signal thresholds:</p>
 <ul class="simple">
-<li><p>Alert when severe interaction count exceeds threshold in 1-hour window</p></li>
-<li><p>Alert on sudden spike in frustration rate (&gt;2x baseline)</p></li>
-<li><p>Alert when escalation rate exceeds 5% of total conversations</p></li>
-<li><p>Alert on degraded efficiency (P95 turn count increases &gt;50%)</p></li>
+<li><p>Alert when <code class="docutils literal notranslate"><span class="pre">signals.quality</span> <span class="pre">=</span> <span class="pre">"severe"</span></code> count exceeds threshold in a
+1-hour window</p></li>
+<li><p>Alert on sudden spike in
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code> (&gt;2× baseline)</p></li>
+<li><p>Alert on sustained <code class="docutils literal notranslate"><span class="pre">signals.execution.failure.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> — agent-caused
+tool issues</p></li>
+<li><p>Alert on spikes in <code class="docutils literal notranslate"><span class="pre">signals.environment.exhaustion.count</span></code> — external
+system degradation</p></li>
+<li><p>Alert on degraded efficiency (P95 <code class="docutils literal notranslate"><span class="pre">signals.turn_count</span></code> up &gt; 50%)</p></li>
 </ul>
 </section>
 <section id="best-practices">
 <h2>Best Practices<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#best-practices" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#best-practices'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>Start simple:</p>
 <ul class="simple">
-<li><p>Alert or page on <strong>Severe</strong> sessions (or on spikes in Severe rate)</p></li>
-<li><p>Review <strong>Poor</strong> sessions within 24 hours</p></li>
-<li><p>Sample <strong>Excellent</strong> sessions as exemplars</p></li>
+<li><p>Alert or page on <code class="docutils literal notranslate"><span class="pre">severe</span></code> sessions (or on spikes in <code class="docutils literal notranslate"><span class="pre">severe</span></code> rate)</p></li>
+<li><p>Review <code class="docutils literal notranslate"><span class="pre">poor</span></code> sessions within 24 hours</p></li>
+<li><p>Sample <code class="docutils literal notranslate"><span class="pre">excellent</span></code> sessions as exemplars</p></li>
 </ul>
 <p>Combine multiple signals to infer failure modes:</p>
 <ul class="simple">
-<li><p>Looping: repetition severity &gt;= 2 + excessive turns</p></li>
-<li><p>User giving up: frustration severity &gt;= 2 + escalation requested</p></li>
-<li><p>Misunderstood intent: repair ratio &gt; 30% + excessive turns</p></li>
-<li><p>Working well: positive feedback + high efficiency + no frustration</p></li>
+<li><p><strong>Silent loop</strong>: <code class="docutils literal notranslate"><span class="pre">signals.interaction.stagnation.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code> +
+<code class="docutils literal notranslate"><span class="pre">signals.turn_count</span></code> above baseline</p></li>
+<li><p><strong>User giving up</strong>: <code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.severity</span> <span class="pre">&gt;=</span> <span class="pre">2</span></code> +
+any escalation event</p></li>
+<li><p><strong>Misunderstood intent</strong>:
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.count</span> <span class="pre">/</span> <span class="pre">user_turns</span> <span class="pre">&gt;</span> <span class="pre">0.3</span></code></p></li>
+<li><p><strong>Agent-caused friction</strong>: <code class="docutils literal notranslate"><span class="pre">signals.execution.failure.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> +
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code></p></li>
+<li><p><strong>External degradation, not agent fault</strong>:
+<code class="docutils literal notranslate"><span class="pre">signals.environment.exhaustion.count</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> while
+<code class="docutils literal notranslate"><span class="pre">signals.execution.failure.count</span> <span class="pre">=</span> <span class="pre">0</span></code></p></li>
+<li><p><strong>Working well</strong>: <code class="docutils literal notranslate"><span class="pre">signals.interaction.satisfaction.count</span> <span class="pre">&gt;=</span> <span class="pre">1</span></code> +
+<code class="docutils literal notranslate"><span class="pre">signals.efficiency_score</span> <span class="pre">&gt;</span> <span class="pre">0.8</span></code> + no disengagement</p></li>
 </ul>
 </section>
 <section id="limitations-and-considerations">
@@ -469,27 +854,36 @@
 </ul>
 <p>Mitigation strategies:</p>
 <ul class="simple">
-<li><p>Periodically sample flagged sessions and measure false positives/negatives</p></li>
+<li><p>Periodically sample flagged sessions and measure false positives / negatives</p></li>
 <li><p>Tune baselines per use case and user population</p></li>
 <li><p>Add domain-specific phrase libraries where needed</p></li>
 <li><p>Combine signals with non-text metrics (tool failures, disconnects, latency)</p></li>
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Behavioral signals complement—but do not replace—domain-specific response quality evaluation. Use signals to prioritize which traces to inspect, then apply domain expertise and outcome checks to diagnose root causes.</p>
+<p>Behavioral signals complement — but do not replace — domain-specific
+response quality evaluation. Use signals to prioritize which traces to
+inspect, then apply domain expertise and outcome checks to diagnose root
+causes.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>The flag marker in the span name provides instant visual feedback in trace UIs, while the structured attributes (<code class="docutils literal notranslate"><span class="pre">signals.quality</span></code>, <code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span></code>, etc.) enable powerful querying and aggregation in your observability platform.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">[!]</span></code> marker in the span name provides instant visual feedback in
+trace UIs, while the structured attributes (<code class="docutils literal notranslate"><span class="pre">signals.quality</span></code>,
+<code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.severity</span></code>, etc.) and per-instance
+span events enable powerful querying and drill-down in your observability
+platform.</p>
 </div>
 </section>
 <section id="see-also">
 <h2>See Also<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#see-also" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#see-also'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="../guides/observability/tracing.html"><span class="doc">Tracing</span></a> - Distributed tracing for agent systems</p></li>
-<li><p><a class="reference internal" href="../guides/observability/monitoring.html"><span class="doc">Monitoring</span></a> - Metrics and dashboards</p></li>
-<li><p><a class="reference internal" href="../guides/observability/access_logging.html"><span class="doc">Access Logging</span></a> - Request/response logging</p></li>
-<li><p><a class="reference internal" href="../guides/observability/observability.html"><span class="doc">Observability</span></a> - Complete observability guide</p></li>
+<li><p><a class="reference external" href="https://arxiv.org/abs/2604.00356" rel="nofollow noopener">Signals: Trajectory Sampling and Triage for Agentic Interactions<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a> — the paper this framework implements</p></li>
+<li><p><a class="reference internal" href="../guides/observability/tracing.html"><span class="doc">Tracing</span></a> — Distributed tracing for agent
+systems</p></li>
+<li><p><a class="reference internal" href="../guides/observability/monitoring.html"><span class="doc">Monitoring</span></a> — Metrics and dashboards</p></li>
+<li><p><a class="reference internal" href="../guides/observability/access_logging.html"><span class="doc">Access Logging</span></a> — Request / response logging</p></li>
+<li><p><a class="reference internal" href="../guides/observability/observability.html"><span class="doc">Observability</span></a> — Complete observability guide</p></li>
 </ul>
 </section>
 </section>
@@ -513,22 +907,32 @@
 </div></div><aside class="hidden text-sm xl:block" id="right-sidebar">
 <div class="sticky top-16 -mt-10 max-h-[calc(100vh-5rem)] h-full overflow-y-auto pt-6 space-y-2"><p class="font-medium">On this page</p>
 <ul>
-<li><a :data-current="activeSection === '#the-problem-knowing-what-s-good'" class="reference internal" href="#the-problem-knowing-what-s-good">The Problem: Knowing What’s “Good”</a></li>
+<li><a :data-current="activeSection === '#why-signals-matter-the-improvement-flywheel'" class="reference internal" href="#why-signals-matter-the-improvement-flywheel">Why Signals Matter: The Improvement Flywheel</a></li>
 <li><a :data-current="activeSection === '#what-are-behavioral-signals'" class="reference internal" href="#what-are-behavioral-signals">What Are Behavioral Signals?</a></li>
-<li><a :data-current="activeSection === '#signals-vs-response-quality'" class="reference internal" href="#signals-vs-response-quality">Signals vs Response Quality</a></li>
-<li><a :data-current="activeSection === '#how-it-works'" class="reference internal" href="#how-it-works">How It Works</a></li>
-<li><a :data-current="activeSection === '#core-signal-types'" class="reference internal" href="#core-signal-types">Core Signal Types</a><ul>
-<li><a :data-current="activeSection === '#turn-count-efficiency'" class="reference internal" href="#turn-count-efficiency">Turn Count &amp; Efficiency</a></li>
-<li><a :data-current="activeSection === '#follow-up-repair-frequency'" class="reference internal" href="#follow-up-repair-frequency">Follow-Up &amp; Repair Frequency</a></li>
-<li><a :data-current="activeSection === '#user-frustration'" class="reference internal" href="#user-frustration">User Frustration</a></li>
-<li><a :data-current="activeSection === '#repetition-looping'" class="reference internal" href="#repetition-looping">Repetition &amp; Looping</a></li>
-<li><a :data-current="activeSection === '#positive-feedback'" class="reference internal" href="#positive-feedback">Positive Feedback</a></li>
-<li><a :data-current="activeSection === '#escalation-requests'" class="reference internal" href="#escalation-requests">Escalation Requests</a></li>
+<li><a :data-current="activeSection === '#signal-taxonomy'" class="reference internal" href="#signal-taxonomy">Signal Taxonomy</a><ul>
+<li><a :data-current="activeSection === '#interaction-user-agent-conversational-quality'" class="reference internal" href="#interaction-user-agent-conversational-quality">Interaction — user ↔ agent conversational quality</a></li>
+<li><a :data-current="activeSection === '#execution-agent-caused-action-quality'" class="reference internal" href="#execution-agent-caused-action-quality">Execution — agent-caused action quality</a></li>
+<li><a :data-current="activeSection === '#environment-external-system-boundary-conditions'" class="reference internal" href="#environment-external-system-boundary-conditions">Environment — external system / boundary conditions</a></li>
 </ul>
 </li>
+<li><a :data-current="activeSection === '#how-it-works'" class="reference internal" href="#how-it-works">How It Works</a></li>
+<li><a :data-current="activeSection === '#otel-span-attributes'" class="reference internal" href="#otel-span-attributes">OTel Span Attributes</a><ul>
+<li><a :data-current="activeSection === '#top-level-attributes'" class="reference internal" href="#top-level-attributes">Top-level attributes</a></li>
+<li><a :data-current="activeSection === '#layered-attributes'" class="reference internal" href="#layered-attributes">Layered attributes</a></li>
+<li><a :data-current="activeSection === '#legacy-attributes-deprecated-still-emitted'" class="reference internal" href="#legacy-attributes-deprecated-still-emitted">Legacy attributes (deprecated, still emitted)</a></li>
+</ul>
+</li>
+<li><a :data-current="activeSection === '#span-events'" class="reference internal" href="#span-events">Span Events</a><ul>
+<li><a :data-current="activeSection === '#visual-flag-marker'" class="reference internal" href="#visual-flag-marker">Visual Flag Marker</a></li>
+<li><a :data-current="activeSection === '#querying-in-your-observability-platform'" class="reference internal" href="#querying-in-your-observability-platform">Querying in Your Observability Platform</a></li>
+</ul>
+</li>
+<li><a :data-current="activeSection === '#severity-levels'" class="reference internal" href="#severity-levels">Severity Levels</a></li>
 <li><a :data-current="activeSection === '#overall-quality-assessment'" class="reference internal" href="#overall-quality-assessment">Overall Quality Assessment</a></li>
 <li><a :data-current="activeSection === '#sampling-and-prioritization'" class="reference internal" href="#sampling-and-prioritization">Sampling and Prioritization</a></li>
-<li><a :data-current="activeSection === '#trace-filtering-and-telemetry'" class="reference internal" href="#trace-filtering-and-telemetry">Trace Filtering and Telemetry</a></li>
+<li><a :data-current="activeSection === '#example-span'" class="reference internal" href="#example-span">Example Span</a></li>
+<li><a :data-current="activeSection === '#building-dashboards'" class="reference internal" href="#building-dashboards">Building Dashboards</a></li>
+<li><a :data-current="activeSection === '#creating-alerts'" class="reference internal" href="#creating-alerts">Creating Alerts</a></li>
 <li><a :data-current="activeSection === '#best-practices'" class="reference internal" href="#best-practices">Best Practices</a></li>
 <li><a :data-current="activeSection === '#limitations-and-considerations'" class="reference internal" href="#limitations-and-considerations">Limitations and Considerations</a></li>
 <li><a :data-current="activeSection === '#see-also'" class="reference internal" href="#see-also">See Also</a></li>
@@ -540,7 +944,7 @@
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 23, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Apr 24, 2026. </p>
 </div>
 </div>
 </footer>
@@ -550,6 +954,7 @@
 <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
 <script defer="defer" src="../_static/theme.js?v=d6a9845b"></script>
 <script src="../_static/design-tabs.js?v=f930bc37"></script>
+<script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 <script src="../_static/js/fix-copy.js?v=2f5cab98"></script>
 </body>
 </html>
