@@ -262,9 +262,9 @@ tools.</p>
 <li><p><strong>Environment layer</strong>: exhaustion (API errors, timeouts, rate limits, context overflow)</p></li>
 </ul>
 <p><strong>Visual Flag Markers</strong></p>
-<p>When concerning signals are detected (disengagement, execution failures / loops, stagnation &gt; 2, or <code class="docutils literal notranslate"><span class="pre">poor</span></code> / <code class="docutils literal notranslate"><span class="pre">severe</span></code> quality), Plano automatically appends a <code class="docutils literal notranslate"><span class="pre">[!]</span></code> marker to the span’s operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.</p>
+<p>When concerning signals are detected (disengagement, execution failures / loops, stagnation &gt; 2, or <code class="docutils literal notranslate"><span class="pre">poor</span></code> / <code class="docutils literal notranslate"><span class="pre">severe</span></code> quality), Plano automatically appends a 🚩 marker to the span’s operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.</p>
 <p><strong>Example Span with Signals</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-4 [!]"</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-4 🚩"</span>
 </span><span id="line-2"><span class="c1"># Standard LLM attributes:</span>
 </span><span id="line-3"><span class="n">llm</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="s2">"gpt-4"</span>
 </span><span id="line-4"><span class="n">llm</span><span class="o">.</span><span class="n">usage</span><span class="o">.</span><span class="n">total_tokens</span> <span class="o">=</span> <span class="mi">225</span>

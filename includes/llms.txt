@@ -1,6 +1,6 @@
 Plano Docs v0.4.20
 llms.txt (auto-generated)
-Generated (UTC): 2026-04-24T19:32:12.216149+00:00
+Generated (UTC): 2026-04-24T20:55:22.182534+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -3108,7 +3108,8 @@ Visual Flag Marker
 
 When concerning signals are detected (disengagement present, stagnation
 count > 2, any execution failure / loop, or overall quality poor/
-severe), the marker [!] is appended to the span’s operation name.
+severe), the marker 🚩 (U+1F6A9) is appended to the span’s operation
+name.
 This makes flagged sessions immediately visible in trace UIs without
 requiring attribute filtering.
 
@@ -3125,7 +3126,7 @@ signals.interaction.satisfaction.count > 0 AND signals.quality = "good"
 signals.execution.failure.count > 0
 signals.environment.exhaustion.count > 0
 
-For flagged sessions, search for [!] in span names.
+For flagged sessions, search for 🚩 in span names.
 
 
 
@@ -3219,7 +3220,7 @@ Example Span
 A concerning session, showing both layered attributes and a per-instance
 event:
 
-# Span name: "POST /v1/chat/completions gpt-5.2 [!]"
+# Span name: "POST /v1/chat/completions gpt-5.2 🚩"
 
 # Top-level
 signals.quality            = "severe"
@@ -3350,7 +3351,7 @@ response quality evaluation. Use signals to prioritize which traces to
 inspect, then apply domain expertise and outcome checks to diagnose root
 causes.
 
-The [!] marker in the span name provides instant visual feedback in
+The 🚩 marker in the span name provides instant visual feedback in
 trace UIs, while the structured attributes (signals.quality,
 signals.interaction.disengagement.severity, etc.) and per-instance
 span events enable powerful querying and drill-down in your observability
@@ -4919,11 +4920,11 @@ Environment layer: exhaustion (API errors, timeouts, rate limits, context overfl
 
 Visual Flag Markers
 
-When concerning signals are detected (disengagement, execution failures / loops, stagnation > 2, or poor / severe quality), Plano automatically appends a [!] marker to the span’s operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.
+When concerning signals are detected (disengagement, execution failures / loops, stagnation > 2, or poor / severe quality), Plano automatically appends a 🚩 marker to the span’s operation name. This makes problematic traces immediately visible in your tracing UI without requiring additional queries.
 
 Example Span with Signals:
 
-# Span name: "POST /v1/chat/completions gpt-4 [!]"
+# Span name: "POST /v1/chat/completions gpt-4 🚩"
 # Standard LLM attributes:
 llm.model = "gpt-4"
 llm.usage.total_tokens = 225

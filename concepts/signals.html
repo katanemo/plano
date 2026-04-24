@@ -660,7 +660,8 @@ traces, then events tell you <em>which messages</em> fired <em>which signals</em
 <h3>Visual Flag Marker<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#visual-flag-marker" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#visual-flag-marker'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
 <p>When concerning signals are detected (disengagement present, stagnation
 count &gt; 2, any execution failure / loop, or overall quality <code class="docutils literal notranslate"><span class="pre">poor</span></code>/
-<code class="docutils literal notranslate"><span class="pre">severe</span></code>), the marker <code class="docutils literal notranslate"><span class="pre">[!]</span></code> is appended to the span’s operation name.
+<code class="docutils literal notranslate"><span class="pre">severe</span></code>), the marker 🚩 (U+1F6A9) is appended to the span’s operation
+name.
 This makes flagged sessions immediately visible in trace UIs without
 requiring attribute filtering.</p>
 </section>
@@ -677,7 +678,7 @@ requiring attribute filtering.</p>
 </span><span id="line-8"><span class="n">signals</span><span class="o">.</span><span class="n">environment</span><span class="o">.</span><span class="n">exhaustion</span><span class="o">.</span><span class="n">count</span> <span class="o">&gt;</span> <span class="mi">0</span>
 </span></code></pre></div>
 </div>
-<p>For flagged sessions, search for <code class="docutils literal notranslate"><span class="pre">[!]</span></code> in span names.</p>
+<p>For flagged sessions, search for 🚩 in span names.</p>
 <a class="reference internal image-reference" href="../_images/signals_trace.png"><img alt="../_images/signals_trace.png" class="align-center" src="../_images/signals_trace.png" style="width: 100%;"/>
 </a>
 </section>
@@ -753,7 +754,7 @@ observability platform filters on the signal attributes described above.</p>
 <h2>Example Span<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#example-span" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#example-span'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>A concerning session, showing both layered attributes and a per-instance
 event:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-5.2 [!]"</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Span name: "POST /v1/chat/completions gpt-5.2 🚩"</span>
 </span><span id="line-2">
 </span><span id="line-3"><span class="c1"># Top-level</span>
 </span><span id="line-4"><span class="n">signals</span><span class="o">.</span><span class="n">quality</span>            <span class="o">=</span> <span class="s2">"severe"</span>
@@ -868,7 +869,7 @@ causes.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">[!]</span></code> marker in the span name provides instant visual feedback in
+<p>The 🚩 marker in the span name provides instant visual feedback in
 trace UIs, while the structured attributes (<code class="docutils literal notranslate"><span class="pre">signals.quality</span></code>,
 <code class="docutils literal notranslate"><span class="pre">signals.interaction.disengagement.severity</span></code>, etc.) and per-instance
 span events enable powerful querying and drill-down in your observability
