@@ -1,5 +1,5 @@
 # Plano Gateway configuration version
-version: v0.3.0
+version: v0.4.0
 
 # External HTTP agents - API type is controlled by request path (/v1/responses, /v1/messages, /v1/chat/completions)
 agents:
@@ -32,17 +32,8 @@ model_providers:
   - model: mistral/ministral-3b-latest
     access_key: $MISTRAL_API_KEY
 
-  # routing_preferences: tags a model with named capabilities so Plano's LLM router
-  # can select the best model for each request based on intent. Requires the
-  # Plano-Orchestrator model (or equivalent) to be configured in overrides.llm_routing_model.
-  # Each preference has a name (short label) and a description (used for intent matching).
   - model: groq/llama-3.3-70b-versatile
     access_key: $GROQ_API_KEY
-    routing_preferences:
-      - name: code generation
-        description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
-      - name: code review
-        description: reviewing, analyzing, and suggesting improvements to existing code
 
   # passthrough_auth: forwards the client's Authorization header upstream instead of
   # using the configured access_key. Useful for LiteLLM or similar proxy setups.
@@ -63,6 +54,29 @@ model_aliases:
 
   smart-llm:
     target: gpt-4o
+
+# routing_preferences: top-level list that tags named task categories with an
+# ordered pool of candidate models. Plano's LLM router matches incoming requests
+# against these descriptions and returns an ordered list of models; the client
+# uses models[0] as primary and retries with models[1], models[2]... on 429/5xx.
+# Requires overrides.llm_routing_model to point at Plano-Orchestrator (or equivalent).
+# Each model in `models` must be declared in model_providers above.
+# selection_policy is optional: {prefer: cheapest|fastest|none} lets the router
+# reorder candidates using live cost/latency data from model_metrics_sources.
+routing_preferences:
+  - name: code generation
+    description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
+    models:
+      - anthropic/claude-sonnet-4-0
+      - openai/gpt-4o
+      - groq/llama-3.3-70b-versatile
+  - name: code review
+    description: reviewing, analyzing, and suggesting improvements to existing code
+    models:
+      - anthropic/claude-sonnet-4-0
+      - groq/llama-3.3-70b-versatile
+    selection_policy:
+      prefer: cheapest
 
 # HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access
 listeners:

@@ -168,7 +168,7 @@ where prompts get routed to, apply guardrails, and enable critical agent observa
 <div class="literal-block-wrapper docutils container" id="id2">
 <div class="code-block-caption"><span class="caption-text"><a class="reference download internal" download="" href="../_downloads/c86f9e8fb1f2994b1ba4a0b98481410e/plano_config_full_reference.yaml"><code class="xref download docutils literal notranslate"><span class="pre">Plano</span> <span class="pre">Configuration</span> <span class="pre">-</span> <span class="pre">Full</span> <span class="pre">Reference</span></code></a></span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id2"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="linenos">  1</span><span class="c1"># Plano Gateway configuration version</span>
-</span><span id="line-2"><span class="linenos">  2</span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v0.3.0</span>
+</span><span id="line-2"><span class="linenos">  2</span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v0.4.0</span>
 </span><span id="line-3"><span class="linenos">  3</span>
 </span><span id="line-4"><span class="linenos">  4</span><span class="c1"># External HTTP agents - API type is controlled by request path (/v1/responses, /v1/messages, /v1/chat/completions)</span>
 </span><span id="line-5"><span class="linenos">  5</span><span class="nt">agents</span><span class="p">:</span>
@@ -201,195 +201,209 @@ where prompts get routed to, apply guardrails, and enable critical agent observa
 </span><span id="line-32"><span class="linenos"> 32</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mistral/ministral-3b-latest</span>
 </span><span id="line-33"><span class="linenos"> 33</span><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$MISTRAL_API_KEY</span>
 </span><span id="line-34"><span class="linenos"> 34</span>
-</span><span id="line-35"><span class="linenos"> 35</span><span class="w">  </span><span class="c1"># routing_preferences: tags a model with named capabilities so Plano's LLM router</span>
-</span><span id="line-36"><span class="linenos"> 36</span><span class="w">  </span><span class="c1"># can select the best model for each request based on intent. Requires the</span>
-</span><span id="line-37"><span class="linenos"> 37</span><span class="w">  </span><span class="c1"># Plano-Orchestrator model (or equivalent) to be configured in overrides.llm_routing_model.</span>
-</span><span id="line-38"><span class="linenos"> 38</span><span class="w">  </span><span class="c1"># Each preference has a name (short label) and a description (used for intent matching).</span>
-</span><span id="line-39"><span class="linenos"> 39</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">groq/llama-3.3-70b-versatile</span>
-</span><span id="line-40"><span class="linenos"> 40</span><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$GROQ_API_KEY</span>
-</span><span id="line-41"><span class="linenos"> 41</span><span class="w">    </span><span class="nt">routing_preferences</span><span class="p">:</span>
-</span><span id="line-42"><span class="linenos"> 42</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code generation</span>
-</span><span id="line-43"><span class="linenos"> 43</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generating new code snippets, functions, or boilerplate based on user prompts or requirements</span>
-</span><span id="line-44"><span class="linenos"> 44</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code review</span>
-</span><span id="line-45"><span class="linenos"> 45</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reviewing, analyzing, and suggesting improvements to existing code</span>
-</span><span id="line-46"><span class="linenos"> 46</span>
-</span><span id="line-47"><span class="linenos"> 47</span><span class="w">  </span><span class="c1"># passthrough_auth: forwards the client's Authorization header upstream instead of</span>
-</span><span id="line-48"><span class="linenos"> 48</span><span class="w">  </span><span class="c1"># using the configured access_key. Useful for LiteLLM or similar proxy setups.</span>
-</span><span id="line-49"><span class="linenos"> 49</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o-litellm</span>
-</span><span id="line-50"><span class="linenos"> 50</span><span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://litellm.example.com</span>
-</span><span id="line-51"><span class="linenos"> 51</span><span class="w">    </span><span class="nt">passthrough_auth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="line-52"><span class="linenos"> 52</span>
-</span><span id="line-53"><span class="linenos"> 53</span><span class="w">  </span><span class="c1"># Custom/self-hosted endpoint with explicit http_host override</span>
-</span><span id="line-54"><span class="linenos"> 54</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/llama-3.3-70b</span>
-</span><span id="line-55"><span class="linenos"> 55</span><span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://api.custom-provider.com</span>
-</span><span id="line-56"><span class="linenos"> 56</span><span class="w">    </span><span class="nt">http_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api.custom-provider.com</span>
-</span><span id="line-57"><span class="linenos"> 57</span><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$CUSTOM_API_KEY</span>
-</span><span id="line-58"><span class="linenos"> 58</span>
-</span><span id="line-59"><span class="linenos"> 59</span><span class="c1"># Model aliases - use friendly names instead of full provider model names</span>
-</span><span id="line-60"><span class="linenos"> 60</span><span class="nt">model_aliases</span><span class="p">:</span>
-</span><span id="line-61"><span class="linenos"> 61</span><span class="w">  </span><span class="nt">fast-llm</span><span class="p">:</span>
-</span><span id="line-62"><span class="linenos"> 62</span><span class="w">    </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o-mini</span>
-</span><span id="line-63"><span class="linenos"> 63</span>
-</span><span id="line-64"><span class="linenos"> 64</span><span class="w">  </span><span class="nt">smart-llm</span><span class="p">:</span>
-</span><span id="line-65"><span class="linenos"> 65</span><span class="w">    </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
-</span><span id="line-66"><span class="linenos"> 66</span>
-</span><span id="line-67"><span class="linenos"> 67</span><span class="c1"># HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access</span>
-</span><span id="line-68"><span class="linenos"> 68</span><span class="nt">listeners</span><span class="p">:</span>
-</span><span id="line-69"><span class="linenos"> 69</span><span class="w">  </span><span class="c1"># Agent listener for routing requests to multiple agents</span>
-</span><span id="line-70"><span class="linenos"> 70</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">agent</span>
-</span><span id="line-71"><span class="linenos"> 71</span><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">travel_booking_service</span>
-</span><span id="line-72"><span class="linenos"> 72</span><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8001</span>
-</span><span id="line-73"><span class="linenos"> 73</span><span class="w">    </span><span class="nt">router</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plano_orchestrator_v1</span>
-</span><span id="line-74"><span class="linenos"> 74</span><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
-</span><span id="line-75"><span class="linenos"> 75</span><span class="w">    </span><span class="nt">agents</span><span class="p">:</span>
-</span><span id="line-76"><span class="linenos"> 76</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rag_agent</span>
-</span><span id="line-77"><span class="linenos"> 77</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">virtual assistant for retrieval augmented generation tasks</span>
-</span><span id="line-78"><span class="linenos"> 78</span><span class="w">        </span><span class="nt">input_filters</span><span class="p">:</span>
-</span><span id="line-79"><span class="linenos"> 79</span><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_guards</span>
+</span><span id="line-35"><span class="linenos"> 35</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">groq/llama-3.3-70b-versatile</span>
+</span><span id="line-36"><span class="linenos"> 36</span><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$GROQ_API_KEY</span>
+</span><span id="line-37"><span class="linenos"> 37</span>
+</span><span id="line-38"><span class="linenos"> 38</span><span class="w">  </span><span class="c1"># passthrough_auth: forwards the client's Authorization header upstream instead of</span>
+</span><span id="line-39"><span class="linenos"> 39</span><span class="w">  </span><span class="c1"># using the configured access_key. Useful for LiteLLM or similar proxy setups.</span>
+</span><span id="line-40"><span class="linenos"> 40</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o-litellm</span>
+</span><span id="line-41"><span class="linenos"> 41</span><span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://litellm.example.com</span>
+</span><span id="line-42"><span class="linenos"> 42</span><span class="w">    </span><span class="nt">passthrough_auth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-43"><span class="linenos"> 43</span>
+</span><span id="line-44"><span class="linenos"> 44</span><span class="w">  </span><span class="c1"># Custom/self-hosted endpoint with explicit http_host override</span>
+</span><span id="line-45"><span class="linenos"> 45</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/llama-3.3-70b</span>
+</span><span id="line-46"><span class="linenos"> 46</span><span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://api.custom-provider.com</span>
+</span><span id="line-47"><span class="linenos"> 47</span><span class="w">    </span><span class="nt">http_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api.custom-provider.com</span>
+</span><span id="line-48"><span class="linenos"> 48</span><span class="w">    </span><span class="nt">access_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$CUSTOM_API_KEY</span>
+</span><span id="line-49"><span class="linenos"> 49</span>
+</span><span id="line-50"><span class="linenos"> 50</span><span class="c1"># Model aliases - use friendly names instead of full provider model names</span>
+</span><span id="line-51"><span class="linenos"> 51</span><span class="nt">model_aliases</span><span class="p">:</span>
+</span><span id="line-52"><span class="linenos"> 52</span><span class="w">  </span><span class="nt">fast-llm</span><span class="p">:</span>
+</span><span id="line-53"><span class="linenos"> 53</span><span class="w">    </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o-mini</span>
+</span><span id="line-54"><span class="linenos"> 54</span>
+</span><span id="line-55"><span class="linenos"> 55</span><span class="w">  </span><span class="nt">smart-llm</span><span class="p">:</span>
+</span><span id="line-56"><span class="linenos"> 56</span><span class="w">    </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o</span>
+</span><span id="line-57"><span class="linenos"> 57</span>
+</span><span id="line-58"><span class="linenos"> 58</span><span class="c1"># routing_preferences: top-level list that tags named task categories with an</span>
+</span><span id="line-59"><span class="linenos"> 59</span><span class="c1"># ordered pool of candidate models. Plano's LLM router matches incoming requests</span>
+</span><span id="line-60"><span class="linenos"> 60</span><span class="c1"># against these descriptions and returns an ordered list of models; the client</span>
+</span><span id="line-61"><span class="linenos"> 61</span><span class="c1"># uses models[0] as primary and retries with models[1], models[2]... on 429/5xx.</span>
+</span><span id="line-62"><span class="linenos"> 62</span><span class="c1"># Requires overrides.llm_routing_model to point at Plano-Orchestrator (or equivalent).</span>
+</span><span id="line-63"><span class="linenos"> 63</span><span class="c1"># Each model in `models` must be declared in model_providers above.</span>
+</span><span id="line-64"><span class="linenos"> 64</span><span class="c1"># selection_policy is optional: {prefer: cheapest|fastest|none} lets the router</span>
+</span><span id="line-65"><span class="linenos"> 65</span><span class="c1"># reorder candidates using live cost/latency data from model_metrics_sources.</span>
+</span><span id="line-66"><span class="linenos"> 66</span><span class="nt">routing_preferences</span><span class="p">:</span>
+</span><span id="line-67"><span class="linenos"> 67</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code generation</span>
+</span><span id="line-68"><span class="linenos"> 68</span><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generating new code snippets, functions, or boilerplate based on user prompts or requirements</span>
+</span><span id="line-69"><span class="linenos"> 69</span><span class="w">    </span><span class="nt">models</span><span class="p">:</span>
+</span><span id="line-70"><span class="linenos"> 70</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anthropic/claude-sonnet-4-0</span>
+</span><span id="line-71"><span class="linenos"> 71</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
+</span><span id="line-72"><span class="linenos"> 72</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">groq/llama-3.3-70b-versatile</span>
+</span><span id="line-73"><span class="linenos"> 73</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code review</span>
+</span><span id="line-74"><span class="linenos"> 74</span><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reviewing, analyzing, and suggesting improvements to existing code</span>
+</span><span id="line-75"><span class="linenos"> 75</span><span class="w">    </span><span class="nt">models</span><span class="p">:</span>
+</span><span id="line-76"><span class="linenos"> 76</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anthropic/claude-sonnet-4-0</span>
+</span><span id="line-77"><span class="linenos"> 77</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">groq/llama-3.3-70b-versatile</span>
+</span><span id="line-78"><span class="linenos"> 78</span><span class="w">    </span><span class="nt">selection_policy</span><span class="p">:</span>
+</span><span id="line-79"><span class="linenos"> 79</span><span class="w">      </span><span class="nt">prefer</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cheapest</span>
 </span><span id="line-80"><span class="linenos"> 80</span>
-</span><span id="line-81"><span class="linenos"> 81</span><span class="w">  </span><span class="c1"># Model listener for direct LLM access</span>
-</span><span id="line-82"><span class="linenos"> 82</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model</span>
-</span><span id="line-83"><span class="linenos"> 83</span><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model_1</span>
-</span><span id="line-84"><span class="linenos"> 84</span><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
-</span><span id="line-85"><span class="linenos"> 85</span><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12000</span>
-</span><span id="line-86"><span class="linenos"> 86</span><span class="w">    </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span><span class="w">          </span><span class="c1"># Request timeout (e.g. "30s", "60s")</span>
-</span><span id="line-87"><span class="linenos"> 87</span><span class="w">    </span><span class="nt">max_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">        </span><span class="c1"># Number of retries on upstream failure</span>
-</span><span id="line-88"><span class="linenos"> 88</span><span class="w">    </span><span class="nt">input_filters</span><span class="p">:</span><span class="w">        </span><span class="c1"># Filters applied before forwarding to LLM</span>
-</span><span id="line-89"><span class="linenos"> 89</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_guards</span>
-</span><span id="line-90"><span class="linenos"> 90</span><span class="w">    </span><span class="nt">output_filters</span><span class="p">:</span><span class="w">       </span><span class="c1"># Filters applied to LLM responses before returning to client</span>
-</span><span id="line-91"><span class="linenos"> 91</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_guards</span>
-</span><span id="line-92"><span class="linenos"> 92</span>
-</span><span id="line-93"><span class="linenos"> 93</span><span class="w">  </span><span class="c1"># Prompt listener for function calling (for prompt_targets)</span>
-</span><span id="line-94"><span class="linenos"> 94</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt</span>
-</span><span id="line-95"><span class="linenos"> 95</span><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt_function_listener</span>
-</span><span id="line-96"><span class="linenos"> 96</span><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
-</span><span id="line-97"><span class="linenos"> 97</span><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span>
-</span><span id="line-98"><span class="linenos"> 98</span>
-</span><span id="line-99"><span class="linenos"> 99</span><span class="c1"># Reusable service endpoints</span>
-</span><span id="line-100"><span class="linenos">100</span><span class="nt">endpoints</span><span class="p">:</span>
-</span><span id="line-101"><span class="linenos">101</span><span class="w">  </span><span class="nt">app_server</span><span class="p">:</span>
-</span><span id="line-102"><span class="linenos">102</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">127.0.0.1:80</span>
-</span><span id="line-103"><span class="linenos">103</span><span class="w">    </span><span class="nt">connect_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.005s</span>
-</span><span id="line-104"><span class="linenos">104</span><span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http</span><span class="w">        </span><span class="c1"># http or https</span>
-</span><span id="line-105"><span class="linenos">105</span>
-</span><span id="line-106"><span class="linenos">106</span><span class="w">  </span><span class="nt">mistral_local</span><span class="p">:</span>
-</span><span id="line-107"><span class="linenos">107</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">127.0.0.1:8001</span>
-</span><span id="line-108"><span class="linenos">108</span>
-</span><span id="line-109"><span class="linenos">109</span><span class="w">  </span><span class="nt">secure_service</span><span class="p">:</span>
-</span><span id="line-110"><span class="linenos">110</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api.example.com:443</span>
-</span><span id="line-111"><span class="linenos">111</span><span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https</span>
-</span><span id="line-112"><span class="linenos">112</span><span class="w">    </span><span class="nt">http_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api.example.com</span><span class="w">  </span><span class="c1"># Override the Host header sent upstream</span>
-</span><span id="line-113"><span class="linenos">113</span>
-</span><span id="line-114"><span class="linenos">114</span><span class="c1"># Optional top-level system prompt applied to all prompt_targets</span>
-</span><span id="line-115"><span class="linenos">115</span><span class="nt">system_prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-</span><span id="line-116"><span class="linenos">116</span><span class="w">  </span><span class="no">You are a helpful assistant. Always respond concisely and accurately.</span>
-</span><span id="line-117"><span class="linenos">117</span>
-</span><span id="line-118"><span class="linenos">118</span><span class="c1"># Prompt targets for function calling and API orchestration</span>
-</span><span id="line-119"><span class="linenos">119</span><span class="nt">prompt_targets</span><span class="p">:</span>
-</span><span id="line-120"><span class="linenos">120</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">get_current_weather</span>
-</span><span id="line-121"><span class="linenos">121</span><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Get current weather at a location.</span>
-</span><span id="line-122"><span class="linenos">122</span><span class="w">    </span><span class="nt">parameters</span><span class="p">:</span>
-</span><span id="line-123"><span class="linenos">123</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">location</span>
-</span><span id="line-124"><span class="linenos">124</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">The location to get the weather for</span>
-</span><span id="line-125"><span class="linenos">125</span><span class="w">        </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="line-126"><span class="linenos">126</span><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span>
-</span><span id="line-127"><span class="linenos">127</span><span class="w">        </span><span class="nt">format</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">City, State</span>
-</span><span id="line-128"><span class="linenos">128</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">days</span>
-</span><span id="line-129"><span class="linenos">129</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">the number of days for the request</span>
-</span><span id="line-130"><span class="linenos">130</span><span class="w">        </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="line-131"><span class="linenos">131</span><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">int</span>
-</span><span id="line-132"><span class="linenos">132</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span>
-</span><span id="line-133"><span class="linenos">133</span><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app_server</span>
-</span><span id="line-134"><span class="linenos">134</span><span class="w">      </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/weather</span>
-</span><span id="line-135"><span class="linenos">135</span><span class="w">      </span><span class="nt">http_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST</span>
-</span><span id="line-136"><span class="linenos">136</span><span class="w">    </span><span class="c1"># Per-target system prompt (overrides top-level system_prompt for this target)</span>
-</span><span id="line-137"><span class="linenos">137</span><span class="w">    </span><span class="nt">system_prompt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">You are a weather expert. Provide accurate and concise weather information.</span>
-</span><span id="line-138"><span class="linenos">138</span><span class="w">    </span><span class="c1"># auto_llm_dispatch_on_response: when true, the LLM is called again with the</span>
-</span><span id="line-139"><span class="linenos">139</span><span class="w">    </span><span class="c1"># function response to produce a final natural-language answer for the user</span>
-</span><span id="line-140"><span class="linenos">140</span><span class="w">    </span><span class="nt">auto_llm_dispatch_on_response</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="line-141"><span class="linenos">141</span>
-</span><span id="line-142"><span class="linenos">142</span><span class="c1"># Rate limits - control token usage per model and request selector</span>
-</span><span id="line-143"><span class="linenos">143</span><span class="nt">ratelimits</span><span class="p">:</span>
-</span><span id="line-144"><span class="linenos">144</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
-</span><span id="line-145"><span class="linenos">145</span><span class="w">    </span><span class="nt">selector</span><span class="p">:</span>
-</span><span id="line-146"><span class="linenos">146</span><span class="w">      </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-user-id</span><span class="w">       </span><span class="c1"># HTTP header key used to identify the rate-limit subject</span>
-</span><span id="line-147"><span class="linenos">147</span><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"*"</span><span class="w">           </span><span class="c1"># Wildcard matches any value; use a specific string to target one</span>
-</span><span id="line-148"><span class="linenos">148</span><span class="w">    </span><span class="nt">limit</span><span class="p">:</span>
-</span><span id="line-149"><span class="linenos">149</span><span class="w">      </span><span class="nt">tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100000</span><span class="w">       </span><span class="c1"># Maximum tokens allowed in the given time unit</span>
-</span><span id="line-150"><span class="linenos">150</span><span class="w">      </span><span class="nt">unit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hour</span><span class="w">           </span><span class="c1"># Time unit: "minute", "hour", or "day"</span>
-</span><span id="line-151"><span class="linenos">151</span>
-</span><span id="line-152"><span class="linenos">152</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o-mini</span>
-</span><span id="line-153"><span class="linenos">153</span><span class="w">    </span><span class="nt">selector</span><span class="p">:</span>
-</span><span id="line-154"><span class="linenos">154</span><span class="w">      </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-org-id</span>
-</span><span id="line-155"><span class="linenos">155</span><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">acme-corp</span>
-</span><span id="line-156"><span class="linenos">156</span><span class="w">    </span><span class="nt">limit</span><span class="p">:</span>
-</span><span id="line-157"><span class="linenos">157</span><span class="w">      </span><span class="nt">tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500000</span>
-</span><span id="line-158"><span class="linenos">158</span><span class="w">      </span><span class="nt">unit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">day</span>
-</span><span id="line-159"><span class="linenos">159</span>
-</span><span id="line-160"><span class="linenos">160</span><span class="c1"># Global behavior overrides</span>
-</span><span id="line-161"><span class="linenos">161</span><span class="nt">overrides</span><span class="p">:</span>
-</span><span id="line-162"><span class="linenos">162</span><span class="w">  </span><span class="c1"># Threshold for routing a request to a prompt_target (0.0–1.0). Lower = more permissive.</span>
-</span><span id="line-163"><span class="linenos">163</span><span class="w">  </span><span class="nt">prompt_target_intent_matching_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span>
-</span><span id="line-164"><span class="linenos">164</span><span class="w">  </span><span class="c1"># Trim conversation history to fit within the model's context window</span>
-</span><span id="line-165"><span class="linenos">165</span><span class="w">  </span><span class="nt">optimize_context_window</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="line-166"><span class="linenos">166</span><span class="w">  </span><span class="c1"># Use Plano's agent orchestrator for multi-agent request routing</span>
-</span><span id="line-167"><span class="linenos">167</span><span class="w">  </span><span class="nt">use_agent_orchestrator</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="line-168"><span class="linenos">168</span><span class="w">  </span><span class="c1"># Connect timeout for upstream provider clusters (e.g., "5s", "10s"). Default: "5s"</span>
-</span><span id="line-169"><span class="linenos">169</span><span class="w">  </span><span class="nt">upstream_connect_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10s</span>
-</span><span id="line-170"><span class="linenos">170</span><span class="w">  </span><span class="c1"># Path to the trusted CA bundle for upstream TLS verification</span>
-</span><span id="line-171"><span class="linenos">171</span><span class="w">  </span><span class="nt">upstream_tls_ca_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/etc/ssl/certs/ca-certificates.crt</span>
-</span><span id="line-172"><span class="linenos">172</span><span class="w">  </span><span class="c1"># Model used for intent-based LLM routing (must be listed in model_providers)</span>
-</span><span id="line-173"><span class="linenos">173</span><span class="w">  </span><span class="nt">llm_routing_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Plano-Orchestrator</span>
-</span><span id="line-174"><span class="linenos">174</span><span class="w">  </span><span class="c1"># Model used for agent orchestration (must be listed in model_providers)</span>
-</span><span id="line-175"><span class="linenos">175</span><span class="w">  </span><span class="nt">agent_orchestration_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Plano-Orchestrator</span>
-</span><span id="line-176"><span class="linenos">176</span><span class="w">  </span><span class="c1"># Disable agentic signal analysis (frustration, repetition, escalation, etc.)</span>
-</span><span id="line-177"><span class="linenos">177</span><span class="w">  </span><span class="c1"># on LLM responses to save CPU. Default: false.</span>
-</span><span id="line-178"><span class="linenos">178</span><span class="w">  </span><span class="nt">disable_signals</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="line-179"><span class="linenos">179</span>
-</span><span id="line-180"><span class="linenos">180</span><span class="c1"># Model affinity — pin routing decisions for agentic loops</span>
-</span><span id="line-181"><span class="linenos">181</span><span class="nt">routing</span><span class="p">:</span>
-</span><span id="line-182"><span class="linenos">182</span><span class="w">  </span><span class="nt">session_ttl_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span><span class="w">    </span><span class="c1"># How long a pinned session lasts (default: 600s / 10 min)</span>
-</span><span id="line-183"><span class="linenos">183</span><span class="w">  </span><span class="nt">session_max_entries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span><span class="w">  </span><span class="c1"># Max cached sessions before eviction (upper limit: 10000)</span>
-</span><span id="line-184"><span class="linenos">184</span><span class="w">  </span><span class="c1"># session_cache controls the backend used to store affinity state.</span>
-</span><span id="line-185"><span class="linenos">185</span><span class="w">  </span><span class="c1"># "memory" (default) is in-process and works for single-instance deployments.</span>
-</span><span id="line-186"><span class="linenos">186</span><span class="w">  </span><span class="c1"># "redis" shares state across replicas — required for multi-replica / Kubernetes setups.</span>
-</span><span id="line-187"><span class="linenos">187</span><span class="w">  </span><span class="nt">session_cache</span><span class="p">:</span>
-</span><span id="line-188"><span class="linenos">188</span><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span><span class="w">              </span><span class="c1"># "memory" (default) or "redis"</span>
-</span><span id="line-189"><span class="linenos">189</span><span class="w">    </span><span class="c1"># url is required when type is "redis". Supports redis:// and rediss:// (TLS).</span>
-</span><span id="line-190"><span class="linenos">190</span><span class="w">    </span><span class="c1"># url: redis://localhost:6379</span>
-</span><span id="line-191"><span class="linenos">191</span><span class="w">    </span><span class="c1"># tenant_header: x-org-id  # optional; when set, keys are scoped as plano:affinity:{tenant_id}:{session_id}</span>
-</span><span id="line-192"><span class="linenos">192</span>
-</span><span id="line-193"><span class="linenos">193</span><span class="c1"># State storage for multi-turn conversation history</span>
-</span><span id="line-194"><span class="linenos">194</span><span class="nt">state_storage</span><span class="p">:</span>
-</span><span id="line-195"><span class="linenos">195</span><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span><span class="w">            </span><span class="c1"># "memory" (in-process) or "postgres" (persistent)</span>
-</span><span id="line-196"><span class="linenos">196</span><span class="w">  </span><span class="c1"># connection_string is required when type is postgres.</span>
-</span><span id="line-197"><span class="linenos">197</span><span class="w">  </span><span class="c1"># Supports environment variable substitution: $VAR or ${VAR}</span>
-</span><span id="line-198"><span class="linenos">198</span><span class="w">  </span><span class="c1"># connection_string: postgresql://user:$DB_PASS@localhost:5432/plano</span>
-</span><span id="line-199"><span class="linenos">199</span>
-</span><span id="line-200"><span class="linenos">200</span><span class="c1"># Input guardrails applied globally to all incoming requests</span>
-</span><span id="line-201"><span class="linenos">201</span><span class="nt">prompt_guards</span><span class="p">:</span>
-</span><span id="line-202"><span class="linenos">202</span><span class="w">  </span><span class="nt">input_guards</span><span class="p">:</span>
-</span><span id="line-203"><span class="linenos">203</span><span class="w">    </span><span class="nt">jailbreak</span><span class="p">:</span>
-</span><span id="line-204"><span class="linenos">204</span><span class="w">      </span><span class="nt">on_exception</span><span class="p">:</span>
-</span><span id="line-205"><span class="linenos">205</span><span class="w">        </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"I'm</span><span class="nv"> </span><span class="s">sorry,</span><span class="nv"> </span><span class="s">I</span><span class="nv"> </span><span class="s">can't</span><span class="nv"> </span><span class="s">help</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">request."</span>
+</span><span id="line-81"><span class="linenos"> 81</span><span class="c1"># HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access</span>
+</span><span id="line-82"><span class="linenos"> 82</span><span class="nt">listeners</span><span class="p">:</span>
+</span><span id="line-83"><span class="linenos"> 83</span><span class="w">  </span><span class="c1"># Agent listener for routing requests to multiple agents</span>
+</span><span id="line-84"><span class="linenos"> 84</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">agent</span>
+</span><span id="line-85"><span class="linenos"> 85</span><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">travel_booking_service</span>
+</span><span id="line-86"><span class="linenos"> 86</span><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8001</span>
+</span><span id="line-87"><span class="linenos"> 87</span><span class="w">    </span><span class="nt">router</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plano_orchestrator_v1</span>
+</span><span id="line-88"><span class="linenos"> 88</span><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
+</span><span id="line-89"><span class="linenos"> 89</span><span class="w">    </span><span class="nt">agents</span><span class="p">:</span>
+</span><span id="line-90"><span class="linenos"> 90</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rag_agent</span>
+</span><span id="line-91"><span class="linenos"> 91</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">virtual assistant for retrieval augmented generation tasks</span>
+</span><span id="line-92"><span class="linenos"> 92</span><span class="w">        </span><span class="nt">input_filters</span><span class="p">:</span>
+</span><span id="line-93"><span class="linenos"> 93</span><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_guards</span>
+</span><span id="line-94"><span class="linenos"> 94</span>
+</span><span id="line-95"><span class="linenos"> 95</span><span class="w">  </span><span class="c1"># Model listener for direct LLM access</span>
+</span><span id="line-96"><span class="linenos"> 96</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model</span>
+</span><span id="line-97"><span class="linenos"> 97</span><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">model_1</span>
+</span><span id="line-98"><span class="linenos"> 98</span><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
+</span><span id="line-99"><span class="linenos"> 99</span><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">12000</span>
+</span><span id="line-100"><span class="linenos">100</span><span class="w">    </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span><span class="w">          </span><span class="c1"># Request timeout (e.g. "30s", "60s")</span>
+</span><span id="line-101"><span class="linenos">101</span><span class="w">    </span><span class="nt">max_retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">        </span><span class="c1"># Number of retries on upstream failure</span>
+</span><span id="line-102"><span class="linenos">102</span><span class="w">    </span><span class="nt">input_filters</span><span class="p">:</span><span class="w">        </span><span class="c1"># Filters applied before forwarding to LLM</span>
+</span><span id="line-103"><span class="linenos">103</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_guards</span>
+</span><span id="line-104"><span class="linenos">104</span><span class="w">    </span><span class="nt">output_filters</span><span class="p">:</span><span class="w">       </span><span class="c1"># Filters applied to LLM responses before returning to client</span>
+</span><span id="line-105"><span class="linenos">105</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_guards</span>
+</span><span id="line-106"><span class="linenos">106</span>
+</span><span id="line-107"><span class="linenos">107</span><span class="w">  </span><span class="c1"># Prompt listener for function calling (for prompt_targets)</span>
+</span><span id="line-108"><span class="linenos">108</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt</span>
+</span><span id="line-109"><span class="linenos">109</span><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt_function_listener</span>
+</span><span id="line-110"><span class="linenos">110</span><span class="w">    </span><span class="nt">address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0.0.0</span>
+</span><span id="line-111"><span class="linenos">111</span><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span>
+</span><span id="line-112"><span class="linenos">112</span>
+</span><span id="line-113"><span class="linenos">113</span><span class="c1"># Reusable service endpoints</span>
+</span><span id="line-114"><span class="linenos">114</span><span class="nt">endpoints</span><span class="p">:</span>
+</span><span id="line-115"><span class="linenos">115</span><span class="w">  </span><span class="nt">app_server</span><span class="p">:</span>
+</span><span id="line-116"><span class="linenos">116</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">127.0.0.1:80</span>
+</span><span id="line-117"><span class="linenos">117</span><span class="w">    </span><span class="nt">connect_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.005s</span>
+</span><span id="line-118"><span class="linenos">118</span><span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http</span><span class="w">        </span><span class="c1"># http or https</span>
+</span><span id="line-119"><span class="linenos">119</span>
+</span><span id="line-120"><span class="linenos">120</span><span class="w">  </span><span class="nt">mistral_local</span><span class="p">:</span>
+</span><span id="line-121"><span class="linenos">121</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">127.0.0.1:8001</span>
+</span><span id="line-122"><span class="linenos">122</span>
+</span><span id="line-123"><span class="linenos">123</span><span class="w">  </span><span class="nt">secure_service</span><span class="p">:</span>
+</span><span id="line-124"><span class="linenos">124</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api.example.com:443</span>
+</span><span id="line-125"><span class="linenos">125</span><span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https</span>
+</span><span id="line-126"><span class="linenos">126</span><span class="w">    </span><span class="nt">http_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api.example.com</span><span class="w">  </span><span class="c1"># Override the Host header sent upstream</span>
+</span><span id="line-127"><span class="linenos">127</span>
+</span><span id="line-128"><span class="linenos">128</span><span class="c1"># Optional top-level system prompt applied to all prompt_targets</span>
+</span><span id="line-129"><span class="linenos">129</span><span class="nt">system_prompt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="line-130"><span class="linenos">130</span><span class="w">  </span><span class="no">You are a helpful assistant. Always respond concisely and accurately.</span>
+</span><span id="line-131"><span class="linenos">131</span>
+</span><span id="line-132"><span class="linenos">132</span><span class="c1"># Prompt targets for function calling and API orchestration</span>
+</span><span id="line-133"><span class="linenos">133</span><span class="nt">prompt_targets</span><span class="p">:</span>
+</span><span id="line-134"><span class="linenos">134</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">get_current_weather</span>
+</span><span id="line-135"><span class="linenos">135</span><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Get current weather at a location.</span>
+</span><span id="line-136"><span class="linenos">136</span><span class="w">    </span><span class="nt">parameters</span><span class="p">:</span>
+</span><span id="line-137"><span class="linenos">137</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">location</span>
+</span><span id="line-138"><span class="linenos">138</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">The location to get the weather for</span>
+</span><span id="line-139"><span class="linenos">139</span><span class="w">        </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-140"><span class="linenos">140</span><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">string</span>
+</span><span id="line-141"><span class="linenos">141</span><span class="w">        </span><span class="nt">format</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">City, State</span>
+</span><span id="line-142"><span class="linenos">142</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">days</span>
+</span><span id="line-143"><span class="linenos">143</span><span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">the number of days for the request</span>
+</span><span id="line-144"><span class="linenos">144</span><span class="w">        </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-145"><span class="linenos">145</span><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">int</span>
+</span><span id="line-146"><span class="linenos">146</span><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span>
+</span><span id="line-147"><span class="linenos">147</span><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app_server</span>
+</span><span id="line-148"><span class="linenos">148</span><span class="w">      </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/weather</span>
+</span><span id="line-149"><span class="linenos">149</span><span class="w">      </span><span class="nt">http_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST</span>
+</span><span id="line-150"><span class="linenos">150</span><span class="w">    </span><span class="c1"># Per-target system prompt (overrides top-level system_prompt for this target)</span>
+</span><span id="line-151"><span class="linenos">151</span><span class="w">    </span><span class="nt">system_prompt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">You are a weather expert. Provide accurate and concise weather information.</span>
+</span><span id="line-152"><span class="linenos">152</span><span class="w">    </span><span class="c1"># auto_llm_dispatch_on_response: when true, the LLM is called again with the</span>
+</span><span id="line-153"><span class="linenos">153</span><span class="w">    </span><span class="c1"># function response to produce a final natural-language answer for the user</span>
+</span><span id="line-154"><span class="linenos">154</span><span class="w">    </span><span class="nt">auto_llm_dispatch_on_response</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-155"><span class="linenos">155</span>
+</span><span id="line-156"><span class="linenos">156</span><span class="c1"># Rate limits - control token usage per model and request selector</span>
+</span><span id="line-157"><span class="linenos">157</span><span class="nt">ratelimits</span><span class="p">:</span>
+</span><span id="line-158"><span class="linenos">158</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
+</span><span id="line-159"><span class="linenos">159</span><span class="w">    </span><span class="nt">selector</span><span class="p">:</span>
+</span><span id="line-160"><span class="linenos">160</span><span class="w">      </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-user-id</span><span class="w">       </span><span class="c1"># HTTP header key used to identify the rate-limit subject</span>
+</span><span id="line-161"><span class="linenos">161</span><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"*"</span><span class="w">           </span><span class="c1"># Wildcard matches any value; use a specific string to target one</span>
+</span><span id="line-162"><span class="linenos">162</span><span class="w">    </span><span class="nt">limit</span><span class="p">:</span>
+</span><span id="line-163"><span class="linenos">163</span><span class="w">      </span><span class="nt">tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100000</span><span class="w">       </span><span class="c1"># Maximum tokens allowed in the given time unit</span>
+</span><span id="line-164"><span class="linenos">164</span><span class="w">      </span><span class="nt">unit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hour</span><span class="w">           </span><span class="c1"># Time unit: "minute", "hour", or "day"</span>
+</span><span id="line-165"><span class="linenos">165</span>
+</span><span id="line-166"><span class="linenos">166</span><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o-mini</span>
+</span><span id="line-167"><span class="linenos">167</span><span class="w">    </span><span class="nt">selector</span><span class="p">:</span>
+</span><span id="line-168"><span class="linenos">168</span><span class="w">      </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-org-id</span>
+</span><span id="line-169"><span class="linenos">169</span><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">acme-corp</span>
+</span><span id="line-170"><span class="linenos">170</span><span class="w">    </span><span class="nt">limit</span><span class="p">:</span>
+</span><span id="line-171"><span class="linenos">171</span><span class="w">      </span><span class="nt">tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500000</span>
+</span><span id="line-172"><span class="linenos">172</span><span class="w">      </span><span class="nt">unit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">day</span>
+</span><span id="line-173"><span class="linenos">173</span>
+</span><span id="line-174"><span class="linenos">174</span><span class="c1"># Global behavior overrides</span>
+</span><span id="line-175"><span class="linenos">175</span><span class="nt">overrides</span><span class="p">:</span>
+</span><span id="line-176"><span class="linenos">176</span><span class="w">  </span><span class="c1"># Threshold for routing a request to a prompt_target (0.0–1.0). Lower = more permissive.</span>
+</span><span id="line-177"><span class="linenos">177</span><span class="w">  </span><span class="nt">prompt_target_intent_matching_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span>
+</span><span id="line-178"><span class="linenos">178</span><span class="w">  </span><span class="c1"># Trim conversation history to fit within the model's context window</span>
+</span><span id="line-179"><span class="linenos">179</span><span class="w">  </span><span class="nt">optimize_context_window</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="line-180"><span class="linenos">180</span><span class="w">  </span><span class="c1"># Use Plano's agent orchestrator for multi-agent request routing</span>
+</span><span id="line-181"><span class="linenos">181</span><span class="w">  </span><span class="nt">use_agent_orchestrator</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="line-182"><span class="linenos">182</span><span class="w">  </span><span class="c1"># Connect timeout for upstream provider clusters (e.g., "5s", "10s"). Default: "5s"</span>
+</span><span id="line-183"><span class="linenos">183</span><span class="w">  </span><span class="nt">upstream_connect_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10s</span>
+</span><span id="line-184"><span class="linenos">184</span><span class="w">  </span><span class="c1"># Path to the trusted CA bundle for upstream TLS verification</span>
+</span><span id="line-185"><span class="linenos">185</span><span class="w">  </span><span class="nt">upstream_tls_ca_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/etc/ssl/certs/ca-certificates.crt</span>
+</span><span id="line-186"><span class="linenos">186</span><span class="w">  </span><span class="c1"># Model used for intent-based LLM routing (must be listed in model_providers)</span>
+</span><span id="line-187"><span class="linenos">187</span><span class="w">  </span><span class="nt">llm_routing_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Plano-Orchestrator</span>
+</span><span id="line-188"><span class="linenos">188</span><span class="w">  </span><span class="c1"># Model used for agent orchestration (must be listed in model_providers)</span>
+</span><span id="line-189"><span class="linenos">189</span><span class="w">  </span><span class="nt">agent_orchestration_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Plano-Orchestrator</span>
+</span><span id="line-190"><span class="linenos">190</span><span class="w">  </span><span class="c1"># Disable agentic signal analysis (frustration, repetition, escalation, etc.)</span>
+</span><span id="line-191"><span class="linenos">191</span><span class="w">  </span><span class="c1"># on LLM responses to save CPU. Default: false.</span>
+</span><span id="line-192"><span class="linenos">192</span><span class="w">  </span><span class="nt">disable_signals</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="line-193"><span class="linenos">193</span>
+</span><span id="line-194"><span class="linenos">194</span><span class="c1"># Model affinity — pin routing decisions for agentic loops</span>
+</span><span id="line-195"><span class="linenos">195</span><span class="nt">routing</span><span class="p">:</span>
+</span><span id="line-196"><span class="linenos">196</span><span class="w">  </span><span class="nt">session_ttl_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span><span class="w">    </span><span class="c1"># How long a pinned session lasts (default: 600s / 10 min)</span>
+</span><span id="line-197"><span class="linenos">197</span><span class="w">  </span><span class="nt">session_max_entries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span><span class="w">  </span><span class="c1"># Max cached sessions before eviction (upper limit: 10000)</span>
+</span><span id="line-198"><span class="linenos">198</span><span class="w">  </span><span class="c1"># session_cache controls the backend used to store affinity state.</span>
+</span><span id="line-199"><span class="linenos">199</span><span class="w">  </span><span class="c1"># "memory" (default) is in-process and works for single-instance deployments.</span>
+</span><span id="line-200"><span class="linenos">200</span><span class="w">  </span><span class="c1"># "redis" shares state across replicas — required for multi-replica / Kubernetes setups.</span>
+</span><span id="line-201"><span class="linenos">201</span><span class="w">  </span><span class="nt">session_cache</span><span class="p">:</span>
+</span><span id="line-202"><span class="linenos">202</span><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span><span class="w">              </span><span class="c1"># "memory" (default) or "redis"</span>
+</span><span id="line-203"><span class="linenos">203</span><span class="w">    </span><span class="c1"># url is required when type is "redis". Supports redis:// and rediss:// (TLS).</span>
+</span><span id="line-204"><span class="linenos">204</span><span class="w">    </span><span class="c1"># url: redis://localhost:6379</span>
+</span><span id="line-205"><span class="linenos">205</span><span class="w">    </span><span class="c1"># tenant_header: x-org-id  # optional; when set, keys are scoped as plano:affinity:{tenant_id}:{session_id}</span>
 </span><span id="line-206"><span class="linenos">206</span>
-</span><span id="line-207"><span class="linenos">207</span><span class="c1"># OpenTelemetry tracing configuration</span>
-</span><span id="line-208"><span class="linenos">208</span><span class="nt">tracing</span><span class="p">:</span>
-</span><span id="line-209"><span class="linenos">209</span><span class="w">  </span><span class="c1"># Random sampling percentage (1-100)</span>
-</span><span id="line-210"><span class="linenos">210</span><span class="w">  </span><span class="nt">random_sampling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
-</span><span id="line-211"><span class="linenos">211</span><span class="w">  </span><span class="c1"># Include internal Plano spans in traces</span>
-</span><span id="line-212"><span class="linenos">212</span><span class="w">  </span><span class="nt">trace_arch_internal</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="line-213"><span class="linenos">213</span><span class="w">  </span><span class="c1"># gRPC endpoint for OpenTelemetry collector (e.g., Jaeger, Tempo)</span>
-</span><span id="line-214"><span class="linenos">214</span><span class="w">  </span><span class="nt">opentracing_grpc_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:4317</span>
-</span><span id="line-215"><span class="linenos">215</span><span class="w">  </span><span class="nt">span_attributes</span><span class="p">:</span>
-</span><span id="line-216"><span class="linenos">216</span><span class="w">    </span><span class="c1"># Propagate request headers whose names start with these prefixes as span attributes</span>
-</span><span id="line-217"><span class="linenos">217</span><span class="w">    </span><span class="nt">header_prefixes</span><span class="p">:</span>
-</span><span id="line-218"><span class="linenos">218</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-user-</span>
-</span><span id="line-219"><span class="linenos">219</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-org-</span>
-</span><span id="line-220"><span class="linenos">220</span><span class="w">    </span><span class="c1"># Static key/value pairs added to every span</span>
-</span><span id="line-221"><span class="linenos">221</span><span class="w">    </span><span class="nt">static</span><span class="p">:</span>
-</span><span id="line-222"><span class="linenos">222</span><span class="w">      </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="line-223"><span class="linenos">223</span><span class="w">      </span><span class="nt">service.team</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">platform</span>
+</span><span id="line-207"><span class="linenos">207</span><span class="c1"># State storage for multi-turn conversation history</span>
+</span><span id="line-208"><span class="linenos">208</span><span class="nt">state_storage</span><span class="p">:</span>
+</span><span id="line-209"><span class="linenos">209</span><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span><span class="w">            </span><span class="c1"># "memory" (in-process) or "postgres" (persistent)</span>
+</span><span id="line-210"><span class="linenos">210</span><span class="w">  </span><span class="c1"># connection_string is required when type is postgres.</span>
+</span><span id="line-211"><span class="linenos">211</span><span class="w">  </span><span class="c1"># Supports environment variable substitution: $VAR or ${VAR}</span>
+</span><span id="line-212"><span class="linenos">212</span><span class="w">  </span><span class="c1"># connection_string: postgresql://user:$DB_PASS@localhost:5432/plano</span>
+</span><span id="line-213"><span class="linenos">213</span>
+</span><span id="line-214"><span class="linenos">214</span><span class="c1"># Input guardrails applied globally to all incoming requests</span>
+</span><span id="line-215"><span class="linenos">215</span><span class="nt">prompt_guards</span><span class="p">:</span>
+</span><span id="line-216"><span class="linenos">216</span><span class="w">  </span><span class="nt">input_guards</span><span class="p">:</span>
+</span><span id="line-217"><span class="linenos">217</span><span class="w">    </span><span class="nt">jailbreak</span><span class="p">:</span>
+</span><span id="line-218"><span class="linenos">218</span><span class="w">      </span><span class="nt">on_exception</span><span class="p">:</span>
+</span><span id="line-219"><span class="linenos">219</span><span class="w">        </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"I'm</span><span class="nv"> </span><span class="s">sorry,</span><span class="nv"> </span><span class="s">I</span><span class="nv"> </span><span class="s">can't</span><span class="nv"> </span><span class="s">help</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">request."</span>
+</span><span id="line-220"><span class="linenos">220</span>
+</span><span id="line-221"><span class="linenos">221</span><span class="c1"># OpenTelemetry tracing configuration</span>
+</span><span id="line-222"><span class="linenos">222</span><span class="nt">tracing</span><span class="p">:</span>
+</span><span id="line-223"><span class="linenos">223</span><span class="w">  </span><span class="c1"># Random sampling percentage (1-100)</span>
+</span><span id="line-224"><span class="linenos">224</span><span class="w">  </span><span class="nt">random_sampling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</span><span id="line-225"><span class="linenos">225</span><span class="w">  </span><span class="c1"># Include internal Plano spans in traces</span>
+</span><span id="line-226"><span class="linenos">226</span><span class="w">  </span><span class="nt">trace_arch_internal</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="line-227"><span class="linenos">227</span><span class="w">  </span><span class="c1"># gRPC endpoint for OpenTelemetry collector (e.g., Jaeger, Tempo)</span>
+</span><span id="line-228"><span class="linenos">228</span><span class="w">  </span><span class="nt">opentracing_grpc_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://localhost:4317</span>
+</span><span id="line-229"><span class="linenos">229</span><span class="w">  </span><span class="nt">span_attributes</span><span class="p">:</span>
+</span><span id="line-230"><span class="linenos">230</span><span class="w">    </span><span class="c1"># Propagate request headers whose names start with these prefixes as span attributes</span>
+</span><span id="line-231"><span class="linenos">231</span><span class="w">    </span><span class="nt">header_prefixes</span><span class="p">:</span>
+</span><span id="line-232"><span class="linenos">232</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-user-</span>
+</span><span id="line-233"><span class="linenos">233</span><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-org-</span>
+</span><span id="line-234"><span class="linenos">234</span><span class="w">    </span><span class="c1"># Static key/value pairs added to every span</span>
+</span><span id="line-235"><span class="linenos">235</span><span class="w">    </span><span class="nt">static</span><span class="p">:</span>
+</span><span id="line-236"><span class="linenos">236</span><span class="w">      </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
+</span><span id="line-237"><span class="linenos">237</span><span class="w">      </span><span class="nt">service.team</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">platform</span>
 </span></code></pre></div>
 </div>
 </div>
