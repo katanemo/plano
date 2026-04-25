@@ -67,6 +67,12 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         model_pattern="deepseek/*",
     ),
     ProviderDefault(
+        name="qianfan",
+        env_var="QIANFAN_API_KEY",
+        base_url="https://qianfan.baidubce.com/v2",
+        model_pattern="qianfan/*",
+    ),
+    ProviderDefault(
         name="mistral",
         env_var="MISTRAL_API_KEY",
         base_url="https://api.mistral.ai/v1",

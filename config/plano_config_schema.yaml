@@ -189,6 +189,7 @@ properties:
             - mistral
             - openai
             - xiaomi
+            - qianfan
             - gemini
             - chatgpt
             - digitalocean
@@ -247,6 +248,7 @@ properties:
             - mistral
             - openai
             - xiaomi
+            - qianfan
             - gemini
             - chatgpt
             - digitalocean

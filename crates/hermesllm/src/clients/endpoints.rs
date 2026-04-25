@@ -133,6 +133,13 @@ impl SupportedAPIsFromClient {
                         build_endpoint("/v1", endpoint_suffix)
                     }
                 }
+                ProviderId::Qianfan => {
+                    if request_path.starts_with("/v1/") {
+                        build_endpoint("/v2", endpoint_suffix)
+                    } else {
+                        build_endpoint("/v1", endpoint_suffix)
+                    }
+                }
                 ProviderId::AzureOpenAI => {
                     if request_path.starts_with("/v1/") {
                         let suffix = endpoint_suffix.trim_start_matches('/');
@@ -398,6 +405,19 @@ mod tests {
                 false
             ),
             "/compatible-mode/v1/chat/completions"
+        );
+
+        // Test Qianfan provider
+        assert_eq!(
+            api.target_endpoint_for_provider(
+                &ProviderId::Qianfan,
+                "/v1/chat/completions",
+                "ernie-4.0-turbo-8k",
+                false,
+                None,
+                false
+            ),
+            "/v2/chat/completions"
         );
 
         // Test Azure OpenAI provider
