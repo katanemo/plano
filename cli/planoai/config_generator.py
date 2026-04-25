@@ -23,6 +23,7 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "mistral",
     "openai",
     "xiaomi",
+    "qianfan",
     "gemini",
     "anthropic",
     "together_ai",

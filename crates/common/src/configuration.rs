@@ -372,6 +372,8 @@ pub enum LlmProviderType {
     OpenAI,
     #[serde(rename = "xiaomi")]
     Xiaomi,
+    #[serde(rename = "qianfan")]
+    Qianfan,
     #[serde(rename = "gemini")]
     Gemini,
     #[serde(rename = "xai")]
@@ -412,6 +414,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Mistral => write!(f, "mistral"),
             LlmProviderType::OpenAI => write!(f, "openai"),
             LlmProviderType::Xiaomi => write!(f, "xiaomi"),
+            LlmProviderType::Qianfan => write!(f, "qianfan"),
             LlmProviderType::XAI => write!(f, "xai"),
             LlmProviderType::TogetherAI => write!(f, "together_ai"),
             LlmProviderType::AzureOpenAI => write!(f, "azure_openai"),
@@ -781,6 +784,15 @@ mod test {
             // recognized there as well or this panics.
             let _ = parsed.to_provider_id();
         }
+    }
+
+    #[test]
+    fn test_llm_provider_type_qianfan_roundtrip() {
+        let parsed: LlmProviderType =
+            serde_yaml::from_str("qianfan").expect("variant should deserialize");
+        assert_eq!(parsed, LlmProviderType::Qianfan);
+        assert_eq!(parsed.to_string(), "qianfan");
+        assert_eq!(parsed.to_provider_id(), hermesllm::ProviderId::Qianfan);
     }
 
     #[test]
