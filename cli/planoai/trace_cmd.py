@@ -599,7 +599,7 @@ def _start_trace_listener(host: str, grpc_port: int) -> None:
 
 
 def start_trace_listener_background(
-    host: str = "0.0.0.0", grpc_port: int = DEFAULT_GRPC_PORT
+    host: str = "127.0.0.1", grpc_port: int = DEFAULT_GRPC_PORT
 ) -> grpc.Server:
     """Start the trace server in-process and return ``grpc.Server`` handle."""
     return _start_trace_server(host, grpc_port)
@@ -1117,7 +1117,7 @@ def trace(
     )
 
     if target == "listen" and not has_show_options:
-        _start_trace_listener("0.0.0.0", DEFAULT_GRPC_PORT)
+        _start_trace_listener("127.0.0.1", DEFAULT_GRPC_PORT)
         return
 
     if target in ("stop", "down") and not has_show_options:

@@ -499,7 +499,7 @@ def up(
                         grpc_port=tracing_port
                     )
                     console.print(
-                        f"[green]✓[/green] Trace collector listening on [cyan]0.0.0.0:{tracing_port}[/cyan]"
+                        f"[green]✓[/green] Trace collector listening on [cyan]127.0.0.1:{tracing_port}[/cyan]"
                     )
                 except Exception as e:
                     console.print(
