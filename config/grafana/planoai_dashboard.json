@@ -1,0 +1,661 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "PlanoAI control + dataplane: HTTP RED, routing decisions, LLM upstream, and build/runtime for the brightstaff orchestrator. Metrics arrive in DO Prometheus under the gen_ai_otel_brightstaff_* prefix.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["inf"],
+      "targetBlank": false,
+      "title": "Inference dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "HTTP RED",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Requests-per-second served by brightstaff, broken out by handler. The orchestrator handler is the routing decision endpoint.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisLabel": "req/s", "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum by (handler) (rate(gen_ai_otel_brightstaff_http_requests_total[1m]))",
+          "legendFormat": "{{handler}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "RPS by handler",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Fraction of brightstaff responses that are 5xx, computed over 5m. Page-worthy when sustained above ~1%.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum(rate(gen_ai_otel_brightstaff_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(gen_ai_otel_brightstaff_http_requests_total[5m])), 1)",
+          "legendFormat": "5xx",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "5xx rate (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "In-flight HTTP requests by handler. Climbs before latency does when brightstaff is saturated.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 1 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi" }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum by (handler) (gen_ai_otel_brightstaff_http_in_flight_requests)",
+          "legendFormat": "{{handler}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "In-flight by handler",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "p50 / p95 / p99 of brightstaff HTTP request duration by handler, computed from the histogram buckets over 5m.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 5, "lineWidth": 1, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le, handler) (rate(gen_ai_otel_brightstaff_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{handler}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(gen_ai_otel_brightstaff_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{handler}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, handler) (rate(gen_ai_otel_brightstaff_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{handler}}",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "HTTP duration p50 / p95 / p99 by handler",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 200,
+      "panels": [],
+      "title": "Routing decisions",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Outcome of every /routing/* call. decision_served = a real model picked. no_candidates = orchestrator returned the sentinel `none`. policy_error = orchestrator failed.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "unit": "reqps"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "decision_served" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "no_candidates" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "policy_error" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum by (outcome) (rate(gen_ai_otel_brightstaff_routing_service_requests_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "/routing/* outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Decision rate broken out by the model the orchestrator selected. The 'none' series is the fallback bucket — any non-zero value here means the router could not classify intent or had no eligible candidates.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" },
+          "unit": "reqps"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "none" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["mean", "lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum by (selected_model) (rate(gen_ai_otel_brightstaff_router_decisions_total[5m]))",
+          "legendFormat": "{{selected_model}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Decisions/sec by selected model",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Total decisions per model over the last 15 minutes. The relative bar lengths are the routing mix the orchestrator is producing.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 28 },
+      "id": 7,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum by (selected_model) (increase(gen_ai_otel_brightstaff_router_decisions_total[15m]))",
+          "legendFormat": "{{selected_model}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Model selection distribution (last 15m)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Fraction of decisions that fell back (orchestrator returned `none` or errored). High = router cannot classify intent or no candidates configured.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "red", "value": 0.5 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 6, "x": 12, "y": 28 },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum by (route) (rate(gen_ai_otel_brightstaff_router_decisions_total{fallback=\"true\"}[5m])) / clamp_min(sum by (route) (rate(gen_ai_otel_brightstaff_router_decisions_total[5m])), 1)",
+          "legendFormat": "{{route}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Fallback rate by route",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "p95 of router decision time by route. The orchestrator includes embedding + classification + candidate scoring; this is the primary tail-latency signal for routing.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "fillOpacity": 5, "lineWidth": 1, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 28 },
+      "id": 9,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi" }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(gen_ai_otel_brightstaff_router_decision_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{route}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(gen_ai_otel_brightstaff_router_decision_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{route}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Router decision p95/p99",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 300,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "description": "p95 LLM upstream call duration by provider/model. Populated once brightstaff exports llm_upstream_duration_seconds.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "fillOpacity": 5, "lineWidth": 1, "showPoints": "never" },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 38 },
+          "id": 10,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi" }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum by (le, provider, model) (rate(gen_ai_otel_brightstaff_llm_upstream_duration_seconds_bucket[5m])))",
+              "legendFormat": "p95 {{provider}}/{{model}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "LLM upstream p95 by provider/model",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "description": "Non-success error classes by provider. timeout/connect = network, 5xx/429 = provider, parse = body shape mismatch, stream = mid-stream disconnect.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 30,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "stacking": { "group": "A", "mode": "normal" }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 38 },
+          "id": 11,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi" }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+              "editorMode": "code",
+              "expr": "sum by (provider, error_class) (rate(gen_ai_otel_brightstaff_llm_upstream_requests_total{error_class!=\"none\"}[5m]))",
+              "legendFormat": "{{provider}} / {{error_class}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "LLM upstream errors by provider / class",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "description": "Streaming time-to-first-token p95. Empty if the route never streams.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "fillOpacity": 5, "lineWidth": 1, "showPoints": "never" },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 47 },
+          "id": 12,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi" }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+              "editorMode": "code",
+              "expr": "histogram_quantile(0.95, sum by (le, provider, model) (rate(gen_ai_otel_brightstaff_llm_time_to_first_token_seconds_bucket[5m])))",
+              "legendFormat": "p95 {{provider}}/{{model}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Time-to-first-token p95 (streaming)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "description": "Tokens/sec by provider/model/kind — proxy for cost. Stacked.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 30,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "stacking": { "group": "A", "mode": "normal" }
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 47 },
+          "id": 13,
+          "options": {
+            "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi" }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+              "editorMode": "code",
+              "expr": "sum by (provider, model, kind) (rate(gen_ai_otel_brightstaff_llm_tokens_total[5m]))",
+              "legendFormat": "{{provider}}/{{model}} {{kind}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Token throughput by provider / model / kind",
+          "type": "timeseries"
+        }
+      ],
+      "title": "LLM upstream (forward-compat)",
+      "type": "row"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 56 },
+      "id": 400,
+      "panels": [],
+      "title": "Build & runtime",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Brightstaff build metadata — version + git_sha labels from the build_info gauge.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 57 },
+      "id": 14,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "gen_ai_otel_brightstaff_build_info",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Brightstaff build info",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "Value": true, "__name__": true, "job": false, "instance": false },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+      "description": "Cumulative routing decisions per model (last 24h). A rough cost-allocation view.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 57 },
+      "id": 15,
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": { "displayMode": "list", "placement": "right", "showLegend": true, "values": ["value"] },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.6.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+          "editorMode": "code",
+          "expr": "sum by (selected_model) (increase(gen_ai_otel_brightstaff_router_decisions_total[24h]))",
+          "legendFormat": "{{selected_model}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Routing mix (24h)",
+      "type": "piechart"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["plano", "brightstaff", "llm", "inf"],
+  "templating": {
+    "list": []
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+  },
+  "timezone": "utc",
+  "title": "PlanoAI — Routing & Brightstaff",
+  "uid": "planoai-routing",
+  "version": 1,
+  "weekStart": ""
+}

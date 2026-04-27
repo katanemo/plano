@@ -1,0 +1,2582 @@
+{
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": 204939,
+    "links": [
+      {
+        "asDropdown": false,
+        "icon": "external link",
+        "includeVars": false,
+        "keepTime": false,
+        "tags": [
+          "inf"
+        ],
+        "targetBlank": false,
+        "title": "links",
+        "tooltip": "",
+        "type": "dashboards",
+        "url": ""
+      }
+    ],
+    "panels": [
+      {
+        "collapsed": false,
+        "gridPos": {
+          "h": 1,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "id": 1,
+        "panels": [],
+        "title": "SLI",
+        "type": "row"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "palette-classic",
+              "seriesBy": "last"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "opacity",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineStyle": {
+                "fill": "solid"
+              },
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "",
+              "spanNulls": false,
+              "stacking": {
+                "group": "",
+                "mode": ""
+              },
+              "thresholdsStyle": {
+                "mode": "dashed+area"
+              }
+            },
+            "mappings": [],
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "transparent",
+                  "value": 0.9995
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 13,
+          "x": 0,
+          "y": 1
+        },
+        "id": 2,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "57qf9Yj4z"
+            },
+            "editorMode": "code",
+            "expr": "sli:gradient_ii:inference_proxy:availability:rate1h",
+            "hide": false,
+            "instant": false,
+            "legendFormat": "",
+            "range": true,
+            "refId": "B"
+          }
+        ],
+        "title": "SLI (Serverless Inference)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 14.4
+                }
+              ]
+            },
+            "unit": ""
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 2,
+          "x": 13,
+          "y": 1
+        },
+        "id": 3,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "",
+          "orientation": "vertical",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": [
+              "last"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "text": {},
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "max(\n  (1 - (\n    sli:gradient_ii:inference_proxy:availability:rate1h\n  )) \n  / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Burn rate",
+        "type": "stat"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.5
+                },
+                {
+                  "color": "green",
+                  "value": 0.75
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 4,
+          "x": 15,
+          "y": 1
+        },
+        "id": 4,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "min(\n  1 - (\n    1 - avg_over_time(\n      (\n        sli:gradient_ii:inference_proxy:availability:rate1h\n      )[$__range]\n    )\n  ) / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Error budget",
+        "type": "gauge"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "decimals": 3,
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.99
+                },
+                {
+                  "color": "green",
+                  "value": 0.9913
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 5,
+          "x": 19,
+          "y": 1
+        },
+        "id": 5,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "avg(\n  avg_over_time(\n    (\n      sli:gradient_ii:inference_proxy:availability:rate1h\n    )[$__range]\n  )\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "SLI",
+        "type": "gauge"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "palette-classic",
+              "seriesBy": "last"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "opacity",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineStyle": {
+                "fill": "solid"
+              },
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "",
+              "spanNulls": false,
+              "stacking": {
+                "group": "",
+                "mode": ""
+              },
+              "thresholdsStyle": {
+                "mode": "dashed+area"
+              }
+            },
+            "mappings": [],
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "transparent",
+                  "value": 0.9995
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": [
+            {
+              "__systemRef": "hideSeriesFrom",
+              "matcher": {
+                "id": "byNames",
+                "options": {
+                  "mode": "exclude",
+                  "names": [
+                    "sli:gradient_ii:inference_toolbox:availability:rate1h{obs_meta_alert_source=\"telemetry-tor1\"}"
+                  ],
+                  "prefix": "All except:",
+                  "readOnly": true
+                }
+              },
+              "properties": [
+                {
+                  "id": "custom.hideFrom",
+                  "value": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 13,
+          "x": 0,
+          "y": 9
+        },
+        "id": 20,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "sli:gradient_ii:inference_toolbox:availability:rate1h",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "SLI (Inference Toolbox)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 14.4
+                }
+              ]
+            },
+            "unit": ""
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 2,
+          "x": 13,
+          "y": 9
+        },
+        "id": 21,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "",
+          "orientation": "vertical",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": [
+              "last"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "text": {},
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "max(\n  (1 - (\n    sli:gradient_ii:inference_toolbox:availability:rate1h\n  )) \n  / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Burn rate",
+        "type": "stat"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.5
+                },
+                {
+                  "color": "green",
+                  "value": 0.75
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 4,
+          "x": 15,
+          "y": 9
+        },
+        "id": 22,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "min(\n  1 - (\n    1 - avg_over_time(\n      (\n        sli:gradient_ii:inference_toolbox:availability:rate1h\n      )[$__range]\n    )\n  ) / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Error budget",
+        "type": "gauge"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "decimals": 3,
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.99
+                },
+                {
+                  "color": "green",
+                  "value": 0.9995
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 5,
+          "x": 19,
+          "y": 9
+        },
+        "id": 23,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "avg(\n  avg_over_time(\n    (\n      sli:gradient_ii:inference_toolbox:availability:rate1h\n    )[$__range]\n  )\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "SLI",
+        "type": "gauge"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "palette-classic",
+              "seriesBy": "last"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "opacity",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineStyle": {
+                "fill": "solid"
+              },
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "",
+              "spanNulls": false,
+              "stacking": {
+                "group": "",
+                "mode": ""
+              },
+              "thresholdsStyle": {
+                "mode": "dashed+area"
+              }
+            },
+            "mappings": [],
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "transparent",
+                  "value": 0.9995
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": [
+            {
+              "__systemRef": "hideSeriesFrom",
+              "matcher": {
+                "id": "byNames",
+                "options": {
+                  "mode": "exclude",
+                  "names": [
+                    "sli:gradient_ii:litellm_executor:availability:rate1h{obs_meta_alert_source=\"telemetry-tor1\"}"
+                  ],
+                  "prefix": "All except:",
+                  "readOnly": true
+                }
+              },
+              "properties": [
+                {
+                  "id": "custom.hideFrom",
+                  "value": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 13,
+          "x": 0,
+          "y": 17
+        },
+        "id": 24,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "sli:gradient_ii:litellm_executor:availability:rate1h",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "SLI (Litellm Executor)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 14.4
+                }
+              ]
+            },
+            "unit": ""
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 2,
+          "x": 13,
+          "y": 17
+        },
+        "id": 25,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "",
+          "orientation": "vertical",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": [
+              "last"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "text": {},
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "max(\n  (1 - (\n    sli:gradient_ii:litellm_executor:availability:rate1h\n  )) \n  / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Burn rate",
+        "type": "stat"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.5
+                },
+                {
+                  "color": "green",
+                  "value": 0.75
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 4,
+          "x": 15,
+          "y": 17
+        },
+        "id": 26,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "min(\n  1 - (\n    1 - avg_over_time(\n      (\n        sli:gradient_ii:litellm_executor:availability:rate1h\n      )[$__range]\n    )\n  ) / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Error budget",
+        "type": "gauge"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "57qf9Yj4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "decimals": 3,
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.99
+                },
+                {
+                  "color": "green",
+                  "value": 0.9995
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 5,
+          "x": 19,
+          "y": 17
+        },
+        "id": 27,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prod-pandora-lts"
+            },
+            "editorMode": "code",
+            "expr": "avg(\n  avg_over_time(\n    (\n      sli:gradient_ii:litellm_executor:availability:rate1h\n    )[$__range]\n  )\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "SLI",
+        "type": "gauge"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {
+          "h": 1,
+          "w": 24,
+          "x": 0,
+          "y": 25
+        },
+        "id": 19,
+        "panels": [],
+        "title": "Control Plane",
+        "type": "row"
+      },
+      {
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Mixed --"
+        },
+        "description": "A recording rule that captures the availability of controlplane services that the II team owns",
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 13,
+          "x": 0,
+          "y": 26
+        },
+        "id": 15,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "masZBiX7k"
+            },
+            "editorMode": "code",
+            "expr": "sli:gradient_ii:gen_ai_api:availability:rate1h",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "mFt_E-_Vk"
+            },
+            "editorMode": "code",
+            "expr": "sli:gradient_ii:gen_ai_api:availability:rate1h",
+            "hide": false,
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "B"
+          }
+        ],
+        "title": "Control plane Availability",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "masZBiX7k"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 14.4
+                }
+              ]
+            },
+            "unit": ""
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 2,
+          "x": 13,
+          "y": 26
+        },
+        "id": 16,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "justifyMode": "",
+          "orientation": "vertical",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": [
+              "last"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "text": {},
+          "textMode": "value",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "masZBiX7k"
+            },
+            "editorMode": "code",
+            "expr": "max(\n  (1 - sli:gradient_ii:gen_ai_api:availability:rate1h) \n  / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Burn rate",
+        "type": "stat"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "masZBiX7k"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.5
+                },
+                {
+                  "color": "green",
+                  "value": 0.75
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 4,
+          "x": 15,
+          "y": 26
+        },
+        "id": 17,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "masZBiX7k"
+            },
+            "editorMode": "code",
+            "expr": "min(\n  1 - (\n    1 - avg_over_time(sli:gradient_ii:gen_ai_api:availability:rate1h[$__range])\n  ) / 0.000500\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Error budget",
+        "type": "gauge"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "masZBiX7k"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "fixedColor": "green",
+              "mode": "thresholds",
+              "seriesBy": "last"
+            },
+            "decimals": 3,
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "noValue": "N/A",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red"
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.99
+                },
+                {
+                  "color": "green",
+                  "value": 0.9995
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 5,
+          "x": 19,
+          "y": 26
+        },
+        "id": 18,
+        "options": {
+          "colorMode": "",
+          "graphMode": "none",
+          "justifyMode": "",
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto",
+          "text": {},
+          "textMode": ""
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "masZBiX7k"
+            },
+            "editorMode": "code",
+            "expr": "avg(\n  avg_over_time(sli:gradient_ii:gen_ai_api:availability:rate1h[$__range])\n)",
+            "format": "time_series",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "SLI",
+        "type": "gauge"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {
+          "h": 1,
+          "w": 24,
+          "x": 0,
+          "y": 34
+        },
+        "id": 11,
+        "panels": [],
+        "title": "Usage",
+        "type": "row"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "eDdv0Fl4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 35
+        },
+        "id": 10,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "sum by (path) (\n  rate(gen_ai_edge_serverless_inference_http_request_rate_by_status_code{\n    path=~\"/v1/chat/completions|/v1/responses|/v1/images/generations|/v1/embeddings|/provider/anthropic/v1/messages|/v1/messages\",\n  }[5m])\n)",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Total TPS per endpoint",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "eDdv0Fl4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 35
+        },
+        "id": 12,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "sum by (path) (\n  rate(gen_ai_edge_serverless_inference_http_request_rate_by_status_code{\n    path=~\"/v1/chat/completions|/v1/responses|/v1/images/generations|/v1/embeddings|/provider/anthropic/v1/messages|/v1/messages|/v1/messages\",status_code=\"200\"\n  }[5m])\n)",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Total TPS per endpoint (200 status code)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "eDdv0Fl4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 43
+        },
+        "id": 9,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "sum(\n  rate(gen_ai_edge_serverless_inference_http_request_rate_by_status_code[5m])\n)",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "avg_over_time(\n  sum(\n    rate(gen_ai_edge_serverless_inference_http_request_rate_by_status_code[5m])\n  )[12h:]\n)",
+            "hide": false,
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "B"
+          }
+        ],
+        "title": "Total TPS Intelligent Inference API",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "eDdv0Fl4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 43
+        },
+        "id": 14,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "sum by (path) (\n  rate(gen_ai_edge_serverless_inference_http_request_rate_by_status_code{\n    path=~\"/v1/chat/completions|/v1/responses|/v1/images/generations|/v1/embeddings|/provider/anthropic/v1/messages|/v1/messages\",status_code=~\"5..\"\n  }[5m])\n)",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Total Failed TPS per endpoint (5xx status code)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "eDdv0Fl4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 51
+        },
+        "id": 13,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "sum by (path) (\n  rate(gen_ai_edge_serverless_inference_http_request_rate_by_status_code{\n    path=~\"/v1/chat/completions|/v1/responses|/v1/images/generations|/v1/embeddings|/provider/anthropic/v1/messages|/v1/messages\",status_code=\"429\"\n  }[5m])\n)",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Total Rate Limit (429) TPS",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "eDdv0Fl4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "__systemRef": "hideSeriesFrom",
+              "matcher": {
+                "id": "byNames",
+                "options": {
+                  "mode": "exclude",
+                  "names": [
+                    "alibaba-qwen3-32b",
+                    "all-mini-lm-l6-v2",
+                    "anthropic-claude-4.1-opus",
+                    "anthropic-claude-4.5-sonnet",
+                    "anthropic-claude-4.6-sonnet",
+                    "anthropic-claude-haiku-4.5",
+                    "anthropic-claude-opus-4",
+                    "anthropic-claude-opus-4.5",
+                    "anthropic-claude-opus-4.6",
+                    "anthropic-claude-sonnet-4",
+                    "deepseek-r1-distill-llama-70b",
+                    "fal-ai/elevenlabs/tts/multilingual-v2",
+                    "fal-ai/fast-sdxl",
+                    "fal-ai/flux/schnell",
+                    "fal-ai/stable-audio-25/text-to-audio",
+                    "glm-5",
+                    "gte-large-en-v1.5",
+                    "kimi-k2.5",
+                    "llama3-8b-instruct",
+                    "llama3.3-70b-instruct",
+                    "minimax-m2.5",
+                    "mistral-nemo-instruct-2407",
+                    "multi-qa-mpnet-base-dot-v1",
+                    "openai-gpt-4.1",
+                    "openai-gpt-4o",
+                    "openai-gpt-4o-mini",
+                    "openai-gpt-5",
+                    "openai-gpt-5-mini",
+                    "openai-gpt-5-nano",
+                    "openai-gpt-5.1-codex-max",
+                    "openai-gpt-5.2",
+                    "openai-gpt-5.2-pro",
+                    "openai-gpt-5.3-codex",
+                    "openai-gpt-5.4",
+                    "openai-gpt-image-1",
+                    "openai-gpt-oss-120b",
+                    "openai-gpt-oss-20b",
+                    "openai-o1",
+                    "openai-o3",
+                    "openai-o3-mini",
+                    "qwen3-embedding-0.6b"
+                  ],
+                  "prefix": "All except:",
+                  "readOnly": true
+                }
+              },
+              "properties": [
+                {
+                  "id": "custom.hideFrom",
+                  "value": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 51
+        },
+        "id": 8,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "sum by (model_name) (\n  rate(gen_ai_platform_inference_proxy_http_requests_total[5m])\n)",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Model TPS",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "eDdv0Fl4z"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 59
+        },
+        "id": 28,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "eDdv0Fl4z"
+            },
+            "editorMode": "code",
+            "expr": "sum by (path) (\n  rate(gen_ai_edge_serverless_inference_http_request_rate_by_status_code{\n    path=~\"/v1/chat/completions|/v1/responses|/v1/images/generations|/v1/embeddings|/provider/anthropic/v1/messages\",status_code=~\"404\"\n  }[5m])\n)",
+            "instant": false,
+            "legendFormat": "__auto",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Total Failed TPS per endpoint (404 status code)",
+        "type": "timeseries"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {
+          "h": 1,
+          "w": 24,
+          "x": 0,
+          "y": 67
+        },
+        "id": 6,
+        "panels": [],
+        "title": "Internal Model SLIs",
+        "type": "row"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "ef0ft44bhgirke"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 68
+        },
+        "id": 7,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "ef0ft44bhgirke"
+            },
+            "editorMode": "code",
+            "expr": "sli:gradient_ii:models:availability:rate1h",
+            "instant": false,
+            "legendFormat": "sli:gradient_ii:{{model_name}}:availability:rate1h",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Model availability",
+        "type": "timeseries"
+      },
+      {
+        "collapsed": false,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 76 },
+        "id": 500,
+        "panels": [],
+        "title": "Plano routing (Brightstaff)",
+        "type": "row"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+        "description": "Brightstaff RPS by handler. The full PlanoAI dashboard is linked at the top of this dashboard (uid: planoai-routing).",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "req/s",
+              "axisPlacement": "auto",
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": { "type": "linear" },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": { "group": "A", "mode": "none" },
+              "thresholdsStyle": { "mode": "off" }
+            },
+            "mappings": [],
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }] },
+            "unit": "reqps"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 77 },
+        "id": 501,
+        "options": {
+          "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+          "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+            "editorMode": "code",
+            "expr": "sum by (handler) (rate(gen_ai_otel_brightstaff_http_requests_total[1m]))",
+            "instant": false,
+            "legendFormat": "{{handler}}",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Brightstaff RPS by handler",
+        "type": "timeseries"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+        "description": "p95 / p99 of router decision time, by route. Computed from gen_ai_otel_brightstaff_router_decision_duration_seconds_bucket.",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "drawStyle": "line",
+              "fillOpacity": 5,
+              "gradientMode": "none",
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": { "type": "linear" },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": { "group": "A", "mode": "none" },
+              "thresholdsStyle": { "mode": "off" }
+            },
+            "mappings": [],
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }] },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 77 },
+        "id": 502,
+        "options": {
+          "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+          "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" }
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+            "editorMode": "code",
+            "expr": "histogram_quantile(0.95, sum by (le, route) (rate(gen_ai_otel_brightstaff_router_decision_duration_seconds_bucket[5m])))",
+            "instant": false,
+            "legendFormat": "p95 {{route}}",
+            "range": true,
+            "refId": "A"
+          },
+          {
+            "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+            "editorMode": "code",
+            "expr": "histogram_quantile(0.99, sum by (le, route) (rate(gen_ai_otel_brightstaff_router_decision_duration_seconds_bucket[5m])))",
+            "instant": false,
+            "legendFormat": "p99 {{route}}",
+            "range": true,
+            "refId": "B"
+          }
+        ],
+        "title": "Router decision p95 / p99",
+        "type": "timeseries"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+        "description": "Fraction of /routing/* decisions that fell back (selected_model='none' or fallback='true'). Sustained > 10% means the orchestrator is failing to classify intent or has no eligible candidates.",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "mappings": [],
+            "max": 1,
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.1 },
+                { "color": "red", "value": 0.5 }
+              ]
+            },
+            "unit": "percentunit"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 85 },
+        "id": 503,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+          "textMode": "auto"
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+            "editorMode": "code",
+            "expr": "sum by (route) (rate(gen_ai_otel_brightstaff_router_decisions_total{fallback=\"true\"}[5m])) / clamp_min(sum by (route) (rate(gen_ai_otel_brightstaff_router_decisions_total[5m])), 1)",
+            "instant": false,
+            "legendFormat": "{{route}}",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Fallback rate by route",
+        "type": "stat"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+        "description": "Total routing decisions per selected_model in the last 15 minutes. The relative bar lengths are the routing mix.",
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" },
+            "mappings": [],
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": { "h": 8, "w": 16, "x": 8, "y": 85 },
+        "id": 504,
+        "options": {
+          "displayMode": "gradient",
+          "minVizHeight": 10,
+          "minVizWidth": 0,
+          "orientation": "horizontal",
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+          "showUnfilled": true,
+          "valueMode": "color"
+        },
+        "pluginVersion": "11.6.2",
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prod-pandora-dc-all-proxy" },
+            "editorMode": "code",
+            "expr": "sum by (selected_model) (increase(gen_ai_otel_brightstaff_router_decisions_total[15m]))",
+            "instant": false,
+            "legendFormat": "{{selected_model}}",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Model selection distribution (last 15m)",
+        "type": "bargauge"
+      }
+    ],
+    "preload": false,
+    "schemaVersion": 41,
+    "tags": [
+      "inf-main"
+    ],
+    "templating": {
+      "list": []
+    },
+    "time": {
+      "from": "now-7d",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": [
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "1d"
+      ]
+    },
+    "timezone": "utc",
+    "title": "Intelligent Inference",
+    "uid": "aff4tb94po6iob",
+    "version": 41
+  }
