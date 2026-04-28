@@ -36,3 +36,4 @@ tokio = { version = "1.44", features = ["sync", "time", "macros", "rt"] }
 hyper = { version = "1.0", features = ["full"] }
 bytes = "1.0"
 http-body-util = "0.1"
+proptest = "1.4"
