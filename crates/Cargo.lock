@@ -534,6 +534,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "bytes",
+ "dashmap",
  "derivative",
  "duration-string",
  "governor",
@@ -551,6 +552,7 @@ dependencies = [
  "serde_with",
  "serde_yaml",
  "serial_test",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "tiktoken-rs",
  "tokio",
@@ -756,6 +758,20 @@ dependencies = [
  "darling_core 0.23.0",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
