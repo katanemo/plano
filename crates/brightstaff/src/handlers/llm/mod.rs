@@ -941,6 +941,7 @@ async fn send_upstream_with_retry(
     // Capture references for the forward_fn closure
     let base_url = upstream_url.to_string();
     let original_headers = request_headers.clone();
+    let request_path_owned = request_path.to_string();
     let primary_model = alias_resolved_model.to_string();
     let http_client = http_client.clone();
 
@@ -950,6 +951,7 @@ async fn send_upstream_with_retry(
         let target_provider = target_provider.clone();
         let base_url = base_url.clone();
         let original_headers = original_headers.clone();
+        let _request_path_owned = request_path_owned.clone();
         let primary_model = primary_model.clone();
         let http_client = http_client.clone();
 
