@@ -415,12 +415,10 @@ def validate_and_render_schema():
                 )
 
             # For wildcard models, don't add model_id to the keys since it's "*"
-            if not is_wildcard:
-                if model_id in model_name_keys:
-                    raise Exception(
-                        f"Duplicate model_id {model_id}, please provide unique model_id for each model_provider"
-                    )
-                model_name_keys.add(model_id)
+            # Note: full model_name dedup is already done above (line 226).
+            # We no longer dedup on model_id alone, because different providers
+            # can serve the same model (e.g., custom/claude-opus-4-6 and
+            # custom-aws/claude-opus-4-6 share model_id but are distinct providers).
 
             # Warn if both passthrough_auth and access_key are configured
             if model_provider.get("passthrough_auth") and model_provider.get(
@@ -431,7 +429,7 @@ def validate_and_render_schema():
                     f"The access_key will be ignored and the client's Authorization header will be forwarded instead."
                 )
 
-            model_provider["model"] = model_id
+            model_provider["model"] = model_name
             model_provider["provider_interface"] = provider
             model_provider_name_set.add(model_provider.get("name"))
             if model_provider.get("provider") and model_provider.get(
@@ -501,15 +499,15 @@ def validate_and_render_schema():
                     llms_with_endpoint_cluster_names.add(cluster_name)
 
     overrides_config = config_yaml.get("overrides", {})
-    # Build lookup of model names (already prefix-stripped by config processing)
+    # Build lookup of model names (full provider/model format)
     model_name_set = {mp.get("model") for mp in updated_model_providers}
 
     # Auto-add plano-orchestrator provider if routing preferences exist and no provider matches the routing model
     router_model = overrides_config.get("llm_routing_model", "Plano-Orchestrator")
-    router_model_id = (
-        router_model.split("/", 1)[1] if "/" in router_model else router_model
-    )
-    if len(seen_pref_names) > 0 and router_model_id not in model_name_set:
+    if len(seen_pref_names) > 0 and router_model not in model_name_set:
+        router_model_id = (
+            router_model.split("/", 1)[1] if "/" in router_model else router_model
+        )
         updated_model_providers.append(
             {
                 "name": "plano-orchestrator",
