@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "src/app/api/slack/commands/route.ts": {
+      "maxDuration": 10
+    }
+  }
+}
