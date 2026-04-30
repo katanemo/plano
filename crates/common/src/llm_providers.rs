@@ -278,6 +278,7 @@ mod tests {
             stream: None,
             passthrough_auth: None,
             headers: None,
+            retry_policy: None,
         }
     }
 

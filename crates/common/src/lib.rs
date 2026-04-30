@@ -7,6 +7,7 @@ pub mod llm_providers;
 pub mod path;
 pub mod pii;
 pub mod ratelimit;
+pub mod retry;
 pub mod routing;
 pub mod stats;
 pub mod tokenizer;
