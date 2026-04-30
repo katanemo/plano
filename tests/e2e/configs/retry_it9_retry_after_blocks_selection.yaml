@@ -1,0 +1,36 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    base_url: http://host.docker.internal:${MOCK_PRIMARY_PORT}
+    access_key: test-key-primary
+    default: true
+    retry_policy:
+      fallback_models: [anthropic/claude-3-5-sonnet]
+      default_strategy: "different_provider"
+      default_max_attempts: 2
+      on_status_codes:
+        - codes: [429]
+          strategy: "different_provider"
+          max_attempts: 2
+      retry_after_handling:
+        scope: "model"
+        apply_to: "global"
+        max_retry_after_seconds: 300
+
+  - model: anthropic/claude-3-5-sonnet
+    base_url: http://host.docker.internal:${MOCK_SECONDARY_PORT}
+    access_key: test-key-secondary
+    default: false
+    retry_policy:
+      default_strategy: "different_provider"
+      default_max_attempts: 2
+      on_status_codes:
+        - codes: [429]
+          strategy: "different_provider"
+          max_attempts: 2

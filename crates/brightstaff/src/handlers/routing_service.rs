@@ -45,7 +45,14 @@ pub fn extract_routing_policy(
             },
         );
 
-    let bytes = Bytes::from(serde_json::to_vec(&json_body).unwrap());
+    // Only re-serialize if we actually removed routing_preferences.
+    // Otherwise preserve the original bytes to maintain JSON key order,
+    // whitespace, and unknown fields — critical for prompt cache hits.
+    let bytes = if routing_preferences.is_some() {
+        Bytes::from(serde_json::to_vec(&json_body).unwrap())
+    } else {
+        Bytes::from(raw_bytes.to_vec())
+    };
     Ok((bytes, routing_preferences))
 }
 
