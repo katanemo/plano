@@ -49,7 +49,7 @@ Client → Envoy (prompt_gateway.wasm → llm_gateway.wasm) → Agents/LLM Provi
 
 ### Python CLI (cli/planoai/)
 
-Entry point: `main.py`. Built with `rich-click`. Commands: `up`, `down`, `build`, `logs`, `trace`, `init`, `cli_agent`, `generate_prompt_targets`.
+Entry point: `main.py`. Built with `rich-click`. Commands: `up`, `down`, `build`, `logs`, `trace`, `init`, `cli_agent`, `generate_prompt_targets`, `chatgpt`, `obs`.
 
 ### Config (config/)
 
@@ -59,7 +59,7 @@ Entry point: `main.py`. Built with `rich-click`. Commands: `up`, `down`, `build`
 
 ### JS Apps (apps/, packages/)
 
-Turbo monorepo with Next.js 16 / React 19. Not part of the core proxy.
+Turbo monorepo with Next.js 16.1 / React 19.2. Not part of the core proxy. Apps: `www`, `katanemo-www`.
 
 ## WASM Plugin Rules
 
@@ -78,17 +78,17 @@ Code in `prompt_gateway` and `llm_gateway` runs in Envoy's WASM sandbox:
 1. Add variant to `ProviderId` in `crates/hermesllm/src/providers/id.rs` + `TryFrom<&str>`
 2. Create request/response types in `crates/hermesllm/src/apis/` if non-OpenAI format
 3. Add variant to `ProviderRequestType`/`ProviderResponseType` enums, update all match arms
-4. Add models to `crates/hermesllm/src/providers/provider_models.yaml`
+4. Add models to `crates/hermesllm/src/bin/provider_models.yaml`
 5. Update `SupportedUpstreamAPIs` mapping if needed
 
 ## Release Process
 
-Update version (e.g., `0.4.11` → `0.4.12`) in all of these files:
+Update version (e.g., `0.4.21` → `0.4.22`) in all of these files:
 
-- `.github/workflows/ci.yml`, `build_filter_image.sh`, `config/validate_plano_config.sh`
-- `cli/planoai/__init__.py`, `cli/planoai/consts.py`, `cli/pyproject.toml`
-- `docs/source/conf.py`, `docs/source/get_started/quickstart.rst`, `docs/source/resources/deployment.rst`
-- `apps/www/src/components/Hero.tsx`, `demos/llm_routing/preference_based_routing/README.md`
+- `.github/workflows/ci.yml`, `build_filter_image.sh`
+- `cli/planoai/__init__.py`, `cli/pyproject.toml`
+- `docs/source/conf.py`, `docs/source/get_started/quickstart.rst`
+- `apps/www/src/components/Hero.tsx` (if version is displayed)
 
 Do NOT change version strings in `*.lock` files or `Cargo.lock`. Commit message: `release X.Y.Z`
 
