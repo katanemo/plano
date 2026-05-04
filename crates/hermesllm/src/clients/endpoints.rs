@@ -175,7 +175,10 @@ impl SupportedAPIsFromClient {
         match self {
             SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages) => {
                 match provider_id {
-                    ProviderId::Anthropic | ProviderId::Vercel => {
+                    // ClaudeCli speaks Anthropic Messages on the wire (the
+                    // brightstaff bridge only accepts `POST /v1/messages`),
+                    // so keep the path as-is just like the real Anthropic.
+                    ProviderId::Anthropic | ProviderId::Vercel | ProviderId::ClaudeCli => {
                         build_endpoint("/v1", "/messages")
                     }
                     ProviderId::AmazonBedrock => {
@@ -198,11 +201,18 @@ impl SupportedAPIsFromClient {
                     | ProviderId::XAI
                     | ProviderId::ChatGPT
                     | ProviderId::Vercel => route_by_provider("/responses"),
+                    // ClaudeCli: bridge only accepts Anthropic Messages.
+                    ProviderId::ClaudeCli => build_endpoint("/v1", "/messages"),
                     // All other providers: translate to /chat/completions
                     _ => route_by_provider("/chat/completions"),
                 }
             }
             SupportedAPIsFromClient::OpenAIChatCompletions(_) => {
+                // ClaudeCli: bridge only accepts Anthropic Messages, regardless
+                // of how the client framed the request.
+                if matches!(provider_id, ProviderId::ClaudeCli) {
+                    return build_endpoint("/v1", "/messages");
+                }
                 // For Chat Completions API, use the standard chat/completions path
                 route_by_provider("/chat/completions")
             }
@@ -631,6 +641,35 @@ mod tests {
             ),
             "/api/v2/messages"
         );
+    }
+
+    /// The brightstaff `claude-cli` bridge only accepts `POST /v1/messages`.
+    /// Make sure that no matter how a client framed the request, the upstream
+    /// path stays `/v1/messages`.
+    #[test]
+    fn test_claude_cli_endpoint_always_v1_messages() {
+        for client_api in [
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages),
+            SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
+            SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses),
+        ] {
+            for request_path in ["/v1/messages", "/v1/chat/completions", "/v1/responses"] {
+                assert_eq!(
+                    client_api.target_endpoint_for_provider(
+                        &ProviderId::ClaudeCli,
+                        request_path,
+                        "claude-cli/sonnet",
+                        false,
+                        None,
+                        false
+                    ),
+                    "/v1/messages",
+                    "client_api={:?} request_path={} should map to /v1/messages",
+                    client_api,
+                    request_path,
+                );
+            }
+        }
     }
 
     #[test]
