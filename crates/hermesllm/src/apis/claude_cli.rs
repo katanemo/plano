@@ -9,15 +9,15 @@
 //! does the actual spawning and streaming.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use serde_with::skip_serializing_none;
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::apis::anthropic::{
-    MessagesContentBlock, MessagesContentDelta, MessagesMessage, MessagesMessageContent,
-    MessagesMessageDelta, MessagesRequest, MessagesResponse, MessagesRole, MessagesStopReason,
-    MessagesStreamEvent, MessagesStreamMessage, MessagesSystemPrompt, MessagesUsage,
+    MessagesContentBlock, MessagesContentDelta, MessagesMessageContent, MessagesMessageDelta,
+    MessagesRequest, MessagesResponse, MessagesRole, MessagesStopReason, MessagesStreamEvent,
+    MessagesStreamMessage, MessagesSystemPrompt, MessagesUsage,
 };
 
 /// Errors produced by translation between Anthropic Messages and Claude Code
@@ -208,7 +208,7 @@ pub fn messages_request_to_stdin_payload(
                 role: "user",
                 content,
             },
-            session_id: session_id.map(|s| s.to_string()),
+            session_id: session_id.map(str::to_string),
         });
     }
     Ok(out)
@@ -292,10 +292,10 @@ where
             ClaudeCliEvent::StreamEvent { event } => match event {
                 MessagesStreamEvent::MessageStart { message } => {
                     if id.is_empty() {
-                        id = message.id.clone();
+                        id.clone_from(&message.id);
                     }
                     if !message.model.is_empty() {
-                        model_out = message.model.clone();
+                        model_out.clone_from(&message.model);
                     }
                     usage = message.usage.clone();
                 }
@@ -337,7 +337,6 @@ where
                     // clients but dropped from the non-streaming aggregate.
                     _ => {}
                 },
-                MessagesStreamEvent::ContentBlockStop { .. } => {}
                 MessagesStreamEvent::MessageDelta {
                     delta,
                     usage: msg_usage,
@@ -351,7 +350,9 @@ where
                     // The MessageDelta usage carries final output_tokens.
                     usage.output_tokens = msg_usage.output_tokens;
                 }
-                MessagesStreamEvent::MessageStop | MessagesStreamEvent::Ping => {}
+                MessagesStreamEvent::ContentBlockStop { .. }
+                | MessagesStreamEvent::MessageStop
+                | MessagesStreamEvent::Ping => {}
             },
             ClaudeCliEvent::Assistant { message } => {
                 last_assistant_message = Some(message);
@@ -411,7 +412,7 @@ where
             BlockKind::ToolUse => {
                 if let Some((tool_id, name, raw_input)) = tool_accum.remove(&idx) {
                     let input_value = if raw_input.is_empty() {
-                        Value::Object(Default::default())
+                        Value::Object(Map::default())
                     } else {
                         serde_json::from_str(&raw_input)
                             .unwrap_or_else(|_| Value::String(raw_input))
@@ -505,9 +506,10 @@ pub fn cli_error_to_anthropic_error_body(message: &str) -> Value {
 /// the CLI did not emit one (it usually does, but very small turns can skip
 /// straight to `assistant`/`result`).
 pub fn synthetic_message_start(model: &str, session_id: Option<&str>) -> MessagesStreamEvent {
-    let id = session_id
-        .map(|s| format!("msg_cli_{}", s))
-        .unwrap_or_else(|| format!("msg_cli_{}", Uuid::new_v4().simple()));
+    let id = session_id.map_or_else(
+        || format!("msg_cli_{}", Uuid::new_v4().simple()),
+        |s| format!("msg_cli_{s}"),
+    );
     MessagesStreamEvent::MessageStart {
         message: MessagesStreamMessage {
             id,
@@ -536,11 +538,6 @@ pub fn parse_ndjson_line(line: &str) -> Option<Result<ClaudeCliEvent, serde_json
     }
     Some(serde_json::from_str(trimmed))
 }
-
-// Unused helper to keep MessagesMessage in scope in case future tool_result
-// translation needs to reach into the message shape directly.
-#[allow(dead_code)]
-fn _touch_messages_message_type(_m: MessagesMessage) {}
 
 #[cfg(test)]
 mod tests {

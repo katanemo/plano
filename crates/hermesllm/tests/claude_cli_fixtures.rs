@@ -56,17 +56,16 @@ fn text_response_aggregates_into_messages_response() {
     ));
     let final_event = stream.last().unwrap();
     assert!(matches!(final_event, MessagesStreamEvent::MessageStop));
-    let text_deltas = stream
+    let text_deltas: String = stream
         .iter()
         .filter_map(|ev| match ev {
             MessagesStreamEvent::ContentBlockDelta {
                 delta: MessagesContentDelta::TextDelta { text },
                 ..
-            } => Some(text.clone()),
+            } => Some(text.as_str()),
             _ => None,
         })
-        .collect::<Vec<_>>()
-        .join("");
+        .collect();
     assert_eq!(text_deltas, "Hello, world!");
 }
 

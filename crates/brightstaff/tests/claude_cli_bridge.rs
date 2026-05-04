@@ -84,6 +84,20 @@ impl BridgeFixture {
     }
 }
 
+/// Best-effort cleanup if a test panics before `stop().await`. We can't
+/// `.await` from `Drop`, so we just abort the listener task; that's enough to
+/// keep the runtime from leaking the spawned future.
+impl Drop for BridgeFixture {
+    fn drop(&mut self) {
+        if let Some(tx) = self.shutdown.take() {
+            let _ = tx.send(());
+        }
+        if let Some(h) = self.handle.take() {
+            h.abort();
+        }
+    }
+}
+
 fn anthropic_request(stream: bool) -> Value {
     json!({
         "model": "claude-cli/sonnet",

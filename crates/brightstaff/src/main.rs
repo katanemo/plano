@@ -4,9 +4,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use brightstaff::app_state::AppState;
 use brightstaff::handlers::agents::orchestrator::agent_chat;
-use brightstaff::handlers::claude_cli::{
-    self, ClaudeCliConfig, SessionManager, SessionManagerConfig,
-};
+use brightstaff::handlers::claude_cli::{self, SessionManager, SessionManagerConfig};
 use brightstaff::handlers::debug;
 use brightstaff::handlers::empty;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
@@ -586,6 +584,11 @@ async fn run_server(state: Arc<AppState>) -> Result<(), Box<dyn std::error::Erro
 /// Build the [`SessionManagerConfig`] from environment variables. Returns
 /// `None` when `CLAUDE_CLI_LISTEN_ADDR` is unset, signaling that the bridge
 /// should not start at all (zero-cost when no claude-cli provider exists).
+///
+/// Starts from `SessionManagerConfig::default()` and only overrides fields
+/// for which the corresponding env var is both set and parses successfully.
+/// This keeps the defaults in one place (the `Default` impls) so they can't
+/// drift between this function and the library types.
 fn claude_cli_config_from_env() -> Option<(std::net::SocketAddr, SessionManagerConfig)> {
     let addr_str = env::var("CLAUDE_CLI_LISTEN_ADDR").ok()?;
     let addr: std::net::SocketAddr = match addr_str.parse() {
@@ -599,35 +602,33 @@ fn claude_cli_config_from_env() -> Option<(std::net::SocketAddr, SessionManagerC
             return None;
         }
     };
-    let binary = env::var("CLAUDE_CLI_BIN").unwrap_or_else(|_| "claude".to_string());
-    let permission_mode =
-        env::var("CLAUDE_CLI_PERMISSION_MODE").unwrap_or_else(|_| "bypassPermissions".to_string());
-    let session_ttl = env::var("CLAUDE_CLI_SESSION_TTL_SECS")
+
+    let mut cfg = SessionManagerConfig::default();
+    if let Ok(s) = env::var("CLAUDE_CLI_BIN") {
+        cfg.process.binary = s;
+    }
+    if let Ok(s) = env::var("CLAUDE_CLI_PERMISSION_MODE") {
+        cfg.process.permission_mode = s;
+    }
+    if let Some(secs) = env::var("CLAUDE_CLI_SESSION_TTL_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
-        .map(Duration::from_secs)
-        .unwrap_or_else(|| Duration::from_secs(600));
-    let watchdog = env::var("CLAUDE_CLI_WATCHDOG_SECS")
+    {
+        cfg.process.session_ttl = Duration::from_secs(secs);
+    }
+    if let Some(secs) = env::var("CLAUDE_CLI_WATCHDOG_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
-        .map(Duration::from_secs)
-        .unwrap_or_else(|| Duration::from_secs(120));
-    let max_sessions = env::var("CLAUDE_CLI_MAX_SESSIONS")
+    {
+        cfg.process.watchdog = Duration::from_secs(secs);
+    }
+    if let Some(n) = env::var("CLAUDE_CLI_MAX_SESSIONS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(claude_cli::session::DEFAULT_MAX_SESSIONS);
-    Some((
-        addr,
-        SessionManagerConfig {
-            max_sessions,
-            process: ClaudeCliConfig {
-                binary,
-                permission_mode,
-                session_ttl,
-                watchdog,
-            },
-        },
-    ))
+    {
+        cfg.max_sessions = n;
+    }
+    Some((addr, cfg))
 }
 
 // ---------------------------------------------------------------------------

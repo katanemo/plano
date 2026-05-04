@@ -86,8 +86,7 @@ impl TryFrom<&str> for ProviderId {
             "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             "vercel" => Ok(ProviderId::Vercel),
             "openrouter" => Ok(ProviderId::OpenRouter),
-            "claude-cli" => Ok(ProviderId::ClaudeCli),
-            "claude_cli" => Ok(ProviderId::ClaudeCli), // alias
+            "claude-cli" | "claude_cli" => Ok(ProviderId::ClaudeCli),
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
