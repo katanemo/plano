@@ -559,3 +559,4 @@ jobs:
         run: |
           source venv/bin/activate
           cd demos/shared/test_runner && bash run_demo_tests.sh advanced/currency_exchange
+
