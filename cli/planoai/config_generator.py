@@ -39,9 +39,62 @@ CHATGPT_API_BASE = "https://chatgpt.com/backend-api/codex"
 CHATGPT_DEFAULT_ORIGINATOR = "codex_cli_rs"
 CHATGPT_DEFAULT_USER_AGENT = "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
 
+# Local-only bridge that runs Claude Code CLI as a subprocess. Hosted by
+# brightstaff on this loopback address; the Python CLI auto-fills the matching
+# provider fields below and tells the launcher to enable the bridge.
+CLAUDE_CLI_DEFAULT_BASE_URL = "http://127.0.0.1:14001"
+CLAUDE_CLI_DEFAULT_LISTEN_ADDR = "127.0.0.1:14001"
+CLAUDE_CLI_DEFAULT_NAME = "claude-cli/*"
+CLAUDE_CLI_DEFAULT_ACCESS_KEY_PLACEHOLDER = "claude-cli-local"
+
 SUPPORTED_PROVIDERS = (
     SUPPORTED_PROVIDERS_WITHOUT_BASE_URL + SUPPORTED_PROVIDERS_WITH_BASE_URL
 )
+
+
+def _is_claude_cli_provider(model_provider):
+    """Return True iff this provider entry refers to the local claude-cli
+    bridge. Triggered by any of `model`, `name`, or `provider_interface`
+    matching the `claude-cli/...` namespace.
+    """
+    model = (model_provider.get("model") or "").strip()
+    name = (model_provider.get("name") or "").strip()
+    interface = (model_provider.get("provider_interface") or "").strip()
+    return (
+        model.startswith("claude-cli/")
+        or name.startswith("claude-cli/")
+        or interface == "claude-cli"
+    )
+
+
+def _apply_claude_cli_autofill(model_provider):
+    """Fill in implicit fields for `claude-cli/*` provider entries so the
+    user only has to write `model: claude-cli/*` (or any `claude-cli/...`)
+    and everything else is wired automatically: a localhost cluster pointing
+    at the brightstaff bridge, the `claude-cli` provider_interface, and a
+    placeholder access key so downstream validation does not reject the entry.
+
+    Returns True iff this entry was treated as a claude-cli provider (so the
+    caller can flip the launcher's `needs_claude_cli_runtime` flag).
+    """
+    if not _is_claude_cli_provider(model_provider):
+        return False
+
+    if not model_provider.get("name"):
+        model_provider["name"] = model_provider.get("model") or CLAUDE_CLI_DEFAULT_NAME
+    if not model_provider.get("provider_interface"):
+        model_provider["provider_interface"] = "claude-cli"
+    if not model_provider.get("base_url"):
+        model_provider["base_url"] = CLAUDE_CLI_DEFAULT_BASE_URL
+    # Keep passthrough_auth users alone; the bridge ignores the access key
+    # anyway (it uses the host's `claude auth login` keychain), so a
+    # placeholder is fine for everyone else.
+    if not model_provider.get("access_key") and not model_provider.get(
+        "passthrough_auth"
+    ):
+        model_provider["access_key"] = CLAUDE_CLI_DEFAULT_ACCESS_KEY_PLACEHOLDER
+
+    return True
 
 
 def get_endpoint_and_port(endpoint, protocol):
@@ -329,6 +382,12 @@ def validate_and_render_schema():
         name = listener.get("name", None)
 
         for model_provider in listener.get("model_providers", []):
+            # Auto-fill the implicit fields for `claude-cli/*` providers
+            # before the rest of the loop runs validation. This makes
+            # `model_providers: [{model: claude-cli/*}]` a fully-formed
+            # entry by the time we reach the wildcard checks below.
+            _apply_claude_cli_autofill(model_provider)
+
             if model_provider.get("usage", None):
                 llms_with_usage.append(model_provider["name"])
             if model_provider.get("name") in model_provider_name_set:

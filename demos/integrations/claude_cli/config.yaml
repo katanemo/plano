@@ -1,0 +1,27 @@
+version: v0.4.0
+
+# Claude Code CLI as a Plano model_provider.
+#
+# The single line below is everything you need: Plano detects the
+# `claude-cli/*` namespace, auto-fills the provider_interface, base_url and
+# placeholder access_key, and starts a localhost bridge inside brightstaff
+# that shells out to the `claude` binary on your $PATH for each request.
+#
+# Requirements:
+#   - `claude --version` must work in the same shell as `planoai up`.
+#   - Auth happens via the CLI's own `claude auth login` (no API key needed
+#     in Plano).
+#
+# Optional overrides via env (set before `planoai up`):
+#   CLAUDE_CLI_BIN=/custom/path/to/claude
+#   CLAUDE_CLI_PERMISSION_MODE=default
+#   CLAUDE_CLI_LISTEN_ADDR=127.0.0.1:14001
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: claude-cli/*
+    default: true

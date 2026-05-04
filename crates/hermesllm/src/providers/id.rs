@@ -48,6 +48,11 @@ pub enum ProviderId {
     DigitalOcean,
     Vercel,
     OpenRouter,
+    /// Claude Code CLI invoked as a local subprocess by brightstaff. On the
+    /// wire it speaks the Anthropic Messages API exactly like
+    /// [`ProviderId::Anthropic`]; the difference is that no Anthropic API key
+    /// or network call is involved — the local `claude` binary is.
+    ClaudeCli,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -81,6 +86,8 @@ impl TryFrom<&str> for ProviderId {
             "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             "vercel" => Ok(ProviderId::Vercel),
             "openrouter" => Ok(ProviderId::OpenRouter),
+            "claude-cli" => Ok(ProviderId::ClaudeCli),
+            "claude_cli" => Ok(ProviderId::ClaudeCli), // alias
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -107,6 +114,7 @@ impl ProviderId {
             ProviderId::Qwen => "qwen",
             ProviderId::ChatGPT => "chatgpt",
             ProviderId::DigitalOcean => "digitalocean",
+            ProviderId::ClaudeCli => "claude-cli",
             _ => return Vec::new(),
         };
 
@@ -142,6 +150,14 @@ impl ProviderId {
             // Anthropic doesn't support Responses API, fall back to chat completions
             (ProviderId::Anthropic, SupportedAPIsFromClient::OpenAIResponsesAPI(_)) => {
                 SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
+            }
+
+            // ClaudeCli speaks the same wire protocol as Anthropic — the
+            // brightstaff bridge always presents itself as an Anthropic
+            // Messages API endpoint, so client requests in any shape get
+            // converted to AnthropicMessagesAPI on the way out.
+            (ProviderId::ClaudeCli, _) => {
+                SupportedUpstreamAPIs::AnthropicMessagesAPI(AnthropicApi::Messages)
             }
 
             // Vercel AI Gateway natively supports all three API types
@@ -267,6 +283,7 @@ impl Display for ProviderId {
             ProviderId::DigitalOcean => write!(f, "digitalocean"),
             ProviderId::Vercel => write!(f, "vercel"),
             ProviderId::OpenRouter => write!(f, "openrouter"),
+            ProviderId::ClaudeCli => write!(f, "claude-cli"),
         }
     }
 }

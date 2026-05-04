@@ -3,8 +3,11 @@ import pytest
 import yaml
 from unittest import mock
 from planoai.config_generator import (
-    validate_and_render_schema,
+    CLAUDE_CLI_DEFAULT_BASE_URL,
+    _apply_claude_cli_autofill,
+    _is_claude_cli_provider,
     migrate_inline_routing_preferences,
+    validate_and_render_schema,
 )
 
 
@@ -738,3 +741,64 @@ model_providers:
     migrate_inline_routing_preferences(config_yaml)
 
     assert config_yaml["version"] == "v0.5.0"
+
+
+def test_claude_cli_autofill_wildcard_provider():
+    provider = {"model": "claude-cli/*"}
+    assert _is_claude_cli_provider(provider) is True
+    assert _apply_claude_cli_autofill(provider) is True
+    assert provider["name"] == "claude-cli/*"
+    assert provider["provider_interface"] == "claude-cli"
+    assert provider["base_url"] == CLAUDE_CLI_DEFAULT_BASE_URL
+    assert provider["access_key"] == "claude-cli-local"
+    # `model` itself must not be rewritten — the wildcard expansion happens
+    # downstream and we want to preserve the user's intent.
+    assert provider["model"] == "claude-cli/*"
+
+
+def test_claude_cli_autofill_specific_model():
+    provider = {"model": "claude-cli/sonnet", "default": True}
+    assert _apply_claude_cli_autofill(provider) is True
+    assert provider["name"] == "claude-cli/sonnet"
+    assert provider["provider_interface"] == "claude-cli"
+    assert provider["base_url"] == CLAUDE_CLI_DEFAULT_BASE_URL
+    # Existing fields like `default` survive.
+    assert provider["default"] is True
+
+
+def test_claude_cli_autofill_does_not_override_user_fields():
+    provider = {
+        "model": "claude-cli/*",
+        "name": "custom-name",
+        "base_url": "http://192.0.2.10:9000",
+        "access_key": "do-not-touch",
+    }
+    assert _apply_claude_cli_autofill(provider) is True
+    assert provider["name"] == "custom-name"
+    assert provider["base_url"] == "http://192.0.2.10:9000"
+    assert provider["access_key"] == "do-not-touch"
+    # provider_interface still gets injected because it was missing.
+    assert provider["provider_interface"] == "claude-cli"
+
+
+def test_claude_cli_autofill_skips_non_matching_providers():
+    provider = {"model": "openai/gpt-4o"}
+    assert _is_claude_cli_provider(provider) is False
+    assert _apply_claude_cli_autofill(provider) is False
+    assert "provider_interface" not in provider
+
+
+def test_claude_cli_autofill_passthrough_auth_skips_access_key():
+    provider = {"model": "claude-cli/*", "passthrough_auth": True}
+    assert _apply_claude_cli_autofill(provider) is True
+    # Honor passthrough_auth: do not inject a placeholder access_key.
+    assert "access_key" not in provider
+    assert provider["passthrough_auth"] is True
+
+
+def test_claude_cli_autofill_detects_via_provider_interface_only():
+    provider = {"model": "sonnet", "provider_interface": "claude-cli"}
+    assert _is_claude_cli_provider(provider) is True
+    assert _apply_claude_cli_autofill(provider) is True
+    assert provider["base_url"] == CLAUDE_CLI_DEFAULT_BASE_URL
+    assert provider["name"] == "sonnet"

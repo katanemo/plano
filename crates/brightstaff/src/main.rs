@@ -4,6 +4,9 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use brightstaff::app_state::AppState;
 use brightstaff::handlers::agents::orchestrator::agent_chat;
+use brightstaff::handlers::claude_cli::{
+    self, ClaudeCliConfig, SessionManager, SessionManagerConfig,
+};
 use brightstaff::handlers::debug;
 use brightstaff::handlers::empty;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
@@ -37,6 +40,7 @@ use opentelemetry::trace::FutureExt;
 use opentelemetry_http::HeaderExtractor;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{env, fs};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
@@ -576,6 +580,57 @@ async fn run_server(state: Arc<AppState>) -> Result<(), Box<dyn std::error::Erro
 }
 
 // ---------------------------------------------------------------------------
+// claude-cli bridge wiring
+// ---------------------------------------------------------------------------
+
+/// Build the [`SessionManagerConfig`] from environment variables. Returns
+/// `None` when `CLAUDE_CLI_LISTEN_ADDR` is unset, signaling that the bridge
+/// should not start at all (zero-cost when no claude-cli provider exists).
+fn claude_cli_config_from_env() -> Option<(std::net::SocketAddr, SessionManagerConfig)> {
+    let addr_str = env::var("CLAUDE_CLI_LISTEN_ADDR").ok()?;
+    let addr: std::net::SocketAddr = match addr_str.parse() {
+        Ok(a) => a,
+        Err(err) => {
+            warn!(
+                value = %addr_str,
+                error = %err,
+                "invalid CLAUDE_CLI_LISTEN_ADDR — claude-cli bridge disabled"
+            );
+            return None;
+        }
+    };
+    let binary = env::var("CLAUDE_CLI_BIN").unwrap_or_else(|_| "claude".to_string());
+    let permission_mode =
+        env::var("CLAUDE_CLI_PERMISSION_MODE").unwrap_or_else(|_| "bypassPermissions".to_string());
+    let session_ttl = env::var("CLAUDE_CLI_SESSION_TTL_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(600));
+    let watchdog = env::var("CLAUDE_CLI_WATCHDOG_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(120));
+    let max_sessions = env::var("CLAUDE_CLI_MAX_SESSIONS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(claude_cli::session::DEFAULT_MAX_SESSIONS);
+    Some((
+        addr,
+        SessionManagerConfig {
+            max_sessions,
+            process: ClaudeCliConfig {
+                binary,
+                permission_mode,
+                session_ttl,
+                watchdog,
+            },
+        },
+    ))
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -586,5 +641,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     bs_metrics::init();
     info!("loaded plano_config.yaml");
     let state = Arc::new(init_app_state(&config).await?);
-    run_server(state).await
+
+    // Optional claude-cli bridge listener. Started iff CLAUDE_CLI_LISTEN_ADDR
+    // is set in the environment (the Python CLI sets this when it detects a
+    // `model: claude-cli/*` provider entry).
+    let bridge_handle = if let Some((addr, cfg)) = claude_cli_config_from_env() {
+        let manager = SessionManager::new(cfg);
+        let shutdown = async {
+            let _ = tokio::signal::ctrl_c().await;
+        };
+        Some(tokio::spawn(async move {
+            if let Err(err) = claude_cli::run_listener(addr, manager, shutdown).await {
+                warn!(error = ?err, "claude-cli bridge listener exited with error");
+            }
+        }))
+    } else {
+        None
+    };
+
+    let result = run_server(state).await;
+
+    if let Some(handle) = bridge_handle {
+        // Ctrl-C already triggered the bridge's own shutdown; join briefly to
+        // give in-flight session drains a chance to finish.
+        let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
+    }
+
+    result
 }

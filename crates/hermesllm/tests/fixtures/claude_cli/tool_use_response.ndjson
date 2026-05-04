@@ -1,0 +1,9 @@
+{"type":"system","subtype":"init","session_id":"tool-1","model":"sonnet","cwd":"/tmp","tools":[]}
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_tool","type":"message","role":"assistant","content":[],"model":"sonnet","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":0}}}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_W","name":"get_weather","input":{}}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"Seattle\"}"}}}
+{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
+{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":7}}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":701,"num_turns":1,"result":null,"total_cost_usd":0.00021,"usage":{"input_tokens":20,"output_tokens":7},"session_id":"tool-1"}

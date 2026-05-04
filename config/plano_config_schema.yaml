@@ -184,6 +184,7 @@ properties:
           enum:
             - plano
             - claude
+            - claude-cli
             - deepseek
             - groq
             - mistral
@@ -242,6 +243,7 @@ properties:
           enum:
             - plano
             - claude
+            - claude-cli
             - deepseek
             - groq
             - mistral
