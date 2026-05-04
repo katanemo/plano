@@ -1,5 +1,6 @@
 pub mod amazon_bedrock;
 pub mod anthropic;
+pub mod claude_cli;
 pub mod openai;
 pub mod openai_responses;
 pub mod streaming_shapes;

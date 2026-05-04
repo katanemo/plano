@@ -22,6 +22,61 @@ from planoai.utils import find_repo_root, getLogger
 
 log = getLogger(__name__)
 
+CLAUDE_CLI_DEFAULT_LISTEN_ADDR = "127.0.0.1:14001"
+# Env vars the user can set to customize the bridge. We always honor a
+# pre-set CLAUDE_CLI_LISTEN_ADDR (so power users can move the listener)
+# but otherwise inject the default whenever a claude-cli provider is
+# detected in the rendered config.
+CLAUDE_CLI_PASSTHROUGH_ENV = (
+    "CLAUDE_CLI_LISTEN_ADDR",
+    "CLAUDE_CLI_BIN",
+    "CLAUDE_CLI_PERMISSION_MODE",
+    "CLAUDE_CLI_SESSION_TTL_SECS",
+    "CLAUDE_CLI_WATCHDOG_SECS",
+    "CLAUDE_CLI_MAX_SESSIONS",
+)
+
+
+def _needs_claude_cli_runtime(plano_config_rendered_path) -> bool:
+    """True iff the rendered config has at least one model_provider whose
+    `provider_interface` is `claude-cli`. The Python config_generator
+    auto-fills this field when it sees a `claude-cli/*` model entry, so the
+    detection is one-step regardless of how the user wrote the original
+    provider line.
+    """
+    import yaml
+
+    try:
+        with open(plano_config_rendered_path, "r") as f:
+            rendered = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return False
+    for provider in rendered.get("model_providers") or []:
+        if (provider or {}).get("provider_interface") == "claude-cli":
+            return True
+    return False
+
+
+def _apply_claude_cli_env(brightstaff_env, plano_config_rendered_path):
+    """If the rendered config opts into the claude-cli bridge, ensure
+    `CLAUDE_CLI_LISTEN_ADDR` is set in the brightstaff process environment so
+    the bridge listener actually starts. Honors any pre-set values from the
+    caller's env (so users can override the listen address, binary path, or
+    permission mode without editing this file).
+    """
+    if not _needs_claude_cli_runtime(plano_config_rendered_path):
+        return False
+    if not brightstaff_env.get("CLAUDE_CLI_LISTEN_ADDR"):
+        brightstaff_env["CLAUDE_CLI_LISTEN_ADDR"] = CLAUDE_CLI_DEFAULT_LISTEN_ADDR
+    for key in CLAUDE_CLI_PASSTHROUGH_ENV:
+        if key in os.environ and key not in brightstaff_env:
+            brightstaff_env[key] = os.environ[key]
+    log.info(
+        "claude-cli bridge enabled: brightstaff will listen on %s",
+        brightstaff_env["CLAUDE_CLI_LISTEN_ADDR"],
+    )
+    return True
+
 
 def _find_config_dir():
     """Locate the directory containing plano_config_schema.yaml and envoy.template.yaml.
@@ -196,6 +251,11 @@ def start_native(
     # Propagate API keys and other env vars
     for key, value in env.items():
         brightstaff_env[key] = value
+
+    # Enable the claude-cli bridge if the rendered config asks for it. Done
+    # after `env.items()` is merged so user-set CLAUDE_CLI_* env vars take
+    # precedence over the auto-injected defaults.
+    _apply_claude_cli_env(brightstaff_env, plano_config_rendered_path)
 
     brightstaff_pid = _daemon_exec(
         [brightstaff_path],

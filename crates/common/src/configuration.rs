@@ -400,6 +400,10 @@ pub enum LlmProviderType {
     Vercel,
     #[serde(rename = "openrouter")]
     OpenRouter,
+    /// Claude Code CLI invoked as a local subprocess. The bridge runs inside
+    /// brightstaff (`CLAUDE_CLI_LISTEN_ADDR`) and exposes Anthropic Messages.
+    #[serde(rename = "claude-cli")]
+    ClaudeCli,
 }
 
 impl Display for LlmProviderType {
@@ -425,6 +429,7 @@ impl Display for LlmProviderType {
             LlmProviderType::DigitalOcean => write!(f, "digitalocean"),
             LlmProviderType::Vercel => write!(f, "vercel"),
             LlmProviderType::OpenRouter => write!(f, "openrouter"),
+            LlmProviderType::ClaudeCli => write!(f, "claude-cli"),
         }
     }
 }
@@ -772,6 +777,7 @@ mod test {
         for (yaml_value, expected) in [
             ("vercel", LlmProviderType::Vercel),
             ("openrouter", LlmProviderType::OpenRouter),
+            ("claude-cli", LlmProviderType::ClaudeCli),
         ] {
             let parsed: LlmProviderType =
                 serde_yaml::from_str(yaml_value).expect("variant should deserialize");

@@ -1,0 +1,10 @@
+{"type":"system","subtype":"init","session_id":"retry-1","model":"sonnet","cwd":"/tmp","tools":[]}
+{"type":"system","subtype":"api_retry","attempt":1,"reason":"529 overloaded"}
+{"type":"system","subtype":"rate_limit_event","reset_at":"2026-05-04T18:30:00Z"}
+{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_retry","type":"message","role":"assistant","content":[],"model":"sonnet","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":0}}}}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}}
+{"type":"stream_event","event":{"type":"content_block_stop","index":0}}
+{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":1}}}
+{"type":"stream_event","event":{"type":"message_stop"}}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":2100,"num_turns":1,"result":"ok","total_cost_usd":0.00009,"usage":{"input_tokens":3,"output_tokens":1},"session_id":"retry-1"}

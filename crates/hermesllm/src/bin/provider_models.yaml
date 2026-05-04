@@ -92,6 +92,19 @@ providers:
   - mistralai/mistral-embed
   - mistralai/codestral-embed
   - mistralai/codestral-embed-2505
+  claude-cli:
+  # Family aliases (always resolve to the latest model in the family).
+  - claude-cli/sonnet
+  - claude-cli/opus
+  - claude-cli/haiku
+  # Dated full ids (sourced from the Claude Code model configuration article;
+  # refresh by re-fetching that doc whenever Anthropic ships new models).
+  - claude-cli/claude-opus-4-7
+  - claude-cli/claude-sonnet-4-6
+  - claude-cli/claude-opus-4-6
+  - claude-cli/claude-opus-4-5-20251101
+  - claude-cli/claude-haiku-4-5-20251001
+  - claude-cli/claude-sonnet-4-5-20250929
   anthropic:
   - anthropic/claude-sonnet-4-6
   - anthropic/claude-opus-4-6
