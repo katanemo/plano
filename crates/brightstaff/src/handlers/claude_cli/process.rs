@@ -105,7 +105,16 @@ pub struct ClaudeProcess {
     /// which keeps `SessionManager` callers from holding the session-map lock
     /// across an async hop.
     last_used: StdMutex<Instant>,
+    /// Brightstaff-internal identifier — a deterministic UUID v5 derived from
+    /// the conversation prefix (or supplied by the client header). Stable
+    /// across retries so the manager can route follow-up turns to this same
+    /// child. NEVER passed to `claude` itself.
     pub session_id: String,
+    /// Per-spawn random UUID v4 passed to `claude --session-id`. Always fresh
+    /// so we never collide with on-disk state (`~/.claude/projects/...`)
+    /// from a previous run of the same conversation. Also stamped onto every
+    /// stdin JSONL event so the CLI can verify the turn matches its session.
+    cli_session_id: String,
 }
 
 impl ClaudeProcess {
@@ -119,6 +128,14 @@ impl ClaudeProcess {
         cwd: Option<&std::path::Path>,
         config: ClaudeCliConfig,
     ) -> Result<Arc<Self>, ProcessError> {
+        // Always hand the CLI a brand-new UUID. `--no-session-persistence`
+        // does NOT actually prevent Claude Code from writing
+        // `~/.claude/projects/<workspace>/<id>.jsonl` — it only blocks
+        // resumability — so re-using our deterministic `session_id` would
+        // collide with any prior run of the same conversation and the CLI
+        // would exit with `Session ID ... is already in use`.
+        let cli_session_id = uuid::Uuid::new_v4().to_string();
+
         let mut cmd = Command::new(&config.binary);
         cmd.arg("-p")
             .arg("--output-format")
@@ -132,7 +149,7 @@ impl ClaudeProcess {
             .arg("--model")
             .arg(normalize_model_arg(model))
             .arg("--session-id")
-            .arg(&session_id)
+            .arg(&cli_session_id)
             .arg("--no-session-persistence");
 
         if let Some(prompt) = system_prompt {
@@ -226,6 +243,7 @@ impl ClaudeProcess {
 
         info!(
             session = %session_id,
+            cli_session = %cli_session_id,
             model = %normalize_model_arg(model),
             "spawned claude-cli"
         );
@@ -237,7 +255,17 @@ impl ClaudeProcess {
             config,
             last_used: StdMutex::new(Instant::now()),
             session_id,
+            cli_session_id,
         }))
+    }
+
+    /// The UUID that `claude --session-id` was launched with. The bridge has
+    /// to stamp every stdin JSONL event with this id so the CLI accepts the
+    /// turn as belonging to its current session — see
+    /// [`Self::session_id`] for why this is distinct from the brightstaff
+    /// session id.
+    pub fn cli_session_id(&self) -> &str {
+        &self.cli_session_id
     }
 
     /// Write the user-turn JSONL events to the child's stdin and return a

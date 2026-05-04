@@ -134,16 +134,19 @@ async fn handle(
         }
     };
 
-    let stdin_payload = match messages_request_to_stdin_payload(&parsed, Some(&session_id)) {
-        Ok(p) => p,
-        Err(err) => {
-            warn!(error = %err, "failed to build claude-cli stdin payload");
-            return Ok(json_error(
-                StatusCode::BAD_REQUEST,
-                &format!("failed to build claude-cli stdin payload: {err}"),
-            ));
-        }
-    };
+    // Stamp stdin events with the CLI's per-spawn UUID, NOT our deterministic
+    // brightstaff session id. The CLI rejects the turn if the two disagree.
+    let stdin_payload =
+        match messages_request_to_stdin_payload(&parsed, Some(process.cli_session_id())) {
+            Ok(p) => p,
+            Err(err) => {
+                warn!(error = %err, "failed to build claude-cli stdin payload");
+                return Ok(json_error(
+                    StatusCode::BAD_REQUEST,
+                    &format!("failed to build claude-cli stdin payload: {err}"),
+                ));
+            }
+        };
 
     let streaming = parsed.stream.unwrap_or(false);
     let model = parsed.model.clone();
