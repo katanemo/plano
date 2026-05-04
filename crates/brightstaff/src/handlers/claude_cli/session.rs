@@ -3,10 +3,8 @@
 //! long-lived `ClaudeProcess`. Enforces an idle TTL and a hard cap on the
 //! number of concurrent sessions.
 
-use std::collections::{hash_map::DefaultHasher, HashMap};
-use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use hermesllm::apis::anthropic::{
     MessagesContentBlock, MessagesMessageContent, MessagesRequest, MessagesRole,
@@ -75,15 +73,19 @@ impl SessionManager {
                 return uuid_from_seed(trimmed);
             }
         }
-        let mut hasher = DefaultHasher::new();
-        req.model.hash(&mut hasher);
+        // Build a deterministic seed from (model, system_prompt, first user
+        // message) so a retried conversation lands on the same session.
+        let mut seed = String::new();
+        seed.push_str(&req.model);
+        seed.push('\u{1f}');
         if let Some(system) = &req.system {
-            system_text(system).hash(&mut hasher);
+            seed.push_str(&system_text(system));
         }
+        seed.push('\u{1f}');
         if let Some(first) = first_user_message_text(req) {
-            first.hash(&mut hasher);
+            seed.push_str(&first);
         }
-        uuid_from_seed(&hasher.finish().to_string())
+        uuid_from_seed(&seed)
     }
 
     /// Get the existing session's process or spawn a new one.
@@ -98,40 +100,61 @@ impl SessionManager {
         // background task for the common one-developer-one-laptop deployment.
         self.evict_idle().await;
 
-        {
-            let map = self.inner.lock().await;
-            if let Some(existing) = map.get(session_id) {
-                debug!(session = %session_id, "reusing claude-cli session");
-                return Ok(Arc::clone(existing));
-            }
-        }
-
+        // Single lock acquisition for the whole get-or-spawn path. `last_used`
+        // is now a sync mutex on `ClaudeProcess`, so iterating to find the
+        // LRU victim does not block other tasks across an `.await`.
         let mut map = self.inner.lock().await;
+
         if let Some(existing) = map.get(session_id) {
+            debug!(session = %session_id, "reusing claude-cli session");
             return Ok(Arc::clone(existing));
         }
 
-        if map.len() >= self.config.max_sessions {
-            // Evict the least-recently-used session to keep the cap honest.
-            if let Some(victim_key) = lru_session_id(&map).await {
-                if let Some(victim) = map.remove(&victim_key) {
-                    info!(session = %victim_key, "evicting LRU claude-cli session to make room");
-                    drop(map);
-                    victim.shutdown().await;
-                    map = self.inner.lock().await;
-                }
-            }
-        }
+        // If we are at the cap, take an LRU victim out of the map first so
+        // its slot is freed before we insert. We drop the lock for the
+        // shutdown await (killing a child can take a tick), accepting that
+        // the cap can drift by one if a concurrent task spawns in that
+        // window — the next reap will catch it.
+        let victim = if map.len() >= self.config.max_sessions {
+            let victim_key = lru_session_id(&map);
+            victim_key.and_then(|k| map.remove(&k).map(|v| (k, v)))
+        } else {
+            None
+        };
 
-        let process = ClaudeProcess::spawn(
-            session_id.to_string(),
-            model,
-            system_prompt,
-            cwd,
-            self.config.process.clone(),
-        )
-        .await?;
-        map.insert(session_id.to_string(), Arc::clone(&process));
+        // Spawn outside of any lock if we have to wait on a victim shutdown.
+        let process = if let Some((victim_key, victim_proc)) = victim {
+            drop(map);
+            info!(session = %victim_key, "evicting LRU claude-cli session to make room");
+            victim_proc.shutdown().await;
+            let process = ClaudeProcess::spawn(
+                session_id.to_string(),
+                model,
+                system_prompt,
+                cwd,
+                self.config.process.clone(),
+            )
+            .await?;
+            self.inner
+                .lock()
+                .await
+                .insert(session_id.to_string(), Arc::clone(&process));
+            process
+        } else {
+            // No eviction needed — keep holding the map lock across spawn so
+            // we don't race with another caller resolving the same id.
+            let process = ClaudeProcess::spawn(
+                session_id.to_string(),
+                model,
+                system_prompt,
+                cwd,
+                self.config.process.clone(),
+            )
+            .await?;
+            map.insert(session_id.to_string(), Arc::clone(&process));
+            process
+        };
+
         Ok(process)
     }
 
@@ -152,23 +175,21 @@ impl SessionManager {
             return;
         }
         let now = Instant::now();
-        let mut to_kill: Vec<(String, Arc<ClaudeProcess>)> = Vec::new();
-        {
-            let map = self.inner.lock().await;
-            for (k, v) in map.iter() {
-                if now.duration_since(v.last_used().await) > ttl {
-                    to_kill.push((k.clone(), Arc::clone(v)));
-                }
-            }
-        }
-        if to_kill.is_empty() {
-            return;
-        }
-        let mut map = self.inner.lock().await;
-        for (k, _) in &to_kill {
-            map.remove(k);
-        }
-        drop(map);
+
+        // Collect victims under a single lock acquisition; `last_used()` is
+        // sync, so the iteration never crosses an `.await`.
+        let to_kill: Vec<(String, Arc<ClaudeProcess>)> = {
+            let mut map = self.inner.lock().await;
+            let keys: Vec<String> = map
+                .iter()
+                .filter(|(_, v)| now.duration_since(v.last_used()) > ttl)
+                .map(|(k, _)| k.clone())
+                .collect();
+            keys.into_iter()
+                .filter_map(|k| map.remove(&k).map(|v| (k, v)))
+                .collect()
+        };
+
         for (k, proc) in to_kill {
             info!(session = %k, "evicting idle claude-cli session");
             proc.shutdown().await;
@@ -176,16 +197,12 @@ impl SessionManager {
     }
 }
 
-async fn lru_session_id(map: &HashMap<String, Arc<ClaudeProcess>>) -> Option<String> {
-    let mut oldest: Option<(String, Instant)> = None;
-    for (k, v) in map.iter() {
-        let used = v.last_used().await;
-        match &oldest {
-            Some((_, t)) if *t < used => {}
-            _ => oldest = Some((k.clone(), used)),
-        }
-    }
-    oldest.map(|(k, _)| k)
+/// Pick the least-recently-used session id from the map. Sync because
+/// `ClaudeProcess::last_used` is sync.
+fn lru_session_id(map: &HashMap<String, Arc<ClaudeProcess>>) -> Option<String> {
+    map.iter()
+        .min_by_key(|(_, v)| v.last_used())
+        .map(|(k, _)| k.clone())
 }
 
 fn first_user_message_text(req: &MessagesRequest) -> Option<String> {
@@ -222,47 +239,12 @@ fn system_text(system: &MessagesSystemPrompt) -> String {
     }
 }
 
-/// Deterministic v5-style UUID derived from an arbitrary seed string. The
-/// `claude` CLI requires `--session-id` to be a valid UUID; we use the DNS
-/// namespace constant as a stable salt so the same conversation always maps
-/// to the same id without us pulling in the v5 feature of the `uuid` crate.
+/// Deterministic UUIDv5 derived from an arbitrary seed string. The `claude`
+/// CLI requires `--session-id` to be a valid UUID; v5 (SHA-1 based) gives
+/// us a stable mapping across Rust toolchain versions, unlike `DefaultHasher`.
+/// We use the OID namespace because the seed isn't a DNS or URL name.
 fn uuid_from_seed(seed: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    seed.hash(&mut hasher);
-    let h1 = hasher.finish();
-    let mut hasher2 = DefaultHasher::new();
-    h1.hash(&mut hasher2);
-    seed.hash(&mut hasher2);
-    let h2 = hasher2.finish();
-    let bytes = [
-        (h1 >> 56) as u8,
-        (h1 >> 48) as u8,
-        (h1 >> 40) as u8,
-        (h1 >> 32) as u8,
-        (h1 >> 24) as u8,
-        (h1 >> 16) as u8,
-        (h1 >> 8) as u8,
-        h1 as u8,
-        (h2 >> 56) as u8,
-        (h2 >> 48) as u8,
-        (h2 >> 40) as u8,
-        (h2 >> 32) as u8,
-        (h2 >> 24) as u8,
-        (h2 >> 16) as u8,
-        (h2 >> 8) as u8,
-        h2 as u8,
-    ];
-    uuid::Builder::from_random_bytes(bytes)
-        .into_uuid()
-        .to_string()
-}
-
-/// `Duration::is_zero` shim — `Duration` exposes `is_zero` only on stable
-/// 1.53+, but our MSRV already covers that. Re-exporting keeps call sites
-/// terse if we ever need to swap implementations.
-#[allow(dead_code)]
-fn is_zero(d: Duration) -> bool {
-    d.is_zero()
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, seed.as_bytes()).to_string()
 }
 
 #[cfg(test)]

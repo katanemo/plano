@@ -4,7 +4,7 @@
 //! and stream-json lives in `hermesllm::apis::claude_cli`.
 
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use hermesllm::apis::claude_cli::{parse_ndjson_line, ClaudeCliEvent, ClaudeCliInputEvent};
@@ -56,6 +56,12 @@ pub enum ProcessError {
     StdinWrite(#[source] std::io::Error),
     #[error("claude process exited unexpectedly")]
     ExitedEarly,
+    /// `Command::spawn` succeeded but a piped stdio handle was already taken
+    /// by the time we asked for it. Should be unreachable given we set
+    /// `Stdio::piped()` immediately before spawn; surfaced as its own variant
+    /// so callers can tell it apart from a real "exited early".
+    #[error("claude child is missing piped {which} after spawn")]
+    MissingStdio { which: &'static str },
     #[error("claude watchdog fired after {0:?} of silence")]
     WatchdogTimeout(Duration),
     #[error("failed to serialize stdin payload: {0}")]
@@ -94,8 +100,11 @@ pub struct ClaudeProcess {
     event_rx: Arc<Mutex<mpsc::Receiver<ClaudeCliEvent>>>,
     config: ClaudeCliConfig,
     /// Last time a request was served on this session — used by the session
-    /// manager to enforce the idle TTL.
-    last_used: Mutex<Instant>,
+    /// manager to enforce the idle TTL. Held under a sync mutex because the
+    /// critical section is one read/write of a `Copy` value with no `.await`,
+    /// which keeps `SessionManager` callers from holding the session-map lock
+    /// across an async hop.
+    last_used: StdMutex<Instant>,
     pub session_id: String,
 }
 
@@ -148,9 +157,18 @@ impl ClaudeProcess {
             source: e,
         })?;
 
-        let stdin = child.stdin.take().ok_or(ProcessError::ExitedEarly)?;
-        let stdout = child.stdout.take().ok_or(ProcessError::ExitedEarly)?;
-        let stderr = child.stderr.take().ok_or(ProcessError::ExitedEarly)?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or(ProcessError::MissingStdio { which: "stdin" })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or(ProcessError::MissingStdio { which: "stdout" })?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or(ProcessError::MissingStdio { which: "stderr" })?;
 
         // Bounded channel — backpressure if the consumer is slow, but large
         // enough that bursts of small text deltas do not block stdout drain.
@@ -217,7 +235,7 @@ impl ClaudeProcess {
             stdin: Mutex::new(Some(stdin)),
             event_rx: Arc::new(Mutex::new(rx)),
             config,
-            last_used: Mutex::new(Instant::now()),
+            last_used: StdMutex::new(Instant::now()),
             session_id,
         }))
     }
@@ -232,7 +250,10 @@ impl ClaudeProcess {
         &self,
         events: &[ClaudeCliInputEvent],
     ) -> Result<TurnStream, ProcessError> {
-        *self.last_used.lock().await = Instant::now();
+        // Sync lock + Copy value; never held across an `.await`.
+        if let Ok(mut last) = self.last_used.lock() {
+            *last = Instant::now();
+        }
 
         // Claim the event receiver for the lifetime of this turn.
         let rx_guard = Arc::clone(&self.event_rx)
@@ -259,8 +280,17 @@ impl ClaudeProcess {
     }
 
     /// Most-recent activity timestamp; used by the session manager's reaper.
-    pub async fn last_used(&self) -> Instant {
-        *self.last_used.lock().await
+    /// Sync because the lock guards a single `Instant` with no `.await` in
+    /// the critical section — keeps callers from holding async locks across
+    /// an await point.
+    pub fn last_used(&self) -> Instant {
+        // Poisoning is impossible here (the only writer is `send_user_turn`
+        // which never panics while holding the lock), but if it ever happens
+        // we degrade gracefully rather than aborting.
+        self.last_used
+            .lock()
+            .map(|g| *g)
+            .unwrap_or_else(|p| *p.into_inner())
     }
 
     /// Forcefully terminate the child. Safe to call multiple times.
