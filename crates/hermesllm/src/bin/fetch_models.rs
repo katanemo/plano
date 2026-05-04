@@ -1,12 +1,21 @@
-// Fetch latest provider models from canonical provider APIs and update provider_models.yaml
+// Fetch latest provider models from canonical provider APIs and merge into
+// provider_models.yaml.
+//
+// Behavior is non-destructive: only providers we successfully fetch this run
+// are replaced. Providers whose API key is missing, or whose fetch fails, are
+// left untouched in the existing file. This means partial runs (e.g. without
+// AWS or Google creds) can't accidentally wipe out provider entries you don't
+// have keys for locally.
+//
 // Usage:
-//   Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GROK_API_KEY,
-//             DASHSCOPE_API_KEY, MOONSHOT_API_KEY, ZHIPU_API_KEY, GOOGLE_API_KEY
-//   Required: AWS CLI configured for Amazon Bedrock models
-//   cargo run --bin fetch_models
+//   Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, MISTRAL_API_KEY,
+//             DEEPSEEK_API_KEY, GROK_API_KEY, DASHSCOPE_API_KEY,
+//             MOONSHOT_API_KEY, ZHIPU_API_KEY, MIMO_API_KEY, GOOGLE_API_KEY
+//   Optional: AWS CLI configured for Amazon Bedrock models
+//   cargo run --bin fetch_models --features model-fetch
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 fn main() {
     // Default to writing in the same directory as this source file
@@ -19,16 +28,33 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| default_path.to_string_lossy().to_string());
 
-    println!("Fetching latest models from provider APIs...");
+    println!("Loading existing {}...", output_path);
+    let existing = match load_existing_models(&output_path) {
+        Ok(map) => {
+            if map.is_empty() {
+                println!("  (none — starting fresh)");
+            } else {
+                println!("  loaded {} existing providers", map.len());
+            }
+            map
+        }
+        Err(e) => {
+            eprintln!("Error loading existing {}: {}", output_path, e);
+            eprintln!("Refusing to overwrite a file we can't parse. Fix or delete it and re-run.");
+            std::process::exit(1);
+        }
+    };
 
-    match fetch_all_models() {
+    println!("\nFetching latest models from provider APIs...");
+
+    match fetch_all_models(existing) {
         Ok(models) => {
             let yaml = serde_yaml::to_string(&models).expect("Failed to serialize models");
 
             std::fs::write(&output_path, yaml).expect("Failed to write provider_models.yaml");
 
             println!(
-                "✓ Successfully updated {} providers ({} models) to {}",
+                "✓ Wrote {} providers ({} models) to {}",
                 models.metadata.total_providers, models.metadata.total_models, output_path
             );
         }
@@ -42,6 +68,18 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn load_existing_models(
+    path: &str,
+) -> Result<BTreeMap<String, Vec<String>>, Box<dyn std::error::Error>> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(e) => return Err(Box::new(e)),
+    };
+    let parsed: ProviderModels = serde_yaml::from_str(&content)?;
+    Ok(parsed.providers)
 }
 
 // OpenAI-compatible API response (used by most providers)
@@ -68,19 +106,34 @@ struct GoogleResponse {
     models: Vec<GoogleModel>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ProviderModels {
+    #[serde(default = "default_version")]
     version: String,
+    #[serde(default = "default_source")]
     source: String,
-    providers: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    providers: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
     metadata: Metadata,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct Metadata {
+    #[serde(default)]
     total_providers: usize,
+    #[serde(default)]
     total_models: usize,
+    #[serde(default)]
     last_updated: String,
+}
+
+fn default_version() -> String {
+    "1.0".to_string()
+}
+
+fn default_source() -> String {
+    "canonical-apis".to_string()
 }
 
 fn is_text_model(model_id: &str) -> bool {
@@ -273,8 +326,13 @@ fn fetch_bedrock_amazon_models() -> Result<Vec<String>, Box<dyn std::error::Erro
     Ok(amazon_models)
 }
 
-fn fetch_all_models() -> Result<ProviderModels, Box<dyn std::error::Error>> {
-    let mut providers: HashMap<String, Vec<String>> = HashMap::new();
+fn fetch_all_models(
+    existing: BTreeMap<String, Vec<String>>,
+) -> Result<ProviderModels, Box<dyn std::error::Error>> {
+    let mut providers = existing;
+    let mut updated: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
     // Configuration: provider name, env var, API URL, prefix for model IDs
@@ -324,90 +382,131 @@ fn fetch_all_models() -> Result<ProviderModels, Box<dyn std::error::Error>> {
         ),
     ];
 
+    // Helper that records the outcome of a fetch attempt and only mutates
+    // `providers` on success, so missing/failed providers keep their existing
+    // entries (or stay absent if there were none).
+    let mut record =
+        |name: &str,
+         env_var: Option<&str>,
+         result: Option<Result<Vec<String>, Box<dyn std::error::Error>>>,
+         providers: &mut BTreeMap<String, Vec<String>>| match result {
+            Some(Ok(models)) => {
+                println!("  ✓ {}: {} models", name, models.len());
+                providers.insert(name.to_string(), models);
+                updated.push(name.to_string());
+            }
+            Some(Err(e)) => {
+                let kept = providers
+                    .get(name)
+                    .map(|v| format!(" (keeping existing {} models)", v.len()))
+                    .unwrap_or_default();
+                let err_msg = format!("  ✗ {}: {}{}", name, e, kept);
+                eprintln!("{}", err_msg);
+                errors.push(err_msg);
+                failed.push(name.to_string());
+            }
+            None => {
+                let kept = providers
+                    .get(name)
+                    .map(|v| format!(" (keeping existing {} models)", v.len()))
+                    .unwrap_or_else(|| " (no existing entry)".to_string());
+                let label = env_var
+                    .map(|v| format!("{} not set", v))
+                    .unwrap_or_else(|| "no credentials".to_string());
+                println!("  ⊘ {}: {}{}", name, label, kept);
+                skipped.push(name.to_string());
+            }
+        };
+
     // Fetch from OpenAI-compatible providers
     for (provider_name, env_var, api_url, prefix) in provider_configs {
-        if let Ok(api_key) = std::env::var(env_var) {
-            match fetch_openai_compatible_models(api_url, &api_key, prefix) {
-                Ok(models) => {
-                    println!("  ✓ {}: {} models", provider_name, models.len());
-                    providers.insert(provider_name.to_string(), models);
-                }
-                Err(e) => {
-                    let err_msg = format!("  ✗ {}: {}", provider_name, e);
-                    eprintln!("{}", err_msg);
-                    errors.push(err_msg);
-                }
-            }
-        } else {
-            println!("  ⊘ {}: {} not set (skipped)", provider_name, env_var);
-        }
+        let result = std::env::var(env_var)
+            .ok()
+            .map(|api_key| fetch_openai_compatible_models(api_url, &api_key, prefix));
+        record(provider_name, Some(env_var), result, &mut providers);
     }
 
     // Fetch Anthropic models (different authentication)
-    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-        match fetch_anthropic_models(&api_key) {
-            Ok(models) => {
-                println!("  ✓ anthropic: {} models", models.len());
-                providers.insert("anthropic".to_string(), models);
-            }
-            Err(e) => {
-                let err_msg = format!("  ✗ anthropic: {}", e);
-                eprintln!("{}", err_msg);
-                errors.push(err_msg);
-            }
-        }
-    } else {
-        println!("  ⊘ anthropic: ANTHROPIC_API_KEY not set (skipped)");
-    }
+    let anthropic_result = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .map(|key| fetch_anthropic_models(&key));
+    record(
+        "anthropic",
+        Some("ANTHROPIC_API_KEY"),
+        anthropic_result,
+        &mut providers,
+    );
 
     // Fetch Google models (different API format)
-    if let Ok(api_key) = std::env::var("GOOGLE_API_KEY") {
-        match fetch_google_models(&api_key) {
-            Ok(models) => {
-                println!("  ✓ google: {} models", models.len());
-                providers.insert("google".to_string(), models);
-            }
-            Err(e) => {
-                let err_msg = format!("  ✗ google: {}", e);
-                eprintln!("{}", err_msg);
-                errors.push(err_msg);
-            }
-        }
-    } else {
-        println!("  ⊘ google: GOOGLE_API_KEY not set (skipped)");
-    }
+    let google_result = std::env::var("GOOGLE_API_KEY")
+        .ok()
+        .map(|key| fetch_google_models(&key));
+    record(
+        "google",
+        Some("GOOGLE_API_KEY"),
+        google_result,
+        &mut providers,
+    );
 
-    // Fetch Amazon models from AWS Bedrock
-    match fetch_bedrock_amazon_models() {
-        Ok(models) => {
-            println!("  ✓ amazon: {} models (via AWS Bedrock)", models.len());
-            providers.insert("amazon".to_string(), models);
-        }
-        Err(e) => {
-            let err_msg = format!("  ✗ amazon: {} (AWS Bedrock required)", e);
-            eprintln!("{}", err_msg);
-            errors.push(err_msg);
-        }
-    }
+    // Fetch Amazon models from AWS Bedrock. Only attempt if the AWS CLI is on
+    // PATH and any AWS credential is configured — otherwise treat as skipped
+    // so we don't drop the existing amazon entry on machines / CI runs without
+    // Bedrock access.
+    let amazon_result = if aws_credentials_available() {
+        Some(fetch_bedrock_amazon_models())
+    } else {
+        None
+    };
+    record(
+        "amazon",
+        Some("AWS credentials"),
+        amazon_result,
+        &mut providers,
+    );
 
     if providers.is_empty() {
-        return Err("No models fetched from any provider. Check API keys.".into());
+        return Err(
+            "No existing data and no models fetched. Set at least one API key and re-run.".into(),
+        );
     }
 
     let total_providers = providers.len();
     let total_models: usize = providers.values().map(|v| v.len()).sum();
 
+    println!("\nSummary:");
     println!(
-        "\n✅ Successfully fetched models from {} providers",
-        total_providers
+        "  updated: {} ({})",
+        updated.len(),
+        if updated.is_empty() {
+            "none".to_string()
+        } else {
+            updated.join(", ")
+        }
     );
-    if !errors.is_empty() {
-        println!("⚠️  {} providers failed", errors.len());
+    println!(
+        "  skipped (kept existing): {} ({})",
+        skipped.len(),
+        if skipped.is_empty() {
+            "none".to_string()
+        } else {
+            skipped.join(", ")
+        }
+    );
+    if !failed.is_empty() {
+        println!(
+            "  failed (kept existing): {} ({})",
+            failed.len(),
+            failed.join(", ")
+        );
     }
+    println!(
+        "✅ Final state: {} providers, {} models",
+        total_providers, total_models
+    );
 
     Ok(ProviderModels {
-        version: "1.0".to_string(),
-        source: "canonical-apis".to_string(),
+        version: default_version(),
+        source: default_source(),
         providers,
         metadata: Metadata {
             total_providers,
@@ -415,4 +514,11 @@ fn fetch_all_models() -> Result<ProviderModels, Box<dyn std::error::Error>> {
             last_updated: chrono::Utc::now().to_rfc3339(),
         },
     })
+}
+
+fn aws_credentials_available() -> bool {
+    std::env::var("AWS_ACCESS_KEY_ID").is_ok()
+        || std::env::var("AWS_PROFILE").is_ok()
+        || std::env::var("AWS_SESSION_TOKEN").is_ok()
+        || std::env::var("AWS_WEB_IDENTITY_TOKEN_FILE").is_ok()
 }
