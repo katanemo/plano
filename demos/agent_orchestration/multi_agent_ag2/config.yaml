@@ -1,0 +1,36 @@
+version: v0.3.0
+
+agents:
+  - id: ag2_research_agent
+    url: http://localhost:10530
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+listeners:
+  - type: agent
+    name: ag2_research_service
+    port: 8001
+    router: plano_orchestrator_v1
+    agents:
+      - id: ag2_research_agent
+        description: |
+
+          AG2ResearchAgent is a multi-agent research team powered by AG2 (formerly AutoGen).
+          Unlike single-agent implementations, this endpoint runs an internal team of
+          specialized AI agents that collaborate via AG2's GroupChat:
+
+          - Researcher: Gathers detailed, factual information on any topic
+          - Analyst: Synthesizes research into actionable insights and recommendations
+
+          Capabilities:
+          * Research and analysis on any topic — technology, business, science, trends
+          * Multi-perspective analysis through internal agent collaboration
+          * Structured insights with key findings and recommendations
+          * Handles questions like "Research [topic]", "Analyze [subject]", "What are the trends in [area]?"
+          * Provides comprehensive yet concise responses
+
+tracing:
+  random_sampling: 100

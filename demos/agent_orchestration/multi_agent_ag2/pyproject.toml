@@ -1,0 +1,22 @@
+[project]
+name = "multi-agent-ag2"
+version = "0.1.0"
+description = "AG2 Multi-Agent Research Team with Plano orchestration"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "ag2[openai]>=0.11.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "openai>=1.0.0",
+    "httpx>=0.24.0",
+    "opentelemetry-api>=1.20.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = []
