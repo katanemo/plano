@@ -213,6 +213,183 @@ properties:
           required:
             - name
             - description
+        retry_policy:
+          type: object
+          description: "Retry policy configuration. When not specified, no retry logic is enabled."
+          properties:
+            fallback_models:
+              type: array
+              description: "Ordered list of model identifiers to fallback to before using Provider_List."
+              items:
+                type: string
+            default_strategy:
+              type: string
+              description: "Default retry strategy for unconfigured status codes. Default: different_provider."
+              enum:
+                - same_model
+                - same_provider
+                - different_provider
+            default_max_attempts:
+              type: integer
+              description: "Default max retry attempts for unconfigured status codes. Default: 2."
+              minimum: 0
+            on_status_codes:
+              type: array
+              description: "Per-status-code retry configuration."
+              items:
+                type: object
+                properties:
+                  codes:
+                    type: array
+                    description: "List of status codes as integers or range strings (e.g. '502-504')."
+                    items:
+                      anyOf:
+                        - type: integer
+                          minimum: 100
+                          maximum: 599
+                        - type: string
+                          description: "Range string in 'start-end' format (e.g. '502-504')."
+                  strategy:
+                    type: string
+                    description: "Retry strategy for these status codes."
+                    enum:
+                      - same_model
+                      - same_provider
+                      - different_provider
+                  max_attempts:
+                    type: integer
+                    description: "Max retry attempts for these status codes."
+                    minimum: 0
+                additionalProperties: false
+                required:
+                  - codes
+                  - strategy
+                  - max_attempts
+            on_timeout:
+              type: object
+              description: "Timeout-specific retry configuration. When omitted, timeouts use default_strategy and default_max_attempts."
+              properties:
+                strategy:
+                  type: string
+                  description: "Retry strategy for timeout errors."
+                  enum:
+                    - same_model
+                    - same_provider
+                    - different_provider
+                max_attempts:
+                  type: integer
+                  description: "Max retry attempts for timeout errors."
+                  minimum: 1
+              additionalProperties: false
+              required:
+                - strategy
+                - max_attempts
+            on_high_latency:
+              type: object
+              description: "High latency proactive failover configuration. When omitted, no latency-based failover is performed."
+              properties:
+                threshold_ms:
+                  type: integer
+                  description: "Latency threshold in milliseconds. When response time exceeds this value, a High_Latency_Event is triggered."
+                  minimum: 1
+                measure:
+                  type: string
+                  description: "What latency metric to measure. Default: ttfb."
+                  enum:
+                    - ttfb
+                    - total
+                strategy:
+                  type: string
+                  description: "Retry strategy when latency threshold is exceeded."
+                  enum:
+                    - same_model
+                    - same_provider
+                    - different_provider
+                max_attempts:
+                  type: integer
+                  description: "Max retry attempts when latency threshold is exceeded."
+                  minimum: 1
+                block_duration_seconds:
+                  type: integer
+                  description: "How long to block the model/provider after detecting high latency, in seconds. Default: 300."
+                  minimum: 1
+                scope:
+                  type: string
+                  description: "What to block: model-level or provider-level. Default: model."
+                  enum:
+                    - model
+                    - provider
+                apply_to:
+                  type: string
+                  description: "Blocking scope: global or request-scoped. Default: global."
+                  enum:
+                    - global
+                    - request
+                min_triggers:
+                  type: integer
+                  description: "Number of High_Latency_Events required before creating a block. Default: 1."
+                  minimum: 1
+                trigger_window_seconds:
+                  type: integer
+                  description: "Sliding time window in seconds for counting triggers. Required when min_triggers > 1."
+                  minimum: 1
+              additionalProperties: false
+              required:
+                - threshold_ms
+                - strategy
+                - max_attempts
+                - block_duration_seconds
+            backoff:
+              type: object
+              description: "Exponential backoff configuration. When omitted, no backoff delays are applied."
+              properties:
+                apply_to:
+                  type: string
+                  description: "REQUIRED. Determines when backoff delays are applied."
+                  enum:
+                    - same_model
+                    - same_provider
+                    - global
+                base_ms:
+                  type: integer
+                  description: "Base delay in milliseconds for exponential backoff. Default: 100."
+                  minimum: 1
+                max_ms:
+                  type: integer
+                  description: "Maximum delay in milliseconds for exponential backoff. Default: 5000."
+                  minimum: 1
+                jitter:
+                  type: boolean
+                  description: "Add random jitter to prevent thundering herd. Default: true."
+              additionalProperties: false
+              required:
+                - apply_to
+            retry_after_handling:
+              type: object
+              description: "Retry-After header handling customization. When omitted, Retry-After is honored with defaults (scope: model, apply_to: global, max_retry_after_seconds: 300)."
+              properties:
+                scope:
+                  type: string
+                  description: "What to block: model-level or provider-level. Default: model."
+                  enum:
+                    - model
+                    - provider
+                apply_to:
+                  type: string
+                  description: "Blocking scope: request-scoped or global. Default: global."
+                  enum:
+                    - request
+                    - global
+                max_retry_after_seconds:
+                  type: integer
+                  description: "Maximum Retry-After value honored in seconds. Default: 300."
+                  minimum: 1
+              additionalProperties: false
+            max_retry_duration_ms:
+              type: integer
+              description: "Maximum total time in milliseconds for all retry attempts combined. Timer starts on first retry."
+              minimum: 0
+          additionalProperties: false
       additionalProperties: false
       required:
         - model
@@ -271,6 +448,183 @@ properties:
           required:
             - name
             - description
+        retry_policy:
+          type: object
+          description: "Retry policy configuration. When not specified, no retry logic is enabled."
+          properties:
+            fallback_models:
+              type: array
+              description: "Ordered list of model identifiers to fallback to before using Provider_List."
+              items:
+                type: string
+            default_strategy:
+              type: string
+              description: "Default retry strategy for unconfigured status codes. Default: different_provider."
+              enum:
+                - same_model
+                - same_provider
+                - different_provider
+            default_max_attempts:
+              type: integer
+              description: "Default max retry attempts for unconfigured status codes. Default: 2."
+              minimum: 0
+            on_status_codes:
+              type: array
+              description: "Per-status-code retry configuration."
+              items:
+                type: object
+                properties:
+                  codes:
+                    type: array
+                    description: "List of status codes as integers or range strings (e.g. '502-504')."
+                    items:
+                      anyOf:
+                        - type: integer
+                          minimum: 100
+                          maximum: 599
+                        - type: string
+                          description: "Range string in 'start-end' format (e.g. '502-504')."
+                  strategy:
+                    type: string
+                    description: "Retry strategy for these status codes."
+                    enum:
+                      - same_model
+                      - same_provider
+                      - different_provider
+                  max_attempts:
+                    type: integer
+                    description: "Max retry attempts for these status codes."
+                    minimum: 0
+                additionalProperties: false
+                required:
+                  - codes
+                  - strategy
+                  - max_attempts
+            on_timeout:
+              type: object
+              description: "Timeout-specific retry configuration. When omitted, timeouts use default_strategy and default_max_attempts."
+              properties:
+                strategy:
+                  type: string
+                  description: "Retry strategy for timeout errors."
+                  enum:
+                    - same_model
+                    - same_provider
+                    - different_provider
+                max_attempts:
+                  type: integer
+                  description: "Max retry attempts for timeout errors."
+                  minimum: 1
+              additionalProperties: false
+              required:
+                - strategy
+                - max_attempts
+            on_high_latency:
+              type: object
+              description: "High latency proactive failover configuration. When omitted, no latency-based failover is performed."
+              properties:
+                threshold_ms:
+                  type: integer
+                  description: "Latency threshold in milliseconds. When response time exceeds this value, a High_Latency_Event is triggered."
+                  minimum: 1
+                measure:
+                  type: string
+                  description: "What latency metric to measure. Default: ttfb."
+                  enum:
+                    - ttfb
+                    - total
+                strategy:
+                  type: string
+                  description: "Retry strategy when latency threshold is exceeded."
+                  enum:
+                    - same_model
+                    - same_provider
+                    - different_provider
+                max_attempts:
+                  type: integer
+                  description: "Max retry attempts when latency threshold is exceeded."
+                  minimum: 1
+                block_duration_seconds:
+                  type: integer
+                  description: "How long to block the model/provider after detecting high latency, in seconds. Default: 300."
+                  minimum: 1
+                scope:
+                  type: string
+                  description: "What to block: model-level or provider-level. Default: model."
+                  enum:
+                    - model
+                    - provider
+                apply_to:
+                  type: string
+                  description: "Blocking scope: global or request-scoped. Default: global."
+                  enum:
+                    - global
+                    - request
+                min_triggers:
+                  type: integer
+                  description: "Number of High_Latency_Events required before creating a block. Default: 1."
+                  minimum: 1
+                trigger_window_seconds:
+                  type: integer
+                  description: "Sliding time window in seconds for counting triggers. Required when min_triggers > 1."
+                  minimum: 1
+              additionalProperties: false
+              required:
+                - threshold_ms
+                - strategy
+                - max_attempts
+                - block_duration_seconds
+            backoff:
+              type: object
+              description: "Exponential backoff configuration. When omitted, no backoff delays are applied."
+              properties:
+                apply_to:
+                  type: string
+                  description: "REQUIRED. Determines when backoff delays are applied."
+                  enum:
+                    - same_model
+                    - same_provider
+                    - global
+                base_ms:
+                  type: integer
+                  description: "Base delay in milliseconds for exponential backoff. Default: 100."
+                  minimum: 1
+                max_ms:
+                  type: integer
+                  description: "Maximum delay in milliseconds for exponential backoff. Default: 5000."
+                  minimum: 1
+                jitter:
+                  type: boolean
+                  description: "Add random jitter to prevent thundering herd. Default: true."
+              additionalProperties: false
+              required:
+                - apply_to
+            retry_after_handling:
+              type: object
+              description: "Retry-After header handling customization. When omitted, Retry-After is honored with defaults (scope: model, apply_to: global, max_retry_after_seconds: 300)."
+              properties:
+                scope:
+                  type: string
+                  description: "What to block: model-level or provider-level. Default: model."
+                  enum:
+                    - model
+                    - provider
+                apply_to:
+                  type: string
+                  description: "Blocking scope: request-scoped or global. Default: global."
+                  enum:
+                    - request
+                    - global
+                max_retry_after_seconds:
+                  type: integer
+                  description: "Maximum Retry-After value honored in seconds. Default: 300."
+                  minimum: 1
+              additionalProperties: false
+            max_retry_duration_ms:
+              type: integer
+              description: "Maximum total time in milliseconds for all retry attempts combined. Timer starts on first retry."
+              minimum: 0
+          additionalProperties: false
       additionalProperties: false
       required:
         - model
