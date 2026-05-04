@@ -24,4 +24,6 @@ listeners:
 
 model_providers:
   - model: claude-cli/*
-    default: true
+
+tracing:
+  random_sampling: 100
