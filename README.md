@@ -41,6 +41,84 @@ Plano pulls rote plumbing out of your framework so you can stay focused on what 
 
 ---
 
+## What is Plano?
+
+Plano is an **AI-native proxy server and data plane** that handles the infrastructure concerns of building agentic applications so you don't have to. Instead of embedding routing logic, guardrails, observability, and model management into your application code, Plano runs as a separate service that sits between your agents and your users.
+
+**The Problem:** When building agentic apps, you end up writing "hidden middleware" - intent classification for routing, safety guardrails, evaluation pipelines, and provider-specific API adapters. This plumbing scatters across your codebase and frameworks.
+
+**The Solution:** Plano centralizes these concerns into a unified dataplane:
+- **Agent Orchestration** - Route user requests to the right agent based on intent
+- **LLM Routing** - Use any model from any provider with unified APIs
+- **Safety & Guardrails** - Apply moderation, jailbreak protection, and policies consistently
+- **Observability** - Automatic tracing, metrics, and agentic signals with zero instrumentation
+
+**Key Benefits:**
+- **Language Agnostic** - Use any programming language or framework (Python, JavaScript, Go, etc.)
+- **Framework Compatible** - Works with LangChain, AutoGen, CrewAI, or vanilla HTTP servers
+- **Production Ready** - Built on Envoy proxy by the engineers who scaled it for modern workloads
+- **Cost Efficient** - Uses lightweight, purpose-built LLMs (like our 4B orchestrator) instead of heavyweight models for routing
+
+---
+
+## Quick Start
+
+### 1. Install Plano
+
+```bash
+# Install via pip (Python 3.10+)
+pip install planoai
+
+# Or use Docker
+docker run -p 12001:12001 -p 8001:8001 katanemo/plano:latest
+```
+
+### 2. Create a Configuration File
+
+Create a `config.yaml` to define your agents and models:
+
+```yaml
+version: v0.3.0
+
+agents:
+  - id: my_agent
+    url: http://localhost:10510
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+listeners:
+  - type: agent
+    name: my_assistant
+    port: 8001
+    agents:
+      - id: my_agent
+        description: "Handles user queries and tasks"
+```
+
+### 3. Start Plano
+
+```bash
+planoai up config.yaml
+```
+
+### 4. Query Your Agent
+
+```bash
+curl http://localhost:8001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+For a complete tutorial, see our [Quickstart Guide](https://docs.planoai.dev/get_started/quickstart.html).
+
+---
+
 ## Build Agentic Apps with Plano
 
 Plano handles **orchestration, model management, and observability** as modular building blocks - letting you configure only what you need (edge proxying for agentic orchestration and guardrails, or LLM routing from your services, or both together) to fit cleanly into existing architectures. Below is a simple multi-agent travel agent built with Plano that showcases all three core capabilities
