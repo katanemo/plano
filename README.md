@@ -41,6 +41,19 @@ Plano pulls rote plumbing out of your framework so you can stay focused on what 
 
 ---
 
+## About Plano & Usage
+
+### What is Plano?
+Plano is an AI-native proxy and data plane that simplifies building and deploying agentic applications. It offloads rote infrastructure work — like agent orchestration, LLM routing, safety guardrails, and observability — into a unified, out-of-process dataplane. This lets you use any language or AI framework, avoid brittle framework abstractions, and deliver agents to production faster.
+
+### How to Use Plano
+1. **Install**: Set up Plano via the [Quickstart Guide](https://docs.planoai.dev/get_started/quickstart.html).
+2. **Configure**: Define your agents, model providers, and routing rules in a YAML config file.
+3. **Launch**: Start Plano with `planoai up <config.yaml>`.
+4. **Integrate**: Point your agents to Plano's proxy endpoints and send requests — Plano handles routing, guardrails, and tracing automatically.
+
+For full tutorials and guides, see the [Build Agentic Apps](#build-agentic-apps-with-plano) section or [Documentation](https://docs.planoai.dev).
+
 ## Build Agentic Apps with Plano
 
 Plano handles **orchestration, model management, and observability** as modular building blocks - letting you configure only what you need (edge proxying for agentic orchestration and guardrails, or LLM routing from your services, or both together) to fit cleanly into existing architectures. Below is a simple multi-agent travel agent built with Plano that showcases all three core capabilities
