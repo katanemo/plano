@@ -46,6 +46,20 @@ def configure_rich_click(plano_color: str) -> None:
                 "options": ["--debug", "--follow"],
             },
         ],
+        "planoai launch claude-desktop": [
+            {
+                "name": "Plano gateway",
+                "options": ["--config", "--base-url"],
+            },
+            {
+                "name": "Mode",
+                "options": ["--no-launch", "--restore"],
+            },
+            {
+                "name": "Confirmation",
+                "options": ["--yes"],
+            },
+        ],
     }
 
     # Command groups for main help.
@@ -57,7 +71,7 @@ def configure_rich_click(plano_color: str) -> None:
             },
             {
                 "name": "Agent Commands",
-                "commands": ["cli-agent"],
+                "commands": ["launch"],
             },
             {
                 "name": "Observability",
@@ -66,6 +80,16 @@ def configure_rich_click(plano_color: str) -> None:
             {
                 "name": "Utilities",
                 "commands": ["generate-prompt-targets"],
+            },
+        ],
+        "planoai launch": [
+            {
+                "name": "CLI Agents",
+                "commands": ["claude-cli", "codex"],
+            },
+            {
+                "name": "Desktop Apps",
+                "commands": ["claude-desktop"],
             },
         ],
     }

@@ -1,0 +1,212 @@
+### Frontier model routing — REST Client / VS Code REST snippets
+###
+### Plano runs the preference-aligned orchestrator on every chat request
+### when top-level `routing_preferences` are configured. The `model` field
+### in the body is the *fallback* if no preference matches; pinning it to
+### `frontier.fast` gives a cheap default. Each route owns an ordered
+### `models` pool — primary first, fallbacks next — that the client (or
+### Plano's retry logic) walks on 429/5xx.
+
+@endpoint = http://localhost:12000
+
+### -------------------------------------------------------------------------
+### 1. Decision-only endpoint: see what the router would pick (no upstream call)
+### Returns: { "models": [...ranked pool...], "route": "...", "trace_id": "..." }
+### -------------------------------------------------------------------------
+POST {{endpoint}}/routing/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.fast",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Refactor this Rust function to remove the global mutable state and add unit tests."
+    }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 2. Routed by intent: daily conversation -> DigitalOcean Sonnet 4.6
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 256,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hey! Give me three fun facts about octopuses I can drop into a dinner conversation."
+    }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 3. Routed by intent: complex reasoning -> OpenAI GPT 5.5
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 512,
+  "messages": [
+    {
+      "role": "user",
+      "content": "A train leaves Chicago at 9:14am traveling 72 mph. Another leaves St Louis at 10:02am traveling 65 mph toward Chicago. The cities are 297 miles apart. Walk through the math step by step and give me the time and place they meet."
+    }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 4. Routed by intent: code generation -> Anthropic Opus 4.7
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 800,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a Rust function that takes a Vec<u8> of UTF-8 bytes and returns a HashMap<char, usize> with grapheme cluster counts. Include unit tests and handle invalid UTF-8 gracefully."
+    }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 5. Routed by intent: deep analysis -> Anthropic Opus 4.7
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 600,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Review this Postgres schema for normalization issues:\nCREATE TABLE orders (id SERIAL PRIMARY KEY, customer_email TEXT, customer_name TEXT, items_json JSONB);"
+    }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 6. Per-request routing override (config-defined preferences are bypassed
+###    for this single call). The `routing_preferences` field is stripped
+###    before the upstream provider sees the body.
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 256,
+  "messages": [
+    { "role": "user", "content": "Draft me a haiku about Postgres replication slots." }
+  ],
+  "routing_preferences": [
+    {
+      "name": "creative writing",
+      "description": "poetry, fiction, lyrical or playful prose",
+      "models": ["anthropic/claude-opus-4-7", "openai/gpt-5.5"]
+    }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 7. Pin a routing decision across an agentic loop with X-Model-Affinity.
+###    The first call routes normally and caches the decision. Subsequent
+###    calls with the same id reuse the cached model until the session TTL
+###    (default 10 min) expires.
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+X-Model-Affinity: agent-session-7f3e
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 256,
+  "messages": [
+    { "role": "user", "content": "Plan a small refactor of an auth module — order of operations?" }
+  ]
+}
+
+### Same affinity id — reuses cached routing decision (no re-classification)
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+X-Model-Affinity: agent-session-7f3e
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 256,
+  "messages": [
+    { "role": "user", "content": "Now write the unit tests for step one." }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 8. Pin to DigitalOcean Sonnet 4.6 via alias (skip routing entirely)
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 128,
+  "messages": [
+    { "role": "user", "content": "One sentence: who painted the ceiling of the Sistine Chapel?" }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 9. Pin to OpenAI GPT 5.5 via alias
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.smart",
+  "max_tokens": 256,
+  "messages": [
+    { "role": "user", "content": "Outline a 30/60/90 day plan for a new platform engineering hire." }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 10. Pin to Anthropic Opus 4.7 via alias
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/chat/completions HTTP/1.1
+Content-Type: application/json
+
+{
+  "model": "frontier.max",
+  "max_tokens": 600,
+  "messages": [
+    { "role": "user", "content": "Review this Postgres schema for normalization issues:\nCREATE TABLE orders (id SERIAL PRIMARY KEY, customer_email TEXT, customer_name TEXT, items_json JSONB);" }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 11. Anthropic Messages API (Claude-native client) -> routed by intent
+### -------------------------------------------------------------------------
+POST {{endpoint}}/v1/messages HTTP/1.1
+Content-Type: application/json
+anthropic-version: 2023-06-01
+x-api-key: test-key
+
+{
+  "model": "frontier.fast",
+  "max_tokens": 256,
+  "messages": [
+    { "role": "user", "content": "Recommend a senior engineering reading list with three picks and one sentence each." }
+  ]
+}
+
+### -------------------------------------------------------------------------
+### 12. Inspect available models (auto-discovered for Claude Desktop / clients)
+### -------------------------------------------------------------------------
+GET {{endpoint}}/v1/models HTTP/1.1
