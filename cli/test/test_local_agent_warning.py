@@ -180,9 +180,11 @@ def test_panel_fires_for_unacked_claude_cli(tmp_path):
     assert "Local-agent" in output or "local-agent" in output
     assert "Learn more" in output
     assert "--ack-local-agents" in output
-    # The dismissal hint must mention the ack file path so the user
-    # knows where to ``rm`` it.
-    assert "local_agent_ack.json" in output
+    # The panel is intentionally compact: it must NOT leak the ack file
+    # path into the user-visible reminder. The ``rm`` instruction lives
+    # in the docs page that "Learn more" links to.
+    assert "local_agent_ack.json" not in output
+    assert "docs.planoai.dev" in output
 
 
 def test_panel_suppressed_when_ack_covers_interface(tmp_path):

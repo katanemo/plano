@@ -51,15 +51,10 @@ ACK_FILE_PATH = os.path.join(PLANO_STATE_DIR, "local_agent_ack.json")
 # are 1/true/yes (case-insensitive); everything else is treated as unset.
 ACK_ENV_VAR = "PLANO_ACK_LOCAL_AGENTS"
 
-# Where the docs page lives. Printed verbatim in the warning panel — the
-# relative path resolves cleanly when an operator opens it from the repo
-# root, and the GitHub URL is a valid fallback for users running planoai
-# outside a clone.
-DOCS_RELATIVE_PATH = "docs/source/resources/local_agent_providers.rst"
-DOCS_LEARN_MORE = (
-    "https://github.com/katanemo/plano/blob/main/docs/source/resources/"
-    "local_agent_providers.rst"
-)
+# Public docs page. The Sphinx source lives at
+# ``docs/source/resources/local_agent_providers.rst`` and is published to
+# https://docs.planoai.dev (CNAME at ``docs/CNAME``).
+DOCS_LEARN_MORE = "https://docs.planoai.dev/resources/local_agent_providers.html"
 
 
 @dataclass(frozen=True)
@@ -182,56 +177,54 @@ def _render_panel(
     console: Console,
     pending: list[LocalAgentProvider],
 ) -> None:
-    """Render the single warning panel for ``pending``. Callers must
-    ensure ``pending`` is non-empty; the caller decides whether to skip
-    based on the ack set."""
+    """Render the (small) reminder panel for ``pending``. Callers must
+    ensure ``pending`` is non-empty.
 
-    listed = "\n".join(
-        f"  • [bold]{p.name}[/bold]"
-        + (f" [dim]({p.model})[/dim]" if p.model and p.model != p.name else "")
-        + f"  [dim]→ provider_interface=[/dim][cyan]{p.interface}[/cyan]"
-        for p in pending
+    The panel is intentionally compact: the title names the interface(s),
+    the body is two short lines (capability summary + dismiss hint), and
+    the "Learn more" link points at the published Sphinx docs. Operators
+    who want the full trust-model write-up follow the link.
+    """
+
+    interfaces = sorted({p.interface for p in pending})
+    interfaces_csv = ", ".join(interfaces)
+
+    # Show user-set names parenthetically, but skip ``<interface>/...``
+    # values — those are just the model id (or the autofilled placeholder)
+    # and add no information beyond the interface itself.
+    extra_names = sorted(
+        {
+            p.name
+            for p in pending
+            if p.name
+            and p.name != p.interface
+            and not any(
+                p.name.startswith(f"{iface}/")
+                for iface in LOCAL_AGENT_PROVIDER_INTERFACES
+            )
+        }
     )
+    names_suffix = f" [dim]({', '.join(extra_names)})[/dim]" if extra_names else ""
 
-    interfaces_csv = ", ".join(sorted({p.interface for p in pending}))
-    body_lines = [
-        "[bold yellow]This config wires up a local-agent provider.[/bold yellow]",
-        "",
-        listed,
-        "",
-        (
-            "Unlike stateless network providers ([cyan]openai[/cyan], "
-            "[cyan]anthropic[/cyan], [cyan]gemini[/cyan], ...), these entries "
-            "spawn a local CLI binary as a subprocess of brightstaff. The "
-            "subprocess inherits the operator's permissions and can:"
-        ),
-        "  • read and write any file the operator can touch",
-        "  • execute arbitrary shell commands as the operator's user",
-        "  • use the host's auth keychain / login session",
-        "  • make outbound network calls from the host's IP",
-        "",
-        (
-            "[bold]Intended for local development only — not production.[/bold] "
-            "Treat this as the same trust class as OpenClaw / OpenCode / "
-            "Hermes (agent integrations), not a stateless LLM provider."
-        ),
-        "",
-        f"[dim]Learn more:[/dim] [bold]{DOCS_LEARN_MORE}[/bold]",
-        f"[dim]Or in this repo:[/dim] [bold]{DOCS_RELATIVE_PATH}[/bold]",
-        "",
-        "[dim]Dismiss permanently:[/dim]",
-        f"  [cyan]planoai up --ack-local-agents[/cyan]   [dim]# writes {ACK_FILE_PATH}[/dim]",
-        f"  [dim]or:[/dim] [cyan]{ACK_ENV_VAR}=1 planoai up[/cyan]",
-        f"[dim]Undo with:[/dim] [cyan]rm {ACK_FILE_PATH}[/cyan]",
-    ]
+    plural = len(interfaces) > 1
+    pronoun = "they spawn" if plural else "it spawns"
+
+    body = (
+        f"[bold]{interfaces_csv}[/bold]{names_suffix} is a local-agent provider — "
+        f"{pronoun} a CLI subprocess that runs as you (full filesystem and shell "
+        f"access). For local development only.\n\n"
+        f"[dim]Learn more:[/dim] [link={DOCS_LEARN_MORE}]"
+        f"{DOCS_LEARN_MORE}[/link]\n"
+        f"[dim]Hide this:[/dim]  [cyan]planoai up --ack-local-agents[/cyan]"
+    )
 
     console.print(
         Panel(
-            "\n".join(body_lines),
+            body,
             title=f"⚠  Local-agent provider detected ({interfaces_csv})",
             title_align="left",
             border_style="yellow",
-            padding=(1, 2),
+            padding=(0, 2),
         )
     )
 
@@ -269,22 +262,22 @@ def maybe_warn_local_agent_providers(
     ack_via_env = _truthy_env(env.get(ACK_ENV_VAR))
     if ack_flag or ack_via_env:
         new_set = _interfaces_in(detected)
-        merged = write_acknowledgement(new_set, ack_path=ack_path)
+        write_acknowledgement(new_set, ack_path=ack_path)
         ack_csv = ", ".join(sorted(new_set))
         console.print(
-            f"[green]✓[/green] Acknowledged local-agent provider(s): "
-            f"[bold]{ack_csv}[/bold] [dim]→ {ack_path}[/dim]"
+            f"[green]✓[/green] Acknowledged local-agent provider: "
+            f"[bold]{ack_csv}[/bold] [dim](won't warn again)[/dim]"
         )
         return False
 
     acknowledged = load_acknowledged_interfaces(ack_path)
     pending = [p for p in detected if p.interface not in acknowledged]
     if not pending:
+        # Stay silent on the happy path — the operator already acknowledged.
+        # We still emit one dim line so the suppression is discoverable in
+        # logs and the test that asserts the interface name still passes.
         ack_csv = ", ".join(sorted(_interfaces_in(detected)))
-        console.print(
-            f"[dim]Local-agent providers acknowledged: {ack_csv}. "
-            f"Remove {ack_path} to undo.[/dim]"
-        )
+        console.print(f"[dim]local-agent provider: {ack_csv} (acknowledged)[/dim]")
         return False
 
     _render_panel(console, pending)
@@ -295,7 +288,6 @@ __all__ = [
     "ACK_ENV_VAR",
     "ACK_FILE_PATH",
     "DOCS_LEARN_MORE",
-    "DOCS_RELATIVE_PATH",
     "LOCAL_AGENT_PROVIDER_INTERFACES",
     "LocalAgentProvider",
     "detect_local_agent_providers",
