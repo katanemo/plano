@@ -65,7 +65,10 @@ COPY --from=envoy /usr/local/bin/envoy /usr/local/bin/envoy
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir uv
+# Pin uv to >=0.11.11; older versions bundle rustls-webpki 0.103.10 which is
+# flagged by GHSA-82j2-j2ch-gfr8 (DoS via panic on malformed CRL BIT STRING).
+# uv 0.11.11+ ships rustls-webpki 0.103.13.
+RUN pip install --no-cache-dir 'uv>=0.11.11'
 
 COPY cli/pyproject.toml ./
 COPY cli/uv.lock ./
