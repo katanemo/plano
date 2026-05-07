@@ -39,6 +39,7 @@ from planoai.init_cmd import init as init_cmd
 from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
 from planoai.chatgpt_cmd import chatgpt as chatgpt_cmd
 from planoai.obs_cmd import obs as obs_cmd
+from planoai.local_agent_warning import maybe_warn_local_agent_providers
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
@@ -354,6 +355,18 @@ def build(docker):
     show_default=True,
     help="Override the LLM listener port when running without a config file. Ignored when a config file is present.",
 )
+@click.option(
+    "--ack-local-agents",
+    "ack_local_agents",
+    default=False,
+    is_flag=True,
+    help=(
+        "Acknowledge that local-agent providers (e.g. claude-cli/*) spawn a "
+        "local CLI binary with full host filesystem and shell access. Writes "
+        "an ack file so the warning is suppressed on future runs. Equivalent "
+        "to setting PLANO_ACK_LOCAL_AGENTS=1."
+    ),
+)
 def up(
     file,
     path,
@@ -363,6 +376,7 @@ def up(
     docker,
     verbose,
     listener_port,
+    ack_local_agents,
 ):
     """Starts Plano."""
     from rich.status import Status
@@ -443,6 +457,15 @@ def up(
 
         with open(plano_config_file, "r") as f:
             plano_config = yaml.safe_load(f)
+
+        # Warn about local-agent providers (e.g. claude-cli/*) that spawn a
+        # local CLI binary with full host filesystem and shell access. Fires
+        # exactly once per `planoai up` invocation; --ack-local-agents (or
+        # PLANO_ACK_LOCAL_AGENTS=1) writes a persistent ack so the warning
+        # only re-appears for newly-introduced local-agent interfaces.
+        maybe_warn_local_agent_providers(
+            plano_config or {}, console, ack_flag=ack_local_agents
+        )
 
         # Inject ChatGPT tokens from ~/.plano/chatgpt/auth.json if any provider needs them
         _inject_chatgpt_tokens_if_needed(plano_config, env, console)
