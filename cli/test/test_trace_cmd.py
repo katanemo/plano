@@ -104,7 +104,7 @@ def test_trace_listen_starts_listener_with_defaults(runner, monkeypatch):
     result = runner.invoke(trace, ["listen"])
 
     assert result.exit_code == 0, result.output
-    assert seen == {"host": "0.0.0.0", "port": trace_cmd.DEFAULT_GRPC_PORT}
+    assert seen == {"host": "127.0.0.1", "port": trace_cmd.DEFAULT_GRPC_PORT}
 
 
 def test_trace_down_prints_success_when_listener_stopped(runner, monkeypatch):
