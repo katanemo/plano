@@ -1,0 +1,71 @@
+version: v0.3.0
+
+# This template wires Agent Skills (https://agentskills.io) into Plano so the
+# built-in Plano-Orchestrator can decide *per request* which skill(s) to attach
+# to the selected route.
+#
+# 1. Install skills locally:
+#      planoai skills add owner/pdf-processing
+#      planoai skills add owner/code-review
+#    Skills land under .plano/skills/<name>/SKILL.md.
+#
+# 2. (Required for project-scope skills) Mark the project trusted so its
+#    skills auto-load at startup:
+#      planoai skills trust
+#
+# 3. Reference the installed skills under `routing_preferences[].skills`.
+#    During the intent step Plano-Orchestrator receives both a <routes> and a
+#    <skills> XML block; it picks a route and zero or more skills, and the
+#    SKILL.md bodies of the chosen skills are injected into the upstream
+#    system prompt for that turn.
+
+model_providers:
+  - model: anthropic/claude-sonnet-4-5
+    default: true
+    access_key: $ANTHROPIC_API_KEY
+
+  - model: openai/gpt-4.1-2025-04-14
+    access_key: $OPENAI_API_KEY
+
+# Catalog of skills available to this project. Entries are skill names
+# (resolved against .plano/skills/<name>/) — the CLI inlines each SKILL.md
+# body into the rendered config at `planoai up` time.
+#
+# Omit `skills:` entirely to auto-include every discovered skill.
+skills:
+  - pdf-processing
+  - code-review
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+# Routing preferences double as Plano-Orchestrator's <routes> catalog. Attach
+# `skills:` to a route to make those skills eligible for activation when the
+# orchestrator picks that route.
+routing_preferences:
+  - name: code review
+    description: |
+      Reviewing pull requests, analyzing diffs, and suggesting improvements
+      to existing code.
+    models:
+      - anthropic/claude-sonnet-4-5
+      - openai/gpt-4.1-2025-04-14
+    skills:
+      - code-review
+
+  - name: document understanding
+    description: |
+      Summarizing PDFs and other long-form documents, extracting structured
+      data such as tables, line items, or signatures.
+    models:
+      - anthropic/claude-sonnet-4-5
+      - openai/gpt-4.1-2025-04-14
+    skills:
+      - pdf-processing
+    selection_policy:
+      prefer: cheapest
+
+tracing:
+  random_sampling: 100

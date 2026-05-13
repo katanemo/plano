@@ -1,5 +1,9 @@
-use common::configuration::TopLevelRoutingPreference;
+use common::configuration::{SkillRef, TopLevelRoutingPreference};
+use common::skills_runtime::augment_system_prompt_with_skills;
+use hermesllm::apis::openai::{Message, MessageContent, Role};
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
+use hermesllm::providers::request::ProviderRequest;
+use hermesllm::transforms::lib::ExtractText;
 use hermesllm::ProviderRequestType;
 use hyper::StatusCode;
 use std::sync::Arc;
@@ -29,6 +33,10 @@ pub struct RoutingResult {
     /// Full ranked list — use subsequent entries as fallbacks on 429/5xx.
     pub models: Vec<String>,
     pub route_name: Option<String>,
+    /// Agent Skills activated by Plano-Orchestrator for this request.
+    /// Their `body` field (the SKILL.md content) is prepended to the
+    /// upstream system prompt by the caller in `send_upstream`.
+    pub activated_skills: Vec<SkillRef>,
 }
 
 pub struct RoutingError {
@@ -128,8 +136,8 @@ pub async fn router_chat_get_upstream_model(
 
     match routing_result {
         Ok(route) => match route {
-            Some((route_name, ranked_models)) => {
-                let model_name = ranked_models.first().cloned().unwrap_or_default();
+            Some(decision) => {
+                let model_name = decision.models.first().cloned().unwrap_or_default();
                 current_span.record("route.selected_model", model_name.as_str());
                 bs_metrics::record_router_decision(
                     route_label,
@@ -139,8 +147,9 @@ pub async fn router_chat_get_upstream_model(
                 );
                 Ok(RoutingResult {
                     model_name,
-                    models: ranked_models,
-                    route_name: Some(route_name),
+                    models: decision.models,
+                    route_name: Some(decision.route_name),
+                    activated_skills: decision.activated_skills,
                 })
             }
             None => {
@@ -159,6 +168,7 @@ pub async fn router_chat_get_upstream_model(
                     model_name: "none".to_string(),
                     models: vec!["none".to_string()],
                     route_name: None,
+                    activated_skills: Vec::new(),
                 })
             }
         },
@@ -171,4 +181,62 @@ pub async fn router_chat_get_upstream_model(
             )))
         }
     }
+}
+
+/// Prepend the bodies of `activated_skills` to the system prompt of the
+/// upstream request so the chosen LLM has access to each skill's instructions.
+/// Works across every provider variant by going through the OpenAI message
+/// shape (`get_messages`/`set_messages`).
+///
+/// When there is already a leading system message we augment it in place;
+/// otherwise a new system message is inserted at position 0. No-op when
+/// `activated_skills` is empty.
+pub fn inject_activated_skills_into_request(
+    client_request: &mut ProviderRequestType,
+    activated_skills: &[SkillRef],
+) {
+    if activated_skills.is_empty() {
+        return;
+    }
+
+    let skill_refs: Vec<&SkillRef> = activated_skills.iter().collect();
+
+    let mut messages = client_request.get_messages();
+
+    let (system_idx, base_text) = match messages.iter().position(|m| m.role == Role::System) {
+        Some(idx) => {
+            let text = messages[idx]
+                .content
+                .as_ref()
+                .map(|c| c.extract_text())
+                .unwrap_or_default();
+            (Some(idx), Some(text))
+        }
+        None => (None, None),
+    };
+
+    let augmented = augment_system_prompt_with_skills(base_text, &skill_refs);
+    let Some(augmented_text) = augmented else {
+        return;
+    };
+
+    match system_idx {
+        Some(idx) => {
+            messages[idx].content = Some(MessageContent::Text(augmented_text));
+        }
+        None => {
+            messages.insert(
+                0,
+                Message {
+                    role: Role::System,
+                    content: Some(MessageContent::Text(augmented_text)),
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            );
+        }
+    }
+
+    client_request.set_messages(&messages);
 }

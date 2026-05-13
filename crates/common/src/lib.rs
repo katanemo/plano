@@ -8,6 +8,7 @@ pub mod path;
 pub mod pii;
 pub mod ratelimit;
 pub mod routing;
+pub mod skills_runtime;
 pub mod stats;
 pub mod tokenizer;
 pub mod traces;

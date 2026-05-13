@@ -209,19 +209,15 @@ impl StreamContext {
             } else {
                 info!("no default prompt target found, forwarding request to upstream llm");
                 let mut messages = Vec::new();
-                // add system prompt
-                match self.system_prompt.as_ref() {
-                    None => {}
-                    Some(system_prompt) => {
-                        let system_prompt_message = Message {
-                            role: SYSTEM_ROLE.to_string(),
-                            content: Some(ContentType::Text(system_prompt.clone())),
-                            model: None,
-                            tool_calls: None,
-                            tool_call_id: None,
-                        };
-                        messages.push(system_prompt_message);
-                    }
+                if let Some(system_prompt) = self.system_prompt.as_ref().clone() {
+                    let system_prompt_message = Message {
+                        role: SYSTEM_ROLE.to_string(),
+                        content: Some(ContentType::Text(system_prompt)),
+                        model: None,
+                        tool_calls: None,
+                        tool_call_id: None,
+                    };
+                    messages.push(system_prompt_message);
                 }
 
                 messages.append(

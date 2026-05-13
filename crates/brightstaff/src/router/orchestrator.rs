@@ -1,7 +1,9 @@
 use std::{borrow::Cow, collections::HashMap, sync::Arc, time::Duration};
 
 use common::{
-    configuration::{AgentUsagePreference, OrchestrationPreference, TopLevelRoutingPreference},
+    configuration::{
+        AgentUsagePreference, OrchestrationPreference, SkillRef, TopLevelRoutingPreference,
+    },
     consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER},
 };
 use hermesllm::apis::openai::Message;
@@ -13,7 +15,7 @@ use tracing::{debug, info};
 
 use super::http::{self, post_and_extract_content};
 use super::model_metrics::ModelMetricsService;
-use super::orchestrator_model::OrchestratorModel;
+use super::orchestrator_model::{OrchestratorModel, OrchestratorSelection};
 
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
@@ -30,10 +32,25 @@ pub struct OrchestratorService {
     orchestrator_model: Arc<dyn OrchestratorModel>,
     orchestrator_provider_name: String,
     top_level_preferences: HashMap<String, TopLevelRoutingPreference>,
+    /// Agent Skills catalog (deduplicated by name) attached to any
+    /// `routing_preferences[].skills` list. Empty when no route has skills.
+    skills_catalog: Vec<SkillRef>,
     metrics_service: Option<Arc<ModelMetricsService>>,
     session_cache: Option<Arc<dyn SessionCache>>,
     session_ttl: Duration,
     tenant_header: Option<String>,
+}
+
+/// Result of `determine_route`: which route was picked, the ranked candidate
+/// models for that route, and the Agent Skill bodies the orchestrator chose
+/// to activate alongside it. Skills are resolved against
+/// `routing_preferences[<route>].skills`, so unknown / cross-route names are
+/// silently dropped.
+#[derive(Debug, Clone, Default)]
+pub struct RouteDecision {
+    pub route_name: String,
+    pub models: Vec<String>,
+    pub activated_skills: Vec<SkillRef>,
 }
 
 #[derive(Debug, Error)]
@@ -66,6 +83,7 @@ impl OrchestratorService {
             orchestrator_model,
             orchestrator_provider_name,
             top_level_preferences: HashMap::new(),
+            skills_catalog: Vec::new(),
             metrics_service: None,
             session_cache: None,
             session_ttl: Duration::from_secs(DEFAULT_SESSION_TTL_SECONDS),
@@ -85,13 +103,52 @@ impl OrchestratorService {
         tenant_header: Option<String>,
         max_token_length: usize,
     ) -> Self {
+        Self::with_routing_and_skills(
+            orchestrator_url,
+            orchestration_model_name,
+            orchestrator_provider_name,
+            top_level_prefs,
+            None,
+            metrics_service,
+            session_ttl_seconds,
+            session_cache,
+            tenant_header,
+            max_token_length,
+        )
+    }
+
+    /// Like `with_routing`, but also seeds the orchestrator with a catalog of
+    /// Agent Skills referenced by `routing_preferences[].skills`. The
+    /// orchestrator gets a `<skills>` block in its system prompt and may
+    /// select zero or more skills alongside the picked route; this enables
+    /// the LLM handler to inject the chosen SKILL.md bodies into the
+    /// upstream request.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_routing_and_skills(
+        orchestrator_url: String,
+        orchestration_model_name: String,
+        orchestrator_provider_name: String,
+        top_level_prefs: Option<Vec<TopLevelRoutingPreference>>,
+        skills_catalog: Option<Vec<SkillRef>>,
+        metrics_service: Option<Arc<ModelMetricsService>>,
+        session_ttl_seconds: Option<u64>,
+        session_cache: Arc<dyn SessionCache>,
+        tenant_header: Option<String>,
+        max_token_length: usize,
+    ) -> Self {
         let top_level_preferences: HashMap<String, TopLevelRoutingPreference> = top_level_prefs
             .map_or_else(HashMap::new, |prefs| {
                 prefs.into_iter().map(|p| (p.name.clone(), p)).collect()
             });
 
-        let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::new(
+        let skills_catalog = build_skills_catalog_for_routes(
+            skills_catalog.as_deref().unwrap_or(&[]),
+            &top_level_preferences,
+        );
+
+        let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::with_skills(
             HashMap::new(),
+            skills_catalog.clone(),
             orchestration_model_name,
             max_token_length,
         ));
@@ -105,6 +162,7 @@ impl OrchestratorService {
             orchestrator_model,
             orchestrator_provider_name,
             top_level_preferences,
+            skills_catalog,
             metrics_service,
             session_cache: Some(session_cache),
             session_ttl,
@@ -170,7 +228,7 @@ impl OrchestratorService {
         messages: &[Message],
         inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
         request_id: &str,
-    ) -> Result<Option<(String, Vec<String>)>> {
+    ) -> Result<Option<RouteDecision>> {
         if messages.is_empty() {
             return Ok(None);
         }
@@ -206,9 +264,13 @@ impl OrchestratorService {
             )
             .await?;
 
-        let result = if let Some(ref routes) = orchestration_result {
-            if routes.len() > 1 {
-                let all_routes: Vec<&str> = routes.iter().map(|(name, _)| name.as_str()).collect();
+        let result = if let Some(ref selection) = orchestration_result {
+            if selection.routes.len() > 1 {
+                let all_routes: Vec<&str> = selection
+                    .routes
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .collect();
                 info!(
                     routes = ?all_routes,
                     using = %all_routes.first().unwrap_or(&"none"),
@@ -216,7 +278,7 @@ impl OrchestratorService {
                 );
             }
 
-            if let Some((route_name, _)) = routes.first() {
+            if let Some((route_name, _)) = selection.routes.first() {
                 let top_pref = inline_top_map
                     .as_ref()
                     .and_then(|m| m.get(route_name))
@@ -227,7 +289,16 @@ impl OrchestratorService {
                         Some(svc) => svc.rank_models(&pref.models, &pref.selection_policy).await,
                         None => pref.models.clone(),
                     };
-                    Some((route_name.clone(), ranked))
+                    let activated_skills = resolve_activated_skills(
+                        &self.skills_catalog,
+                        pref.skills.as_deref().unwrap_or(&[]),
+                        &selection.skills,
+                    );
+                    Some(RouteDecision {
+                        route_name: route_name.clone(),
+                        models: ranked,
+                        activated_skills,
+                    })
                 } else {
                     None
                 }
@@ -239,7 +310,7 @@ impl OrchestratorService {
         };
 
         info!(
-            selected_model = ?result,
+            selected_route = ?result.as_ref().map(|r| (&r.route_name, r.models.first(), r.activated_skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>())),
             "plano-orchestrator determined route"
         );
 
@@ -253,7 +324,7 @@ impl OrchestratorService {
         messages: &[Message],
         usage_preferences: Option<Vec<AgentUsagePreference>>,
         request_id: Option<String>,
-    ) -> Result<Option<Vec<(String, String)>>> {
+    ) -> Result<Option<OrchestratorSelection>> {
         if messages.is_empty() {
             return Ok(None);
         }
@@ -326,6 +397,61 @@ impl OrchestratorService {
 
         Ok(parsed)
     }
+}
+
+/// Build the orchestrator-visible skills catalog (deduplicated by name) from
+/// the union of every skill name referenced under
+/// `routing_preferences[].skills`. Skills that are not referenced by any
+/// route are excluded — they would just clutter the prompt with no way for
+/// the orchestrator to attach them to a route.
+fn build_skills_catalog_for_routes(
+    catalog: &[SkillRef],
+    routes: &HashMap<String, TopLevelRoutingPreference>,
+) -> Vec<SkillRef> {
+    let mut referenced: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for route in routes.values() {
+        if let Some(names) = route.skills.as_ref() {
+            for name in names {
+                referenced.insert(name.as_str());
+            }
+        }
+    }
+
+    let mut out: Vec<SkillRef> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for skill in catalog {
+        if referenced.contains(skill.name.as_str()) && seen.insert(skill.name.clone()) {
+            out.push(skill.clone());
+        }
+    }
+    out
+}
+
+/// Filter the orchestrator-selected skill names down to the SKILL.md bodies
+/// allowed for the chosen route, preserving the order the orchestrator
+/// returned. Unknown names (either not in the catalog or not allowed by the
+/// route) are silently dropped; the orchestrator can hallucinate.
+fn resolve_activated_skills(
+    catalog: &[SkillRef],
+    route_allowlist: &[String],
+    selected: &[String],
+) -> Vec<SkillRef> {
+    let allowed: std::collections::HashSet<&str> =
+        route_allowlist.iter().map(String::as_str).collect();
+    let mut out: Vec<SkillRef> = Vec::with_capacity(selected.len());
+    let mut taken: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for name in selected {
+        if !allowed.contains(name.as_str()) {
+            continue;
+        }
+        if !taken.insert(name.as_str()) {
+            continue;
+        }
+        if let Some(skill) = catalog.iter().find(|s| &s.name == name) {
+            out.push(skill.clone());
+        }
+    }
+    out
 }
 
 #[cfg(test)]

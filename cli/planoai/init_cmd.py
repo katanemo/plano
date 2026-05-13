@@ -64,6 +64,12 @@ BUILTIN_TEMPLATES: list[Template] = [
         description="stateful responses with memory-backed storage",
         yaml_text=_load_template_yaml("conversational_state_v1_responses.yaml"),
     ),
+    Template(
+        id="skills_routing",
+        title="Agent Skills Routing",
+        description="install Agent Skills (agentskills.io) and let Plano-Orchestrator route to them",
+        yaml_text=_load_template_yaml("skills_routing.yaml"),
+    ),
 ]
 
 

@@ -314,11 +314,12 @@ async fn init_app_state(
         .orchestrator_model_context_length
         .unwrap_or(brightstaff::router::orchestrator_model_v1::MAX_TOKEN_LEN);
 
-    let orchestrator_service = Arc::new(OrchestratorService::with_routing(
+    let orchestrator_service = Arc::new(OrchestratorService::with_routing_and_skills(
         format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
         orchestrator_model_name,
         orchestrator_llm_provider,
         config.routing_preferences.clone(),
+        config.skills.clone(),
         metrics_service,
         session_ttl_seconds,
         session_cache,
