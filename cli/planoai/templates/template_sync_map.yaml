@@ -27,3 +27,8 @@ templates:
     template_file: conversational_state_v1_responses.yaml
     demo_configs: []
     transform: none
+
+  - template_id: skills_routing
+    template_file: skills_routing.yaml
+    demo_configs: []
+    transform: none

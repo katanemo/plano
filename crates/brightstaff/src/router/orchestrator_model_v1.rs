@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
-use common::configuration::{AgentUsagePreference, OrchestrationPreference};
+use common::configuration::{AgentUsagePreference, OrchestrationPreference, SkillRef};
 use hermesllm::apis::openai::{ChatCompletionsRequest, Message, MessageContent, Role};
 use hermesllm::transforms::lib::ExtractText;
 use serde::{ser::Serialize as SerializeTrait, Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use super::orchestrator_model::{OrchestratorModel, OrchestratorModelError};
+use super::orchestrator_model::{OrchestratorModel, OrchestratorModelError, OrchestratorSelection};
 
 pub const MAX_TOKEN_LEN: usize = 8192; // Default max token length for the orchestration model
 
@@ -138,10 +138,47 @@ Return your answer strictly in JSON as follows:
 If no routes are needed, return an empty list for `route`.
 "#;
 
+/// System prompt used when one or more Agent Skills are attached to candidate
+/// routes. Adds a `<skills>` block alongside `<routes>` and asks the model to
+/// also pick zero or more skills that should be loaded into the downstream
+/// LLM's system prompt.
+pub const ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT_WITH_SKILLS: &str = r#"
+You are a helpful assistant that selects the most suitable routes and Agent Skills based on user intent.
+You are provided with a list of available routes enclosed within <routes></routes> XML tags:
+<routes>
+{routes}
+</routes>
+
+You are provided with a list of available Agent Skills enclosed within <skills></skills> XML tags:
+<skills>
+{skills}
+</skills>
+
+You are also given the conversation context enclosed within <conversation></conversation> XML tags:
+<conversation>
+{conversation}
+</conversation>
+
+## Instructions
+1. Analyze the latest user intent from the conversation.
+2. Compare it against the available routes to find which routes can help fulfill the request.
+3. Independently compare it against the available skills; pick the skills whose descriptions match what the user is trying to do. Skills can be combined with any route. Activating a skill loads detailed instructions into the next response's system prompt.
+4. Respond only with exact names from <routes> and <skills>.
+5. If no routes or skills can help, return empty lists.
+
+## Response Format
+Return your answer strictly in JSON as follows:
+{{"route": ["route_name_1", "..."], "skills": ["skill_name_1", "..."]}}
+Use empty lists for `route` and/or `skills` when nothing applies.
+"#;
+
 pub type Result<T> = std::result::Result<T, OrchestratorModelError>;
 pub struct OrchestratorModelV1 {
     agent_orchestration_json_str: String,
     agent_orchestration_to_model_map: HashMap<String, String>,
+    /// Pre-rendered `<skills>` block (one JSON entry per skill, name +
+    /// description). Empty when no skills are attached to any route.
+    skills_catalog_json_str: String,
     orchestration_model: String,
     max_token_length: usize,
 }
@@ -152,9 +189,26 @@ impl OrchestratorModelV1 {
         orchestration_model: String,
         max_token_length: usize,
     ) -> Self {
+        Self::with_skills(
+            agent_orchestrations,
+            Vec::new(),
+            orchestration_model,
+            max_token_length,
+        )
+    }
+
+    /// Like `new`, but additionally seeds the orchestrator with an Agent
+    /// Skills catalog. When `skills_catalog` is empty the orchestrator uses
+    /// the routes-only system prompt; otherwise it asks the model to also
+    /// pick zero or more skills from the catalog.
+    pub fn with_skills(
+        agent_orchestrations: HashMap<String, Vec<OrchestrationPreference>>,
+        skills_catalog: Vec<SkillRef>,
+        orchestration_model: String,
+        max_token_length: usize,
+    ) -> Self {
         let agent_orchestration_values: Vec<OrchestrationPreference> =
             agent_orchestrations.values().flatten().cloned().collect();
-        // Format routes: each route as JSON on its own line with standard spacing
         let agent_orchestration_json_str = agent_orchestration_values
             .iter()
             .map(to_spaced_json)
@@ -165,19 +219,48 @@ impl OrchestratorModelV1 {
             .flat_map(|(model, prefs)| prefs.iter().map(|pref| (pref.name.clone(), model.clone())))
             .collect();
 
+        let skills_catalog_json_str = render_skills_catalog(&skills_catalog);
+
         OrchestratorModelV1 {
             orchestration_model,
             max_token_length,
             agent_orchestration_json_str,
             agent_orchestration_to_model_map,
+            skills_catalog_json_str,
         }
     }
 }
 
+/// JSON shape suitable for the `<skills>` block in the orchestrator prompt:
+/// `{"name": "...", "description": "..."}`. Only metadata that helps the
+/// orchestrator pick a skill is included; the full SKILL.md body is injected
+/// separately, after a skill has been selected.
+#[derive(Debug, Clone, Serialize)]
+struct SkillCatalogEntry<'a> {
+    name: &'a str,
+    description: &'a str,
+}
+
+fn render_skills_catalog(skills: &[SkillRef]) -> String {
+    skills
+        .iter()
+        .map(|s| SkillCatalogEntry {
+            name: &s.name,
+            description: s.catalog_description(),
+        })
+        .map(|entry| to_spaced_json(&entry))
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AgentOrchestratorResponse {
-    /// The route field now expects an array of route names: ["route_name_1", "route_name_2", ...]
+    /// The route field expects an array of route names: ["route_name_1", "route_name_2", ...].
     pub route: Option<Vec<String>>,
+    /// Optional array of Agent Skill names the orchestrator chose to activate.
+    /// Absent or empty when no skills should be loaded for this turn.
+    #[serde(default)]
+    pub skills: Option<Vec<String>>,
 }
 
 const TOKEN_LENGTH_DIVISOR: usize = 4; // Approximate token length divisor for UTF-8 characters
@@ -209,7 +292,13 @@ impl OrchestratorModel for OrchestratorModelV1 {
         // Ensure the conversation does not exceed the configured token budget.
         // We use `len() / TOKEN_LENGTH_DIVISOR` as a cheap token estimate to
         // avoid running a real tokenizer on the hot path.
-        let mut token_count = ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT.len() / TOKEN_LENGTH_DIVISOR;
+        let template_len = if self.skills_catalog_json_str.is_empty() {
+            ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT.len()
+        } else {
+            ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT_WITH_SKILLS.len()
+                + self.skills_catalog_json_str.len()
+        };
+        let mut token_count = template_len / TOKEN_LENGTH_DIVISOR;
         let mut selected_messages_list_reversed: Vec<Message> = vec![];
         for (selected_messsage_count, message) in messages_vec.iter().rev().enumerate() {
             let message_text = message.content.extract_text();
@@ -289,14 +378,16 @@ impl OrchestratorModel for OrchestratorModelV1 {
         // Generate the orchestrator request message based on the usage preferences.
         // If preferences are passed in request then we use them;
         // Otherwise, we use the default orchestration modelpreferences.
-        let orchestrator_message =
-            match convert_to_orchestrator_preferences(usage_preferences_from_request) {
-                Some(prefs) => generate_orchestrator_message(&prefs, &selected_conversation_list),
-                None => generate_orchestrator_message(
-                    &self.agent_orchestration_json_str,
-                    &selected_conversation_list,
-                ),
-            };
+        let routes_block = match convert_to_orchestrator_preferences(usage_preferences_from_request)
+        {
+            Some(prefs) => prefs,
+            None => self.agent_orchestration_json_str.clone(),
+        };
+        let orchestrator_message = generate_orchestrator_message(
+            &routes_block,
+            &self.skills_catalog_json_str,
+            &selected_conversation_list,
+        );
 
         ChatCompletionsRequest {
             model: self.orchestration_model.clone(),
@@ -316,7 +407,7 @@ impl OrchestratorModel for OrchestratorModelV1 {
         &self,
         content: &str,
         usage_preferences: &Option<Vec<AgentUsagePreference>>,
-    ) -> Result<Option<Vec<(String, String)>>> {
+    ) -> Result<Option<OrchestratorSelection>> {
         if content.is_empty() {
             return Ok(None);
         }
@@ -326,20 +417,21 @@ impl OrchestratorModel for OrchestratorModelV1 {
 
         let selected_routes = orchestrator_response.route.unwrap_or_default();
 
-        // Filter out empty routes
         let valid_routes: Vec<String> = selected_routes
             .into_iter()
             .filter(|route| !route.is_empty())
             .collect();
 
-        if valid_routes.is_empty() {
-            return Ok(None);
-        }
+        let selected_skills: Vec<String> = orchestrator_response
+            .skills
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        let mut result: Vec<(String, String)> = Vec::new();
+        let mut routes: Vec<(String, String)> = Vec::new();
 
         if let Some(usage_preferences) = usage_preferences {
-            // If usage preferences are defined, we need to find the model that matches each selected route
             for selected_route in valid_routes {
                 let model_name: Option<String> = usage_preferences
                     .iter()
@@ -351,7 +443,7 @@ impl OrchestratorModel for OrchestratorModelV1 {
                     .map(|pref| pref.model.clone());
 
                 if let Some(model_name) = model_name {
-                    result.push((selected_route, model_name));
+                    routes.push((selected_route, model_name));
                 } else {
                     warn!(
                         route = %selected_route,
@@ -361,14 +453,13 @@ impl OrchestratorModel for OrchestratorModelV1 {
                 }
             }
         } else {
-            // If no usage preferences are passed in request then use the default orchestration model preferences
             for selected_route in valid_routes {
                 if let Some(model) = self
                     .agent_orchestration_to_model_map
                     .get(&selected_route)
                     .cloned()
                 {
-                    result.push((selected_route, model));
+                    routes.push((selected_route, model));
                 } else {
                     warn!(
                         route = %selected_route,
@@ -379,11 +470,14 @@ impl OrchestratorModel for OrchestratorModelV1 {
             }
         }
 
-        if result.is_empty() {
+        if routes.is_empty() && selected_skills.is_empty() {
             return Ok(None);
         }
 
-        Ok(Some(result))
+        Ok(Some(OrchestratorSelection {
+            routes,
+            skills: selected_skills,
+        }))
     }
 
     fn get_model_name(&self) -> String {
@@ -391,7 +485,11 @@ impl OrchestratorModel for OrchestratorModelV1 {
     }
 }
 
-fn generate_orchestrator_message(prefs: &str, selected_conversation_list: &Vec<Message>) -> String {
+fn generate_orchestrator_message(
+    prefs: &str,
+    skills_catalog: &str,
+    selected_conversation_list: &Vec<Message>,
+) -> String {
     // Format conversation with 4-space indentation (equivalent to Python's json.dumps(obj, indent=4))
     let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    ");
     let mut conversation_buf = Vec::new();
@@ -399,9 +497,19 @@ fn generate_orchestrator_message(prefs: &str, selected_conversation_list: &Vec<M
     SerializeTrait::serialize(&selected_conversation_list, &mut serializer).unwrap();
     let conversation_json = String::from_utf8(conversation_buf).unwrap_or_default();
 
-    ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT
+    let template = if skills_catalog.is_empty() {
+        ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT
+    } else {
+        ARCH_ORCHESTRATOR_V1_SYSTEM_PROMPT_WITH_SKILLS
+    };
+
+    let mut out = template
         .replace("{routes}", prefs)
-        .replace("{conversation}", &conversation_json)
+        .replace("{conversation}", &conversation_json);
+    if !skills_catalog.is_empty() {
+        out = out.replace("{skills}", skills_catalog);
+    }
+    out
 }
 
 fn convert_to_orchestrator_preferences(
@@ -1349,23 +1457,30 @@ If no routes are needed, return an empty list for `route`.
         let orchestrator =
             OrchestratorModelV1::new(agent_orchestrations, "test-model".to_string(), 2000);
 
+        fn routes(pairs: &[(&str, &str)]) -> OrchestratorSelection {
+            OrchestratorSelection {
+                routes: pairs
+                    .iter()
+                    .map(|(r, m)| (r.to_string(), m.to_string()))
+                    .collect(),
+                skills: Vec::new(),
+            }
+        }
+
         // Case 1: Valid JSON with single route in array
         let input = r#"{"route": ["Image generation"]}"#;
         let result = orchestrator.parse_response(input, &None).unwrap();
-        assert_eq!(
-            result,
-            Some(vec![("Image generation".to_string(), "gpt-4o".to_string())])
-        );
+        assert_eq!(result, Some(routes(&[("Image generation", "gpt-4o")])));
 
         // Case 2: Valid JSON with multiple routes in array
         let input = r#"{"route": ["Image generation", "Code generation"]}"#;
         let result = orchestrator.parse_response(input, &None).unwrap();
         assert_eq!(
             result,
-            Some(vec![
-                ("Image generation".to_string(), "gpt-4o".to_string()),
-                ("Code generation".to_string(), "gpt-4o".to_string())
-            ])
+            Some(routes(&[
+                ("Image generation", "gpt-4o"),
+                ("Code generation", "gpt-4o")
+            ]))
         );
 
         // Case 3: Valid JSON with empty array
@@ -1396,14 +1511,65 @@ If no routes are needed, return an empty list for `route`.
         // Case 7: Single quotes and \n in JSON
         let input = "{'route': ['Image generation']}\\n";
         let result = orchestrator.parse_response(input, &None).unwrap();
-        assert_eq!(
-            result,
-            Some(vec![("Image generation".to_string(), "gpt-4o".to_string())])
-        );
+        assert_eq!(result, Some(routes(&[("Image generation", "gpt-4o")])));
 
         // Case 8: Array with unknown route (not in orchestrations map)
         let input = r#"{"route": ["Unknown route"]}"#;
         let result = orchestrator.parse_response(input, &None).unwrap();
         assert_eq!(result, None);
+
+        // Case 9: Routes plus selected skills are propagated through.
+        let input = r#"{"route": ["Image generation"], "skills": ["pdf-processing"]}"#;
+        let result = orchestrator.parse_response(input, &None).unwrap().unwrap();
+        assert_eq!(result.routes.len(), 1);
+        assert_eq!(result.skills, vec!["pdf-processing".to_string()]);
+
+        // Case 10: Skills-only selection (no routes) still surfaces as Some.
+        let input = r#"{"route": [], "skills": ["pdf-processing"]}"#;
+        let result = orchestrator.parse_response(input, &None).unwrap().unwrap();
+        assert!(result.routes.is_empty());
+        assert_eq!(result.skills, vec!["pdf-processing".to_string()]);
+    }
+
+    #[test]
+    fn test_system_prompt_with_skills_block() {
+        let orchestrator = OrchestratorModelV1::with_skills(
+            HashMap::from([(
+                "gpt-4o".to_string(),
+                vec![OrchestrationPreference {
+                    name: "Image generation".to_string(),
+                    description: "generating image".to_string(),
+                }],
+            )]),
+            vec![SkillRef {
+                name: "pdf-processing".to_string(),
+                description: "Extract structured data from PDFs.".to_string(),
+                path: None,
+                base_dir: None,
+                body: None,
+                scope: None,
+                compatibility: None,
+                license: None,
+                metadata: None,
+                allowed_tools: None,
+            }],
+            "test-model".to_string(),
+            usize::MAX,
+        );
+
+        let conversation: Vec<Message> = serde_json::from_str(
+            r#"[{"role": "user", "content": "extract the invoice totals from this pdf"}]"#,
+        )
+        .unwrap();
+        let req = orchestrator.generate_request(&conversation, &None);
+        let prompt = req.messages[0].content.extract_text();
+
+        assert!(prompt.contains("<skills>"));
+        assert!(prompt.contains("</skills>"));
+        assert!(prompt.contains(r#""name": "pdf-processing""#));
+        assert!(prompt.contains("Extract structured data from PDFs."));
+        // Response format documentation must mention the `skills` array
+        // so the orchestrator emits it.
+        assert!(prompt.contains(r#""skills""#));
     }
 }
