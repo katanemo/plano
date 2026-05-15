@@ -63,7 +63,7 @@ After installation, these skills are available to your coding agent and can be i
 - `plano-agent-orchestration` - Agent registration and routing descriptions
 - `plano-filter-guardrails` - MCP filters, guardrail messaging, filter ordering
 - `plano-observability-debugging` - Tracing setup, span attributes, trace analysis
-- `plano-cli-operations` - `planoai up`, `cli_agent`, init, prompt target generation
+- `plano-cli-operations` - `planoai up`, `cli_agent`, init
 - `plano-deployment-security` - Docker networking, health checks, state storage
 - `plano-advanced-patterns` - Multi-listener architecture and prompt target schema design
 
@@ -110,7 +110,7 @@ skills/
 | 3 | `agent-` | Agent Orchestration | Descriptions, agent registration |
 | 4 | `filter-` | Filter Chains & Guardrails | Ordering, MCP integration, guardrails |
 | 5 | `observe-` | Observability & Debugging | Tracing, trace inspection, span attributes |
-| 6 | `cli-` | CLI Operations | Startup, CLI agent, init, code generation |
+| 6 | `cli-` | CLI Operations | Startup, CLI agent, init |
 | 7 | `deploy-` | Deployment & Security | Docker networking, state storage, health checks |
 | 8 | `advanced-` | Advanced Patterns | Prompt targets, rate limits, multi-listener |
 

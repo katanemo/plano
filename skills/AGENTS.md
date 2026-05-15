@@ -31,9 +31,8 @@
   - [5.3 Use `planoai trace` to Inspect Routing Decisions](#use-planoai-trace-to-inspect-routing-decisions)
 - [Section 6: CLI Operations](#section-6)
   - [6.1 Follow the `planoai up` Validation Workflow Before Debugging Runtime Issues](#follow-the-planoai-up-validation-workflow-before-debugging-runtime-issues)
-  - [6.2 Generate Prompt Targets from Python Functions with `planoai generate_prompt_targets`](#generate-prompt-targets-from-python-functions-with-planoai-generateprompttargets)
-  - [6.3 Use `planoai cli_agent` to Connect Claude Code Through Plano](#use-planoai-cliagent-to-connect-claude-code-through-plano)
-  - [6.4 Use `planoai init` Templates to Bootstrap New Projects Correctly](#use-planoai-init-templates-to-bootstrap-new-projects-correctly)
+  - [6.2 Use `planoai cli_agent` to Connect Claude Code Through Plano](#use-planoai-cliagent-to-connect-claude-code-through-plano)
+  - [6.3 Use `planoai init` Templates to Bootstrap New Projects Correctly](#use-planoai-init-templates-to-bootstrap-new-projects-correctly)
 - [Section 7: Deployment & Security](#section-7)
   - [7.1 Understand Plano's Docker Network Topology for Agent URL Configuration](#understand-planos-docker-network-topology-for-agent-url-configuration)
   - [7.2 Use PostgreSQL State Storage for Multi-Turn Conversations in Production](#use-postgresql-state-storage-for-multi-turn-conversations-in-production)
@@ -1377,99 +1376,7 @@ Reference: https://github.com/katanemo/archgw
 
 ---
 
-### 6.2 Generate Prompt Targets from Python Functions with `planoai generate_prompt_targets`
-
-**Impact:** `MEDIUM` — Manually writing prompt_targets YAML for existing Python APIs is error-prone — the generator introspects function signatures and produces correct YAML automatically
-**Tags:** `cli`, `generate`, `prompt-targets`, `python`, `code-generation`
-
-## Generate Prompt Targets from Python Functions with `planoai generate_prompt_targets`
-
-`planoai generate_prompt_targets` introspects Python function signatures and docstrings to generate `prompt_targets` YAML for your Plano config. This is the fastest way to expose existing Python APIs as LLM-callable functions without manually writing the YAML schema.
-
-**Python function requirements for generation:**
-- Use simple type annotations: `int`, `float`, `bool`, `str`, `list`, `tuple`, `set`, `dict`
-- Include a docstring describing what the function does (becomes the `description`)
-- Complex Pydantic models must be flattened into primitive typed parameters first
-
-**Example Python file:**
-
-```python
-# api.py
-
-def get_stock_quote(symbol: str, exchange: str = "NYSE") -> dict:
-    """Get the current stock price and trading data for a given stock symbol.
-
-    Returns price, volume, market cap, and 24h change percentage.
-    """
-    # Implementation calls stock API
-    pass
-
-def get_weather_forecast(city: str, days: int = 3, units: str = "celsius") -> dict:
-    """Get the weather forecast for a city.
-
-    Returns temperature, precipitation, and conditions for the specified number of days.
-    """
-    pass
-
-def search_flights(origin: str, destination: str, date: str, passengers: int = 1) -> list:
-    """Search for available flights between two airports on a given date.
-
-    Date format: YYYY-MM-DD. Returns list of flight options with prices.
-    """
-    pass
-```
-
-**Running the generator:**
-
-```bash
-planoai generate_prompt_targets --file api.py
-```
-
-**Generated output (add to your config.yaml):**
-
-```yaml
-prompt_targets:
-  - name: get_stock_quote
-    description: Get the current stock price and trading data for a given stock symbol.
-    parameters:
-      - name: symbol
-        type: str
-        required: true
-      - name: exchange
-        type: str
-        required: false
-        default: NYSE
-    # Add endpoint manually:
-    endpoint:
-      name: stock_api
-      path: /quote?symbol={symbol}&exchange={exchange}
-
-  - name: get_weather_forecast
-    description: Get the weather forecast for a city.
-    parameters:
-      - name: city
-        type: str
-        required: true
-      - name: days
-        type: int
-        required: false
-        default: 3
-      - name: units
-        type: str
-        required: false
-        default: celsius
-    endpoint:
-      name: weather_api
-      path: /forecast?city={city}&days={days}&units={units}
-```
-
-After generation, manually add the `endpoint` blocks pointing to your actual API. The generator produces the schema; you wire in the connectivity.
-
-Reference: https://github.com/katanemo/archgw
-
----
-
-### 6.3 Use `planoai cli_agent` to Connect Claude Code Through Plano
+### 6.2 Use `planoai cli_agent` to Connect Claude Code Through Plano
 
 **Impact:** `MEDIUM-HIGH` — Running Claude Code directly against provider APIs bypasses Plano's routing, observability, and guardrails — cli_agent routes all Claude Code traffic through your configured Plano instance
 **Tags:** `cli`, `cli-agent`, `claude`, `coding-agent`, `integration`
@@ -1562,7 +1469,7 @@ Reference: [https://github.com/katanemo/archgw](https://github.com/katanemo/arch
 
 ---
 
-### 6.4 Use `planoai init` Templates to Bootstrap New Projects Correctly
+### 6.3 Use `planoai init` Templates to Bootstrap New Projects Correctly
 
 **Impact:** `MEDIUM` — Starting from a blank config.yaml leads to missing required fields and common structural mistakes — templates provide validated, idiomatic starting points
 **Tags:** `cli`, `init`, `templates`, `getting-started`, `project-setup`
