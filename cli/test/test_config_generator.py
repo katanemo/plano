@@ -329,6 +329,33 @@ tracing:
 
 """,
     },
+    {
+        "id": "unknown_listener_output_filter",
+        "expected_error": "references output_filters id 'missing_output_guard'",
+        "plano_config": """
+version: v0.4.0
+
+filters:
+  - id: input_guard
+    url: http://localhost:10500
+    type: http
+
+listeners:
+  - name: llm
+    type: model
+    port: 12000
+    input_filters:
+      - input_guard
+    output_filters:
+      - missing_output_guard
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+""",
+    },
 ]
 
 
