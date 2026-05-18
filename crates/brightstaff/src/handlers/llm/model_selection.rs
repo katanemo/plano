@@ -137,6 +137,34 @@ pub async fn router_chat_get_upstream_model(
     match routing_result {
         Ok(route) => match route {
             Some(decision) => {
+                // Skills-only decision (no route, no models) -> fall through
+                // to the "none" sentinel so the original / aliased model is
+                // used, but propagate activated_skills so they still get
+                // injected. Documented at docs/source/resources/skills.rst.
+                if decision.route_name.is_none() && decision.models.is_empty() {
+                    current_span.record("route.selected_model", "none");
+                    info!(
+                        skills = ?decision
+                            .activated_skills
+                            .iter()
+                            .map(|s| s.name.as_str())
+                            .collect::<Vec<_>>(),
+                        "no route determined; activating skills against default model"
+                    );
+                    bs_metrics::record_router_decision(
+                        route_label,
+                        "none",
+                        true,
+                        determination_elapsed,
+                    );
+                    return Ok(RoutingResult {
+                        model_name: "none".to_string(),
+                        models: vec!["none".to_string()],
+                        route_name: None,
+                        activated_skills: decision.activated_skills,
+                    });
+                }
+
                 let model_name = decision.models.first().cloned().unwrap_or_default();
                 current_span.record("route.selected_model", model_name.as_str());
                 bs_metrics::record_router_decision(
@@ -148,7 +176,7 @@ pub async fn router_chat_get_upstream_model(
                 Ok(RoutingResult {
                     model_name,
                     models: decision.models,
-                    route_name: Some(decision.route_name),
+                    route_name: decision.route_name,
                     activated_skills: decision.activated_skills,
                 })
             }
@@ -186,11 +214,29 @@ pub async fn router_chat_get_upstream_model(
 /// Prepend the bodies of `activated_skills` to the system prompt of the
 /// upstream request so the chosen LLM has access to each skill's instructions.
 /// Works across every provider variant by going through the OpenAI message
-/// shape (`get_messages`/`set_messages`).
+/// shape (`get_messages` / `set_messages`).
 ///
-/// When there is already a leading system message we augment it in place;
-/// otherwise a new system message is inserted at position 0. No-op when
-/// `activated_skills` is empty.
+/// # Behavior contract
+///
+/// * **No-op** when `activated_skills` is empty.
+/// * **Augments the first system message in place** when one is present at
+///   any position in `messages` (typically index 0, but we look for the
+///   first `Role::System` rather than assuming). Subsequent system messages
+///   (rare but legal for some providers) are left untouched. We pick "first"
+///   so the skill content appears as early in the prompt as possible —
+///   models weight earlier system content more heavily and an Anthropic
+///   tools+system combo is conventionally a single leading block.
+/// * **Inserts a new leading system message** at index 0 when no system
+///   message exists in the request.
+/// * **Flattens `MessageContent::Parts` system content to a single
+///   `MessageContent::Text`** when extracting the base prompt. This is
+///   intentional: every supported upstream API accepts text in system
+///   messages, and the alternative — preserving each `ContentPart` and
+///   appending a new text part — fails on providers that disallow
+///   multi-part system content. The trade-off is that non-text system parts
+///   (e.g. images attached to a system message, which no production
+///   provider supports anyway) are dropped on the floor. Verified by
+///   `flattens_parts_system_content` below.
 pub fn inject_activated_skills_into_request(
     client_request: &mut ProviderRequestType,
     activated_skills: &[SkillRef],
@@ -239,4 +285,175 @@ pub fn inject_activated_skills_into_request(
     }
 
     client_request.set_messages(&messages);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hermesllm::apis::openai::{ChatCompletionsRequest, ContentPart};
+
+    fn req_with_messages(msgs: Vec<Message>) -> ProviderRequestType {
+        ProviderRequestType::ChatCompletionsRequest(ChatCompletionsRequest {
+            model: "test".to_string(),
+            messages: msgs,
+            ..Default::default()
+        })
+    }
+
+    fn user_msg(text: &str) -> Message {
+        Message {
+            role: Role::User,
+            content: Some(MessageContent::Text(text.to_string())),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn system_msg(text: &str) -> Message {
+        Message {
+            role: Role::System,
+            content: Some(MessageContent::Text(text.to_string())),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn skill(name: &str, body: &str) -> SkillRef {
+        SkillRef {
+            name: name.to_string(),
+            description: format!("desc for {name}"),
+            path: None,
+            base_dir: None,
+            body: Some(body.to_string()),
+            scope: Some("project".to_string()),
+            compatibility: None,
+            license: None,
+            metadata: None,
+            allowed_tools: None,
+        }
+    }
+
+    fn first_system_text(req: &ProviderRequestType) -> String {
+        req.get_messages()
+            .iter()
+            .find(|m| m.role == Role::System)
+            .and_then(|m| m.content.as_ref())
+            .map(|c| c.extract_text())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn injects_new_system_message_when_none_present() {
+        let mut req = req_with_messages(vec![user_msg("hi")]);
+        inject_activated_skills_into_request(&mut req, &[skill("pdf", "process pdfs")]);
+        let messages = req.get_messages();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, Role::System);
+        let txt = first_system_text(&req);
+        assert!(txt.contains("<skill_content name=\"pdf\""));
+        assert!(txt.contains("process pdfs"));
+    }
+
+    #[test]
+    fn augments_existing_system_message_in_place_preserving_user_message() {
+        let mut req = req_with_messages(vec![system_msg("you are helpful"), user_msg("hi")]);
+        inject_activated_skills_into_request(&mut req, &[skill("pdf", "process pdfs")]);
+        let messages = req.get_messages();
+        assert_eq!(messages.len(), 2);
+        let txt = first_system_text(&req);
+        assert!(txt.starts_with("you are helpful"));
+        assert!(txt.contains("<skill_content name=\"pdf\""));
+        assert_eq!(messages[1].role, Role::User);
+    }
+
+    #[test]
+    fn noop_when_no_skills_activated() {
+        let mut req = req_with_messages(vec![system_msg("base"), user_msg("hi")]);
+        let before = req.get_messages();
+        inject_activated_skills_into_request(&mut req, &[]);
+        let after = req.get_messages();
+        assert_eq!(after.len(), before.len());
+        assert_eq!(first_system_text(&req), "base");
+    }
+
+    #[test]
+    fn augments_only_the_first_system_message() {
+        // Two system messages (rare in practice). Only the first one is
+        // augmented; the trailing one is left untouched. Documented contract.
+        let mut req = req_with_messages(vec![
+            system_msg("primary"),
+            system_msg("secondary"),
+            user_msg("hi"),
+        ]);
+        inject_activated_skills_into_request(&mut req, &[skill("pdf", "process pdfs")]);
+        let messages = req.get_messages();
+        assert!(messages[0]
+            .content
+            .as_ref()
+            .unwrap()
+            .extract_text()
+            .contains("primary"));
+        assert!(messages[0]
+            .content
+            .as_ref()
+            .unwrap()
+            .extract_text()
+            .contains("<skill_content"));
+        assert_eq!(
+            messages[1].content.as_ref().unwrap().extract_text(),
+            "secondary"
+        );
+    }
+
+    #[test]
+    fn flattens_parts_system_content() {
+        // Documented behavior: `MessageContent::Parts` system content is
+        // extracted to plain text via ExtractText and re-emitted as
+        // `MessageContent::Text`. Non-text parts (e.g. images) are dropped
+        // — no production provider ships images in a system message.
+        let parts_system = Message {
+            role: Role::System,
+            content: Some(MessageContent::Parts(vec![
+                ContentPart::Text {
+                    text: "be brief".to_string(),
+                },
+                ContentPart::Text {
+                    text: " and polite".to_string(),
+                },
+            ])),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        };
+        let mut req = req_with_messages(vec![parts_system, user_msg("hi")]);
+        inject_activated_skills_into_request(&mut req, &[skill("pdf", "body")]);
+        let messages = req.get_messages();
+        let system = &messages[0];
+        match system.content.as_ref().unwrap() {
+            MessageContent::Text(t) => {
+                assert!(t.contains("be brief"));
+                assert!(t.contains(" and polite"));
+                assert!(t.contains("<skill_content name=\"pdf\""));
+            }
+            MessageContent::Parts(_) => panic!("expected flattened text, got Parts"),
+        }
+    }
+
+    #[test]
+    fn injects_in_orchestrator_order_for_multiple_skills() {
+        let mut req = req_with_messages(vec![user_msg("hi")]);
+        inject_activated_skills_into_request(
+            &mut req,
+            &[skill("first", "alpha-body"), skill("second", "beta-body")],
+        );
+        let txt = first_system_text(&req);
+        let first_pos = txt.find("alpha-body").expect("first skill body present");
+        let second_pos = txt.find("beta-body").expect("second skill body present");
+        assert!(
+            first_pos < second_pos,
+            "skills should appear in the order they were activated"
+        );
+    }
 }

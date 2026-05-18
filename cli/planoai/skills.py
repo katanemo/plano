@@ -102,24 +102,55 @@ class Skill:
         }
 
 
-def find_project_root(start: Path | None = None) -> Path:
-    """Walk up from `start` looking for `.plano/`, then `.git/`.
+_MAX_PROJECT_ROOT_WALK_DEPTH = 30
 
-    Falls back to `start` (or cwd) if nothing is found. This matches how
-    `npx skills add` chooses a project root.
+
+def find_project_root(start: Path | None = None) -> Path:
+    """Walk up from ``start`` looking for ``.plano/``, then ``.git/``.
+
+    The walk is bounded so a CLI invocation in a deeply-nested or
+    pathological directory does not iterate all the way to ``/`` on every
+    call. Two bounds apply, whichever fires first:
+
+    * **$HOME**: when ``start`` is inside the user's home directory, the
+      walk stops at ``$HOME`` itself. We never inspect siblings of
+      ``$HOME`` like ``/Users`` — picking up a stray ``.git/`` there would
+      be more surprising than helpful.
+    * **Hard depth cap** (``_MAX_PROJECT_ROOT_WALK_DEPTH`` parents): a
+      defensive fallback for paths outside ``$HOME`` (e.g. ``/tmp/...``)
+      so we still terminate quickly on absurdly deep trees.
+
+    Falls back to ``start`` (or cwd) if nothing is found. This matches how
+    ``npx skills add`` chooses a project root.
     """
     base = Path(start or Path.cwd()).resolve()
-    cur = base
-    while cur != cur.parent:
+
+    try:
+        home = Path(os.path.expanduser("~")).resolve()
+    except (OSError, RuntimeError):
+        home = None
+
+    def _ancestors(start_dir: Path) -> list[Path]:
+        out: list[Path] = []
+        cur = start_dir
+        for _ in range(_MAX_PROJECT_ROOT_WALK_DEPTH + 1):
+            out.append(cur)
+            if home is not None and cur == home:
+                break
+            if cur == cur.parent:
+                break
+            cur = cur.parent
+        return out
+
+    ancestors = _ancestors(base)
+
+    for cur in ancestors:
         if (cur / ".plano").exists():
             return cur
-        cur = cur.parent
 
-    cur = base
-    while cur != cur.parent:
+    for cur in ancestors:
         if (cur / ".git").exists():
             return cur
-        cur = cur.parent
 
     return base
 
