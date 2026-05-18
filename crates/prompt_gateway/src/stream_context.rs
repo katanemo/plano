@@ -9,7 +9,7 @@ use common::consts::{
     API_REQUEST_TIMEOUT_MS, ARCH_FC_MODEL_NAME, ARCH_INTERNAL_CLUSTER_NAME,
     ARCH_UPSTREAM_HOST_HEADER, ASSISTANT_ROLE, DEFAULT_TARGET_REQUEST_TIMEOUT_MS, MESSAGES_KEY,
     REQUEST_ID_HEADER, SYSTEM_ROLE, TOOL_ROLE, TRACE_PARENT_HEADER, USER_ROLE,
-    X_ARCH_FC_MODEL_RESPONSE,
+    X_ARCH_API_RESPONSE, X_ARCH_FC_MODEL_RESPONSE, X_ARCH_STATE_HEADER, X_ARCH_TOOL_CALL,
 };
 use common::errors::ServerError;
 use common::http::{CallArgs, Client};
@@ -18,6 +18,7 @@ use derivative::Derivative;
 use http::StatusCode;
 use log::{debug, info, warn};
 use proxy_wasm::traits::*;
+use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -66,6 +67,8 @@ pub struct StreamContext {
     pub traceparent: Option<String>,
     pub _tracing: Rc<Option<Tracing>>,
     pub arch_fc_response: Option<String>,
+    /// Accumulates upstream non-streaming response chunks until end of stream.
+    pub non_streaming_response_buffer: Vec<u8>,
 }
 
 impl StreamContext {
@@ -100,6 +103,7 @@ impl StreamContext {
             start_upstream_llm_request_time: 0,
             time_to_first_token: None,
             arch_fc_response: None,
+            non_streaming_response_buffer: Vec::new(),
         }
     }
 
@@ -802,6 +806,80 @@ impl StreamContext {
         info!("plano => (default target) llm request: {}", json_resp);
         self.set_http_request_body(0, self.request_body_size, json_resp.as_bytes());
         self.resume_http_request();
+    }
+
+    pub fn process_non_streaming_response_body(&mut self, body: &[u8], body_size: usize) {
+        let body_utf8 = match String::from_utf8(body.to_vec()) {
+            Ok(body_utf8) => body_utf8,
+            Err(e) => {
+                info!("could not convert to utf8: {}", e);
+                return;
+            }
+        };
+
+        if let Some(tool_calls) = self.tool_calls.as_ref() {
+            if !tool_calls.is_empty() {
+                if self.arch_state.is_none() {
+                    self.arch_state = Some(Vec::new());
+                }
+
+                let mut data = match serde_json::from_str(&body_utf8) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        warn!(
+                            "could not deserialize response, sending data as it is: {}",
+                            e
+                        );
+                        return;
+                    }
+                };
+                if let Value::Object(ref mut map) = data {
+                    let metadata = map
+                        .entry("metadata")
+                        .or_insert(Value::Object(serde_json::Map::new()));
+                    if metadata == &Value::Null {
+                        *metadata = Value::Object(serde_json::Map::new());
+                    }
+
+                    let tool_call_message = self.generate_tool_call_message();
+                    let tool_call_message_str = serde_json::to_string(&tool_call_message).unwrap();
+                    metadata.as_object_mut().unwrap().insert(
+                        X_ARCH_TOOL_CALL.to_string(),
+                        serde_json::Value::String(tool_call_message_str),
+                    );
+
+                    let api_response_message = self.generate_api_response_message();
+                    let api_response_message_str =
+                        serde_json::to_string(&api_response_message).unwrap();
+                    metadata.as_object_mut().unwrap().insert(
+                        X_ARCH_API_RESPONSE.to_string(),
+                        serde_json::Value::String(api_response_message_str),
+                    );
+
+                    let fc_messages = vec![tool_call_message, api_response_message];
+
+                    let fc_messages_str = serde_json::to_string(&fc_messages).unwrap();
+                    let arch_state = HashMap::from([("messages".to_string(), fc_messages_str)]);
+                    let arch_state_str = serde_json::to_string(&arch_state).unwrap();
+                    metadata.as_object_mut().unwrap().insert(
+                        X_ARCH_STATE_HEADER.to_string(),
+                        serde_json::Value::String(arch_state_str),
+                    );
+
+                    if let Some(arch_fc_response) = self.arch_fc_response.as_ref() {
+                        metadata.as_object_mut().unwrap().insert(
+                            X_ARCH_FC_MODEL_RESPONSE.to_string(),
+                            serde_json::Value::String(
+                                serde_json::to_string(arch_fc_response).unwrap(),
+                            ),
+                        );
+                    }
+                    let data_serialized = serde_json::to_string(&data).unwrap();
+                    info!("plano <= developer: {}", data_serialized);
+                    self.set_http_response_body(0, body_size, data_serialized.as_bytes());
+                }
+            }
+        }
     }
 }
 
