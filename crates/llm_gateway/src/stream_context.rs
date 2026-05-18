@@ -1183,6 +1183,12 @@ impl HttpContext for StreamContext {
             return Action::Continue;
         }
 
+        // Non-streaming upstream responses may arrive in multiple chunks; wait for the
+        // full buffered body before parsing (body_size is cumulative on the final chunk).
+        if !self.streaming_response && !end_of_stream {
+            return Action::Continue;
+        }
+
         // Check if this is an error response from upstream
         if let Some(status_code) = &self.upstream_status_code {
             if status_code.is_client_error() || status_code.is_server_error() {
