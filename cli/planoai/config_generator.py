@@ -61,7 +61,9 @@ def apply_kimi_code_provider_defaults(model_provider: dict) -> None:
         return
     parsed = urlparse(base_url)
     model_id = model_provider.get("model", "")
-    is_kimi_code = parsed.hostname == KIMI_CODE_API_HOST or model_id == "kimi-for-coding"
+    is_kimi_code = (
+        parsed.hostname == KIMI_CODE_API_HOST or model_id == "kimi-for-coding"
+    )
     if not is_kimi_code:
         return
 
@@ -71,6 +73,7 @@ def apply_kimi_code_provider_defaults(model_provider: dict) -> None:
 
     headers = model_provider.setdefault("headers", {})
     headers.setdefault("User-Agent", KIMI_CODE_DEFAULT_USER_AGENT)
+
 
 SUPPORTED_PROVIDERS = (
     SUPPORTED_PROVIDERS_WITHOUT_BASE_URL + SUPPORTED_PROVIDERS_WITH_BASE_URL
