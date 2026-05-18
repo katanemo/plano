@@ -1206,7 +1206,7 @@ impl HttpContext for StreamContext {
                             String::from_utf8_lossy(&body)
                         );
                         // Forward the error response as-is
-                        let replace_size = if self.streaming_response {
+                        let replace_size = if body_size > 0 {
                             body_size
                         } else {
                             body.len()
@@ -1248,7 +1248,7 @@ impl HttpContext for StreamContext {
             return Action::Continue;
         }
 
-        let replace_size = if self.streaming_response {
+        let replace_size = if body_size > 0 {
             body_size
         } else {
             body.len()
