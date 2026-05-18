@@ -39,6 +39,39 @@ CHATGPT_API_BASE = "https://chatgpt.com/backend-api/codex"
 CHATGPT_DEFAULT_ORIGINATOR = "codex_cli_rs"
 CHATGPT_DEFAULT_USER_AGENT = "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
 
+KIMI_CODE_API_HOST = "api.kimi.com"
+KIMI_CODE_DEFAULT_USER_AGENT = "KimiCLI/1.3"
+
+
+def normalize_kimi_code_base_url(base_url: str) -> str:
+    """Ensure Kimi Code API base URLs include the /v1 suffix."""
+    parsed = urlparse(base_url)
+    if parsed.hostname != KIMI_CODE_API_HOST:
+        return base_url
+    path = parsed.path.rstrip("/")
+    if path.endswith("/coding"):
+        return f"{parsed.scheme}://{parsed.netloc}{path}/v1"
+    return base_url
+
+
+def apply_kimi_code_provider_defaults(model_provider: dict) -> None:
+    """Inject Kimi Code API defaults (User-Agent, normalized base URL)."""
+    base_url = model_provider.get("base_url")
+    if not base_url:
+        return
+    parsed = urlparse(base_url)
+    model_id = model_provider.get("model", "")
+    is_kimi_code = parsed.hostname == KIMI_CODE_API_HOST or model_id == "kimi-for-coding"
+    if not is_kimi_code:
+        return
+
+    normalized = normalize_kimi_code_base_url(base_url)
+    if normalized != base_url:
+        model_provider["base_url"] = normalized
+
+    headers = model_provider.setdefault("headers", {})
+    headers.setdefault("User-Agent", KIMI_CODE_DEFAULT_USER_AGENT)
+
 SUPPORTED_PROVIDERS = (
     SUPPORTED_PROVIDERS_WITHOUT_BASE_URL + SUPPORTED_PROVIDERS_WITH_BASE_URL
 )
@@ -462,6 +495,8 @@ def validate_and_render_schema():
                 headers.setdefault("user-agent", CHATGPT_DEFAULT_USER_AGENT)
                 headers.setdefault("session_id", str(uuid.uuid4()))
                 model_provider["headers"] = headers
+
+            apply_kimi_code_provider_defaults(model_provider)
 
             updated_model_providers.append(model_provider)
 

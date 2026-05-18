@@ -136,6 +136,20 @@ impl ChatCompletionsRequest {
             self.temperature = Some(1.0);
         }
     }
+
+    /// Strip request fields that Kimi Code API (`kimi-for-coding`) rejects or mishandles.
+    pub fn normalize_for_kimi_code_api(&mut self) {
+        self.stream_options = None;
+        self.reasoning_effort = None;
+        self.web_search_options = None;
+        self.service_tier = None;
+        self.store = None;
+    }
+}
+
+/// True when the upstream model id is Moonshot's Kimi Code endpoint model.
+pub fn is_kimi_code_model(model: &str) -> bool {
+    model == "kimi-for-coding"
 }
 
 // ============================================================================

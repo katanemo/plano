@@ -432,6 +432,9 @@ Moonshot AI
    * - Model Name
      - Model ID for Config
      - Description
+   * - Kimi for Coding
+     - ``moonshotai/kimi-for-coding``
+     - Kimi Code API model for agentic coding (use with ``base_url: https://api.kimi.com/coding/v1``)
    * - Kimi K2 Preview
      - ``moonshotai/kimi-k2-0905-preview``
      - Foundation model optimized for agentic tasks with 32B activated parameters
@@ -447,6 +450,13 @@ Moonshot AI
 .. code-block:: yaml
 
     llm_providers:
+      # Kimi Code API (Claude Code / agentic clients via Plano translation)
+      - model: moonshotai/kimi-for-coding
+        access_key: $MOONSHOTAI_API_KEY
+        base_url: https://api.kimi.com/coding/v1
+        headers:
+          User-Agent: "KimiCLI/1.3"
+
       # Latest K2 models for agentic tasks
       - model: moonshotai/kimi-k2-0905-preview
         access_key: $MOONSHOTAI_API_KEY
