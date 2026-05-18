@@ -247,6 +247,7 @@ jobs:
   # E2E: prompt_gateway tests
   # ──────────────────────────────────────────────
   test-prompt-gateway:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     needs: docker-build
     runs-on: ubuntu-latest
     steps:
@@ -297,6 +298,7 @@ jobs:
   # E2E: model_alias_routing tests
   # ──────────────────────────────────────────────
   test-model-alias-routing:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     needs: docker-build
     runs-on: ubuntu-latest
     steps:
@@ -347,6 +349,7 @@ jobs:
   # E2E: responses API with state tests
   # ──────────────────────────────────────────────
   test-responses-api-with-state:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     needs: docker-build
     runs-on: ubuntu-latest
     steps:
@@ -397,6 +400,7 @@ jobs:
   # E2E: plano tests (multi-Python matrix)
   # ──────────────────────────────────────────────
   e2e-plano-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     needs: docker-build
     runs-on: ubuntu-latest-m
     strategy:
@@ -462,6 +466,7 @@ jobs:
   # E2E: demo — preference based routing
   # ──────────────────────────────────────────────
   e2e-demo-preference:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     needs: docker-build
     runs-on: ubuntu-latest-m
     steps:
@@ -514,6 +519,7 @@ jobs:
   # E2E: demo — currency conversion
   # ──────────────────────────────────────────────
   e2e-demo-currency:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     needs: docker-build
     runs-on: ubuntu-latest-m
     steps:
