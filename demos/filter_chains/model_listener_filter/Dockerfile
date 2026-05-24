@@ -4,7 +4,7 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir fastapi uvicorn pydantic
 
-COPY content_guard.py .
+COPY content_guard.py fake_provider.py output_filter.py ./
 
 EXPOSE 10500
 

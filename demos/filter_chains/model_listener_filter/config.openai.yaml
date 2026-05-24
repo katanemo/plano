@@ -10,8 +10,7 @@ filters:
 
 model_providers:
   - model: openai/gpt-4o-mini
-    access_key: local-demo-key
-    base_url: http://fake-provider:10501/v1
+    access_key: $OPENAI_API_KEY
     default: true
 
 listeners:
