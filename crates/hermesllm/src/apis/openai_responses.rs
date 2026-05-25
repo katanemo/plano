@@ -126,16 +126,12 @@ pub enum InputParam {
 pub enum InputItem {
     /// Input message (role + content)
     Message(InputMessage),
-    /// Item reference
-    ItemReference {
-        #[serde(rename = "type")]
-        item_type: String,
-        id: String,
-    },
     /// Function call emitted by model in prior turn
     FunctionCall {
         #[serde(rename = "type")]
         item_type: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         name: String,
         arguments: String,
         call_id: String,
@@ -146,6 +142,18 @@ pub enum InputItem {
         item_type: String,
         call_id: String,
         output: serde_json::Value,
+    },
+    /// Item reference
+    ///
+    /// Keep this after concrete item variants. Some Responses items include an
+    /// `id` plus additional required fields (`function_call` has `call_id`,
+    /// `name`, and `arguments`). With serde's untagged enum matching, placing
+    /// this broad reference shape first silently drops those fields and sends an
+    /// invalid upstream item.
+    ItemReference {
+        #[serde(rename = "type")]
+        item_type: String,
+        id: String,
     },
 }
 
@@ -339,13 +347,11 @@ pub enum Tool {
 impl Tool {
     pub fn name(&self) -> Option<&str> {
         match self {
-            Tool::Function { name, function, .. } => {
-                function
-                    .as_ref()
-                    .and_then(|f| f.name.as_ref())
-                    .map(|s| s.as_str())
-                    .or_else(|| name.as_ref().map(|s| s.as_str()))
-            }
+            Tool::Function { name, function, .. } => function
+                .as_ref()
+                .and_then(|f| f.name.as_ref())
+                .map(|s| s.as_str())
+                .or_else(|| name.as_ref().map(|s| s.as_str())),
             Tool::Custom { name, .. } => name.as_deref(),
             _ => None,
         }

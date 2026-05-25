@@ -28,8 +28,7 @@ use hermesllm::providers::response::ProviderResponse;
 use hermesllm::providers::streaming_response::ProviderStreamResponse;
 use hermesllm::{
     serialize_for_upstream, DecodedFrame, ProviderId, ProviderRequest, ProviderRequestType,
-    ProviderResponseType,
-    ProviderStreamResponseType,
+    ProviderResponseType, ProviderStreamResponseType,
 };
 
 pub struct StreamContext {
@@ -57,6 +56,7 @@ pub struct StreamContext {
     http_protocol: Option<String>,
     sse_buffer: Option<SseStreamBuffer>,
     sse_chunk_processor: Option<SseChunkProcessor>,
+    deferred_responses_stream_body: Vec<u8>,
 }
 
 impl StreamContext {
@@ -88,6 +88,7 @@ impl StreamContext {
             http_protocol: None,
             sse_buffer: None,
             sse_chunk_processor: None,
+            deferred_responses_stream_body: Vec::new(),
         }
     }
 
@@ -259,6 +260,18 @@ impl StreamContext {
         // However, a missing Content-Length header is not grounds for bad requests given that intermediary hops could
         // manipulate the body in benign ways e.g., compression.
         self.set_http_request_header("content-length", None);
+    }
+
+    fn force_identity_response_encoding_for_streams(&mut self) {
+        // The WASM gateway parses upstream SSE bytes directly. If the client's
+        // Accept-Encoding (for example Python requests' default gzip/deflate/br)
+        // is forwarded upstream, ChatGPT Codex can return compressed SSE chunks;
+        // those are not parseable as SSE here and can surface as a clean HTTP 200
+        // with only lifecycle events reaching the client. Ask upstream for plain
+        // bytes whenever this filter is responsible for streaming transforms.
+        if self.streaming_response {
+            self.set_http_request_header("accept-encoding", Some("identity"));
+        }
     }
 
     fn save_ratelimit_header(&mut self) {
@@ -903,6 +916,7 @@ impl HttpContext for StreamContext {
         }
 
         self.delete_content_length_header();
+        self.force_identity_response_encoding_for_streams();
         self.save_ratelimit_header();
 
         self.request_id = self.get_http_request_header(REQUEST_ID_HEADER);
@@ -1083,14 +1097,15 @@ impl HttpContext for StreamContext {
                             );
                             return Action::Pause;
                         }
-                        debug!(
-                            "request_id={}: upstream request payload: {}",
-                            self.request_identifier(),
-                            String::from_utf8_lossy(&request.to_bytes().unwrap_or_default())
-                        );
-
-                        match request.to_bytes() {
-                            Ok(bytes) => bytes,
+                        match serialize_for_upstream(&request, self.get_provider_id()) {
+                            Ok(bytes) => {
+                                debug!(
+                                    "request_id={}: upstream request payload: {}",
+                                    self.request_identifier(),
+                                    String::from_utf8_lossy(&bytes)
+                                );
+                                bytes
+                            }
                             Err(e) => {
                                 warn!(
                                     "request_id={}: failed to serialize request body: {}",
@@ -1106,9 +1121,7 @@ impl HttpContext for StreamContext {
                                 );
                                 return Action::Pause;
                             }
-                        };
-
-                        request_bytes
+                        }
                     }
                     Err(e) => {
                         warn!(
@@ -1182,6 +1195,25 @@ impl HttpContext for StreamContext {
                 self.request_identifier(),
                 body_size
             );
+            if self.streaming_response {
+                if let Some(buffer) = self.sse_buffer.as_mut() {
+                    buffer.finalize_stream();
+                    let bytes = buffer.to_bytes();
+                    if matches!(
+                        self.client_api,
+                        Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
+                    ) {
+                        self.deferred_responses_stream_body
+                            .extend_from_slice(&bytes);
+                        let full_body = std::mem::take(&mut self.deferred_responses_stream_body);
+                        if !full_body.is_empty() {
+                            set_response_body_allow_growth(self, body_size, &full_body);
+                        }
+                    } else if !bytes.is_empty() {
+                        self.set_http_response_body(0, body_size, &bytes);
+                    }
+                }
+            }
             self.handle_end_of_request_metrics_and_traces(current_time);
             return Action::Continue;
         }
@@ -1246,7 +1278,37 @@ impl HttpContext for StreamContext {
         if self.streaming_response {
             match self.handle_streaming_response(&body, provider_id) {
                 Ok(serialized_body) => {
-                    self.set_http_response_body(0, body_size, &serialized_body);
+                    let terminal_bytes = if end_of_stream {
+                        if let Some(buffer) = self.sse_buffer.as_mut() {
+                            buffer.finalize_stream();
+                            buffer.to_bytes()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    if matches!(
+                        self.client_api,
+                        Some(SupportedAPIsFromClient::OpenAIResponsesAPI(_))
+                    ) {
+                        self.deferred_responses_stream_body
+                            .extend_from_slice(&serialized_body);
+                        self.deferred_responses_stream_body
+                            .extend_from_slice(&terminal_bytes);
+                        if end_of_stream {
+                            let full_body =
+                                std::mem::take(&mut self.deferred_responses_stream_body);
+                            set_response_body_allow_growth(self, body_size, &full_body);
+                        } else {
+                            self.set_http_response_body(0, body_size, &[]);
+                        }
+                    } else {
+                        set_response_body_allow_growth(self, body_size, &serialized_body);
+                        if !terminal_bytes.is_empty() {
+                            self.set_http_response_body(serialized_body.len(), 0, &terminal_bytes);
+                        }
+                    }
                 }
                 Err(action) => return action,
             }
@@ -1261,6 +1323,17 @@ impl HttpContext for StreamContext {
 
         Action::Continue
     }
+}
+
+fn set_response_body_allow_growth(ctx: &dyn HttpContext, original_size: usize, body: &[u8]) {
+    if body.len() <= original_size {
+        ctx.set_http_response_body(0, original_size, body);
+        return;
+    }
+
+    let (replacement, extra) = body.split_at(original_size);
+    ctx.set_http_response_body(0, original_size, replacement);
+    ctx.set_http_response_body(original_size, 0, extra);
 }
 
 fn current_time_ns() -> u128 {

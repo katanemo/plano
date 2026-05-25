@@ -196,6 +196,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                         }
                         InputItem::FunctionCall {
                             item_type: _,
+                            id: _,
                             name,
                             arguments,
                             call_id,
@@ -1423,6 +1424,7 @@ mod tests {
                 }),
                 InputItem::FunctionCall {
                     item_type: "function_call".to_string(),
+                    id: Some("fc_abc123".to_string()),
                     name: "exec_command".to_string(),
                     arguments: "{\"cmd\":\"pwd\"}".to_string(),
                     call_id: "toolu_abc123".to_string(),

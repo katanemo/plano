@@ -332,6 +332,15 @@ mod tests {
     }
 
     #[test]
+    fn test_chatgpt_models_include_gpt_5_5() {
+        let chatgpt_models = ProviderId::ChatGPT.models();
+        assert!(
+            chatgpt_models.iter().any(|model| model == "gpt-5.5"),
+            "ChatGPT models should include gpt-5.5"
+        );
+    }
+
+    #[test]
     fn test_unsupported_providers_return_empty() {
         // Providers without models should return empty vec
         let github_models = ProviderId::GitHub.models();
