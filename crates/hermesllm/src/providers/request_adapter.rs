@@ -613,7 +613,9 @@ mod tests {
         let mut request = ProviderRequestType::ResponsesAPIRequest(req);
 
         // normalize_for_upstream sets store=false, stream=true, wraps input in Items
-        request.normalize_for_upstream(ProviderId::ChatGPT, &upstream_api);
+        request
+            .normalize_for_upstream(ProviderId::ChatGPT, &upstream_api)
+            .expect("ChatGPT responses request should normalize");
 
         // serialize_for_upstream then renames max_output_tokens and flattens content
         let bytes = serialize_for_upstream(&request, ProviderId::ChatGPT).unwrap();

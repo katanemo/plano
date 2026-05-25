@@ -1025,7 +1025,7 @@ mod tests {
             input: InputParam::Text("Hello, Codex!".to_string()),
             temperature: None,
             max_output_tokens: Some(8192),
-            stream: Some(false),
+            stream: None,
             metadata: None,
             tools: None,
             tool_choice: None,
@@ -1051,7 +1051,9 @@ mod tests {
 
         let upstream_api = SupportedUpstreamAPIs::OpenAIResponsesAPI(Responses);
         let mut request = ProviderRequestType::ResponsesAPIRequest(responses_req);
-        request.normalize_for_upstream(ProviderId::ChatGPT, &upstream_api);
+        request
+            .normalize_for_upstream(ProviderId::ChatGPT, &upstream_api)
+            .expect("ChatGPT responses request should normalize");
 
         match request {
             ProviderRequestType::ResponsesAPIRequest(req) => {
