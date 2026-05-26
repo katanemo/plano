@@ -33,6 +33,7 @@ mod tests {
                     "openai/gpt-4o".to_string(),
                     "openai/gpt-4o-mini".to_string(),
                 ],
+                skills: None,
                 selection_policy: SelectionPolicy {
                     prefer: SelectionPreference::None,
                 },
@@ -44,6 +45,7 @@ mod tests {
                     "anthropic/claude-3-sonnet".to_string(),
                     "openai/gpt-4o-mini".to_string(),
                 ],
+                skills: None,
                 selection_policy: SelectionPolicy {
                     prefer: SelectionPreference::None,
                 },

@@ -316,6 +316,52 @@ properties:
         description: "Maximum token length for the orchestrator/routing model context window. Default is 8192."
   system_prompt:
     type: string
+  skills:
+    type: array
+    description: |
+      Agent Skills (https://agentskills.io) registered for this Plano project.
+      Each entry may be a string (the skill name, resolved against
+      .plano/skills/<name>/ or ~/.plano/skills/<name>/) or an object with name
+      + optional inline metadata. The Python CLI auto-populates body/path
+      during config rendering. Skills are attached to routes via
+      `routing_preferences[].skills`; when omitted there, the orchestrator
+      sees every entry declared (or auto-discovered) here.
+    items:
+      oneOf:
+        - type: string
+        - type: object
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            path:
+              type: string
+              description: "Absolute path to the SKILL.md file (set by the CLI at render time)."
+            base_dir:
+              type: string
+              description: "Absolute path to the skill directory (set by the CLI at render time)."
+            body:
+              type: string
+              description: "Markdown body of SKILL.md (inlined at render time so WASM does not need filesystem access)."
+            scope:
+              type: string
+              enum:
+                - project
+                - user
+            compatibility:
+              type: string
+            license:
+              type: string
+            metadata:
+              type: object
+              additionalProperties:
+                type: string
+            allowed_tools:
+              type: string
+          additionalProperties: false
+          required:
+            - name
   prompt_targets:
     type: array
     items:
@@ -549,6 +595,17 @@ properties:
           items:
             type: string
           minItems: 1
+        skills:
+          type: array
+          description: |
+            Agent Skills associated with this routing preference. When
+            Plano-Orchestrator selects this route, the listed skills are also
+            considered for activation and their SKILL.md bodies are injected
+            into the upstream system prompt. Skill names must match an entry
+            in the top-level `skills:` catalog or be discoverable under
+            `.plano/skills/` or `~/.plano/skills/`.
+          items:
+            type: string
         selection_policy:
           type: object
           properties:

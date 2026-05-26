@@ -1,19 +1,22 @@
 use std::{borrow::Cow, collections::HashMap, sync::Arc, time::Duration};
 
 use common::{
-    configuration::{AgentUsagePreference, OrchestrationPreference, TopLevelRoutingPreference},
+    configuration::{
+        AgentUsagePreference, OrchestrationPreference, SkillRef, TopLevelRoutingPreference,
+    },
     consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER},
+    skills_runtime::{referenced_skills_catalog, resolve_for_route, resolve_selected_skills},
 };
 use hermesllm::apis::openai::Message;
 use hyper::header;
 use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::http::{self, post_and_extract_content};
 use super::model_metrics::ModelMetricsService;
-use super::orchestrator_model::OrchestratorModel;
+use super::orchestrator_model::{OrchestratorModel, OrchestratorSelection};
 
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
@@ -30,10 +33,38 @@ pub struct OrchestratorService {
     orchestrator_model: Arc<dyn OrchestratorModel>,
     orchestrator_provider_name: String,
     top_level_preferences: HashMap<String, TopLevelRoutingPreference>,
+    /// Agent Skills catalog (deduplicated by name) attached to any
+    /// `routing_preferences[].skills` list. Empty when no route has skills.
+    skills_catalog: Vec<SkillRef>,
     metrics_service: Option<Arc<ModelMetricsService>>,
     session_cache: Option<Arc<dyn SessionCache>>,
     session_ttl: Duration,
     tenant_header: Option<String>,
+}
+
+/// Result of `determine_route`: which route was picked (if any), the
+/// ranked candidate models for that route, and the Agent Skill bodies the
+/// orchestrator chose to activate alongside it.
+///
+/// Two valid shapes:
+///
+/// * **Route + skills (typical):** `route_name = Some(...)`, `models`
+///   non-empty, `activated_skills` may be non-empty. Skills are resolved
+///   against `routing_preferences[<route>].skills`, so picks that aren't
+///   allow-listed for the route are dropped with a `warn!`.
+/// * **Skills-only:** `route_name = None`, `models` empty,
+///   `activated_skills` non-empty. The orchestrator decided no route
+///   needed to change but the user's intent matches one or more skills.
+///   Per `docs/source/resources/skills.rst`, the request falls back to the
+///   originally-requested model and the skill bodies are injected the
+///   same way. Allow-list filtering uses the catalog union (effectively
+///   the catalog itself, which is pre-filtered to skills referenced by
+///   some route).
+#[derive(Debug, Clone, Default)]
+pub struct RouteDecision {
+    pub route_name: Option<String>,
+    pub models: Vec<String>,
+    pub activated_skills: Vec<SkillRef>,
 }
 
 #[derive(Debug, Error)]
@@ -66,6 +97,7 @@ impl OrchestratorService {
             orchestrator_model,
             orchestrator_provider_name,
             top_level_preferences: HashMap::new(),
+            skills_catalog: Vec::new(),
             metrics_service: None,
             session_cache: None,
             session_ttl: Duration::from_secs(DEFAULT_SESSION_TTL_SECONDS),
@@ -85,13 +117,52 @@ impl OrchestratorService {
         tenant_header: Option<String>,
         max_token_length: usize,
     ) -> Self {
+        Self::with_routing_and_skills(
+            orchestrator_url,
+            orchestration_model_name,
+            orchestrator_provider_name,
+            top_level_prefs,
+            None,
+            metrics_service,
+            session_ttl_seconds,
+            session_cache,
+            tenant_header,
+            max_token_length,
+        )
+    }
+
+    /// Like `with_routing`, but also seeds the orchestrator with a catalog of
+    /// Agent Skills referenced by `routing_preferences[].skills`. The
+    /// orchestrator gets a `<skills>` block in its system prompt and may
+    /// select zero or more skills alongside the picked route; this enables
+    /// the LLM handler to inject the chosen SKILL.md bodies into the
+    /// upstream request.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_routing_and_skills(
+        orchestrator_url: String,
+        orchestration_model_name: String,
+        orchestrator_provider_name: String,
+        top_level_prefs: Option<Vec<TopLevelRoutingPreference>>,
+        skills_catalog: Option<Vec<SkillRef>>,
+        metrics_service: Option<Arc<ModelMetricsService>>,
+        session_ttl_seconds: Option<u64>,
+        session_cache: Arc<dyn SessionCache>,
+        tenant_header: Option<String>,
+        max_token_length: usize,
+    ) -> Self {
         let top_level_preferences: HashMap<String, TopLevelRoutingPreference> = top_level_prefs
             .map_or_else(HashMap::new, |prefs| {
                 prefs.into_iter().map(|p| (p.name.clone(), p)).collect()
             });
 
-        let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::new(
+        let skills_catalog = referenced_skills_catalog(
+            skills_catalog.as_deref().unwrap_or(&[]),
+            &top_level_preferences,
+        );
+
+        let orchestrator_model = Arc::new(orchestrator_model_v1::OrchestratorModelV1::with_skills(
             HashMap::new(),
+            skills_catalog.clone(),
             orchestration_model_name,
             max_token_length,
         ));
@@ -105,6 +176,7 @@ impl OrchestratorService {
             orchestrator_model,
             orchestrator_provider_name,
             top_level_preferences,
+            skills_catalog,
             metrics_service,
             session_cache: Some(session_cache),
             session_ttl,
@@ -170,7 +242,7 @@ impl OrchestratorService {
         messages: &[Message],
         inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
         request_id: &str,
-    ) -> Result<Option<(String, Vec<String>)>> {
+    ) -> Result<Option<RouteDecision>> {
         if messages.is_empty() {
             return Ok(None);
         }
@@ -206,9 +278,13 @@ impl OrchestratorService {
             )
             .await?;
 
-        let result = if let Some(ref routes) = orchestration_result {
-            if routes.len() > 1 {
-                let all_routes: Vec<&str> = routes.iter().map(|(name, _)| name.as_str()).collect();
+        let result = if let Some(ref selection) = orchestration_result {
+            if selection.routes.len() > 1 {
+                let all_routes: Vec<&str> = selection
+                    .routes
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .collect();
                 info!(
                     routes = ?all_routes,
                     using = %all_routes.first().unwrap_or(&"none"),
@@ -216,7 +292,8 @@ impl OrchestratorService {
                 );
             }
 
-            if let Some((route_name, _)) = routes.first() {
+            if let Some((route_name, _)) = selection.routes.first() {
+                // Route + (optional) skills path.
                 let top_pref = inline_top_map
                     .as_ref()
                     .and_then(|m| m.get(route_name))
@@ -227,9 +304,42 @@ impl OrchestratorService {
                         Some(svc) => svc.rank_models(&pref.models, &pref.selection_policy).await,
                         None => pref.models.clone(),
                     };
-                    Some((route_name.clone(), ranked))
+                    let resolution = resolve_for_route(
+                        &self.skills_catalog,
+                        pref.skills.as_deref().unwrap_or(&[]),
+                        &selection.skills,
+                    );
+                    log_skill_drops(route_name, &resolution);
+                    let activated_skills: Vec<SkillRef> =
+                        resolution.activated.into_iter().cloned().collect();
+                    Some(RouteDecision {
+                        route_name: Some(route_name.clone()),
+                        models: ranked,
+                        activated_skills,
+                    })
                 } else {
                     None
+                }
+            } else if !selection.skills.is_empty() {
+                // Skills-only path: orchestrator picked no route but flagged
+                // skills. Per the documented contract the request still goes
+                // through with the originally-requested model and the skill
+                // bodies are injected. The catalog itself is the effective
+                // allow-list (it's already the union across every route's
+                // allow-list, so anything in it was deemed safe to expose).
+                let activated: Vec<SkillRef> =
+                    resolve_selected_skills(&self.skills_catalog, &selection.skills)
+                        .into_iter()
+                        .cloned()
+                        .collect();
+                if activated.is_empty() {
+                    None
+                } else {
+                    Some(RouteDecision {
+                        route_name: None,
+                        models: Vec::new(),
+                        activated_skills: activated,
+                    })
                 }
             } else {
                 None
@@ -239,7 +349,7 @@ impl OrchestratorService {
         };
 
         info!(
-            selected_model = ?result,
+            selected_route = ?result.as_ref().map(|r| (&r.route_name, r.models.first(), r.activated_skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>())),
             "plano-orchestrator determined route"
         );
 
@@ -253,7 +363,7 @@ impl OrchestratorService {
         messages: &[Message],
         usage_preferences: Option<Vec<AgentUsagePreference>>,
         request_id: Option<String>,
-    ) -> Result<Option<Vec<(String, String)>>> {
+    ) -> Result<Option<OrchestratorSelection>> {
         if messages.is_empty() {
             return Ok(None);
         }
@@ -325,6 +435,30 @@ impl OrchestratorService {
         );
 
         Ok(parsed)
+    }
+}
+
+/// Emit `warn!` for any skill names the orchestrator selected but the
+/// resolver dropped. Surfacing these is critical for debuggability — a
+/// silently-dropped skill is hard to diagnose, and the most common causes
+/// (forgetting to add a skill to a route's allow-list, or the orchestrator
+/// hallucinating a name) are both fixable once visible.
+fn log_skill_drops(route_name: &str, resolution: &common::skills_runtime::SkillResolution<'_>) {
+    if !resolution.dropped_not_allowed.is_empty() {
+        warn!(
+            route = %route_name,
+            skills = ?resolution.dropped_not_allowed,
+            "orchestrator selected Agent Skills that are not on this route's allow-list; \
+             dropping (add them to routing_preferences[].skills if you want this route to use them)"
+        );
+    }
+    if !resolution.dropped_unknown.is_empty() {
+        warn!(
+            route = %route_name,
+            skills = ?resolution.dropped_unknown,
+            "orchestrator selected Agent Skills that are not in the runtime catalog \
+             (likely hallucinated or removed)"
+        );
     }
 }
 
@@ -408,6 +542,50 @@ mod tests {
         assert!(svc.get_cached_route("s1", None).await.is_none());
         assert!(svc.get_cached_route("s2", None).await.is_some());
         assert!(svc.get_cached_route("s3", None).await.is_some());
+    }
+
+    // ---- RouteDecision construction ----
+
+    fn skill_ref(name: &str) -> SkillRef {
+        SkillRef {
+            name: name.to_string(),
+            description: format!("desc for {name}"),
+            path: None,
+            base_dir: None,
+            body: Some(format!("body for {name}")),
+            scope: Some("project".to_string()),
+            compatibility: None,
+            license: None,
+            metadata: None,
+            allowed_tools: None,
+        }
+    }
+
+    #[test]
+    fn route_decision_holds_optional_route_name_for_skills_only_path() {
+        // Regression guard for the docs promise at skills.rst:153-155: a
+        // skills-only decision must be representable, with no route_name and
+        // empty models, so the LLM handler falls back to the original model.
+        let decision = RouteDecision {
+            route_name: None,
+            models: Vec::new(),
+            activated_skills: vec![skill_ref("pdf")],
+        };
+        assert!(decision.route_name.is_none());
+        assert!(decision.models.is_empty());
+        assert_eq!(decision.activated_skills.len(), 1);
+    }
+
+    #[test]
+    fn log_skill_drops_does_not_panic_on_empty_resolution() {
+        // The logger is fire-and-forget. We can't easily assert on the
+        // emitted warns here without setting up a tracing subscriber, so the
+        // contract under test is: empty resolutions are silent (no warn
+        // attempt). Confidence in the warn paths comes from
+        // common::skills_runtime tests for resolve_for_route, which is the
+        // function whose dropped_* lists drive this logger.
+        let empty = common::skills_runtime::SkillResolution::default();
+        log_skill_drops("any", &empty);
     }
 
     #[tokio::test]

@@ -37,7 +37,7 @@ use crate::tracing::{
     collect_custom_trace_attributes, llm as tracing_llm, operation_component,
     plano as tracing_plano, set_service_name,
 };
-use model_selection::router_chat_get_upstream_model;
+use model_selection::{inject_activated_skills_into_request, router_chat_get_upstream_model};
 
 const PERPLEXITY_PROVIDER_PREFIX: &str = "perplexity/";
 
@@ -282,26 +282,16 @@ async fn llm_chat_inner(
         Err(response) => return Ok(response),
     };
 
-    // Serialize request for upstream BEFORE router consumes it
-    let client_request_bytes_for_upstream: Bytes =
-        match ProviderRequestType::to_bytes(&client_request) {
-            Ok(bytes) => bytes.into(),
-            Err(err) => {
-                warn!(error = %err, "failed to serialize request for upstream");
-                let mut r = Response::new(full(format!("Failed to serialize request: {}", err)));
-                *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                return Ok(r);
-            }
-        };
-
-    // --- Phase 3: Route the request (or use pinned model from session cache) ---
-    let resolved_model = if let Some(cached_model) = pinned_model {
+    // Route the request (or use pinned model from session cache) BEFORE
+    // serializing for upstream — skill body injection happens here, so the
+    // upstream bytes must be produced after routing returns.
+    let (resolved_model, activated_skills) = if let Some(cached_model) = pinned_model {
         info!(
             session_id = %session_id.as_deref().unwrap_or(""),
             model = %cached_model,
             "using pinned routing decision from cache"
         );
-        cached_model
+        (cached_model, Vec::new())
     } else {
         let routing_span = info_span!(
             "routing",
@@ -313,11 +303,16 @@ async fn llm_chat_inner(
             route.selected_model = tracing::field::Empty,
             routing.determination_ms = tracing::field::Empty,
         );
+        // The router consumes the request (it converts it to OpenAI format
+        // internally to extract conversation messages). Clone so we can
+        // still mutate the original below when Plano-Orchestrator activates
+        // any Agent Skills.
+        let request_for_routing = client_request.clone();
         let routing_result = match async {
             set_service_name(operation_component::ROUTING);
             router_chat_get_upstream_model(
                 Arc::clone(&state.orchestrator_service),
-                client_request,
+                request_for_routing,
                 &request_path,
                 &request_id,
                 inline_routing_preferences,
@@ -335,8 +330,11 @@ async fn llm_chat_inner(
             }
         };
 
-        let (router_selected_model, route_name) =
-            (routing_result.model_name, routing_result.route_name);
+        let (router_selected_model, route_name, activated) = (
+            routing_result.model_name,
+            routing_result.route_name,
+            routing_result.activated_skills,
+        );
         let model = if router_selected_model != "none" {
             router_selected_model
         } else {
@@ -362,9 +360,33 @@ async fn llm_chat_inner(
                 .await;
         }
 
-        model
+        (model, activated)
     };
     tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
+
+    // If Plano-Orchestrator activated any Agent Skills for this route, inject
+    // their SKILL.md bodies into the system prompt before we hand the bytes
+    // off to the upstream provider.
+    if !activated_skills.is_empty() {
+        info!(
+            count = activated_skills.len(),
+            skills = ?activated_skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            "injecting activated Agent Skills into upstream system prompt"
+        );
+        inject_activated_skills_into_request(&mut client_request, &activated_skills);
+    }
+
+    // Serialize request for upstream AFTER potential skill injection.
+    let client_request_bytes_for_upstream: Bytes =
+        match ProviderRequestType::to_bytes(&client_request) {
+            Ok(bytes) => bytes.into(),
+            Err(err) => {
+                warn!(error = %err, "failed to serialize request for upstream");
+                let mut r = Response::new(full(format!("Failed to serialize request: {}", err)));
+                *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                return Ok(r);
+            }
+        };
 
     // --- Phase 4: Forward to upstream and stream back ---
     send_upstream(

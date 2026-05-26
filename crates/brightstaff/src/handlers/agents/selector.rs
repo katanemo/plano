@@ -132,11 +132,15 @@ impl AgentSelector {
             .determine_orchestration(messages, Some(usage_preferences), request_id)
             .await
         {
-            Ok(Some(routes)) => {
-                debug!(count = routes.len(), "determined agents via orchestration");
+            Ok(Some(selection)) => {
+                debug!(
+                    count = selection.routes.len(),
+                    skill_count = selection.skills.len(),
+                    "determined agents via orchestration"
+                );
                 let mut selected_agents = Vec::new();
 
-                for (route_name, agent_name) in routes {
+                for (route_name, agent_name) in selection.routes {
                     debug!(route = %route_name, agent = %agent_name, "processing route");
                     let selected_agent = agents
                         .iter()
