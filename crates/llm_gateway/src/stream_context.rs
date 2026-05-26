@@ -434,14 +434,17 @@ impl StreamContext {
             }
             Ok(streaming_chunk)
         } else {
+            if body_size == 0 {
+                return Err(Action::Continue);
+            }
             debug!(
                 "request_id={}: upstream response complete, streaming=false body_size={}",
                 self.request_identifier(),
                 body_size
             );
-            match self.get_http_response_body(0, usize::MAX) {
-                Some(body) if !body.is_empty() => Ok(body),
-                _ => {
+            match self.get_http_response_body(0, body_size) {
+                Some(body) => Ok(body),
+                None => {
                     warn!(
                         "request_id={}: non streaming response body empty",
                         self.request_identifier()
@@ -1170,14 +1173,7 @@ impl HttpContext for StreamContext {
         }
 
         let current_time = get_current_time().unwrap();
-
-        // Non-streaming upstream responses may arrive in multiple chunks; wait for the
-        // full buffered body before parsing.
-        if !self.streaming_response && !end_of_stream {
-            return Action::Continue;
-        }
-
-        if end_of_stream && body_size == 0 && self.streaming_response {
+        if end_of_stream && body_size == 0 {
             debug!(
                 "request_id={}: response body complete, total_bytes={}",
                 self.request_identifier(),
@@ -1198,20 +1194,15 @@ impl HttpContext for StreamContext {
                 );
 
                 // For error responses, forward the upstream error directly without parsing
-                if let Ok(body) = self.read_raw_response_body(body_size) {
-                    if !body.is_empty() {
+                if body_size > 0 {
+                    if let Ok(body) = self.read_raw_response_body(body_size) {
                         debug!(
                             "request_id={}: upstream error body: {}",
                             self.request_identifier(),
                             String::from_utf8_lossy(&body)
                         );
                         // Forward the error response as-is
-                        let replace_size = if body_size > 0 {
-                            body_size
-                        } else {
-                            body.len()
-                        };
-                        self.set_http_response_body(0, replace_size, &body);
+                        self.set_http_response_body(0, body_size, &body);
                     }
                 }
                 return Action::Continue;
@@ -1241,19 +1232,6 @@ impl HttpContext for StreamContext {
             Err(action) => return action,
         };
 
-        if !self.streaming_response && body.is_empty() {
-            if end_of_stream {
-                self.handle_end_of_request_metrics_and_traces(current_time);
-            }
-            return Action::Continue;
-        }
-
-        let replace_size = if body_size > 0 {
-            body_size
-        } else {
-            body.len()
-        };
-
         debug!(
             "request_id={}: upstream raw response, body_size={} content={}",
             self.request_identifier(),
@@ -1265,14 +1243,14 @@ impl HttpContext for StreamContext {
         if self.streaming_response {
             match self.handle_streaming_response(&body, provider_id) {
                 Ok(serialized_body) => {
-                    self.set_http_response_body(0, replace_size, &serialized_body);
+                    self.set_http_response_body(0, body_size, &serialized_body);
                 }
                 Err(action) => return action,
             }
         } else {
             match self.handle_non_streaming_response(&body, provider_id) {
                 Ok(serialized_body) => {
-                    self.set_http_response_body(0, replace_size, &serialized_body);
+                    self.set_http_response_body(0, body_size, &serialized_body);
                 }
                 Err(action) => return action,
             }

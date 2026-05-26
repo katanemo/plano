@@ -19,8 +19,7 @@ run_hurl_with_retries() {
   local max_attempts=1
   local attempt=1
 
-  if [ "$demo_name" = "llm_routing/preference_based_routing" ] \
-    || [ "$demo_name" = "advanced/currency_exchange" ]; then
+  if [ "$demo_name" = "llm_routing/preference_based_routing" ]; then
     max_attempts=3
   fi
 
