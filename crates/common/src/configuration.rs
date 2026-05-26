@@ -400,6 +400,10 @@ pub enum LlmProviderType {
     Vercel,
     #[serde(rename = "openrouter")]
     OpenRouter,
+    #[serde(rename = "astraflow")]
+    Astraflow,
+    #[serde(rename = "astraflow_cn")]
+    AstraflowCN,
 }
 
 impl Display for LlmProviderType {
@@ -425,6 +429,8 @@ impl Display for LlmProviderType {
             LlmProviderType::DigitalOcean => write!(f, "digitalocean"),
             LlmProviderType::Vercel => write!(f, "vercel"),
             LlmProviderType::OpenRouter => write!(f, "openrouter"),
+            LlmProviderType::Astraflow => write!(f, "astraflow"),
+            LlmProviderType::AstraflowCN => write!(f, "astraflow_cn"),
         }
     }
 }
