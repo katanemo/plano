@@ -1,4 +1,4 @@
-# CLAUDE.md
+# Contributor Guide
 
 Plano is an AI-native proxy server and data plane for agentic applications, built on Envoy proxy. It centralizes agent orchestration, LLM routing, observability, and safety guardrails as an out-of-process dataplane.
 
@@ -94,9 +94,10 @@ Do NOT change version strings in `*.lock` files or `Cargo.lock`. Commit message:
 
 ## Workflow Preferences
 
-- **Commits:** No `Co-Authored-By`. Short one-line messages. Never push directly to `main` — always feature branch + PR.
-- **Branches:** Use `adil/<feature_name>` format.
-- **Issues:** When a GitHub issue URL is pasted, fetch all context first. Goal is always a PR with passing tests.
+- **Commits:** Use short one-line messages. Do not add assistant- or tool-specific attribution trailers unless explicitly requested.
+- **Branches:** Never push directly to `main`; use a feature branch and open a PR.
+- **Branch names:** Prefer descriptive names such as `<type>/<short-feature-name>` or `<username>/<short-feature-name>`.
+- **Issues:** When a GitHub issue URL is provided, fetch the full issue context before making changes. The expected outcome is a PR with relevant tests passing.
 
 ## Key Conventions
 
