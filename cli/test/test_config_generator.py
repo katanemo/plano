@@ -3,8 +3,10 @@ import pytest
 import yaml
 from unittest import mock
 from planoai.config_generator import (
-    validate_and_render_schema,
+    apply_kimi_code_provider_defaults,
     migrate_inline_routing_preferences,
+    normalize_kimi_code_base_url,
+    validate_and_render_schema,
 )
 
 
@@ -795,3 +797,29 @@ model_providers:
     migrate_inline_routing_preferences(config_yaml)
 
     assert config_yaml["version"] == "v0.5.0"
+
+
+def test_normalize_kimi_code_base_url_appends_v1_suffix():
+    assert (
+        normalize_kimi_code_base_url("https://api.kimi.com/coding")
+        == "https://api.kimi.com/coding/v1"
+    )
+    assert (
+        normalize_kimi_code_base_url("https://api.kimi.com/coding/")
+        == "https://api.kimi.com/coding/v1"
+    )
+    assert (
+        normalize_kimi_code_base_url("https://api.kimi.com/coding/v1")
+        == "https://api.kimi.com/coding/v1"
+    )
+
+
+def test_apply_kimi_code_provider_defaults_injects_user_agent():
+    provider = {
+        "model": "kimi-for-coding",
+        "base_url": "https://api.kimi.com/coding",
+        "access_key": "$MOONSHOTAI_API_KEY",
+    }
+    apply_kimi_code_provider_defaults(provider)
+    assert provider["base_url"] == "https://api.kimi.com/coding/v1"
+    assert provider["headers"]["User-Agent"] == "KimiCLI/1.3"

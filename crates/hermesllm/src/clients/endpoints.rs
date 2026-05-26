@@ -500,6 +500,19 @@ mod tests {
             "/custom/api/v2/chat/completions"
         );
 
+        // Kimi Code API: base_url path prefix already includes /coding/v1
+        assert_eq!(
+            api.target_endpoint_for_provider(
+                &ProviderId::Moonshotai,
+                "/v1/messages",
+                "kimi-for-coding",
+                false,
+                Some("/coding/v1"),
+                false
+            ),
+            "/coding/v1/chat/completions"
+        );
+
         // Test Groq with custom prefix
         assert_eq!(
             api.target_endpoint_for_provider(
