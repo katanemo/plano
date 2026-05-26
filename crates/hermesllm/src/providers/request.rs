@@ -1,5 +1,6 @@
 use crate::apis::anthropic::MessagesRequest;
 use crate::apis::openai::{is_kimi_code_model, ChatCompletionsRequest};
+use log::warn;
 
 use crate::apis::amazon_bedrock::{ConverseRequest, ConverseStreamRequest};
 use crate::apis::openai_responses::ResponsesAPIRequest;
@@ -99,7 +100,10 @@ impl ProviderRequestType {
                     req.normalize_for_kimi_code_api();
                 }
             } else if let Self::MessagesRequest(req) = self {
-                if is_kimi_code_model(req.model.as_str()) {
+                if is_kimi_code_model(req.model.as_str()) && req.thinking.is_some() {
+                    warn!(
+                        "kimi-for-coding: stripping unsupported thinking config from upstream request"
+                    );
                     req.thinking = None;
                 }
             }
