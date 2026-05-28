@@ -1,0 +1,59 @@
+services:
+  # Risk Crew Agent - CrewAI-based multi-agent service
+  risk-crew-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: risk-crew-agent
+    restart: unless-stopped
+    ports:
+      - "10530:10530"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_GATEWAY_ENDPOINT=http://host.docker.internal:12000/v1
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+    command: ["uv", "run", "python", "src/credit_risk_demo/risk_crew_agent.py"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - jaeger
+
+  # PII Security Filter (MCP)
+  pii-filter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pii-filter
+    restart: unless-stopped
+    ports:
+      - "10550:10550"
+    command: ["uv", "run", "python", "src/credit_risk_demo/pii_filter.py"]
+
+  # Streamlit UI
+  streamlit-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: streamlit-ui
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - PLANO_ENDPOINT=http://host.docker.internal:8001/v1
+    command: ["uv", "run", "streamlit", "run", "src/credit_risk_demo/ui_streamlit.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - risk-crew-agent
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
