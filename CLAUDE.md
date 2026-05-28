@@ -1,6 +1,16 @@
-# CLAUDE.md
+# Agent Guide
 
 Plano is an AI-native proxy server and data plane for agentic applications, built on Envoy proxy. It centralizes agent orchestration, LLM routing, observability, and safety guardrails as an out-of-process dataplane.
+
+This file is intended for any AI coding agent working in this repository. Use it as the shared repository guide for build commands, architecture, implementation constraints, and contribution workflow.
+
+## Agent Operating Notes
+
+- Read the relevant code before changing behavior; prefer existing patterns and local helpers.
+- Keep changes narrowly scoped to the requested task.
+- Do not hardcode API keys, tokens, secrets, or local machine paths.
+- Run the smallest relevant validation first, then broader checks when the change affects shared behavior.
+- Preserve user changes in the working tree unless explicitly asked to revert them.
 
 ## Build & Test Commands
 
@@ -92,7 +102,7 @@ Update version (e.g., `0.4.11` → `0.4.12`) in all of these files:
 
 Do NOT change version strings in `*.lock` files or `Cargo.lock`. Commit message: `release X.Y.Z`
 
-## Workflow Preferences
+## Contribution Workflow
 
 - **Commits:** No `Co-Authored-By`. Short one-line messages. Never push directly to `main` — always feature branch + PR.
 - **Branches:** Use `adil/<feature_name>` format.
