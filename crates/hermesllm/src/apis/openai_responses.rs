@@ -126,16 +126,12 @@ pub enum InputParam {
 pub enum InputItem {
     /// Input message (role + content)
     Message(InputMessage),
-    /// Item reference
-    ItemReference {
-        #[serde(rename = "type")]
-        item_type: String,
-        id: String,
-    },
     /// Function call emitted by model in prior turn
     FunctionCall {
         #[serde(rename = "type")]
         item_type: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         name: String,
         arguments: String,
         call_id: String,
@@ -146,6 +142,18 @@ pub enum InputItem {
         item_type: String,
         call_id: String,
         output: serde_json::Value,
+    },
+    /// Item reference
+    ///
+    /// Keep this after concrete item variants. Some Responses items include an
+    /// `id` plus additional required fields (`function_call` has `call_id`,
+    /// `name`, and `arguments`). With serde's untagged enum matching, placing
+    /// this broad reference shape first silently drops those fields and sends an
+    /// invalid upstream item.
+    ItemReference {
+        #[serde(rename = "type")]
+        item_type: String,
+        id: String,
     },
 }
 
@@ -280,16 +288,31 @@ pub struct ConversationParam {
     pub id: Option<String>,
 }
 
-/// Tool definitions
+/// Tool definitions.
+///
+/// Supports both the canonical OpenAI Responses flat tool shape:
+///   { "type": "function", "name": "...", "description": "...", "parameters": {...} }
+/// and the nested chat-completions-compatible shape:
+///   { "type": "function", "function": { "name": "...", "description": "...", "parameters": {...} } }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Tool {
-    /// Function tool - flat structure in Responses API
+    /// Function tool — accepts both flat and nested `function` object shapes.
     Function {
-        name: String,
+        /// Top-level name (flat shape).
+        name: Option<String>,
+        /// Top-level description (flat shape).
         description: Option<String>,
+        /// Top-level parameters (flat shape).
         parameters: Option<serde_json::Value>,
+        /// Top-level strict flag (flat shape).
         strict: Option<bool>,
+        /// Nested `function` object (nested/compat shape).
+        ///
+        /// When present, `name`/`description`/`parameters` from the outer level are
+        /// ignored in favour of the values inside this object.
+        #[serde(default, flatten)]
+        function: Option<FunctionDef>,
     },
     /// File search tool
     FileSearch {
@@ -321,6 +344,47 @@ pub enum Tool {
     },
 }
 
+impl Tool {
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Tool::Function { name, function, .. } => function
+                .as_ref()
+                .and_then(|f| f.name.as_ref())
+                .map(|s| s.as_str())
+                .or_else(|| name.as_ref().map(|s| s.as_str())),
+            Tool::Custom { name, .. } => name.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn description(&self) -> Option<&String> {
+        match self {
+            Tool::Function {
+                description,
+                function,
+                ..
+            } => description
+                .as_ref()
+                .or_else(|| function.as_ref().and_then(|f| f.description.as_ref())),
+            Tool::Custom { description, .. } => description.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn parameters(&self) -> Option<&serde_json::Value> {
+        match self {
+            Tool::Function {
+                parameters,
+                function,
+                ..
+            } => parameters
+                .as_ref()
+                .or_else(|| function.as_ref().and_then(|f| f.parameters.as_ref())),
+            _ => None,
+        }
+    }
+}
+
 /// Ranking options for file search
 #[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,6 +405,16 @@ pub struct UserLocation {
     pub country: Option<String>,
     pub region: Option<String>,
     pub timezone: Option<String>,
+}
+
+/// Inner function definition — used inside the nested `function` object.
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionDef {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub parameters: Option<serde_json::Value>,
+    pub strict: Option<bool>,
 }
 
 /// Tool choice options
@@ -1158,7 +1232,10 @@ impl ProviderRequest for ResponsesAPIRequest {
             tools
                 .iter()
                 .filter_map(|tool| match tool {
-                    Tool::Function { name, .. } => Some(name.clone()),
+                    Tool::Function { name, function, .. } => function
+                        .as_ref()
+                        .and_then(|f| f.name.clone())
+                        .or_else(|| name.clone()),
                     Tool::Custom {
                         name: Some(name), ..
                     } => Some(name.clone()),

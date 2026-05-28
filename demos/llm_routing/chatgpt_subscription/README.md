@@ -48,6 +48,7 @@ bash test_chatgpt.sh
 ## Available models
 
 ```
+chatgpt/gpt-5.5
 chatgpt/gpt-5.4
 chatgpt/gpt-5.3-codex
 chatgpt/gpt-5.2

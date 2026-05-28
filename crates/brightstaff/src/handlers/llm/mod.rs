@@ -5,7 +5,7 @@ use common::llm_providers::LlmProviders;
 use hermesllm::apis::openai::Message;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
-use hermesllm::{ProviderRequest, ProviderRequestType};
+use hermesllm::{serialize_for_upstream, ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::header::{self};
@@ -284,7 +284,7 @@ async fn llm_chat_inner(
 
     // Serialize request for upstream BEFORE router consumes it
     let client_request_bytes_for_upstream: Bytes =
-        match ProviderRequestType::to_bytes(&client_request) {
+        match serialize_for_upstream(&client_request, provider_id) {
             Ok(bytes) => bytes.into(),
             Err(err) => {
                 warn!(error = %err, "failed to serialize request for upstream");
