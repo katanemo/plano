@@ -296,6 +296,24 @@ model_providers:
 """,
     },
     {
+        "id": "qianfan_is_supported_provider",
+        "expected_error": None,
+        "plano_config": """
+version: v0.4.0
+
+listeners:
+  - name: llm
+    type: model
+    port: 12000
+
+model_providers:
+  - model: qianfan/*
+    base_url: https://qianfan.baidubce.com/v2
+    passthrough_auth: true
+
+""",
+    },
+    {
         "id": "duplicate_routeing_preference_name",
         "expected_error": "Duplicate routing preference name",
         "plano_config": """

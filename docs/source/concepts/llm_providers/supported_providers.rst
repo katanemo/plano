@@ -547,6 +547,31 @@ Xiaomi MiMo
       - model: xiaomi/mimo-v2-omni
         access_key: $MIMO_API_KEY
 
+Baidu Qianfan
+~~~~~~~~~~~~~
+
+**Provider Prefix:** ``qianfan/``
+
+**API Endpoint:** ``/v2/chat/completions`` through Qianfan's OpenAI-compatible API.
+
+**Authentication:** API Key - Get your API key from `Baidu AI Cloud Qianfan <https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application>`_ and set ``QIANFAN_API_KEY``.
+
+**Supported Chat Models:** All Qianfan chat models available through the OpenAI-compatible API, including ERNIE models and future chat model releases.
+
+**Configuration Examples:**
+
+.. code-block:: yaml
+
+    llm_providers:
+      # Configure Qianfan models with wildcard routing
+      - model: qianfan/*
+        access_key: $QIANFAN_API_KEY
+
+      # Or configure a specific ERNIE model
+      - model: qianfan/ernie-4.0-turbo-8k
+        access_key: $QIANFAN_API_KEY
+        default: true
+
 Providers Requiring Base URL
 ----------------------------
 
