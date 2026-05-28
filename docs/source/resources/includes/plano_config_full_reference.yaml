@@ -42,10 +42,15 @@ model_providers:
     passthrough_auth: true
 
   # Custom/self-hosted endpoint with explicit http_host override
+  # headers: optional key-value map of extra HTTP headers sent to the upstream
+  # provider. Legacy llm_providers entries support the same provider fields.
   - model: openai/llama-3.3-70b
     base_url: https://api.custom-provider.com
     http_host: api.custom-provider.com
     access_key: $CUSTOM_API_KEY
+    headers:
+      User-Agent: "Plano/1.0"
+      X-Organization-Id: "org-example"
 
 # Model aliases - use friendly names instead of full provider model names
 model_aliases:

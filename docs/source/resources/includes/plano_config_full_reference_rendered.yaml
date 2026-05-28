@@ -82,6 +82,9 @@ listeners:
     base_url: https://api.custom-provider.com
     cluster_name: openai_api.custom-provider.com
     endpoint: api.custom-provider.com
+    headers:
+      User-Agent: Plano/1.0
+      X-Organization-Id: org-example
     http_host: api.custom-provider.com
     model: llama-3.3-70b
     name: openai/llama-3.3-70b
@@ -138,6 +141,9 @@ model_providers:
   base_url: https://api.custom-provider.com
   cluster_name: openai_api.custom-provider.com
   endpoint: api.custom-provider.com
+  headers:
+    User-Agent: Plano/1.0
+    X-Organization-Id: org-example
   http_host: api.custom-provider.com
   model: llama-3.3-70b
   name: openai/llama-3.3-70b
