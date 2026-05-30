@@ -6,6 +6,12 @@ Function Calling
 **Function Calling** is a powerful feature in Plano that allows your application to dynamically execute backend functions or services based on user prompts.
 This enables seamless integration between natural language interactions and backend operations, turning user inputs into actionable results.
 
+.. deprecated:: v0.4.22
+   The prompt-target based workflow shown below (see :ref:`Step 2 <function_calling>`)
+   is deprecated. :ref:`Prompt Targets <prompt_target>` are no longer actively
+   maintained and may be removed in a future release. For new function-calling
+   workloads, prefer :ref:`Agents <agents>` with tool definitions.
+
 
 What is Function Calling?
 -------------------------

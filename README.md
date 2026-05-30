@@ -183,7 +183,6 @@ Ready to try Plano? Check out our comprehensive documentation:
 - **[LLM Routing](https://docs.planoai.dev/guides/llm_router.html)** - Route by model name, alias, or intelligent preferences
 - **[Agent Orchestration](https://docs.planoai.dev/guides/orchestration.html)** - Build multi-agent workflows
 - **[Filter Chains](https://docs.planoai.dev/concepts/filter_chain.html)** - Add guardrails, moderation, and memory hooks
-- **[Prompt Targets](https://docs.planoai.dev/concepts/prompt_target.html)** - Turn prompts into deterministic API calls
 - **[Observability](https://docs.planoai.dev/guides/observability/observability.html)** - Traces, metrics, and logs
 
 ## Contribution

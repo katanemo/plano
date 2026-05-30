@@ -16,7 +16,6 @@ Quick Navigation
 - :ref:`cli_reference_logs`
 - :ref:`cli_reference_init`
 - :ref:`cli_reference_trace`
-- :ref:`cli_reference_prompt_targets`
 - :ref:`cli_reference_cli_agent`
 
 
@@ -258,24 +257,6 @@ Inspect request traces from the local OTLP listener.
 
 - ``--host`` and ``--port`` are valid only when ``TARGET`` is ``listen``.
 - ``--list`` cannot be combined with a specific trace-id target.
-
-
-.. _cli_reference_prompt_targets:
-
-planoai prompt_targets
-----------------------
-
-Generate prompt-target metadata from Python methods.
-
-**Synopsis**
-
-.. code-block:: console
-
-   $ planoai prompt_targets --file <python-file>
-
-**Options**
-
-- ``--file, --f <python-file>``: required path to a ``.py`` source file.
 
 
 .. _cli_reference_cli_agent:
