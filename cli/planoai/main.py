@@ -1,4 +1,3 @@
-import json
 import os
 import multiprocessing
 import subprocess
@@ -19,7 +18,6 @@ PLANO_COLOR = "#969FF4"
 from planoai.docker_cli import (
     docker_validate_plano_schema,
     stream_gateway_logs,
-    docker_container_status,
 )
 from planoai.utils import (
     getLogger,
@@ -33,48 +31,22 @@ from planoai.utils import (
 from planoai.core import (
     start_plano,
     stop_docker_container,
-    start_cli_agent,
 )
 from planoai.init_cmd import init as init_cmd
+from planoai.launch_cmd import launch as launch_cmd
 from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
 from planoai.chatgpt_cmd import chatgpt as chatgpt_cmd
 from planoai.obs_cmd import obs as obs_cmd
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
-    NATIVE_PID_FILE,
     PLANO_RUN_DIR,
     PLANO_DOCKER_IMAGE,
-    PLANO_DOCKER_NAME,
 )
 from planoai.rich_click_config import configure_rich_click
 from planoai.versioning import check_version_status, get_latest_version, get_version
 
 log = getLogger(__name__)
-
-
-def _is_native_plano_running() -> bool:
-    if not os.path.exists(NATIVE_PID_FILE):
-        return False
-    try:
-        with open(NATIVE_PID_FILE, "r") as f:
-            pids = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return False
-
-    envoy_pid = pids.get("envoy_pid")
-    brightstaff_pid = pids.get("brightstaff_pid")
-    if not isinstance(envoy_pid, int) or not isinstance(brightstaff_pid, int):
-        return False
-
-    for pid in (envoy_pid, brightstaff_pid):
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            continue
-    return True
 
 
 def _is_port_in_use(port: int) -> bool:
@@ -690,57 +662,12 @@ def logs(debug, follow, docker):
             plano_process.terminate()
 
 
-@click.command()
-@click.argument("type", type=click.Choice(["claude", "codex"]), required=True)
-@click.argument("file", required=False)  # Optional file argument
-@click.option(
-    "--path", default=".", help="Path to the directory containing plano_config.yaml"
-)
-@click.option(
-    "--settings",
-    default="{}",
-    help="Additional settings as JSON string for the CLI agent.",
-)
-def cli_agent(type, file, path, settings):
-    """Start a CLI agent connected to Plano.
-
-    CLI_AGENT: The type of CLI agent to start ('claude' or 'codex')
-    """
-
-    native_running = _is_native_plano_running()
-    docker_running = False
-    if not native_running:
-        docker_running = docker_container_status(PLANO_DOCKER_NAME) == "running"
-
-    if not (native_running or docker_running):
-        log.error("Plano is not running.")
-        log.error(
-            "Start Plano first using 'planoai up <config.yaml>' (native or --docker mode)."
-        )
-        sys.exit(1)
-
-    # Determine plano_config.yaml path
-    plano_config_file = find_config_file(path, file)
-    if not os.path.exists(plano_config_file):
-        log.error(f"Config file not found: {plano_config_file}")
-        sys.exit(1)
-
-    try:
-        start_cli_agent(plano_config_file, type, settings)
-    except SystemExit:
-        # Re-raise SystemExit to preserve exit codes
-        raise
-    except Exception as e:
-        click.echo(f"Error: {e}")
-        sys.exit(1)
-
-
 # add commands to the main group
 main.add_command(up)
 main.add_command(down)
 main.add_command(build)
 main.add_command(logs)
-main.add_command(cli_agent)
+main.add_command(launch_cmd, name="launch")
 main.add_command(generate_prompt_targets)
 main.add_command(init_cmd, name="init")
 main.add_command(trace_cmd, name="trace")

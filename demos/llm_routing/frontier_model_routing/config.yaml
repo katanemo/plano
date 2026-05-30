@@ -1,0 +1,103 @@
+version: v0.4.0
+
+# Frontier-tier model routing across three providers.
+#
+# - DigitalOcean Sonnet 4.6  -> daily driver: balanced quality + cost
+# - OpenAI GPT 5.5            -> multimodal reasoning, tool use, math
+# - Anthropic Opus 4.7        -> top-tier reasoning, long-form analysis, code
+#
+# Plano's preference-aligned router (Plano-Orchestrator) inspects each prompt
+# and dispatches to the model whose top-level `routing_preferences` entry best
+# matches the user's intent. Each route owns an ordered `models` list:
+# `models[0]` is the primary; subsequent entries are fallbacks the client
+# (or Plano's retry logic) can try on `429`/`5xx` errors.
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+# ---------------------------------------------------------------------------
+# Model providers (declared once, referenced by every route below)
+# ---------------------------------------------------------------------------
+# The `digitalocean/`, `openai/`, and `anthropic/` prefixes are recognized
+# natively by Plano — no `base_url` or provider interface override needed.
+model_providers:
+  - model: digitalocean/anthropic-claude-4.6-sonnet
+    access_key: $DO_API_KEY
+    default: true                       # used when no routing preference matches
+
+  - model: digitalocean/openai-gpt-5.5
+    access_key: $DO_API_KEY
+
+  - model: digitalocean/anthropic-claude-opus-4.7
+    access_key: $DO_API_KEY
+
+# ---------------------------------------------------------------------------
+# Routing preferences (v0.4.0 top-level form)
+# ---------------------------------------------------------------------------
+# Best-practice notes (per the LLM Routing guide):
+#   - Names should be specific, non-overlapping, and aligned with the
+#     description so the orchestrator can disambiguate cleanly.
+#   - Descriptions are noun-centric phrases describing *the work*, not
+#     conversational instructions.
+#   - Always include a generic "domain" route so prompts that don't match a
+#     specific action still land on a deliberate model — here that's
+#     "daily conversation" pinned to the cheapest tier.
+#   - `models` is an ordered candidate pool; entry 0 is primary and entries
+#     1..n are fallbacks (clients retry on 429/5xx).
+routing_preferences:
+  - name: code generation
+    description: writing new functions, classes, scripts, or boilerplate; implementing APIs; producing unit tests; refactoring code
+    models:
+      - digitalocean/anthropic-claude-opus-4.7        # primary: top-tier code quality
+      - digitalocean/openai-gpt-5.5                   # fallback if Opus is rate-limited / down
+
+  - name: deep analysis
+    description: long-form analysis, architecture review, security review, evaluating tradeoffs, structured critique
+    models:
+      - digitalocean/anthropic-claude-opus-4.7
+      - digitalocean/openai-gpt-5.5
+
+  - name: complex reasoning
+    description: multi-step reasoning, mathematical problem solving, structured planning, tool and function calling, data extraction
+    models:
+      - digitalocean/openai-gpt-5.5                   # primary: strong reasoning + tool use
+      - digitalocean/anthropic-claude-opus-4.7
+
+  - name: daily conversation
+    description: general chat, casual Q&A, summaries, drafting messages, quick rewrites, day-to-day requests where speed and cost matter
+    models:
+      - digitalocean/anthropic-claude-4.6-sonnet
+      - digitalocean/openai-gpt-5.5
+
+# ---------------------------------------------------------------------------
+# Aliases — stable, human-friendly handles for clients
+# ---------------------------------------------------------------------------
+# Clients can pin to a tier without thinking about the underlying provider,
+# and the underlying model can change without breaking callers.
+model_aliases:
+  # Daily driver -> Claude Sonnet 4.6
+  frontier.fast:
+    target: digitalocean/anthropic-claude-4.6-sonnet
+
+  # Reasoning + tool calling -> OpenAI GPT 5.5
+  frontier.smart:
+    target: digitalocean/openai-gpt-5.5
+
+  # Code + deep analysis -> Anthropic Opus 4.7
+  frontier.max:
+    target: digitalocean/anthropic-claude-opus-4.7
+
+# ---------------------------------------------------------------------------
+# Model affinity for agentic loops
+# ---------------------------------------------------------------------------
+# In a tool-using agent loop, successive prompts can look like different
+# routes (tool selection ~ code, reasoning ~ analysis), causing the router
+# to flip between models mid-session. Clients send `X-Model-Affinity: <id>`
+# and Plano caches the routing decision for the session TTL below.
+routing:
+  session_ttl_seconds: 600
+
+tracing:
+  random_sampling: 100
