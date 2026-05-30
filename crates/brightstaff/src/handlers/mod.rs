@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod claude_cli;
 pub mod debug;
 pub mod function_calling;
 pub mod llm;

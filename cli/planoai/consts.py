@@ -13,6 +13,7 @@ PLANO_HOME = os.path.join(os.path.expanduser("~"), ".plano")
 PLANO_RUN_DIR = os.path.join(PLANO_HOME, "run")
 PLANO_BIN_DIR = os.path.join(PLANO_HOME, "bin")
 PLANO_PLUGINS_DIR = os.path.join(PLANO_HOME, "plugins")
+PLANO_STATE_DIR = os.path.join(PLANO_HOME, "state")
 ENVOY_VERSION = "v1.37.0"  # keep in sync with Dockerfile ARG ENVOY_VERSION
 NATIVE_PID_FILE = os.path.join(PLANO_RUN_DIR, "plano.pid")
 DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT = "http://localhost:4317"
