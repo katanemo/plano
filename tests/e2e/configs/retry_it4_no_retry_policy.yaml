@@ -1,0 +1,17 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    base_url: http://host.docker.internal:${MOCK_PRIMARY_PORT}
+    access_key: test-key-primary
+    default: true
+    # No retry_policy — errors should be returned directly to client
+
+  - model: anthropic/claude-3-5-sonnet
+    base_url: http://host.docker.internal:${MOCK_SECONDARY_PORT}
+    access_key: test-key-secondary
