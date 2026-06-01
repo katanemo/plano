@@ -53,7 +53,7 @@ impl Serialize for FunctionParameters {
     where
         S: serde::Serializer,
     {
-        // select all requried parameters
+        // select all required parameters
         let required: Vec<&String> = self
             .properties
             .iter()
