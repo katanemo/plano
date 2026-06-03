@@ -51,7 +51,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
    $ python -m venv venv
    $ source venv/bin/activate   # On Windows, use: venv\Scripts\activate
-   $ pip install planoai==0.4.22
+   $ pip install planoai==0.4.23
 
 
 .. _llm_routing_quickstart:
