@@ -43,7 +43,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
 .. code-block:: console
 
-   $ uv tool install planoai==0.4.22
+   $ uv tool install planoai==0.4.23
 
 **Option 2: Install with pip (Traditional)**
 
