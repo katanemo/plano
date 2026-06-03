@@ -162,6 +162,14 @@
 <div id="content" role="main">
 <section id="prompt-target">
 <span id="id1"></span><h1>Prompt Target<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#prompt-target"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h1>
+<div class="deprecated">
+<p><span class="versionmodified deprecated">Deprecated since version v0.4.22: </span><strong>Prompt Targets are deprecated and no longer actively maintained.</strong> This concept is
+retained for existing users on older Plano configurations, but new applications should
+not adopt it. For deterministic, task-specific workloads, use <a class="reference internal" href="agents.html#agents"><span class="std std-ref">Agents</span></a>
+together with <a class="reference internal" href="../guides/function_calling.html#function-calling"><span class="std std-ref">Function Calling</span></a> instead. The
+<code class="docutils literal notranslate"><span class="pre">prompt_targets</span></code> configuration block and related CLI commands will continue to
+function for now, but may be removed in a future release.</p>
+</div>
 <p>A Prompt Target is a deterministic, task-specific backend function or API endpoint that your application calls via Plano.
 Unlike agents (which handle wide-ranging, open-ended tasks), prompt targets are designed for focused, specific workloads where Plano can add value through input clarification and validation.</p>
 <p>Plano helps by:</p>

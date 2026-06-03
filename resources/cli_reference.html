@@ -174,7 +174,6 @@ Use this page as the canonical source for command syntax, options, and recommend
 <li><p><a class="reference internal" href="#cli-reference-logs"><span class="std std-ref">planoai logs</span></a></p></li>
 <li><p><a class="reference internal" href="#cli-reference-init"><span class="std std-ref">planoai init</span></a></p></li>
 <li><p><a class="reference internal" href="#cli-reference-trace"><span class="std std-ref">planoai trace</span></a></p></li>
-<li><p><a class="reference internal" href="#cli-reference-prompt-targets"><span class="std std-ref">planoai prompt_targets</span></a></p></li>
 <li><p><a class="reference internal" href="#cli-reference-cli-agent"><span class="std std-ref">planoai cli_agent</span></a></p></li>
 </ul>
 </section>
@@ -368,18 +367,6 @@ Use this page as the canonical source for command syntax, options, and recommend
 <li><p><code class="docutils literal notranslate"><span class="pre">--list</span></code> cannot be combined with a specific trace-id target.</p></li>
 </ul>
 </section>
-<section id="planoai-prompt-targets">
-<span id="cli-reference-prompt-targets"></span><h2>planoai prompt_targets<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#planoai-prompt-targets" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#planoai-prompt-targets'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
-<p>Generate prompt-target metadata from Python methods.</p>
-<p><strong>Synopsis</strong></p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="gp">$ </span>planoai<span class="w"> </span>prompt_targets<span class="w"> </span>--file<span class="w"> </span>&lt;python-file&gt;
-</span></code></pre></div>
-</div>
-<p><strong>Options</strong></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--file,</span> <span class="pre">--f</span> <span class="pre">&lt;python-file&gt;</span></code>: required path to a <code class="docutils literal notranslate"><span class="pre">.py</span></code> source file.</p></li>
-</ul>
-</section>
 <section id="planoai-cli-agent">
 <span id="cli-reference-cli-agent"></span><h2>planoai cli_agent<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#planoai-cli-agent" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#planoai-cli-agent'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>Start an interactive CLI agent session against a running Plano deployment.</p>
@@ -427,7 +414,6 @@ Use this page as the canonical source for command syntax, options, and recommend
 <li><a :data-current="activeSection === '#planoai-logs'" class="reference internal" href="#planoai-logs">planoai logs</a></li>
 <li><a :data-current="activeSection === '#planoai-init'" class="reference internal" href="#planoai-init">planoai init</a></li>
 <li><a :data-current="activeSection === '#planoai-trace'" class="reference internal" href="#planoai-trace">planoai trace</a></li>
-<li><a :data-current="activeSection === '#planoai-prompt-targets'" class="reference internal" href="#planoai-prompt-targets">planoai prompt_targets</a></li>
 <li><a :data-current="activeSection === '#planoai-cli-agent'" class="reference internal" href="#planoai-cli-agent">planoai cli_agent</a></li>
 </ul>
 </div>

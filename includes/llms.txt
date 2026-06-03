@@ -1,6 +1,6 @@
 Plano Docs v0.4.22
 llms.txt (auto-generated)
-Generated (UTC): 2026-06-03T20:39:15.011041+00:00
+Generated (UTC): 2026-06-03T20:39:22.485968+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -2294,6 +2294,13 @@ Doc: concepts/prompt_target
 
 Prompt Target
 
+Deprecated since version v0.4.22: Prompt Targets are deprecated and no longer actively maintained. This concept is
+retained for existing users on older Plano configurations, but new applications should
+not adopt it. For deterministic, task-specific workloads, use Agents
+together with Function Calling instead. The
+prompt_targets configuration block and related CLI commands will continue to
+function for now, but may be removed in a future release.
+
 A Prompt Target is a deterministic, task-specific backend function or API endpoint that your application calls via Plano.
 Unlike agents (which handle wide-ranging, open-ended tasks), prompt targets are designed for focused, specific workloads where Plano can add value through input clarification and validation.
 
@@ -3500,9 +3507,9 @@ Explore Plano’s LLM integration options
 
 ../concepts/llm_providers/llm_providers.html
 
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-workflow" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.75C0 .784.784 0 1.75 0h3.5C6.216 0 7 .784 7 1.75v3.5A1.75 1.75 0 0 1 5.25 7H4v4a1 1 0 0 0 1 1h4v-1.25C9 9.784 9.784 9 10.75 9h3.5c.966 0 1.75.784 1.75 1.75v3.5A1.75 1.75 0 0 1 14.25 16h-3.5A1.75 1.75 0 0 1 9 14.25v-.75H5A2.5 2.5 0 0 1 2.5 11V7h-.75A1.75 1.75 0 0 1 0 5.25Zm1.75-.25a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h3.5a.25.25 0 0 0 .25-.25v-3.5a.25.25 0 0 0-.25-.25Zm9 9a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h3.5a.25.25 0 0 0 .25-.25v-3.5a.25.25 0 0 0-.25-.25Z"></path></svg> Prompt Target
+<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-workflow" viewBox="0 0 16 16" aria-hidden="true"><path d="M0 1.75C0 .784.784 0 1.75 0h3.5C6.216 0 7 .784 7 1.75v3.5A1.75 1.75 0 0 1 5.25 7H4v4a1 1 0 0 0 1 1h4v-1.25C9 9.784 9.784 9 10.75 9h3.5c.966 0 1.75.784 1.75 1.75v3.5A1.75 1.75 0 0 1 14.25 16h-3.5A1.75 1.75 0 0 1 9 14.25v-.75H5A2.5 2.5 0 0 1 2.5 11V7h-.75A1.75 1.75 0 0 1 0 5.25Zm1.75-.25a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h3.5a.25.25 0 0 0 .25-.25v-3.5a.25.25 0 0 0-.25-.25Zm9 9a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h3.5a.25.25 0 0 0 .25-.25v-3.5a.25.25 0 0 0-.25-.25Z"></path></svg> Prompt Target (Deprecated)
 
-Understand how Plano handles prompts
+Deprecated — kept for existing users. New apps should use Agents.
 
 ../concepts/prompt_target.html
 
@@ -3762,6 +3769,10 @@ You can then ask a follow-up like “Also book me a hotel near JFK” and Plano-
 
 Deterministic API calls with prompt targets
 
+Deprecated since version v0.4.22: Prompt Targets are deprecated and no longer actively
+maintained. The walkthrough below is preserved for users on existing configs;
+new applications should use Agents instead.
+
 Next, we’ll show Plano’s deterministic API calling using a single prompt target. We’ll build a currency exchange backend powered by https://api.frankfurter.dev/, assuming USD as the base currency.
 
 Step 1. Create plano config file
@@ -3908,6 +3919,11 @@ Function Calling
 
 Function Calling is a powerful feature in Plano that allows your application to dynamically execute backend functions or services based on user prompts.
 This enables seamless integration between natural language interactions and backend operations, turning user inputs into actionable results.
+
+Deprecated since version v0.4.22: The prompt-target based workflow shown below (see Step 2)
+is deprecated. Prompt Targets are no longer actively
+maintained and may be removed in a future release. For new function-calling
+workloads, prefer Agents with tool definitions.
 
 What is Function Calling?
 
@@ -6695,8 +6711,6 @@ cli_reference_init
 
 cli_reference_trace
 
-cli_reference_prompt_targets
-
 cli_reference_cli_agent
 
 
@@ -6911,20 +6925,6 @@ Operational notes
 --host and --port are valid only when TARGET is listen.
 
 --list cannot be combined with a specific trace-id target.
-
-
-
-planoai prompt_targets
-
-Generate prompt-target metadata from Python methods.
-
-Synopsis
-
-$ planoai prompt_targets --file <python-file>
-
-Options
-
---file, --f <python-file>: required path to a .py source file.
 
 
 
