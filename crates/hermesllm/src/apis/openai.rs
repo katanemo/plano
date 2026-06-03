@@ -145,9 +145,7 @@ impl ChatCompletionsRequest {
             self.stream_options = None;
         }
         if self.reasoning_effort.is_some() {
-            warn!(
-                "kimi-for-coding: stripping unsupported reasoning_effort from upstream request"
-            );
+            warn!("kimi-for-coding: stripping unsupported reasoning_effort from upstream request");
             self.reasoning_effort = None;
         }
         if self.web_search_options.is_some() {

@@ -2552,9 +2552,9 @@ dependencies = [
 
 [[package]]
 name = "proxy-wasm"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8d35d9e2bc5104e2e954b149aa1d5f9fa3bb27f73b45b2706020fed101db685"
+checksum = "de8f6564bd52c2f4ff79fa5d1bd3bc10d8f822162af8d527e121e46703496aa0"
 dependencies = [
  "hashbrown 0.16.1",
  "log",
