@@ -5,6 +5,20 @@ services:
       dockerfile: Dockerfile
     ports:
       - "10500:10500"
+  fake-provider:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uvicorn", "fake_provider:app", "--host", "0.0.0.0", "--port", "10501"]
+    ports:
+      - "10501:10501"
+  output-filter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["uvicorn", "output_filter:app", "--host", "0.0.0.0", "--port", "10502"]
+    ports:
+      - "10502:10502"
   plano:
     build:
       context: ../../../
@@ -12,10 +26,14 @@ services:
     ports:
       - "12000:12000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     volumes:
-      - ./config.yaml:/app/plano_config.yaml
+      - ${PLANO_CONFIG_FILE:-./config.yaml}:/app/plano_config.yaml
       - /etc/ssl/cert.pem:/etc/ssl/cert.pem
+    depends_on:
+      - content-guard
+      - fake-provider
+      - output-filter
   jaeger:
     build:
       context: ../../shared/jaeger
