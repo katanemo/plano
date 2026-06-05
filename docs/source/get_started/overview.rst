@@ -57,10 +57,10 @@ Deep dive into essential ideas and mechanisms behind Plano:
 
         Explore Plano's LLM integration options
 
-    .. grid-item-card:: :octicon:`workflow` Prompt Target
+    .. grid-item-card:: :octicon:`workflow` Prompt Target (Deprecated)
         :link: ../concepts/prompt_target.html
 
-        Understand how Plano handles prompts
+        Deprecated — kept for existing users. New apps should use Agents.
 
 
 Guides

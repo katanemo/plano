@@ -88,6 +88,18 @@ listeners:
     port: 443
     protocol: https
     provider_interface: openai
+  - access_key: $MOONSHOTAI_API_KEY
+    base_url: https://api.kimi.com/coding/v1
+    base_url_path_prefix: /coding/v1
+    cluster_name: moonshotai_api.kimi.com
+    endpoint: api.kimi.com
+    headers:
+      User-Agent: KimiCLI/1.3
+    model: kimi-for-coding
+    name: moonshotai/kimi-for-coding
+    port: 443
+    protocol: https
+    provider_interface: moonshotai
   name: model_1
   output_filters:
   - input_guards
@@ -144,6 +156,18 @@ model_providers:
   port: 443
   protocol: https
   provider_interface: openai
+- access_key: $MOONSHOTAI_API_KEY
+  base_url: https://api.kimi.com/coding/v1
+  base_url_path_prefix: /coding/v1
+  cluster_name: moonshotai_api.kimi.com
+  endpoint: api.kimi.com
+  headers:
+    User-Agent: KimiCLI/1.3
+  model: kimi-for-coding
+  name: moonshotai/kimi-for-coding
+  port: 443
+  protocol: https
+  provider_interface: moonshotai
 - internal: true
   model: Plano-Orchestrator
   name: plano-orchestrator

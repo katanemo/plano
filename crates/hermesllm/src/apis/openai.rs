@@ -1,3 +1,4 @@
+use log::warn;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::skip_serializing_none;
@@ -136,6 +137,37 @@ impl ChatCompletionsRequest {
             self.temperature = Some(1.0);
         }
     }
+
+    /// Strip request fields that Kimi Code API (`kimi-for-coding`) rejects or mishandles.
+    pub fn normalize_for_kimi_code_api(&mut self) {
+        if self.stream_options.is_some() {
+            warn!("kimi-for-coding: stripping unsupported stream_options from upstream request");
+            self.stream_options = None;
+        }
+        if self.reasoning_effort.is_some() {
+            warn!("kimi-for-coding: stripping unsupported reasoning_effort from upstream request");
+            self.reasoning_effort = None;
+        }
+        if self.web_search_options.is_some() {
+            warn!(
+                "kimi-for-coding: stripping unsupported web_search_options from upstream request"
+            );
+            self.web_search_options = None;
+        }
+        if self.service_tier.is_some() {
+            warn!("kimi-for-coding: stripping unsupported service_tier from upstream request");
+            self.service_tier = None;
+        }
+        if self.store.is_some() {
+            warn!("kimi-for-coding: stripping unsupported store from upstream request");
+            self.store = None;
+        }
+    }
+}
+
+/// True when the upstream model id is Moonshot's Kimi Code endpoint model.
+pub fn is_kimi_code_model(model: &str) -> bool {
+    model == "kimi-for-coding"
 }
 
 // ============================================================================

@@ -32,7 +32,7 @@ Plano solves this by moving core delivery concerns into a unified, out-of-proces
 Plano pulls rote plumbing out of your framework so you can stay focused on what matters most: the core product logic of your agentic applications. Plano is backed by [industry-leading LLM research](https://planoai.dev/research) and built on [Envoy](https://envoyproxy.io) by its core contributors, who built critical infrastructure at scale for modern worklaods.
 
 **High-Level Network Sequence Diagram**:
-![high-level network plano arcitecture for Plano](docs/source/_static/img/plano_network_diagram_high_level.png)
+![high-level network plano architecture for Plano](docs/source/_static/img/plano_network_diagram_high_level.png)
 
 **Jump to our [docs](https://docs.planoai.dev)** to learn how you can use Plano to improve the speed, safety and obervability of your agentic applications.
 
@@ -156,7 +156,7 @@ curl http://localhost:8001/v1/chat/completions \
 
 Every request is traced end-to-end with OpenTelemetry - no instrumentation code needed.
 
-![Atomatic Tracing](docs/source/_static/img/demo_tracing.png)
+![Automatic Tracing](docs/source/_static/img/demo_tracing.png)
 
 ### What You Didn't Have to Build
 
@@ -183,7 +183,6 @@ Ready to try Plano? Check out our comprehensive documentation:
 - **[LLM Routing](https://docs.planoai.dev/guides/llm_router.html)** - Route by model name, alias, or intelligent preferences
 - **[Agent Orchestration](https://docs.planoai.dev/guides/orchestration.html)** - Build multi-agent workflows
 - **[Filter Chains](https://docs.planoai.dev/concepts/filter_chain.html)** - Add guardrails, moderation, and memory hooks
-- **[Prompt Targets](https://docs.planoai.dev/concepts/prompt_target.html)** - Turn prompts into deterministic API calls
 - **[Observability](https://docs.planoai.dev/guides/observability/observability.html)** - Traces, metrics, and logs
 
 ## Contribution

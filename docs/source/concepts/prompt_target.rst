@@ -2,6 +2,15 @@
 
 Prompt Target
 =============
+
+.. deprecated:: v0.4.22
+   **Prompt Targets are deprecated and no longer actively maintained.** This concept is
+   retained for existing users on older Plano configurations, but new applications should
+   not adopt it. For deterministic, task-specific workloads, use :ref:`Agents <agents>`
+   together with :ref:`Function Calling <function_calling>` instead. The
+   ``prompt_targets`` configuration block and related CLI commands will continue to
+   function for now, but may be removed in a future release.
+
 A Prompt Target is a deterministic, task-specific backend function or API endpoint that your application calls via Plano.
 Unlike agents (which handle wide-ranging, open-ended tasks), prompt targets are designed for focused, specific workloads where Plano can add value through input clarification and validation.
 

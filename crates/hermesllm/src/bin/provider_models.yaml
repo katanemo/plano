@@ -313,6 +313,7 @@ providers:
   - deepseek/deepseek-chat
   - deepseek/deepseek-reasoner
   moonshotai:
+  - moonshotai/kimi-for-coding
   - moonshotai/kimi-k2-thinking
   - moonshotai/moonshot-v1-auto
   - moonshotai/moonshot-v1-32k-vision-preview

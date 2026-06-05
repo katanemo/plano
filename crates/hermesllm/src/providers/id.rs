@@ -48,6 +48,8 @@ pub enum ProviderId {
     DigitalOcean,
     Vercel,
     OpenRouter,
+    Astraflow,
+    AstraflowCN,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -81,6 +83,8 @@ impl TryFrom<&str> for ProviderId {
             "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             "vercel" => Ok(ProviderId::Vercel),
             "openrouter" => Ok(ProviderId::OpenRouter),
+            "astraflow" => Ok(ProviderId::Astraflow),
+            "astraflow_cn" => Ok(ProviderId::AstraflowCN),
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -107,6 +111,7 @@ impl ProviderId {
             ProviderId::Qwen => "qwen",
             ProviderId::ChatGPT => "chatgpt",
             ProviderId::DigitalOcean => "digitalocean",
+            ProviderId::Astraflow | ProviderId::AstraflowCN => return Vec::new(),
             _ => return Vec::new(),
         };
 
@@ -174,7 +179,9 @@ impl ProviderId {
                 | ProviderId::Qwen
                 | ProviderId::DigitalOcean
                 | ProviderId::OpenRouter
-                | ProviderId::ChatGPT,
+                | ProviderId::ChatGPT
+                | ProviderId::Astraflow
+                | ProviderId::AstraflowCN,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -196,7 +203,9 @@ impl ProviderId {
                 | ProviderId::Qwen
                 | ProviderId::DigitalOcean
                 | ProviderId::OpenRouter
-                | ProviderId::ChatGPT,
+                | ProviderId::ChatGPT
+                | ProviderId::Astraflow
+                | ProviderId::AstraflowCN,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -267,6 +276,8 @@ impl Display for ProviderId {
             ProviderId::DigitalOcean => write!(f, "digitalocean"),
             ProviderId::Vercel => write!(f, "vercel"),
             ProviderId::OpenRouter => write!(f, "openrouter"),
+            ProviderId::Astraflow => write!(f, "astraflow"),
+            ProviderId::AstraflowCN => write!(f, "astraflow_cn"),
         }
     }
 }

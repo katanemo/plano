@@ -63,9 +63,5 @@ def configure_rich_click(plano_color: str) -> None:
                 "name": "Observability",
                 "commands": ["trace", "obs"],
             },
-            {
-                "name": "Utilities",
-                "commands": ["generate-prompt-targets"],
-            },
         ],
     }

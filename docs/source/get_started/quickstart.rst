@@ -43,7 +43,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
 .. code-block:: console
 
-   $ uv tool install planoai==0.4.22
+   $ uv tool install planoai==0.4.23
 
 **Option 2: Install with pip (Traditional)**
 
@@ -51,7 +51,7 @@ Plano's CLI allows you to manage and interact with the Plano efficiently. To ins
 
    $ python -m venv venv
    $ source venv/bin/activate   # On Windows, use: venv\Scripts\activate
-   $ pip install planoai==0.4.22
+   $ pip install planoai==0.4.23
 
 
 .. _llm_routing_quickstart:
@@ -246,6 +246,11 @@ You can then ask a follow-up like "Also book me a hotel near JFK" and Plano-Orch
 
 Deterministic API calls with prompt targets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. deprecated:: v0.4.22
+   :ref:`Prompt Targets <prompt_target>` are deprecated and no longer actively
+   maintained. The walkthrough below is preserved for users on existing configs;
+   new applications should use :ref:`Agents <agents>` instead.
 
 Next, we'll show Plano's deterministic API calling using a single prompt target. We'll build a currency exchange backend powered by `https://api.frankfurter.dev/`, assuming USD as the base currency.
 

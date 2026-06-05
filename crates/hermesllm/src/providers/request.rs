@@ -1,5 +1,6 @@
 use crate::apis::anthropic::MessagesRequest;
-use crate::apis::openai::ChatCompletionsRequest;
+use crate::apis::openai::{is_kimi_code_model, ChatCompletionsRequest};
+use log::warn;
 
 use crate::apis::amazon_bedrock::{ConverseRequest, ConverseStreamRequest};
 use crate::apis::openai_responses::ResponsesAPIRequest;
@@ -87,6 +88,24 @@ impl ProviderRequestType {
             if let Self::ChatCompletionsRequest(req) = self {
                 // xAI's legacy live-search shape is deprecated on chat/completions.
                 req.web_search_options = None;
+            }
+        }
+
+        if matches!(
+            upstream_api,
+            SupportedUpstreamAPIs::OpenAIChatCompletions(_)
+        ) {
+            if let Self::ChatCompletionsRequest(req) = self {
+                if is_kimi_code_model(req.model()) {
+                    req.normalize_for_kimi_code_api();
+                }
+            } else if let Self::MessagesRequest(req) = self {
+                if is_kimi_code_model(req.model.as_str()) && req.thinking.is_some() {
+                    warn!(
+                        "kimi-for-coding: stripping unsupported thinking config from upstream request"
+                    );
+                    req.thinking = None;
+                }
             }
         }
 
@@ -876,6 +895,42 @@ mod tests {
         let ProviderRequestType::ChatCompletionsRequest(req) = request else {
             panic!("expected chat request");
         };
+        assert!(req.web_search_options.is_none());
+    }
+
+    #[test]
+    fn test_normalize_for_upstream_kimi_code_strips_unsupported_chat_fields() {
+        use crate::apis::openai::{Message, MessageContent, OpenAIApi, Role, StreamOptions};
+
+        let mut request = ProviderRequestType::ChatCompletionsRequest(ChatCompletionsRequest {
+            model: "kimi-for-coding".to_string(),
+            messages: vec![Message {
+                role: Role::User,
+                content: Some(MessageContent::Text("hello".to_string())),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            stream_options: Some(StreamOptions {
+                include_usage: Some(true),
+            }),
+            reasoning_effort: Some("high".to_string()),
+            web_search_options: Some(serde_json::json!({"search_context_size":"medium"})),
+            ..Default::default()
+        });
+
+        request
+            .normalize_for_upstream(
+                ProviderId::Moonshotai,
+                &SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
+            )
+            .unwrap();
+
+        let ProviderRequestType::ChatCompletionsRequest(req) = request else {
+            panic!("expected chat request");
+        };
+        assert!(req.stream_options.is_none());
+        assert!(req.reasoning_effort.is_none());
         assert!(req.web_search_options.is_none());
     }
 

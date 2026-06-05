@@ -7,7 +7,6 @@ import contextlib
 import logging
 import rich_click as click
 import yaml
-from planoai import targets
 from planoai.defaults import (
     DEFAULT_LLM_LISTENER_PORT,
     detect_providers,
@@ -626,28 +625,6 @@ def down(docker, verbose):
 
 @click.command()
 @click.option(
-    "--f",
-    "--file",
-    type=click.Path(exists=True),
-    required=True,
-    help="Path to the Python file",
-)
-def generate_prompt_targets(file):
-    """Generats prompt_targets from python methods.
-    Note: This works for simple data types like ['int', 'float', 'bool', 'str', 'list', 'tuple', 'set', 'dict']:
-    If you have a complex pydantic data type, you will have to flatten those manually until we add support for it.
-    """
-
-    print(f"Processing file: {file}")
-    if not file.endswith(".py"):
-        print("Error: Input file must be a .py file")
-        sys.exit(1)
-
-    targets.generate_prompt_targets(file)
-
-
-@click.command()
-@click.option(
     "--debug",
     help="For detailed debug logs to trace calls from plano <> api_server, etc",
     is_flag=True,
@@ -743,7 +720,6 @@ main.add_command(down)
 main.add_command(build)
 main.add_command(logs)
 main.add_command(cli_agent)
-main.add_command(generate_prompt_targets)
 main.add_command(init_cmd, name="init")
 main.add_command(trace_cmd, name="trace")
 main.add_command(chatgpt_cmd, name="chatgpt")

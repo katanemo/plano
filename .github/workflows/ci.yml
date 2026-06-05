@@ -110,6 +110,25 @@ jobs:
       # ── Zero-config path: `planoai up` with no args, no plano.yaml in cwd.
       # Exercises the synthesize_default_config branch in cli/planoai/main.py
       # which is otherwise never hit by the smoke test above.
+      #
+      # Pre-seed ~/.plano/ from the freshly-built artifacts so the CLI's
+      # cached-download path hits in step (2) of ensure_wasm_plugins /
+      # ensure_brightstaff_binary. Without this, running from outside the
+      # repo means find_repo_root() returns None, the local-build short-
+      # circuit is skipped, and the CLI tries to download from a GitHub
+      # release that does not yet exist for the in-flight version on
+      # release-bump PRs (e.g. 0.4.23 before publish-binaries has run).
+      - name: Seed ~/.plano cache for zero-config test
+        run: |
+          VERSION=$(sed -nE 's/^__version__ = "(.*)"$/\1/p' cli/planoai/__init__.py)
+          mkdir -p ~/.plano/plugins ~/.plano/bin
+          cp crates/target/wasm32-wasip1/release/prompt_gateway.wasm ~/.plano/plugins/
+          cp crates/target/wasm32-wasip1/release/llm_gateway.wasm ~/.plano/plugins/
+          cp crates/target/release/brightstaff ~/.plano/bin/
+          chmod +x ~/.plano/bin/brightstaff
+          echo "$VERSION" > ~/.plano/plugins/wasm.version
+          echo "$VERSION" > ~/.plano/bin/brightstaff.version
+
       - name: Zero-config smoke test
         env:
           OPENAI_API_KEY: test-key-not-used
@@ -164,13 +183,13 @@ jobs:
           load: true
           tags: |
             ${{ env.PLANO_DOCKER_IMAGE }}
-            ${{ env.DOCKER_IMAGE }}:0.4.22
+            ${{ env.DOCKER_IMAGE }}:0.4.23
             ${{ env.DOCKER_IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Save image as artifact
-        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.22 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
+        run: docker save ${{ env.PLANO_DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}:0.4.23 ${{ env.DOCKER_IMAGE }}:latest -o /tmp/plano-image.tar
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v6

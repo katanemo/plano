@@ -47,6 +47,14 @@ model_providers:
     http_host: api.custom-provider.com
     access_key: $CUSTOM_API_KEY
 
+  # headers: optional map of extra HTTP headers sent on upstream requests (after auth).
+  # Use for provider-specific requirements such as User-Agent, org IDs, or account headers.
+  - model: moonshotai/kimi-for-coding
+    access_key: $MOONSHOTAI_API_KEY
+    base_url: https://api.kimi.com/coding/v1
+    headers:
+      User-Agent: "KimiCLI/1.3"
+
 # Model aliases - use friendly names instead of full provider model names
 model_aliases:
   fast-llm:
