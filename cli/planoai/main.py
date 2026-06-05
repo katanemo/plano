@@ -471,10 +471,12 @@ def up(
             else:
                 env_file_dict = load_env_file_to_dict(app_env_file)
                 for access_key in access_keys:
-                    if env_file_dict.get(access_key) is None:
-                        missing_keys.append(access_key)
-                    else:
+                    if env_file_dict.get(access_key) is not None:
                         env_stage[access_key] = env_file_dict[access_key]
+                    elif env.get(access_key) is not None:
+                        env_stage[access_key] = env.get(access_key)
+                    else:
+                        missing_keys.append(access_key)
 
         if missing_keys:
             _print_missing_keys(console, missing_keys)

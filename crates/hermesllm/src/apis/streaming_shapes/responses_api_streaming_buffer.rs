@@ -1,5 +1,5 @@
 use crate::apis::openai_responses::{
-    OutputItem, OutputItemStatus, Reasoning, ResponseStatus, ResponsesAPIResponse,
+    OutputContent, OutputItem, OutputItemStatus, Reasoning, ResponseStatus, ResponsesAPIResponse,
     ResponsesAPIStreamEvent, TextConfig, TextFormat,
 };
 use crate::apis::streaming_shapes::sse::{SseEvent, SseStreamBufferTrait};
@@ -14,6 +14,8 @@ fn event_to_sse(event: ResponsesAPIStreamEvent) -> SseEvent {
         ResponsesAPIStreamEvent::ResponseCompleted { .. } => "response.completed",
         ResponsesAPIStreamEvent::ResponseOutputItemAdded { .. } => "response.output_item.added",
         ResponsesAPIStreamEvent::ResponseOutputItemDone { .. } => "response.output_item.done",
+        ResponsesAPIStreamEvent::ResponseContentPartAdded { .. } => "response.content_part.added",
+        ResponsesAPIStreamEvent::ResponseContentPartDone { .. } => "response.content_part.done",
         ResponsesAPIStreamEvent::ResponseOutputTextDelta { .. } => "response.output_text.delta",
         ResponsesAPIStreamEvent::ResponseOutputTextDone { .. } => "response.output_text.done",
         ResponsesAPIStreamEvent::ResponseFunctionCallArgumentsDelta { .. } => {
@@ -178,6 +180,22 @@ impl ResponsesAPIStreamBuffer {
         event_to_sse(event)
     }
 
+    /// Create content_part.added event for text
+    fn create_content_part_added_event(&mut self, output_index: i32, item_id: &str) -> SseEvent {
+        let event = ResponsesAPIStreamEvent::ResponseContentPartAdded {
+            item_id: item_id.to_string(),
+            output_index,
+            content_index: 0,
+            part: OutputContent::OutputText {
+                text: String::new(),
+                annotations: vec![],
+                logprobs: None,
+            },
+            sequence_number: self.next_sequence_number(),
+        };
+        event_to_sse(event)
+    }
+
     /// Create output_item.added event for tool call
     fn create_tool_call_added_event(
         &mut self,
@@ -291,44 +309,10 @@ impl ResponsesAPIStreamBuffer {
 
         // Emit done events for all accumulated content
 
-        // Text content done events
-        let text_items: Vec<_> = self
-            .text_content
-            .iter()
-            .map(|(id, content)| (id.clone(), content.clone()))
-            .collect();
-        for (item_id, content) in text_items {
-            let output_index = self
-                .output_items_added
-                .iter()
-                .find(|(_, id)| **id == item_id)
-                .map(|(idx, _)| *idx)
-                .unwrap_or(0);
-
-            let seq1 = self.next_sequence_number();
-            let text_done_event = ResponsesAPIStreamEvent::ResponseOutputTextDone {
-                item_id: item_id.clone(),
-                output_index,
-                content_index: 0,
-                text: content.clone(),
-                logprobs: vec![],
-                sequence_number: seq1,
-            };
-            events.push(event_to_sse(text_done_event));
-
-            let seq2 = self.next_sequence_number();
-            let item_done_event = ResponsesAPIStreamEvent::ResponseOutputItemDone {
-                output_index,
-                item: OutputItem::Message {
-                    id: item_id.clone(),
-                    status: OutputItemStatus::Completed,
-                    role: "assistant".to_string(),
-                    content: vec![],
-                },
-                sequence_number: seq2,
-            };
-            events.push(event_to_sse(item_done_event));
-        }
+        // Text completion is represented in response.completed.output below.
+        // Avoid emitting optional per-item done events here: some proxy-wasm
+        // streaming paths truncate size-changing final chunks, and strict
+        // Responses clients only require the terminal completed response.
 
         // Function call done events
         let func_items: Vec<_> = self
@@ -541,6 +525,7 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
                     self.output_items_added
                         .insert(*output_index, item_id.clone());
                     events.push(self.create_output_item_added_event(*output_index, &item_id));
+                    events.push(self.create_content_part_added_event(*output_index, &item_id));
                 }
 
                 // Accumulate text content
@@ -622,6 +607,26 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
                 }
                 events.push(event_to_sse(delta_event));
             }
+            ResponsesAPIStreamEvent::ResponseCompleted { response, .. } => {
+                // Some upstream Responses API streams emit response.completed with an
+                // empty response.output even after text deltas were streamed. Clients
+                // such as OpenClaw may read the final response.output rather than the
+                // deltas, so synthesize our completed event from accumulated stream
+                // state while preserving upstream metadata like usage/service tier.
+                self.upstream_response_metadata = Some(response.clone());
+                self.finalize();
+                return;
+            }
+            ResponsesAPIStreamEvent::ResponseOutputItemAdded { .. }
+            | ResponsesAPIStreamEvent::ResponseContentPartAdded { .. }
+            | ResponsesAPIStreamEvent::ResponseOutputTextDone { .. }
+            | ResponsesAPIStreamEvent::ResponseContentPartDone { .. }
+            | ResponsesAPIStreamEvent::ResponseOutputItemDone { .. } => {
+                // We generate a canonical Responses lifecycle from deltas/finalize.
+                // Passing upstream lifecycle events through can create duplicate or
+                // out-of-order item/content IDs that strict clients may ignore.
+                return;
+            }
             _ => {
                 // For other event types, just pass through with sequence number
                 let other_event = stream_event.as_ref().clone();
@@ -637,7 +642,7 @@ impl SseStreamBufferTrait for ResponsesAPIStreamBuffer {
     fn to_bytes(&mut self) -> Vec<u8> {
         // For Responses API, we need special handling:
         // - Most events are already in buffered_events from add_transformed_event
-        // - We should NOT finalize here - finalization happens when we detect [DONE] or end of stream
+        // - Finalization happens when we detect [DONE], response.completed, or transport end
         // - Just flush the accumulated events and clear the buffer
 
         // Convert all accumulated events to bytes and clear buffer
@@ -716,14 +721,6 @@ mod tests {
             "Should have text deltas"
         );
         assert!(
-            output.contains("response.output_text.done"),
-            "Should have text.done"
-        );
-        assert!(
-            output.contains("response.output_item.done"),
-            "Should have output_item.done"
-        );
-        assert!(
             output.contains("response.completed"),
             "Should have response.completed"
         );
@@ -731,8 +728,8 @@ mod tests {
         println!("\nVALIDATION SUMMARY:");
         println!("{}", "-".repeat(80));
         println!("✓ Lifecycle events: response.created, response.in_progress, response.completed");
-        println!("✓ Output item lifecycle: output_item.added, output_item.done");
-        println!("✓ Text streaming: output_text.delta (2 deltas), output_text.done");
+        println!("✓ Output item lifecycle: output_item.added, response.completed output");
+        println!("✓ Text streaming: output_text.delta (2 deltas), response.completed output");
         println!("✓ Complete transformation with finalization ([DONE] processed)\n");
     }
 
@@ -852,5 +849,43 @@ data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890
             completed_count, 1,
             "response.completed should be emitted exactly once"
         );
+    }
+
+    #[test]
+    fn test_responses_transport_end_finalizes_captured_gpt55_shape() {
+        // Captured from the OpenClaw GPT-5.5 repro: upstream emitted Responses
+        // text deltas, then the transport ended without an explicit [DONE] or
+        // response.completed event. The gateway must synthesize the terminal
+        // lifecycle so strict Responses clients can produce a visible result.
+        let raw_input = r#"event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_upstream","status":"in_progress","role":"assistant","content":[]},"sequence_number":2}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","item_id":"msg_upstream","output_index":1,"content_index":0,"part":{"type":"output_text","text":"","annotations":[],"logprobs":null},"sequence_number":3}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_upstream","output_index":1,"content_index":0,"delta":"PAR","logprobs":[],"sequence_number":4}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_upstream","output_index":1,"content_index":0,"delta":"IS","logprobs":[],"sequence_number":5}"#;
+
+        let client_api = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let upstream_api = SupportedUpstreamAPIs::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let stream_iter = SseStreamIter::try_from(raw_input.as_bytes()).unwrap();
+        let mut buffer = ResponsesAPIStreamBuffer::new();
+
+        for raw_event in stream_iter {
+            let transformed_event =
+                SseEvent::try_from((raw_event, &client_api, &upstream_api)).unwrap();
+            buffer.add_transformed_event(transformed_event);
+        }
+        let partial_output = String::from_utf8_lossy(&buffer.to_bytes()).to_string();
+        assert!(partial_output.contains("response.output_text.delta"));
+        assert!(!partial_output.contains("response.completed"));
+
+        buffer.finalize();
+        let terminal_output = String::from_utf8_lossy(&buffer.to_bytes()).to_string();
+        assert!(terminal_output.contains("event: response.completed"));
+        assert!(terminal_output.contains("PARIS"));
     }
 }

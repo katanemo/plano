@@ -237,6 +237,7 @@ providers:
   - openai/gpt-5.4-nano-2026-03-17
   - openai/gpt-5.4-nano
   - openai/gpt-5.4-mini-2026-03-17
+  - openai/gpt-5.5
   - openai/gpt-3.5-turbo-instruct
   - openai/gpt-3.5-turbo-instruct-0914
   - openai/gpt-3.5-turbo-1106
@@ -331,6 +332,7 @@ providers:
   - xiaomi/mimo-v2-omni
   - xiaomi/mimo-v2-pro
   chatgpt:
+  - chatgpt/gpt-5.5
   - chatgpt/gpt-5.4
   - chatgpt/gpt-5.3-codex
   - chatgpt/gpt-5.2

@@ -38,6 +38,11 @@ pub trait SseStreamBufferTrait: Send + Sync {
     /// # Returns
     /// Bytes ready for wire transmission (may be empty if no events were accumulated)
     fn to_bytes(&mut self) -> Vec<u8>;
+
+    /// Finalize a stream when the transport ends without an explicit provider
+    /// terminal event. Most buffers do not need this; Responses API buffering
+    /// uses it to synthesize *.done and response.completed lifecycle events.
+    fn finalize_stream(&mut self) {}
 }
 
 /// Unified SSE Stream Buffer enum that provides a zero-cost abstraction
@@ -64,6 +69,12 @@ impl SseStreamBufferTrait for SseStreamBuffer {
             Self::OpenAIChatCompletions(buffer) => buffer.to_bytes(),
             Self::AnthropicMessages(buffer) => buffer.to_bytes(),
             Self::OpenAIResponses(buffer) => buffer.to_bytes(),
+        }
+    }
+
+    fn finalize_stream(&mut self) {
+        if let Self::OpenAIResponses(buffer) = self {
+            buffer.finalize();
         }
     }
 }
