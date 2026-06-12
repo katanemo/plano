@@ -223,6 +223,7 @@ impl From<MessagesRole> for Role {
         match val {
             MessagesRole::User => Role::User,
             MessagesRole::Assistant => Role::Assistant,
+            MessagesRole::System => Role::System,
         }
     }
 }
@@ -340,6 +341,11 @@ impl TryFrom<MessagesMessage> for BedrockMessage {
         let role = match message.role {
             MessagesRole::User => ConversationRole::User,
             MessagesRole::Assistant => ConversationRole::Assistant,
+            MessagesRole::System => {
+                return Err(TransformError::UnsupportedConversion(
+                    "System messages must be set via the system prompt, not messages".to_string(),
+                ));
+            }
         };
 
         let mut content_blocks = Vec::new();

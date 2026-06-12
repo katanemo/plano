@@ -128,6 +128,7 @@ pub struct MessagesRequest {
 pub enum MessagesRole {
     User,
     Assistant,
+    System,
 }
 
 /// Cache control types for content blocks
@@ -415,13 +416,46 @@ impl MessagesRequest {
     pub fn api_type() -> AnthropicApi {
         AnthropicApi::Messages
     }
+
+    fn normalize_system_messages(&mut self) {
+        let mut system_parts = Vec::new();
+        let mut filtered_messages = Vec::new();
+
+        if let Some(existing_system) = self.system.take() {
+            let existing_text = match existing_system {
+                MessagesSystemPrompt::Single(text) => text,
+                MessagesSystemPrompt::Blocks(blocks) => blocks.extract_text(),
+            };
+            if !existing_text.is_empty() {
+                system_parts.push(existing_text);
+            }
+        }
+
+        for message in self.messages.drain(..) {
+            if message.role == MessagesRole::System {
+                let text = message.content.extract_text();
+                if !text.is_empty() {
+                    system_parts.push(text);
+                }
+            } else {
+                filtered_messages.push(message);
+            }
+        }
+
+        if !system_parts.is_empty() {
+            self.system = Some(MessagesSystemPrompt::Single(system_parts.join("\n")));
+        }
+        self.messages = filtered_messages;
+    }
 }
 
 impl TryFrom<&[u8]> for MessagesRequest {
     type Error = serde_json::Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        serde_json::from_slice(bytes)
+        let mut request: MessagesRequest = serde_json::from_slice(bytes)?;
+        request.normalize_system_messages();
+        Ok(request)
     }
 }
 
@@ -632,6 +666,7 @@ impl MessagesRole {
         match self {
             MessagesRole::User => "user",
             MessagesRole::Assistant => "assistant",
+            MessagesRole::System => "system",
         }
     }
 }
@@ -727,6 +762,36 @@ mod tests {
         // Serialize back to JSON and compare
         let serialized_json = serde_json::to_value(&deserialized_request).unwrap();
         assert_eq!(original_json, serialized_json);
+    }
+
+    #[test]
+    fn test_system_role_in_messages_normalized() {
+        let original_json = json!({
+            "model": "claude-3-sonnet-20240229",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant"
+                },
+                {
+                    "role": "user",
+                    "content": "Hello"
+                }
+            ],
+            "max_tokens": 100
+        });
+
+        let bytes = serde_json::to_vec(&original_json).unwrap();
+        let deserialized_request: MessagesRequest = MessagesRequest::try_from(bytes.as_slice()).unwrap();
+
+        assert_eq!(deserialized_request.messages.len(), 1);
+        assert_eq!(deserialized_request.messages[0].role, MessagesRole::User);
+        assert_eq!(
+            deserialized_request.system,
+            Some(MessagesSystemPrompt::Single(
+                "You are a helpful assistant".to_string()
+            ))
+        );
     }
 
     #[test]
