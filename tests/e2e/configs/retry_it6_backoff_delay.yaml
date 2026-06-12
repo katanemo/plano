@@ -1,0 +1,24 @@
+version: v0.3.0
+
+listeners:
+  - type: model
+    name: model_listener
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o
+    base_url: http://host.docker.internal:${MOCK_PRIMARY_PORT}
+    access_key: test-key-primary
+    default: true
+    retry_policy:
+      default_strategy: "same_model"
+      default_max_attempts: 3
+      on_status_codes:
+        - codes: [429]
+          strategy: "same_model"
+          max_attempts: 3
+      backoff:
+        apply_to: "same_model"
+        base_ms: 500
+        max_ms: 5000
+        jitter: false
