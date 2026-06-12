@@ -38,6 +38,7 @@ from planoai.init_cmd import init as init_cmd
 from planoai.trace_cmd import trace as trace_cmd, start_trace_listener_background
 from planoai.chatgpt_cmd import chatgpt as chatgpt_cmd
 from planoai.obs_cmd import obs as obs_cmd
+from planoai.skills_cmd import skills as skills_cmd
 from planoai.consts import (
     DEFAULT_OTEL_TRACING_GRPC_ENDPOINT,
     DEFAULT_NATIVE_OTEL_TRACING_GRPC_ENDPOINT,
@@ -722,6 +723,7 @@ main.add_command(init_cmd, name="init")
 main.add_command(trace_cmd, name="trace")
 main.add_command(chatgpt_cmd, name="chatgpt")
 main.add_command(obs_cmd, name="obs")
+main.add_command(skills_cmd, name="skills")
 
 if __name__ == "__main__":
     main()
