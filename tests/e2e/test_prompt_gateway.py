@@ -395,7 +395,7 @@ def test_claude_v1_messages_api():
     )
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",  # Use working model from smoke test
+        model="claude-sonnet-4-6",  # Use working model from smoke test
         max_tokens=50,
         messages=[
             {
@@ -414,7 +414,7 @@ def test_claude_v1_messages_api_streaming():
     client = anthropic.Anthropic(api_key="test-key", base_url=base_url)
 
     with client.messages.stream(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=50,
         messages=[
             {
@@ -525,7 +525,7 @@ def test_openai_gpt4o_mini_v1_messages_api_streaming():
 
 
 def test_openai_client_with_claude_model_streaming():
-    """Test OpenAI client using /v1/chat/completions API with Claude model (claude-sonnet-4-20250514)
+    """Test OpenAI client using /v1/chat/completions API with Claude model (claude-sonnet-4-6)
     This tests the transformation: Anthropic upstream -> OpenAI client format with proper chunk handling
     """
     # Get the base URL from the LLM gateway endpoint
@@ -537,7 +537,7 @@ def test_openai_client_with_claude_model_streaming():
     )
 
     stream = client.chat.completions.create(
-        model="claude-sonnet-4-20250514",  # Claude model via OpenAI client
+        model="claude-sonnet-4-6",  # Claude model via OpenAI client
         max_tokens=50,
         messages=[
             {

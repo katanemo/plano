@@ -102,7 +102,7 @@ curl -s "$PLANO_URL/routing/v1/chat/completions" \
       {
         "name": "coding",
         "description": "code generation, writing functions, debugging",
-        "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "openai/gpt-4o-mini"],
+        "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o", "openai/gpt-4o-mini"],
         "selection_policy": {"prefer": "fastest"}
       }
     ]

@@ -40,7 +40,7 @@ model_providers:
     access_key: $OPENAI_API_KEY
     default: true
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
 state_storage:

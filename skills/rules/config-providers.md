@@ -14,7 +14,7 @@ Plano translates requests between its internal format and each provider's API. T
 | Model prefix | Wire format | Example |
 |---|---|---|
 | `openai/*` | OpenAI | `openai/gpt-4o` |
-| `anthropic/*` | Anthropic | `anthropic/claude-sonnet-4-20250514` |
+| `anthropic/*` | Anthropic | `anthropic/claude-sonnet-4-6` |
 | `gemini/*` | Google Gemini | `gemini/gemini-2.0-flash` |
 | `mistral/*` | Mistral | `mistral/mistral-large-latest` |
 | `groq/*` | Groq | `groq/llama-3.3-70b-versatile` |
@@ -42,7 +42,7 @@ model_providers:
     access_key: $OPENAI_API_KEY
     default: true
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
   - model: gemini/gemini-2.0-flash

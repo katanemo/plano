@@ -43,7 +43,7 @@ listeners:
     port: 12000
 
 model_providers:
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
     default: true
     routing_preferences:
@@ -62,7 +62,7 @@ model_providers:
 
 model_aliases:
   claude.fast.v1:
-    target: claude-sonnet-4-20250514
+    target: claude-sonnet-4-6
   claude.smart.v1:
     target: claude-opus-4-6
 

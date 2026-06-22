@@ -584,7 +584,7 @@ model_providers:
       - name: code understanding
         description: understand and explain existing code snippets, functions, or libraries
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
     routing_preferences:
       - name: code generation
@@ -601,9 +601,7 @@ model_providers:
     by_name = {entry["name"]: entry for entry in top_level}
     assert set(by_name) == {"code understanding", "code generation"}
     assert by_name["code understanding"]["models"] == ["openai/gpt-4o"]
-    assert by_name["code generation"]["models"] == [
-        "anthropic/claude-sonnet-4-20250514"
-    ]
+    assert by_name["code generation"]["models"] == ["anthropic/claude-sonnet-4-6"]
     assert (
         by_name["code understanding"]["description"]
         == "understand and explain existing code snippets, functions, or libraries"
@@ -626,7 +624,7 @@ model_providers:
       - name: code generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
     routing_preferences:
       - name: code generation
@@ -641,7 +639,7 @@ model_providers:
     assert entry["name"] == "code generation"
     assert entry["models"] == [
         "openai/gpt-4o",
-        "anthropic/claude-sonnet-4-20250514",
+        "anthropic/claude-sonnet-4-6",
     ]
     assert config_yaml["version"] == "v0.4.0"
 
@@ -658,7 +656,7 @@ listeners:
 model_providers:
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
 routing_preferences:
@@ -666,7 +664,7 @@ routing_preferences:
     description: generating new code snippets or boilerplate
     models:
       - openai/gpt-4o
-      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-sonnet-4-6
 """
     config_yaml = yaml.safe_load(plano_config)
     before = yaml.safe_dump(config_yaml, sort_keys=True)

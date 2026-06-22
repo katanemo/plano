@@ -35,7 +35,7 @@ def test_conversation_state_management_two_turn():
     # Turn 1: Send initial message to Anthropic (non-OpenAI model)
     logger.info("\n[TURN 1] Sending initial message...")
     resp1 = client.responses.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         input="My name is Alice and I like pizza.",
     )
 
@@ -53,7 +53,7 @@ def test_conversation_state_management_two_turn():
         f"\n[TURN 2] Sending follow-up with previous_response_id={response_id_1}"
     )
     resp2 = client.responses.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         input="Please list all the messages you have received in our conversation, numbering each one.",
         previous_response_id=response_id_1,
     )
@@ -121,7 +121,7 @@ def test_conversation_state_management_two_turn_streaming():
     # Turn 1: Send initial streaming message to Anthropic (non-OpenAI model)
     logger.info("\n[TURN 1] Sending initial streaming message...")
     stream1 = client.responses.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         input="My name is Alice and I like pizza.",
         stream=True,
     )
@@ -154,7 +154,7 @@ def test_conversation_state_management_two_turn_streaming():
         f"\n[TURN 2] Sending follow-up streaming request with previous_response_id={response_id_1}"
     )
     stream2 = client.responses.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         input="Please list all the messages you have received in our conversation, numbering each one.",
         previous_response_id=response_id_1,
         stream=True,
