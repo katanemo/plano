@@ -10,8 +10,42 @@ use tracing::{debug, info, warn};
 
 const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models/catalog";
 
+/// Routing modality used to scope the per-modality `fastest` latency signal
+/// (WS10). Latency is keyed by `(model, modality)`: text keeps its existing
+/// TTFT behavior; image/audio carry their own per-modality timing definitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Modality {
+    Text,
+    Vision,
+    ImageOut,
+    AudioOut,
+}
+
+impl Modality {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Modality::Text => "text",
+            Modality::Vision => "vision",
+            Modality::ImageOut => "image_out",
+            Modality::AudioOut => "audio_out",
+        }
+    }
+}
+
+/// Composite latency-map key scoping a model's latency to a modality. Text uses
+/// the bare model id (back-compat with the existing flat Prometheus map); other
+/// modalities are namespaced so they never collide with the text signal.
+pub fn modality_latency_key(model: &str, modality: Modality) -> String {
+    match modality {
+        Modality::Text => model.to_string(),
+        other => format!("{}\u{1}{}", other.as_str(), model),
+    }
+}
+
 pub struct ModelMetricsService {
     cost: Arc<RwLock<HashMap<String, f64>>>,
+    /// Latency map keyed by either a bare model id (text) or a
+    /// `modality\u{1}model` composite (see [`modality_latency_key`]).
     latency: Arc<RwLock<HashMap<String, f64>>>,
 }
 
@@ -107,7 +141,66 @@ impl ModelMetricsService {
                 }
                 rank_by_ascending_metric(models, &latency_data)
             }
+            SelectionPreference::LongContextQuality => {
+                // Tier 2: rank by Plano's internal long-context-quality dataset.
+                // Higher score is better, so rank descending; unscored models last.
+                let scores: HashMap<String, f64> = models
+                    .iter()
+                    .filter_map(|m| {
+                        match hermesllm::long_context_quality_score(m) {
+                            Some(s) => Some((m.clone(), s)),
+                            None => {
+                                warn!(model = %m, "no long-context-quality score — ranking last (prefer: long_context_quality)");
+                                None
+                            }
+                        }
+                    })
+                    .collect();
+                rank_by_descending_metric(models, &scores)
+            }
             SelectionPreference::None => models.to_vec(),
+        }
+    }
+
+    /// Rank `models` by latency for a specific `modality` (WS10 groundwork).
+    /// Looks up the `(model, modality)` composite key first, then falls back to
+    /// the bare model latency, then ranks last. For `Modality::Text` this is
+    /// identical to `prefer: fastest` today.
+    pub async fn rank_models_by_modality_latency(
+        &self,
+        models: &[String],
+        modality: Modality,
+    ) -> Vec<String> {
+        let latency_data = self.latency.read().await;
+        let resolved: HashMap<String, f64> = models
+            .iter()
+            .filter_map(|m| {
+                let composite = modality_latency_key(m, modality);
+                let v = latency_data
+                    .get(&composite)
+                    .or_else(|| latency_data.get(m.as_str()))
+                    .copied();
+                match v {
+                    Some(v) if !v.is_nan() => Some((m.clone(), v)),
+                    _ => {
+                        warn!(model = %m, modality = modality.as_str(), "no per-modality latency — ranking last (prefer: fastest)");
+                        None
+                    }
+                }
+            })
+            .collect();
+        rank_by_ascending_metric(models, &resolved)
+    }
+
+    /// Seed the latency map for cold start (WS10): at launch there is no live
+    /// traffic, so `prefer: fastest` on the new modalities must be primed from
+    /// benchmark data. Entries should use [`modality_latency_key`] for non-text
+    /// modalities. Existing keys are overwritten; live data takes over on the
+    /// next Prometheus refresh.
+    pub async fn seed_latency(&self, seed: HashMap<String, f64>) {
+        let mut latency = self.latency.write().await;
+        for (k, v) in seed {
+            latency.insert(k, v);
         }
     }
 
@@ -135,6 +228,34 @@ fn rank_by_ascending_metric(models: &[String], data: &HashMap<String, f64>) -> V
         })
         .collect();
     with_data.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let without_data: Vec<&String> = models
+        .iter()
+        .filter(|m| data.get(m.as_str()).is_none_or(|v| v.is_nan()))
+        .collect();
+
+    with_data
+        .iter()
+        .map(|(m, _)| (*m).clone())
+        .chain(without_data.iter().map(|m| (*m).clone()))
+        .collect()
+}
+
+/// Rank `models` by a metric where **higher is better** (e.g. quality scores).
+/// Models with no data are appended at the end in their original order.
+fn rank_by_descending_metric(models: &[String], data: &HashMap<String, f64>) -> Vec<String> {
+    let mut with_data: Vec<(&String, f64)> = models
+        .iter()
+        .filter_map(|m| {
+            let v = *data.get(m.as_str())?;
+            if v.is_nan() {
+                None
+            } else {
+                Some((m, v))
+            }
+        })
+        .collect();
+    with_data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let without_data: Vec<&String> = models
         .iter()
@@ -231,7 +352,16 @@ async fn fetch_prometheus_metrics(
                 .filter_map(|r| {
                     let model_name = r.metric.get("model_name")?.clone();
                     let value: f64 = r.value.1.parse().ok()?;
-                    Some((model_name, value))
+                    // If the series carries a `modality` label, namespace the key
+                    // so per-modality latency (WS10) never collides with text.
+                    let key = match r.metric.get("modality").map(String::as_str) {
+                        Some("text") | None => model_name,
+                        Some("vision") => modality_latency_key(&model_name, Modality::Vision),
+                        Some("image_out") => modality_latency_key(&model_name, Modality::ImageOut),
+                        Some("audio_out") => modality_latency_key(&model_name, Modality::AudioOut),
+                        Some(_) => model_name,
+                    };
+                    Some((key, value))
                 })
                 .collect(),
             Err(err) => {
@@ -319,6 +449,49 @@ mod tests {
         assert_eq!(result, vec!["claude-sonnet", "gpt-4o"]);
     }
 
+    #[test]
+    fn test_rank_by_descending_metric_picks_highest_first() {
+        let models = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let mut data = HashMap::new();
+        data.insert("a".to_string(), 0.80);
+        data.insert("b".to_string(), 0.95);
+        data.insert("c".to_string(), 0.70);
+        // unscored models would sort last; here all scored, highest first
+        assert_eq!(
+            rank_by_descending_metric(&models, &data),
+            vec!["b", "a", "c"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rank_models_long_context_quality() {
+        // Uses the vendored internal LCQ dataset. gemini-2.5-pro outranks gpt-4o,
+        // and an unscored model sorts last.
+        let service = ModelMetricsService {
+            cost: Arc::new(RwLock::new(HashMap::new())),
+            latency: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let models = vec![
+            "openai/gpt-4o".to_string(),
+            "openai/no-lcq-model".to_string(),
+            "gemini/gemini-2.5-pro".to_string(),
+        ];
+        let result = service
+            .rank_models(
+                &models,
+                &make_policy(SelectionPreference::LongContextQuality),
+            )
+            .await;
+        assert_eq!(
+            result,
+            vec![
+                "gemini/gemini-2.5-pro",
+                "openai/gpt-4o",
+                "openai/no-lcq-model"
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn test_rank_models_fallback_no_metrics() {
         let service = ModelMetricsService {
@@ -366,6 +539,65 @@ mod tests {
             .await;
         // none → original order, despite gpt-4o-mini being cheaper
         assert_eq!(result, vec!["gpt-4o", "gpt-4o-mini"]);
+    }
+
+    #[test]
+    fn test_modality_latency_key_namespaces_non_text() {
+        assert_eq!(
+            modality_latency_key("openai/gpt-4o", Modality::Text),
+            "openai/gpt-4o"
+        );
+        assert_eq!(
+            modality_latency_key("openai/gpt-image-1", Modality::ImageOut),
+            "image_out\u{1}openai/gpt-image-1"
+        );
+        assert_ne!(
+            modality_latency_key("m", Modality::Vision),
+            modality_latency_key("m", Modality::AudioOut)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rank_models_by_modality_latency_prefers_composite_key() {
+        let service = ModelMetricsService {
+            cost: Arc::new(RwLock::new(HashMap::new())),
+            latency: Arc::new(RwLock::new(HashMap::new())),
+        };
+        // Seed per-modality (audio) latency for two TTS models.
+        let mut seed = HashMap::new();
+        seed.insert(
+            modality_latency_key("openai/tts-slow", Modality::AudioOut),
+            500.0,
+        );
+        seed.insert(
+            modality_latency_key("openai/tts-fast", Modality::AudioOut),
+            100.0,
+        );
+        service.seed_latency(seed).await;
+
+        let models = vec!["openai/tts-slow".to_string(), "openai/tts-fast".to_string()];
+        let result = service
+            .rank_models_by_modality_latency(&models, Modality::AudioOut)
+            .await;
+        assert_eq!(result, vec!["openai/tts-fast", "openai/tts-slow"]);
+    }
+
+    #[tokio::test]
+    async fn test_rank_models_by_modality_latency_falls_back_to_bare_model() {
+        let service = ModelMetricsService {
+            cost: Arc::new(RwLock::new(HashMap::new())),
+            latency: Arc::new(RwLock::new({
+                let mut m = HashMap::new();
+                m.insert("text-model".to_string(), 42.0);
+                m
+            })),
+        };
+        let models = vec!["text-model".to_string(), "no-data".to_string()];
+        let result = service
+            .rank_models_by_modality_latency(&models, Modality::Vision)
+            .await;
+        // bare-model fallback ranks first; the unseen model sorts last.
+        assert_eq!(result, vec!["text-model", "no-data"]);
     }
 
     #[test]

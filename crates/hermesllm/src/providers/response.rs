@@ -37,6 +37,16 @@ pub trait TokenUsage {
     fn reasoning_tokens(&self) -> Option<usize> {
         None
     }
+    /// Number of generated images (billable unit for `/v1/images/generations`).
+    /// `None` for text/audio responses.
+    fn image_units(&self) -> Option<usize> {
+        None
+    }
+    /// Number of synthesized audio units — characters or seconds depending on the
+    /// provider (billable unit for `/v1/audio/speech`). `None` for non-audio.
+    fn audio_units(&self) -> Option<usize> {
+        None
+    }
 }
 
 /// Rich usage breakdown extracted from a provider response.

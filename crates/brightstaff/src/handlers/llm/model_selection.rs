@@ -1,13 +1,13 @@
-use common::configuration::TopLevelRoutingPreference;
+use common::configuration::{EmptyPoolBehavior, TopLevelRoutingPreference};
 use hermesllm::clients::endpoints::SupportedUpstreamAPIs;
-use hermesllm::ProviderRequestType;
+use hermesllm::{ProviderRequest, ProviderRequestType, RequiredCapabilities};
 use hyper::StatusCode;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
-use crate::router::orchestrator::OrchestratorService;
+use crate::router::orchestrator::{OrchestrationError, OrchestratorService};
 use crate::streaming::truncate_message;
 use crate::tracing::routing;
 
@@ -41,6 +41,15 @@ impl RoutingError {
         Self {
             message,
             status_code: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    /// Tier 1 capability filter left no viable model (D3 `error`). 422 so the
+    /// client can see this is a request/config mismatch, not a server fault.
+    pub fn capability_error(message: String) -> Self {
+        Self {
+            message,
+            status_code: StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 }
@@ -109,6 +118,14 @@ pub async fn router_chat_get_upstream_model(
         "processing router request"
     );
 
+    // Tier 1: compute the capability requirements implied by this request shape.
+    let mut required = RequiredCapabilities::for_endpoint(request_path);
+    required.vision = chat_request.has_vision();
+    required.min_context_tokens = chat_request.required_context_tokens();
+    if !required.is_unconstrained() {
+        debug!(requirement = %required.describe(), "computed required capabilities");
+    }
+
     // Capture start time for routing span
     let routing_start_time = std::time::Instant::now();
 
@@ -117,6 +134,7 @@ pub async fn router_chat_get_upstream_model(
             &chat_request.messages,
             inline_routing_preferences,
             request_id,
+            &required,
         )
         .await;
 
@@ -144,8 +162,42 @@ pub async fn router_chat_get_upstream_model(
                 })
             }
             None => {
-                // No route determined, return sentinel value "none"
-                // This signals to llm.rs to use the original validated request model
+                // No preference matched. The "none" sentinel tells llm.rs to use
+                // the original validated request model — but capability is a hard
+                // gate even here, so validate that explicit model against the
+                // request shape (catches e.g. an image sent to a text-only model).
+                let explicit_model = chat_request.model();
+                if !required.is_unconstrained()
+                    && orchestrator_service.has_capability_filter()
+                    && !orchestrator_service
+                        .is_model_capable(explicit_model, &required)
+                        .await
+                {
+                    match orchestrator_service.empty_pool_behavior() {
+                        EmptyPoolBehavior::Error => {
+                            current_span.record("route.selected_model", "unknown");
+                            bs_metrics::record_router_decision(
+                                route_label,
+                                "unknown",
+                                true,
+                                determination_elapsed,
+                            );
+                            return Err(RoutingError::capability_error(format!(
+                                "model '{}' cannot serve this request (requires {})",
+                                explicit_model,
+                                required.describe()
+                            )));
+                        }
+                        EmptyPoolBehavior::Warning => {
+                            warn!(
+                                model = %explicit_model,
+                                requirement = %required.describe(),
+                                "explicit model is not capable; empty_pool_behavior=warning, proceeding"
+                            );
+                        }
+                    }
+                }
+
                 current_span.record("route.selected_model", "none");
                 info!("no route determined, using default model");
                 bs_metrics::record_router_decision(
@@ -165,10 +217,18 @@ pub async fn router_chat_get_upstream_model(
         Err(err) => {
             current_span.record("route.selected_model", "unknown");
             bs_metrics::record_router_decision(route_label, "unknown", true, determination_elapsed);
-            Err(RoutingError::internal_error(format!(
-                "Failed to determine route: {}",
-                err
-            )))
+            match err {
+                OrchestrationError::CapabilityFilterEmpty { route, requirement } => {
+                    Err(RoutingError::capability_error(format!(
+                        "no capable model for route '{}': request requires {}",
+                        route, requirement
+                    )))
+                }
+                other => Err(RoutingError::internal_error(format!(
+                    "Failed to determine route: {}",
+                    other
+                ))),
+            }
         }
     }
 }

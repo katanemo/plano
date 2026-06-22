@@ -823,3 +823,98 @@ def test_apply_kimi_code_provider_defaults_injects_user_agent():
     apply_kimi_code_provider_defaults(provider)
     assert provider["base_url"] == "https://api.kimi.com/coding/v1"
     assert provider["headers"]["User-Agent"] == "KimiCLI/1.3"
+
+
+def _load_schema():
+    from jsonschema import validate
+
+    with open("../config/plano_config_schema.yaml", "r") as f:
+        return validate, yaml.safe_load(f.read())
+
+
+def test_schema_accepts_capabilities_and_signal_routing():
+    """Capability/signal-aware routing fields validate against the schema."""
+    validate, schema = _load_schema()
+    config = yaml.safe_load("""
+version: v0.4.0
+listeners:
+  - type: model
+    name: model_1
+    address: 0.0.0.0
+    port: 12000
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: anthropic/claude-opus-4-1-128k
+    access_key: $ANTHROPIC_API_KEY
+    capabilities:
+      context_window: 128000
+  - model: openai/llama-3.3-70b-vision
+    base_url: https://api.custom-provider.com
+    access_key: $CUSTOM_API_KEY
+    capabilities:
+      context_window: 128000
+      supports_vision: true
+      supports_image_generation: false
+      supports_audio_out: false
+      max_output_tokens: 8192
+routing_preferences:
+  - name: long document analysis
+    description: summarizing or querying very large documents
+    models:
+      - anthropic/claude-opus-4-1-128k
+      - openai/gpt-4o
+    selection_policy:
+      prefer: long_context_quality
+overrides:
+  llm_routing_model: Plano-Orchestrator
+  empty_pool_behavior: warning
+  model_capabilities_source:
+    url: https://models.dev/api.json
+    refresh_interval: 86400
+""")
+    validate(config, schema)
+
+
+def test_schema_rejects_unknown_capability_field():
+    """capabilities block is closed (additionalProperties: false)."""
+    from jsonschema import ValidationError
+
+    validate, schema = _load_schema()
+    config = yaml.safe_load("""
+version: v0.4.0
+listeners:
+  - type: model
+    name: model_1
+    address: 0.0.0.0
+    port: 12000
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    capabilities:
+      supports_telepathy: true
+""")
+    with pytest.raises(ValidationError):
+        validate(config, schema)
+
+
+def test_schema_rejects_invalid_empty_pool_behavior():
+    from jsonschema import ValidationError
+
+    validate, schema = _load_schema()
+    config = yaml.safe_load("""
+version: v0.4.0
+listeners:
+  - type: model
+    name: model_1
+    address: 0.0.0.0
+    port: 12000
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+overrides:
+  empty_pool_behavior: explode
+""")
+    with pytest.raises(ValidationError):
+        validate(config, schema)

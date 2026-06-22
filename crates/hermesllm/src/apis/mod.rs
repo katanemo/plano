@@ -1,6 +1,7 @@
 pub mod amazon_bedrock;
 pub mod anthropic;
 pub mod openai;
+pub mod openai_multimodal;
 pub mod openai_responses;
 pub mod streaming_shapes;
 
@@ -14,6 +15,9 @@ pub use openai::{
     ChatCompletionsRequest, ChatCompletionsResponse, ChatCompletionsStreamResponse, OpenAIApi,
 };
 pub use openai::{Message as OpenAIMessage, Tool as OpenAITool, ToolChoice as OpenAIToolChoice};
+pub use openai_multimodal::{
+    AudioSpeechRequest, ImageData, ImagesRequest, ImagesResponse, ImagesUsage,
+};
 
 pub trait ApiDefinition {
     /// Returns the endpoint path for this API
@@ -88,9 +92,11 @@ mod tests {
     fn test_all_variants_method() {
         // Test that all_variants returns the expected variants
         let openai_variants = OpenAIApi::all_variants();
-        assert_eq!(openai_variants.len(), 2);
+        assert_eq!(openai_variants.len(), 4);
         assert!(openai_variants.contains(&OpenAIApi::ChatCompletions));
         assert!(openai_variants.contains(&OpenAIApi::Responses));
+        assert!(openai_variants.contains(&OpenAIApi::Images));
+        assert!(openai_variants.contains(&OpenAIApi::Audio));
 
         let anthropic_variants = AnthropicApi::all_variants();
         assert_eq!(anthropic_variants.len(), 1);

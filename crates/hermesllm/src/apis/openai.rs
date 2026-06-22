@@ -11,7 +11,9 @@ use crate::providers::request::{ProviderRequest, ProviderRequestError};
 use crate::providers::response::{ProviderResponse, TokenUsage};
 use crate::providers::streaming_response::ProviderStreamResponse;
 use crate::transforms::lib::ExtractText;
-use crate::{CHAT_COMPLETIONS_PATH, OPENAI_RESPONSES_API_PATH};
+use crate::{
+    AUDIO_SPEECH_PATH, CHAT_COMPLETIONS_PATH, IMAGES_GENERATIONS_PATH, OPENAI_RESPONSES_API_PATH,
+};
 
 // ============================================================================
 // OPENAI API ENUMERATION
@@ -22,6 +24,10 @@ use crate::{CHAT_COMPLETIONS_PATH, OPENAI_RESPONSES_API_PATH};
 pub enum OpenAIApi {
     ChatCompletions,
     Responses,
+    /// Image generation (`/v1/images/generations`).
+    Images,
+    /// Text-to-speech / audio output (`/v1/audio/speech`). Returns binary audio.
+    Audio,
     // Future APIs can be added here:
     // Embeddings,
     // FineTuning,
@@ -33,6 +39,8 @@ impl ApiDefinition for OpenAIApi {
         match self {
             OpenAIApi::ChatCompletions => CHAT_COMPLETIONS_PATH,
             OpenAIApi::Responses => OPENAI_RESPONSES_API_PATH,
+            OpenAIApi::Images => IMAGES_GENERATIONS_PATH,
+            OpenAIApi::Audio => AUDIO_SPEECH_PATH,
         }
     }
 
@@ -40,6 +48,8 @@ impl ApiDefinition for OpenAIApi {
         match endpoint {
             CHAT_COMPLETIONS_PATH => Some(OpenAIApi::ChatCompletions),
             OPENAI_RESPONSES_API_PATH => Some(OpenAIApi::Responses),
+            IMAGES_GENERATIONS_PATH => Some(OpenAIApi::Images),
+            AUDIO_SPEECH_PATH => Some(OpenAIApi::Audio),
             _ => None,
         }
     }
@@ -48,6 +58,9 @@ impl ApiDefinition for OpenAIApi {
         match self {
             OpenAIApi::ChatCompletions => true,
             OpenAIApi::Responses => true,
+            // TTS supports streamed audio chunks; image generation does not.
+            OpenAIApi::Audio => true,
+            OpenAIApi::Images => false,
         }
     }
 
@@ -55,6 +68,8 @@ impl ApiDefinition for OpenAIApi {
         match self {
             OpenAIApi::ChatCompletions => true,
             OpenAIApi::Responses => true,
+            OpenAIApi::Images => false,
+            OpenAIApi::Audio => false,
         }
     }
 
@@ -62,11 +77,19 @@ impl ApiDefinition for OpenAIApi {
         match self {
             OpenAIApi::ChatCompletions => true,
             OpenAIApi::Responses => true,
+            // These are output modalities, not vision input.
+            OpenAIApi::Images => false,
+            OpenAIApi::Audio => false,
         }
     }
 
     fn all_variants() -> Vec<Self> {
-        vec![OpenAIApi::ChatCompletions, OpenAIApi::Responses]
+        vec![
+            OpenAIApi::ChatCompletions,
+            OpenAIApi::Responses,
+            OpenAIApi::Images,
+            OpenAIApi::Audio,
+        ]
     }
 }
 
@@ -1183,9 +1206,11 @@ mod tests {
 
         // Test all_variants
         let all_variants = OpenAIApi::all_variants();
-        assert_eq!(all_variants.len(), 2);
+        assert_eq!(all_variants.len(), 4);
         assert!(all_variants.contains(&OpenAIApi::ChatCompletions));
         assert!(all_variants.contains(&OpenAIApi::Responses));
+        assert!(all_variants.contains(&OpenAIApi::Images));
+        assert!(all_variants.contains(&OpenAIApi::Audio));
     }
 
     #[test]

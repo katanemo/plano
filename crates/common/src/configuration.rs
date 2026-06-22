@@ -137,6 +137,10 @@ pub enum StateStorageType {
 pub enum SelectionPreference {
     Cheapest,
     Fastest,
+    /// Tier 2 ranking: rank the (already capability-filtered) pool by Plano's
+    /// internal long-context-quality score.
+    #[serde(rename = "long_context_quality")]
+    LongContextQuality,
     /// Return models in the same order they were defined — no reordering.
     #[default]
     #[serde(alias = "")]
@@ -235,6 +239,35 @@ pub struct Overrides {
     pub agent_orchestration_model: Option<String>,
     pub orchestrator_model_context_length: Option<usize>,
     pub disable_signals: Option<bool>,
+    /// What to do when Tier 1 capability filtering removes every candidate model
+    /// from a matched route (D3). Defaults to `error`.
+    #[serde(default)]
+    pub empty_pool_behavior: Option<EmptyPoolBehavior>,
+    /// Optional override for where model capabilities are sourced from. Defaults
+    /// to the public models.dev URL + vendored snapshot when unset.
+    #[serde(default)]
+    pub model_capabilities_source: Option<ModelCapabilitiesSource>,
+}
+
+/// Behavior when Tier 1 capability filtering empties a matched route's model pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EmptyPoolBehavior {
+    /// Return an HTTP 422 with a clear message (no silent degrade).
+    #[default]
+    Error,
+    /// Log a warning and proceed with the developer's pre-filter pool as-is.
+    Warning,
+}
+
+/// Optional configuration for the models.dev capability source (nested under
+/// `overrides`). Defaults to the public models.dev URL when unset.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelCapabilitiesSource {
+    /// models.dev-compatible API URL. Defaults to `https://models.dev/api.json`.
+    pub url: Option<String>,
+    /// Refresh interval in seconds. Omit to use the vendored seed only.
+    pub refresh_interval: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -498,6 +531,11 @@ pub struct LlmProvider {
     pub internal: Option<bool>,
     pub passthrough_auth: Option<bool>,
     pub headers: Option<HashMap<String, String>>,
+    /// Optional per-model capability overrides (Tier 1 routing). All fields are
+    /// optional; anything left unset is resolved from the models.dev catalog,
+    /// then a conservative default. Precedence: user config > models.dev > default.
+    #[serde(default)]
+    pub capabilities: Option<hermesllm::ModelCapabilities>,
 }
 
 pub trait IntoModels {
@@ -542,6 +580,7 @@ impl Default for LlmProvider {
             internal: None,
             passthrough_auth: None,
             headers: None,
+            capabilities: None,
         }
     }
 }

@@ -12,6 +12,7 @@ use brightstaff::handlers::models::list_models;
 use brightstaff::handlers::routing_service::routing_decision;
 use brightstaff::metrics as bs_metrics;
 use brightstaff::metrics::labels as metric_labels;
+use brightstaff::router::model_capabilities::ModelCapabilitiesService;
 use brightstaff::router::model_metrics::ModelMetricsService;
 use brightstaff::router::orchestrator::OrchestratorService;
 use brightstaff::session_cache::init_session_cache;
@@ -308,17 +309,50 @@ async fn init_app_state(
         .orchestrator_model_context_length
         .unwrap_or(brightstaff::router::orchestrator_model_v1::MAX_TOKEN_LEN);
 
-    let orchestrator_service = Arc::new(OrchestratorService::with_routing(
-        format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
-        orchestrator_model_name,
-        orchestrator_llm_provider,
-        config.routing_preferences.clone(),
-        metrics_service,
-        session_ttl_seconds,
-        session_cache,
-        session_tenant_header,
-        orchestrator_max_tokens,
+    // Tier 1 capability source: vendored models.dev seed + optional runtime
+    // refresh, layered with per-provider user overrides.
+    let capabilities_service = Some(Arc::new(
+        ModelCapabilitiesService::new(
+            &config.model_providers,
+            overrides.model_capabilities_source.as_ref(),
+            reqwest::Client::new(),
+        )
+        .await,
     ));
+    let empty_pool_behavior = overrides.empty_pool_behavior.unwrap_or_default();
+
+    // Surface internal long-context-quality dataset provenance + staleness (R5).
+    {
+        let lcq = hermesllm::providers::long_context_quality::dataset();
+        if let Ok(dated) = chrono::NaiveDate::parse_from_str(&lcq.dated, "%Y-%m-%d") {
+            let age_days = (chrono::Utc::now().date_naive() - dated).num_days().max(0) as f64;
+            brightstaff::metrics::record_lcq_staleness_days(age_days);
+            info!(
+                models = lcq.len(),
+                source = %lcq.source,
+                dated = %lcq.dated,
+                age_days,
+                "loaded internal long-context-quality dataset"
+            );
+        } else {
+            info!(models = lcq.len(), source = %lcq.source, "loaded internal long-context-quality dataset");
+        }
+    }
+
+    let orchestrator_service = Arc::new(
+        OrchestratorService::with_routing(
+            format!("{llm_provider_url}{CHAT_COMPLETIONS_PATH}"),
+            orchestrator_model_name,
+            orchestrator_llm_provider,
+            config.routing_preferences.clone(),
+            metrics_service,
+            session_ttl_seconds,
+            session_cache,
+            session_tenant_header,
+            orchestrator_max_tokens,
+        )
+        .with_capability_filter(capabilities_service, empty_pool_behavior),
+    );
 
     let state_storage = init_state_storage(config).await?;
 
