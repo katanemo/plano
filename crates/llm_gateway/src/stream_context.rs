@@ -56,6 +56,9 @@ pub struct StreamContext {
     http_protocol: Option<String>,
     sse_buffer: Option<SseStreamBuffer>,
     sse_chunk_processor: Option<SseChunkProcessor>,
+    /// True when the upstream response is binary (e.g. `audio/*` from
+    /// `/v1/audio/speech`) and must be passed through without JSON parsing.
+    response_is_binary: bool,
 }
 
 impl StreamContext {
@@ -87,6 +90,7 @@ impl StreamContext {
             http_protocol: None,
             sse_buffer: None,
             sse_chunk_processor: None,
+            response_is_binary: false,
         }
     }
 
@@ -1152,6 +1156,27 @@ impl HttpContext for StreamContext {
             }
         }
 
+        // Detect binary (non-JSON) response bodies — e.g. audio from
+        // /v1/audio/speech. These must be passed through untouched: the gateway
+        // otherwise JSON-parses and re-serializes every non-streaming response,
+        // which would corrupt binary audio. Keep content-length intact for these.
+        let content_type = self
+            .get_http_response_header("content-type")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        self.response_is_binary = content_type.starts_with("audio/")
+            || content_type.starts_with("image/")
+            || content_type == "application/octet-stream";
+
+        if self.response_is_binary {
+            debug!(
+                "request_id={}: binary response (content-type={}), passing through untouched",
+                self.request_identifier(),
+                content_type
+            );
+            return Action::Continue;
+        }
+
         self.remove_http_response_header("content-length");
         self.remove_http_response_header("content-encoding");
 
@@ -1180,6 +1205,20 @@ impl HttpContext for StreamContext {
                 body_size
             );
             self.handle_end_of_request_metrics_and_traces(current_time);
+            return Action::Continue;
+        }
+
+        // Binary responses (e.g. audio/* from /v1/audio/speech) are passed
+        // through without JSON parsing or token accounting (G3 / WS8).
+        if self.response_is_binary {
+            debug!(
+                "request_id={}: binary response body passthrough, body_size={}",
+                self.request_identifier(),
+                body_size
+            );
+            if end_of_stream {
+                self.handle_end_of_request_metrics_and_traces(current_time);
+            }
             return Action::Continue;
         }
 

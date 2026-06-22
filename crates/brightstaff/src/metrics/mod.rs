@@ -317,6 +317,26 @@ pub fn record_llm_ttft(provider: &str, model: &str, ttft: Duration) {
     .record(ttft.as_secs_f64());
 }
 
+/// Per-modality generation latency, the cold-start-seedable signal that powers
+/// `prefer: fastest` for the non-text modalities (WS10). `kind` distinguishes the
+/// per-modality timing definition: `e2e` (image-gen, request→asset), `ttfa`
+/// (streaming audio, time-to-first-audio-chunk), or `synthesis` (non-streaming
+/// audio, total synthesis time). Text continues to use TTFT and is unaffected.
+pub fn record_modality_latency(
+    model: &str,
+    modality: &str,
+    kind: &'static str,
+    duration: Duration,
+) {
+    histogram!(
+        "brightstaff_llm_modality_latency_seconds",
+        "model" => model.to_string(),
+        "modality" => modality.to_string(),
+        "kind" => kind,
+    )
+    .record(duration.as_secs_f64());
+}
+
 pub fn record_llm_tokens(provider: &str, model: &str, kind: &'static str, count: u64) {
     counter!(
         "brightstaff_llm_tokens_total",
@@ -358,6 +378,36 @@ pub fn record_router_decision(
         "route" => route,
     )
     .record(duration.as_secs_f64());
+}
+
+/// Record Tier 1 capability-filter timing + pool sizes for a matched route.
+/// `outcome` is one of `pass`, `filtered`, `empty_error`, `empty_warning`.
+pub fn record_capability_filter(
+    route: &str,
+    outcome: &'static str,
+    pre_filter: usize,
+    post_filter: usize,
+    duration: Duration,
+) {
+    counter!(
+        "brightstaff_capability_filter_total",
+        "route" => route.to_string(),
+        "outcome" => outcome,
+    )
+    .increment(1);
+    histogram!(
+        "brightstaff_capability_filter_duration_seconds",
+        "route" => route.to_string(),
+    )
+    .record(duration.as_secs_f64());
+    histogram!("brightstaff_capability_filter_pre_pool_size").record(pre_filter as f64);
+    histogram!("brightstaff_capability_filter_post_pool_size").record(post_filter as f64);
+}
+
+/// Surface the age (in days) of the internal long-context-quality dataset so
+/// staleness is observable (R5).
+pub fn record_lcq_staleness_days(age_days: f64) {
+    gauge!("brightstaff_long_context_quality_staleness_days").set(age_days);
 }
 
 pub fn record_routing_service_outcome(outcome: &'static str) {

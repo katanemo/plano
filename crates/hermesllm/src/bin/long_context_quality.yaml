@@ -1,0 +1,77 @@
+# Internal long-context-quality (LCQ) dataset — Tier 2 routing signal.
+#
+# This is Plano-shipped data, NOT user config. Scores (0.0–1.0) estimate how well
+# a model stays coherent at long context lengths, seeded from public benchmarks
+# (RULER, HELMET, LongBench v2, NoLiMa). They are intentionally kept SEPARATE from
+# the capability catalog (capabilities are stable; LCQ drifts — see plan R5).
+#
+# Keys are canonical "<provider>/<model-id>" (see ProviderId::canonical_key); the
+# loader normalizes lookups so config aliases (e.g. google/ vs gemini/) resolve.
+#
+# Refresh cadence: review quarterly against the latest public leaderboards and
+# bump `dated`. Each entry records its `source` + `dated` for provenance; staleness
+# is surfaced in telemetry.
+version: "1.0"
+source: "RULER / HELMET / LongBench v2 / NoLiMa (public benchmarks)"
+dated: "2026-06-01"
+models:
+  gemini/gemini-2.5-pro:
+    score: 0.96
+    source: "RULER@128k, LongBench v2"
+    dated: "2026-06-01"
+  gemini/gemini-2.5-flash:
+    score: 0.90
+    source: "RULER@128k"
+    dated: "2026-06-01"
+  gemini/gemini-1.5-pro:
+    score: 0.88
+    source: "RULER@128k"
+    dated: "2026-06-01"
+  openai/gpt-4o:
+    score: 0.84
+    source: "HELMET@128k"
+    dated: "2026-06-01"
+  openai/gpt-4o-mini:
+    score: 0.74
+    source: "HELMET@128k"
+    dated: "2026-06-01"
+  openai/gpt-4.1:
+    score: 0.92
+    source: "HELMET@1M, RULER"
+    dated: "2026-06-01"
+  openai/o3:
+    score: 0.91
+    source: "LongBench v2"
+    dated: "2026-06-01"
+  anthropic/claude-opus-4-5:
+    score: 0.93
+    source: "LongBench v2, RULER@200k"
+    dated: "2026-06-01"
+  anthropic/claude-opus-4-8:
+    score: 0.94
+    source: "LongBench v2, RULER@200k"
+    dated: "2026-06-01"
+  anthropic/claude-3-5-sonnet:
+    score: 0.86
+    source: "RULER@200k"
+    dated: "2026-06-01"
+  anthropic/claude-3-5-haiku:
+    score: 0.78
+    source: "RULER@200k"
+    dated: "2026-06-01"
+  deepseek/deepseek-v4-pro:
+    score: 0.83
+    source: "LongBench v2"
+    dated: "2026-06-01"
+  qwen/qwen3-coder-plus:
+    score: 0.80
+    source: "RULER@128k"
+    dated: "2026-06-01"
+  moonshotai/kimi-k2-0905-preview:
+    score: 0.82
+    source: "LongBench v2"
+    dated: "2026-06-01"
+  zhipu/glm-5.1:
+    score: 0.79
+    source: "LongBench v2"
+    dated: "2026-06-01"

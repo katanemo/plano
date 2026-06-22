@@ -1,17 +1,21 @@
 use std::{borrow::Cow, collections::HashMap, sync::Arc, time::Duration};
 
 use common::{
-    configuration::{AgentUsagePreference, OrchestrationPreference, TopLevelRoutingPreference},
+    configuration::{
+        AgentUsagePreference, EmptyPoolBehavior, OrchestrationPreference, TopLevelRoutingPreference,
+    },
     consts::{ARCH_PROVIDER_HINT_HEADER, REQUEST_ID_HEADER},
 };
 use hermesllm::apis::openai::Message;
+use hermesllm::RequiredCapabilities;
 use hyper::header;
 use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::http::{self, post_and_extract_content};
+use super::model_capabilities::ModelCapabilitiesService;
 use super::model_metrics::ModelMetricsService;
 use super::orchestrator_model::OrchestratorModel;
 
@@ -31,6 +35,8 @@ pub struct OrchestratorService {
     orchestrator_provider_name: String,
     top_level_preferences: HashMap<String, TopLevelRoutingPreference>,
     metrics_service: Option<Arc<ModelMetricsService>>,
+    capabilities_service: Option<Arc<ModelCapabilitiesService>>,
+    empty_pool_behavior: EmptyPoolBehavior,
     session_cache: Option<Arc<dyn SessionCache>>,
     session_ttl: Duration,
     tenant_header: Option<String>,
@@ -43,6 +49,11 @@ pub enum OrchestrationError {
 
     #[error("Orchestrator model error: {0}")]
     OrchestratorModelError(#[from] super::orchestrator_model::OrchestratorModelError),
+
+    /// Tier 1 capability filtering removed every candidate from the matched
+    /// route and `empty_pool_behavior` is `error` (D3).
+    #[error("no capable model for route '{route}': request requires {requirement}")]
+    CapabilityFilterEmpty { route: String, requirement: String },
 }
 
 pub type Result<T> = std::result::Result<T, OrchestrationError>;
@@ -67,10 +78,44 @@ impl OrchestratorService {
             orchestrator_provider_name,
             top_level_preferences: HashMap::new(),
             metrics_service: None,
+            capabilities_service: None,
+            empty_pool_behavior: EmptyPoolBehavior::default(),
             session_cache: None,
             session_ttl: Duration::from_secs(DEFAULT_SESSION_TTL_SECONDS),
             tenant_header: None,
         }
+    }
+
+    /// Attach the Tier 1 capability filter and the empty-pool policy (D3).
+    /// Builder-style so existing constructor call sites stay unchanged.
+    #[must_use]
+    pub fn with_capability_filter(
+        mut self,
+        capabilities_service: Option<Arc<ModelCapabilitiesService>>,
+        empty_pool_behavior: EmptyPoolBehavior,
+    ) -> Self {
+        self.capabilities_service = capabilities_service;
+        self.empty_pool_behavior = empty_pool_behavior;
+        self
+    }
+
+    /// Whether a single model can serve a request with the given required
+    /// capabilities (used for the no-preference-match validation path).
+    pub async fn is_model_capable(&self, model: &str, required: &RequiredCapabilities) -> bool {
+        match &self.capabilities_service {
+            Some(svc) if !required.is_unconstrained() => {
+                required.satisfied_by(&svc.capabilities_for(model).await)
+            }
+            _ => true,
+        }
+    }
+
+    pub fn empty_pool_behavior(&self) -> EmptyPoolBehavior {
+        self.empty_pool_behavior
+    }
+
+    pub fn has_capability_filter(&self) -> bool {
+        self.capabilities_service.is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -106,6 +151,8 @@ impl OrchestratorService {
             orchestrator_provider_name,
             top_level_preferences,
             metrics_service,
+            capabilities_service: None,
+            empty_pool_behavior: EmptyPoolBehavior::default(),
             session_cache: Some(session_cache),
             session_ttl,
             tenant_header,
@@ -170,6 +217,7 @@ impl OrchestratorService {
         messages: &[Message],
         inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
         request_id: &str,
+        required: &RequiredCapabilities,
     ) -> Result<Option<(String, Vec<String>)>> {
         if messages.is_empty() {
             return Ok(None);
@@ -223,10 +271,27 @@ impl OrchestratorService {
                     .or_else(|| self.top_level_preferences.get(route_name));
 
                 if let Some(pref) = top_pref {
+                    // Tier 1: hard capability filter (intersection) before ranking.
+                    let effective_models = self
+                        .apply_capability_filter(route_name, &pref.models, required)
+                        .await?;
+
+                    // Tier 2: rank the surviving capable pool (preserves order for `none`).
                     let ranked = match &self.metrics_service {
-                        Some(svc) => svc.rank_models(&pref.models, &pref.selection_policy).await,
-                        None => pref.models.clone(),
+                        Some(svc) => {
+                            svc.rank_models(&effective_models, &pref.selection_policy)
+                                .await
+                        }
+                        None => effective_models.clone(),
                     };
+                    info!(
+                        route = %route_name,
+                        tier = "tier2",
+                        selection_policy = ?pref.selection_policy,
+                        capable_pool = effective_models.len(),
+                        selected = %ranked.first().map(|s| s.as_str()).unwrap_or(""),
+                        "Tier 2 preference ranking applied"
+                    );
                     Some((route_name.clone(), ranked))
                 } else {
                     None
@@ -244,6 +309,90 @@ impl OrchestratorService {
         );
 
         Ok(result)
+    }
+
+    /// Tier 1: intersect a route's model pool with the models capable of serving
+    /// the request shape, preserving preference order among survivors. When the
+    /// intersection is empty, honor `empty_pool_behavior` (D3): `error` returns a
+    /// typed error; `warning` logs and proceeds with the pre-filter pool.
+    async fn apply_capability_filter(
+        &self,
+        route_name: &str,
+        models: &[String],
+        required: &RequiredCapabilities,
+    ) -> Result<Vec<String>> {
+        let Some(svc) = &self.capabilities_service else {
+            return Ok(models.to_vec());
+        };
+        if required.is_unconstrained() {
+            return Ok(models.to_vec());
+        }
+
+        let started = std::time::Instant::now();
+        let mut capable = Vec::new();
+        for m in models {
+            let caps = svc.capabilities_for(m).await;
+            if required.satisfied_by(&caps) {
+                capable.push(m.clone());
+            }
+        }
+        let elapsed = started.elapsed();
+
+        if capable.is_empty() {
+            match self.empty_pool_behavior {
+                EmptyPoolBehavior::Error => {
+                    bs_metrics::record_capability_filter(
+                        route_name,
+                        metric_labels::CAPABILITY_FILTER_EMPTY_ERROR,
+                        models.len(),
+                        0,
+                        elapsed,
+                    );
+                    return Err(OrchestrationError::CapabilityFilterEmpty {
+                        route: route_name.to_string(),
+                        requirement: required.describe(),
+                    });
+                }
+                EmptyPoolBehavior::Warning => {
+                    bs_metrics::record_capability_filter(
+                        route_name,
+                        metric_labels::CAPABILITY_FILTER_EMPTY_WARNING,
+                        models.len(),
+                        0,
+                        elapsed,
+                    );
+                    warn!(
+                        route = %route_name,
+                        requirement = %required.describe(),
+                        "Tier 1 capability filter emptied the pool; empty_pool_behavior=warning, proceeding with pre-filter pool"
+                    );
+                    return Ok(models.to_vec());
+                }
+            }
+        }
+
+        let outcome = if capable.len() == models.len() {
+            metric_labels::CAPABILITY_FILTER_PASS
+        } else {
+            metric_labels::CAPABILITY_FILTER_FILTERED
+        };
+        bs_metrics::record_capability_filter(
+            route_name,
+            outcome,
+            models.len(),
+            capable.len(),
+            elapsed,
+        );
+        info!(
+            route = %route_name,
+            tier = "tier1",
+            pre_filter = models.len(),
+            post_filter = capable.len(),
+            requirement = %required.describe(),
+            filter_us = elapsed.as_micros() as u64,
+            "Tier 1 capability filter applied"
+        );
+        Ok(capable)
     }
 
     // ---- Agent orchestration (existing) ----

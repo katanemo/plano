@@ -36,3 +36,9 @@ pub const ROUTING_SVC_POLICY_ERROR: &str = "policy_error";
 pub const SESSION_CACHE_HIT: &str = "hit";
 pub const SESSION_CACHE_MISS: &str = "miss";
 pub const SESSION_CACHE_STORE: &str = "store";
+
+// Tier 1 capability-filter outcome values.
+pub const CAPABILITY_FILTER_PASS: &str = "pass";
+pub const CAPABILITY_FILTER_FILTERED: &str = "filtered";
+pub const CAPABILITY_FILTER_EMPTY_ERROR: &str = "empty_error";
+pub const CAPABILITY_FILTER_EMPTY_WARNING: &str = "empty_warning";

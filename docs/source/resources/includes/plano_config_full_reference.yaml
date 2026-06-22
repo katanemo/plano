@@ -55,6 +55,32 @@ model_providers:
     headers:
       User-Agent: "KimiCLI/1.3"
 
+  # Multimodal models — capabilities (vision / image-out / audio-out / context
+  # window) are fetched at runtime from models.dev (like cost/latency metrics),
+  # so you normally declare NOTHING. Add an optional `capabilities:` block only to
+  # override models.dev or to describe a model models.dev doesn't have.
+  # Precedence: capabilities block > models.dev > conservative default.
+  - model: openai/gpt-image-1          # serves /v1/images/generations
+    access_key: $OPENAI_API_KEY
+
+  - model: openai/gpt-4o-mini-tts      # serves /v1/audio/speech (TTS)
+    access_key: $OPENAI_API_KEY
+
+  # Override example: models.dev reports 200k, but this deployment is pinned to 128k.
+  - model: anthropic/claude-opus-4-1-128k
+    access_key: $ANTHROPIC_API_KEY
+    capabilities:
+      context_window: 128000
+
+  # Custom/self-hosted model models.dev doesn't know — declare its capabilities.
+  - model: openai/llama-3.3-70b-vision
+    base_url: https://api.custom-provider.com
+    http_host: api.custom-provider.com
+    access_key: $CUSTOM_API_KEY
+    capabilities:
+      context_window: 128000
+      supports_vision: true
+
 # Model aliases - use friendly names instead of full provider model names
 model_aliases:
   fast-llm:
@@ -69,8 +95,14 @@ model_aliases:
 # uses models[0] as primary and retries with models[1], models[2]... on 429/5xx.
 # Requires overrides.llm_routing_model to point at Plano-Orchestrator (or equivalent).
 # Each model in `models` must be declared in model_providers above.
-# selection_policy is optional: {prefer: cheapest|fastest|none} lets the router
-# reorder candidates using live cost/latency data from model_metrics_sources.
+# selection_policy is optional: {prefer: cheapest|fastest|long_context_quality|none}
+# lets the router reorder candidates. cheapest/fastest use live cost/latency data
+# from model_metrics_sources; long_context_quality ranks by Plano's internal
+# benchmark-seeded long-context-quality score (supplied internally, not user-authored).
+#
+# Tier 1 capability filters (modality + context-window fit) apply AUTOMATICALLY from
+# the request shape: each preset's `models` pool is narrowed to the models that can
+# physically serve the request before selection_policy ranks the survivors.
 routing_preferences:
   - name: code generation
     description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
@@ -85,6 +117,36 @@ routing_preferences:
       - groq/llama-3.3-70b-versatile
     selection_policy:
       prefer: cheapest
+
+  # long-context preset — ranks the window-sufficient pool by long-context quality.
+  - name: long document analysis
+    description: summarizing or querying very large documents and codebases
+    models:
+      - anthropic/claude-opus-4-1-128k
+      - openai/gpt-4o
+    selection_policy:
+      prefer: long_context_quality
+
+  # vision preset — pool auto-filtered to vision-capable models (Tier 1).
+  - name: image understanding
+    description: answering questions about uploaded images, screenshots, or diagrams
+    models:
+      - anthropic/claude-sonnet-4-0
+      - openai/gpt-4o
+
+  # image-generation preset — serves /v1/images/generations (Tier 1).
+  - name: image generation
+    description: creating or editing images from a text prompt
+    models:
+      - openai/gpt-image-1
+    selection_policy:
+      prefer: cheapest
+
+  # TTS preset — serves /v1/audio/speech (Tier 1).
+  - name: text to speech
+    description: synthesizing spoken audio from text
+    models:
+      - openai/gpt-4o-mini-tts
 
 # HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access
 listeners:
@@ -198,6 +260,17 @@ overrides:
   # Disable agentic signal analysis (frustration, repetition, escalation, etc.)
   # on LLM responses to save CPU. Default: false.
   disable_signals: false
+  # Tier 1 capability filtering is a hard gate. When it removes every model in a
+  # matched route, "error" returns HTTP 422 (default); "warning" logs and proceeds
+  # with the developer's pre-filter pool. This is the only lever that lets
+  # routing_preferences win over capability.
+  empty_pool_behavior: error
+  # Optional — model capabilities are fetched at runtime from models.dev. Set this
+  # only to change the URL or refresh cadence; omit refresh_interval to fetch once
+  # at startup (no periodic refresh).
+  model_capabilities_source:
+    url: https://models.dev/api.json
+    refresh_interval: 86400   # seconds (daily)
 
 # Model affinity — pin routing decisions for agentic loops
 routing:

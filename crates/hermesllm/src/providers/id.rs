@@ -91,6 +91,38 @@ impl TryFrom<&str> for ProviderId {
 }
 
 impl ProviderId {
+    /// Stable lowercase token used as the canonical provider key for capability
+    /// lookups (see `providers::capabilities`). Must round-trip through
+    /// `ProviderId::try_from`, and the capability snapshot generator maps
+    /// models.dev provider keys to these same tokens.
+    pub fn canonical_key(&self) -> &'static str {
+        match self {
+            ProviderId::OpenAI => "openai",
+            ProviderId::Xiaomi => "xiaomi",
+            ProviderId::Mistral => "mistral",
+            ProviderId::Deepseek => "deepseek",
+            ProviderId::Groq => "groq",
+            ProviderId::Gemini => "gemini",
+            ProviderId::Anthropic => "anthropic",
+            ProviderId::GitHub => "github",
+            ProviderId::Plano => "plano",
+            ProviderId::AzureOpenAI => "azure_openai",
+            ProviderId::XAI => "xai",
+            ProviderId::TogetherAI => "together_ai",
+            ProviderId::Ollama => "ollama",
+            ProviderId::Moonshotai => "moonshotai",
+            ProviderId::Zhipu => "zhipu",
+            ProviderId::Qwen => "qwen",
+            ProviderId::AmazonBedrock => "amazon_bedrock",
+            ProviderId::ChatGPT => "chatgpt",
+            ProviderId::DigitalOcean => "digitalocean",
+            ProviderId::Vercel => "vercel",
+            ProviderId::OpenRouter => "openrouter",
+            ProviderId::Astraflow => "astraflow",
+            ProviderId::AstraflowCN => "astraflow_cn",
+        }
+    }
+
     /// Get all available models for this provider
     /// Returns model names without the provider prefix (e.g., "gpt-4" not "openai/gpt-4")
     pub fn models(&self) -> Vec<String> {

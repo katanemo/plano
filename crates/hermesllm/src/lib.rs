@@ -9,7 +9,13 @@ pub mod transforms;
 pub use apis::streaming_shapes::amazon_bedrock_binary_frame::BedrockBinaryFrameDecoder;
 pub use apis::streaming_shapes::sse::{SseEvent, SseStreamIter};
 pub use aws_smithy_eventstream::frame::DecodedFrame;
+pub use providers::capabilities::{
+    CapabilitiesCatalog, CapabilitiesSnapshot, ModelCapabilities, RequiredCapabilities,
+};
 pub use providers::id::ProviderId;
+pub use providers::long_context_quality::{
+    score_for as long_context_quality_score, LongContextQualityDataset,
+};
 pub use providers::request::{ProviderRequest, ProviderRequestError, ProviderRequestType};
 pub use providers::response::{
     ProviderResponse, ProviderResponseError, ProviderResponseType, TokenUsage,
@@ -20,6 +26,8 @@ pub use providers::streaming_response::{ProviderStreamResponse, ProviderStreamRe
 pub const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 pub const OPENAI_RESPONSES_API_PATH: &str = "/v1/responses";
 pub const MESSAGES_PATH: &str = "/v1/messages";
+pub const IMAGES_GENERATIONS_PATH: &str = "/v1/images/generations";
+pub const AUDIO_SPEECH_PATH: &str = "/v1/audio/speech";
 
 #[cfg(test)]
 mod tests {

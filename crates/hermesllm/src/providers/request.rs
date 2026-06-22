@@ -58,6 +58,25 @@ pub trait ProviderRequest: Send + Sync {
     /// Set message history from OpenAI Message format
     /// This converts OpenAI messages to the appropriate format for each provider type
     fn set_messages(&mut self, messages: &[crate::apis::openai::Message]);
+
+    /// Request-shape introspection: does any message carry image input (vision)?
+    /// Drives Tier 1 capability filtering (`supports_vision`).
+    fn has_vision(&self) -> bool {
+        use crate::apis::openai::{ContentPart, MessageContent};
+        self.get_messages().iter().any(|m| match &m.content {
+            Some(MessageContent::Parts(parts)) => parts
+                .iter()
+                .any(|p| matches!(p, ContentPart::ImageUrl { .. })),
+            _ => false,
+        })
+    }
+
+    /// Approximate input token count for context-window filtering (Tier 1).
+    /// Uses a coarse ~4-chars-per-token heuristic over message text; precise
+    /// tokenization is unnecessary for a "fits the window" hard gate.
+    fn required_context_tokens(&self) -> usize {
+        self.extract_messages_text().chars().count() / 4
+    }
 }
 
 impl ProviderRequestType {

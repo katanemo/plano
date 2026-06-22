@@ -184,22 +184,54 @@ properties:
           enum:
             - plano
             - claude
+            - anthropic
             - deepseek
             - groq
             - mistral
             - openai
             - xiaomi
             - gemini
+            - xai
+            - together_ai
+            - azure_openai
+            - ollama
+            - zhipu
+            - qwen
+            - amazon_bedrock
             - chatgpt
             - digitalocean
             - vercel
             - openrouter
             - moonshotai
+            - astraflow
+            - astraflow_cn
         headers:
           type: object
           additionalProperties:
             type: string
           description: "Additional headers to send with upstream requests (e.g., ChatGPT-Account-Id, originator)."
+        capabilities:
+          type: object
+          additionalProperties: false
+          description: "Optional model capability overrides. Capabilities default from models.dev (vendored seed + runtime refresh); declare these only to override models.dev or to describe a model models.dev doesn't have. Precedence: this block > models.dev > conservative default."
+          properties:
+            context_window:
+              type: integer
+              minimum: 1
+              description: "Maximum total context (input + output) tokens the model accepts."
+            max_output_tokens:
+              type: integer
+              minimum: 1
+              description: "Maximum output tokens the model can produce."
+            supports_vision:
+              type: boolean
+              description: "Whether the model accepts image input (vision)."
+            supports_image_generation:
+              type: boolean
+              description: "Whether the model serves /v1/images/generations."
+            supports_audio_out:
+              type: boolean
+              description: "Whether the model serves /v1/audio/speech (TTS)."
         routing_preferences:
           type: array
           description: "[DEPRECATED] Inline routing_preferences under a model_provider are auto-migrated to the top-level routing_preferences list by the config generator. New configs should declare routing_preferences at the top level with an explicit models: [...] list. See docs/routing-api.md."
@@ -243,17 +275,27 @@ properties:
           enum:
             - plano
             - claude
+            - anthropic
             - deepseek
             - groq
             - mistral
             - openai
             - xiaomi
             - gemini
+            - xai
+            - together_ai
+            - azure_openai
+            - ollama
+            - zhipu
+            - qwen
+            - amazon_bedrock
             - chatgpt
             - digitalocean
             - vercel
             - openrouter
             - moonshotai
+            - astraflow
+            - astraflow_cn
         headers:
           type: object
           additionalProperties:
@@ -316,6 +358,26 @@ properties:
       orchestrator_model_context_length:
         type: integer
         description: "Maximum token length for the orchestrator/routing model context window. Default is 8192."
+      empty_pool_behavior:
+        type: string
+        enum:
+          - error
+          - warning
+        default: error
+        description: "Tier 1 capability filtering is a hard gate. When it removes every model in a matched route, 'error' returns HTTP 422 (default); 'warning' logs and proceeds with the pre-filter pool. This is the only lever that lets routing_preferences win over capability."
+      model_capabilities_source:
+        type: object
+        additionalProperties: false
+        description: "Optional source for model capabilities, fetched at runtime from models.dev (like cost/latency metrics). Defaults to the public models.dev API; users rarely set this. Omit refresh_interval to fetch only once at startup."
+        properties:
+          url:
+            type: string
+            default: "https://models.dev/api.json"
+            description: "models.dev-compatible capability API URL."
+          refresh_interval:
+            type: integer
+            minimum: 1
+            description: "Refresh interval in seconds. Omit to fetch only once at startup."
   system_prompt:
     type: string
   prompt_targets:
@@ -559,6 +621,7 @@ properties:
               enum:
                 - cheapest
                 - fastest
+                - long_context_quality
                 - none
           additionalProperties: false
           required:

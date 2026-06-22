@@ -61,12 +61,18 @@ impl SupportedAPIsFromClient {
     /// Create a SupportedApi from an endpoint path
     pub fn from_endpoint(endpoint: &str) -> Option<Self> {
         if let Some(openai_api) = OpenAIApi::from_endpoint(endpoint) {
-            // Check if this is the Responses API endpoint
-            if openai_api == OpenAIApi::Responses {
-                return Some(SupportedAPIsFromClient::OpenAIResponsesAPI(openai_api));
+            match openai_api {
+                OpenAIApi::Responses => {
+                    return Some(SupportedAPIsFromClient::OpenAIResponsesAPI(openai_api));
+                }
+                OpenAIApi::ChatCompletions => {
+                    return Some(SupportedAPIsFromClient::OpenAIChatCompletions(openai_api));
+                }
+                // Image-generation / audio-speech are identified for routing
+                // (capability gating + binary passthrough) but are not parsed as
+                // chat-style client request bodies, so they don't resolve here.
+                OpenAIApi::Images | OpenAIApi::Audio => {}
             }
-            // Otherwise it's ChatCompletions
-            return Some(SupportedAPIsFromClient::OpenAIChatCompletions(openai_api));
         }
 
         if let Some(anthropic_api) = AnthropicApi::from_endpoint(endpoint) {
@@ -247,8 +253,13 @@ impl SupportedUpstreamAPIs {
 pub fn supported_endpoints() -> Vec<&'static str> {
     let mut endpoints = Vec::new();
 
-    // Add all OpenAI endpoints
+    // Add OpenAI client-routable endpoints. Image-generation / audio-speech
+    // endpoints are recognized for capability routing but not yet advertised as
+    // chat-style client endpoints (handled via native/binary passthrough).
     for api in OpenAIApi::all_variants() {
+        if matches!(api, OpenAIApi::Images | OpenAIApi::Audio) {
+            continue;
+        }
         endpoints.push(api.endpoint());
     }
 
@@ -310,9 +321,11 @@ mod tests {
     fn test_endpoints_generated_from_api_definitions() {
         let endpoints = supported_endpoints();
 
-        // Verify that we get endpoints from all API variants
+        // Verify that we get endpoints from all client-routable API variants.
+        // Image-generation / audio-speech are excluded (not chat-style clients).
         let openai_endpoints: Vec<_> = OpenAIApi::all_variants()
             .iter()
+            .filter(|api| !matches!(api, OpenAIApi::Images | OpenAIApi::Audio))
             .map(|api| api.endpoint())
             .collect();
         let anthropic_endpoints: Vec<_> = AnthropicApi::all_variants()
@@ -337,10 +350,14 @@ mod tests {
                 endpoint
             );
         }
-        // Total should match
+        // Total should match the client-routable variants (excludes Images/Audio).
+        let openai_client_routable = OpenAIApi::all_variants()
+            .iter()
+            .filter(|api| !matches!(api, OpenAIApi::Images | OpenAIApi::Audio))
+            .count();
         assert_eq!(
             endpoints.len(),
-            OpenAIApi::all_variants().len() + AnthropicApi::all_variants().len()
+            openai_client_routable + AnthropicApi::all_variants().len()
         );
     }
 
