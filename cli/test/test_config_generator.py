@@ -388,6 +388,33 @@ model_providers:
 
 """,
     },
+    {
+        "id": "valid_tracing_posthog_exporter",
+        "expected_error": None,
+        "plano_config": """
+version: v0.4.0
+
+listeners:
+  - name: llm
+    type: model
+    port: 12000
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+tracing:
+  random_sampling: 100
+  exporters:
+    - type: posthog
+      url: https://us.i.posthog.com
+      api_key: $POSTHOG_API_KEY
+      distinct_id_header: x-user-id
+      capture_messages: false
+
+""",
+    },
 ]
 
 

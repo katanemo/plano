@@ -1,6 +1,7 @@
 mod constants;
 mod custom_attributes;
 mod init;
+mod posthog_exporter;
 mod service_name_exporter;
 
 pub use constants::{
@@ -8,6 +9,7 @@ pub use constants::{
 };
 pub use custom_attributes::collect_custom_trace_attributes;
 pub use init::init_tracer;
+pub use posthog_exporter::PostHogExporter;
 pub use service_name_exporter::{ServiceNameOverrideExporter, SERVICE_NAME_OVERRIDE_KEY};
 
 use opentelemetry::trace::get_active_span;

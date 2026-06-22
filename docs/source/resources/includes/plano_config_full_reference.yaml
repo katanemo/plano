@@ -243,3 +243,18 @@ tracing:
     static:
       environment: production
       service.team: platform
+  # Provider-agnostic export destinations. LLM spans are streamed to each of
+  # these in addition to any opentracing_grpc_endpoint above.
+  exporters:
+    # PostHog AI observability: each LLM call is captured as an $ai_generation event.
+    - type: posthog
+      # PostHog host. The /batch/ capture path is appended automatically.
+      url: https://us.i.posthog.com
+      # PostHog project API key (token). Supports $ENV_VAR expansion.
+      api_key: $POSTHOG_API_KEY
+      # Optional: request header used as the PostHog distinct_id. Omit for anonymous capture.
+      distinct_id_header: x-user-id
+      # Optional: include the (truncated) user message as $ai_input. Defaults to false.
+      capture_messages: false
+      # Optional: set to false to keep the config but disable export. Defaults to true.
+      enabled: true
