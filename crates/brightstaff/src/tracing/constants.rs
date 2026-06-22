@@ -145,6 +145,11 @@ pub mod plano {
     /// "software-engineering"). Absent when the client routed directly
     /// to a concrete model.
     pub const ROUTE_NAME: &str = "plano.route.name";
+
+    /// Caller identity used to populate downstream observability `distinct_id`
+    /// fields (e.g. PostHog). Sourced from the configured
+    /// `tracing.exporters[].distinct_id_header`. Absent for anonymous calls.
+    pub const DISTINCT_ID: &str = "plano.distinct_id";
 }
 
 // =============================================================================

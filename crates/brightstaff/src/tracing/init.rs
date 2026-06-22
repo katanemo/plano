@@ -11,8 +11,8 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-use super::ServiceNameOverrideExporter;
-use common::configuration::Tracing;
+use super::{PostHogExporter, ServiceNameOverrideExporter};
+use common::configuration::{Exporter, PosthogExporter, Tracing};
 
 struct BracketedTime;
 
@@ -90,26 +90,56 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
 
         let random_sampling = tracing_config.and_then(|t| t.random_sampling).unwrap_or(0);
 
-        let tracing_enabled = random_sampling > 0 && otel_endpoint.is_some();
+        // Collect enabled PostHog export destinations from `tracing.exporters`.
+        let posthog_exporters: Vec<PosthogExporter> = tracing_config
+            .and_then(|t| t.exporters.as_ref())
+            .map(|exporters| {
+                exporters
+                    .iter()
+                    .filter_map(|exporter| match exporter {
+                        Exporter::Posthog(posthog) if posthog.is_enabled() => Some(posthog.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Tracing is enabled when sampling is on and there is at least one
+        // destination — an OTLP collector and/or a configured exporter.
+        let has_destination = otel_endpoint.is_some() || !posthog_exporters.is_empty();
+        let tracing_enabled = random_sampling > 0 && has_destination;
         eprintln!(
-            "initializing tracing: tracing_enabled={}, otel_endpoint={:?}, random_sampling={}",
-            tracing_enabled, otel_endpoint, random_sampling
+            "initializing tracing: tracing_enabled={}, otel_endpoint={:?}, random_sampling={}, posthog_exporters={}",
+            tracing_enabled, otel_endpoint, random_sampling, posthog_exporters.len()
         );
 
-        // Create OTLP exporter to send spans to collector.
-        // Use `if let` to destructure the endpoint, avoiding an unwrap.
-        if let Some(endpoint) = otel_endpoint.as_deref().filter(|_| tracing_enabled) {
+        if tracing_enabled {
             if std::env::var("OTEL_SERVICE_NAME").is_err() {
                 std::env::set_var("OTEL_SERVICE_NAME", "plano");
             }
+
+            // Compose the tracer provider from all configured destinations. Each
+            // `with_batch_exporter` registers an independent span processor, so
+            // every span fans out to the OTLP collector and every exporter.
+            let mut builder = SdkTracerProvider::builder();
+
             // Create ServiceNameOverrideExporter to support per-span service names
             // This allows spans to have different service names (e.g., plano(orchestrator),
             // plano(filter), plano(llm)) by setting the "service.name.override" attribute
-            let exporter = ServiceNameOverrideExporter::new(endpoint);
+            if let Some(endpoint) = otel_endpoint.as_deref() {
+                builder = builder.with_batch_exporter(ServiceNameOverrideExporter::new(endpoint));
+            }
 
-            let provider = SdkTracerProvider::builder()
-                .with_batch_exporter(exporter)
-                .build();
+            // PostHog exporters translate LLM spans into `$ai_generation` events.
+            for posthog in &posthog_exporters {
+                builder = builder.with_batch_exporter(PostHogExporter::new(
+                    &posthog.url,
+                    &posthog.api_key,
+                    posthog.capture_messages.unwrap_or(false),
+                ));
+            }
+
+            let provider = builder.build();
 
             global::set_tracer_provider(provider.clone());
 

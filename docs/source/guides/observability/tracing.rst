@@ -259,6 +259,86 @@ Request headers::
 Result: no attributes are captured from ``X-Other-User-Id``.
 
 
+Exporting Telemetry Anywhere
+----------------------------
+
+Beyond the OTLP/gRPC collector, Plano can stream LLM telemetry directly to
+third-party observability backends through ``tracing.exporters``. The list is
+provider-agnostic: each entry is tagged by its ``type`` and points at a URL, so
+new destinations can be added without changing anything else. Exporters run in
+addition to ``opentracing_grpc_endpoint`` — you can use one, the other, or both.
+
+PostHog
+~~~~~~~
+
+PostHog is supported as a first-class integration. Every LLM call is captured as
+a PostHog `$ai_generation <https://posthog.com/docs/ai-observability/generations>`_
+event and POSTed to PostHog's capture API. Setup is intentionally minimal —
+point at your PostHog URL and project token::
+
+  tracing:
+    random_sampling: 100
+    exporters:
+      - type: posthog
+        url: https://us.i.posthog.com   # /batch/ is appended automatically
+        api_key: $POSTHOG_API_KEY        # PostHog project token (env expansion supported)
+        distinct_id_header: x-user-id    # optional; omit for anonymous capture
+        capture_messages: false          # optional; send user message as $ai_input
+
+That's all that's required. When ``random_sampling`` is greater than ``0`` and at
+least one exporter (or ``opentracing_grpc_endpoint``) is configured, tracing is
+enabled and ``$ai_generation`` events begin flowing. They appear under PostHog's
+**AI Observability** in the Traces and Generations tabs.
+
+**Captured properties**
+
+Plano maps span data onto PostHog ``$ai_*`` properties:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - PostHog property
+     - Source
+   * - ``$ai_model``
+     - Resolved upstream model (``llm.model``)
+   * - ``$ai_provider``
+     - Provider derived from the resolved model (``llm.provider``)
+   * - ``$ai_latency``
+     - Total call duration in seconds (``llm.duration_ms``)
+   * - ``$ai_time_to_first_token``
+     - Time to first token in seconds, streaming only
+   * - ``$ai_input_tokens`` / ``$ai_output_tokens``
+     - Prompt / completion token usage
+   * - ``$ai_http_status`` / ``$ai_is_error``
+     - Upstream HTTP status and error flag
+   * - ``$ai_trace_id`` / ``$ai_parent_id``
+     - Trace and parent span identifiers
+   * - ``distinct_id``
+     - Value of ``distinct_id_header`` (else anonymous)
+
+**Identifying users**
+
+Set ``distinct_id_header`` to the request header carrying your user identity
+(for example ``x-user-id``). When present, Plano stamps the value as the PostHog
+``distinct_id``. When the header is missing — or ``distinct_id_header`` is not
+configured — the event is captured anonymously (``$process_person_profile`` is
+set to ``false``), matching PostHog's anonymous vs. identified semantics.
+
+**Capturing message content**
+
+By default Plano does not send prompt content off-box. Set
+``capture_messages: true`` to include the (truncated) user message preview as
+``$ai_input``. Leave it ``false`` when prompt content must not leave your data
+plane.
+
+**Multiple destinations**
+
+``exporters`` is a list, so you can fan out to several backends (and combine
+with an OTLP collector). Set ``enabled: false`` on an entry to keep it in the
+config without exporting.
+
+
 Benefits of Using ``Traceparent`` Headers
 -----------------------------------------
 

@@ -21,6 +21,10 @@ pub struct AppState {
     pub state_storage: Option<Arc<dyn StateStorage>>,
     pub llm_provider_url: String,
     pub span_attributes: Option<SpanAttributes>,
+    /// Request header whose value populates the observability `distinct_id`
+    /// (e.g. PostHog). Sourced from `tracing.exporters[].distinct_id_header`.
+    /// `None` means LLM events are captured anonymously.
+    pub distinct_id_header: Option<String>,
     /// Shared HTTP client for upstream LLM requests (connection pooling / keep-alive).
     pub http_client: reqwest::Client,
     pub filter_pipeline: Arc<FilterPipeline>,

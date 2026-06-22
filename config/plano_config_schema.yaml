@@ -447,6 +447,30 @@ properties:
             additionalProperties:
               type: string
         additionalProperties: false
+      exporters:
+        type: array
+        items:
+          oneOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  const: posthog
+                url:
+                  type: string
+                api_key:
+                  type: string
+                distinct_id_header:
+                  type: string
+                enabled:
+                  type: boolean
+                capture_messages:
+                  type: boolean
+              additionalProperties: false
+              required:
+                - type
+                - url
+                - api_key
     additionalProperties: false
   mode:
     type: string

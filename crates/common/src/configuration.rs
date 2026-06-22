@@ -244,6 +244,11 @@ pub struct Tracing {
     pub random_sampling: Option<u32>,
     pub opentracing_grpc_endpoint: Option<String>,
     pub span_attributes: Option<SpanAttributes>,
+    /// Provider-agnostic telemetry export destinations. Each entry is tagged by
+    /// its `type` (e.g. `posthog`) so new backends can be added without breaking
+    /// existing configs. LLM spans are translated into each backend's native
+    /// event format and streamed in addition to any `opentracing_grpc_endpoint`.
+    pub exporters: Option<Vec<Exporter>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -251,6 +256,45 @@ pub struct SpanAttributes {
     pub header_prefixes: Option<Vec<String>>,
     #[serde(rename = "static")]
     pub static_attributes: Option<HashMap<String, String>>,
+}
+
+/// A telemetry export destination configured under `tracing.exporters`.
+///
+/// The list is provider-agnostic; each variant is internally tagged by its
+/// `type` field (e.g. `type: posthog`). Additional backends (datadog, raw
+/// otlp, ...) can be added as new variants without breaking existing configs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Exporter {
+    /// PostHog AI observability. LLM spans are converted into PostHog
+    /// `$ai_generation` events and POSTed to the configured `url`.
+    Posthog(PosthogExporter),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PosthogExporter {
+    /// PostHog host, e.g. `https://us.i.posthog.com`. The `/batch/` capture
+    /// path is appended automatically.
+    pub url: String,
+    /// PostHog project API key (token). Supports `$ENV_VAR` expansion at render
+    /// time, e.g. `$POSTHOG_API_KEY`.
+    pub api_key: String,
+    /// Optional request header whose value is used as the PostHog `distinct_id`.
+    /// When unset (or the header is missing on a request) events are captured
+    /// anonymously.
+    pub distinct_id_header: Option<String>,
+    /// Whether this exporter is active. Defaults to `true` when omitted.
+    pub enabled: Option<bool>,
+    /// When true, include the truncated user message preview as `$ai_input`.
+    /// Defaults to `false` to avoid sending prompt content off-box.
+    pub capture_messages: Option<bool>,
+}
+
+impl PosthogExporter {
+    /// Whether this exporter should be wired up. Disabled exporters are skipped.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
@@ -812,5 +856,51 @@ disable_signals: false
         let yaml_missing = "{}";
         let overrides: super::Overrides = serde_yaml::from_str(yaml_missing).unwrap();
         assert_eq!(overrides.disable_signals, None);
+    }
+
+    #[test]
+    fn test_tracing_posthog_exporter_deserialize() {
+        let yaml = r#"
+random_sampling: 100
+exporters:
+  - type: posthog
+    url: https://us.i.posthog.com
+    api_key: phc_secret
+    distinct_id_header: x-user-id
+    capture_messages: true
+"#;
+        let tracing: super::Tracing = serde_yaml::from_str(yaml).unwrap();
+        let exporters = tracing.exporters.expect("exporters should be parsed");
+        assert_eq!(exporters.len(), 1);
+        match &exporters[0] {
+            super::Exporter::Posthog(posthog) => {
+                assert_eq!(posthog.url, "https://us.i.posthog.com");
+                assert_eq!(posthog.api_key, "phc_secret");
+                assert_eq!(posthog.distinct_id_header.as_deref(), Some("x-user-id"));
+                assert_eq!(posthog.capture_messages, Some(true));
+                // Defaults to enabled when omitted.
+                assert!(posthog.is_enabled());
+            }
+        }
+    }
+
+    #[test]
+    fn test_tracing_posthog_exporter_minimal_and_disabled() {
+        let yaml = r#"
+exporters:
+  - type: posthog
+    url: https://eu.i.posthog.com
+    api_key: phc_eu
+    enabled: false
+"#;
+        let tracing: super::Tracing = serde_yaml::from_str(yaml).unwrap();
+        let exporters = tracing.exporters.unwrap();
+        match &exporters[0] {
+            super::Exporter::Posthog(posthog) => {
+                assert_eq!(posthog.distinct_id_header, None);
+                assert_eq!(posthog.capture_messages, None);
+                assert!(!posthog.is_enabled());
+            }
+        }
     }
 }
