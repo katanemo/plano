@@ -144,3 +144,68 @@ def test_parse_do_catalog_divides_large_values_as_per_million():
     prices = _parse_do_pricing(sample)
     assert prices["mystery-model"].input_per_token_usd == 5.0 / 1_000_000
     assert prices["mystery-model"].output_per_token_usd == 15.0 / 1_000_000
+
+
+_MODELS_DEV_SAMPLE = {
+    "anthropic": {
+        "id": "anthropic",
+        "models": {
+            "claude-opus-4-5": {
+                "id": "claude-opus-4-5",
+                "cost": {"input": 5, "output": 25, "cache_read": 0.5},
+            }
+        },
+    },
+    "groq": {
+        "id": "groq",
+        "models": {
+            "llama-3.3-70b-versatile": {
+                "id": "llama-3.3-70b-versatile",
+                "cost": {"input": 0.59, "output": 0.79},
+            },
+            # No cost block → skipped.
+            "whisper-large-v3-turbo": {"id": "whisper-large-v3-turbo"},
+        },
+    },
+}
+
+
+def test_parse_models_dev_composes_provider_keys_and_per_token_rates():
+    from planoai.obs.pricing import _parse_models_dev_pricing
+
+    prices = _parse_models_dev_pricing(_MODELS_DEV_SAMPLE)
+
+    # models.dev cost values are per-million → divided by 1e6.
+    opus = prices["anthropic/claude-opus-4-5"]
+    assert opus.input_per_token_usd == 5 / 1_000_000
+    assert opus.output_per_token_usd == 25 / 1_000_000
+    assert opus.cached_input_per_token_usd == 0.5 / 1_000_000
+
+    # Composite provider/model keys match Plano's routing names.
+    assert "groq/llama-3.3-70b-versatile" in prices
+    # Bare model id registered as a fallback.
+    assert "llama-3.3-70b-versatile" in prices
+    # Models without a cost block are skipped.
+    assert "groq/whisper-large-v3-turbo" not in prices
+
+
+def test_models_dev_catalog_cost_computation():
+    from planoai.obs.pricing import PricingCatalog, _parse_models_dev_pricing
+
+    catalog = PricingCatalog(_parse_models_dev_pricing(_MODELS_DEV_SAMPLE))
+    # 1000 input @ 5e-6 = 0.005; 500 output @ 25e-6 = 0.0125
+    cost = catalog.cost_for_call(_call("anthropic/claude-opus-4-5", 1000, 500))
+    assert cost == round(0.005 + 0.0125, 6)
+
+
+def test_models_dev_skips_zero_rate_entries():
+    from planoai.obs.pricing import _parse_models_dev_pricing
+
+    sample = {
+        "free": {
+            "models": {
+                "promo-model": {"cost": {"input": 0, "output": 0}},
+            }
+        }
+    }
+    assert _parse_models_dev_pricing(sample) == {}

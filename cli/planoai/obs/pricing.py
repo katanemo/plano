@@ -1,7 +1,8 @@
-"""DigitalOcean Gradient pricing catalog for the obs console.
+"""Model pricing catalog for the obs console.
 
-Ported loosely from ``crates/brightstaff/src/router/model_metrics.rs::fetch_do_pricing``.
-Single-source: one fetch at startup, cached for the life of the process.
+Mirrors ``crates/brightstaff/src/router/model_metrics.rs``. The source is
+configurable: ``digitalocean`` (DO GenAI catalog) or ``models.dev``. A single
+fetch at startup is cached for the life of the process.
 """
 
 from __future__ import annotations
@@ -14,7 +15,18 @@ from typing import Any
 
 import requests
 
-DEFAULT_PRICING_URL = "https://api.digitalocean.com/v2/gen-ai/models/catalog"
+DO_PRICING_URL = "https://api.digitalocean.com/v2/gen-ai/models/catalog"
+MODELS_DEV_URL = "https://models.dev/api.json"
+
+# Backwards-compatible default (DigitalOcean) used when no provider is given.
+DEFAULT_PRICING_URL = DO_PRICING_URL
+DEFAULT_PRICING_PROVIDER = "digitalocean"
+
+_DEFAULT_URLS = {
+    "digitalocean": DO_PRICING_URL,
+    "models.dev": MODELS_DEV_URL,
+}
+
 FETCH_TIMEOUT_SECS = 5.0
 
 
@@ -51,36 +63,52 @@ class PricingCatalog:
             return list(self._prices.keys())[:n]
 
     @classmethod
-    def fetch(cls, url: str = DEFAULT_PRICING_URL) -> "PricingCatalog":
-        """Fetch pricing from DO's catalog endpoint. On failure, returns an
+    def fetch(
+        cls,
+        provider: str = DEFAULT_PRICING_PROVIDER,
+        url: str | None = None,
+    ) -> "PricingCatalog":
+        """Fetch pricing from the configured catalog. On failure, returns an
         empty catalog (cost column will be blank).
 
-        The catalog endpoint is public — no auth required, no signup — so
-        ``planoai obs`` gets cost data on first run out of the box.
+        ``provider`` selects the parser/default URL: ``digitalocean`` or
+        ``models.dev``. Both catalog endpoints are public — no auth required —
+        so ``planoai obs`` gets cost data on first run out of the box.
         """
+        provider = (provider or DEFAULT_PRICING_PROVIDER).strip().lower()
+        resolved_url = url or _DEFAULT_URLS.get(provider, DO_PRICING_URL)
         try:
-            resp = requests.get(url, timeout=FETCH_TIMEOUT_SECS)
+            resp = requests.get(resolved_url, timeout=FETCH_TIMEOUT_SECS)
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:  # noqa: BLE001 — best-effort; never fatal
             logger.warning(
-                "DO pricing fetch failed: %s; cost column will be blank.",
+                "%s pricing fetch failed: %s; cost column will be blank.",
+                provider,
                 exc,
             )
             return cls()
 
-        prices = _parse_do_pricing(data)
+        if provider == "models.dev":
+            prices = _parse_models_dev_pricing(data)
+        else:
+            prices = _parse_do_pricing(data)
+
         if not prices:
-            # Dump the first entry's raw shape so we can see which fields DO
-            # actually returned — helps when the catalog adds new fields or
-            # the response doesn't match our parser.
+            # Dump a sample of the raw shape so we can see which fields the
+            # catalog returned — helps when it adds new fields or the response
+            # doesn't match our parser.
             import json as _json
 
-            sample_items = _coerce_items(data)
-            sample = sample_items[0] if sample_items else data
+            if provider == "models.dev" and isinstance(data, dict):
+                sample = next(iter(data.values()), data)
+            else:
+                sample_items = _coerce_items(data)
+                sample = sample_items[0] if sample_items else data
             logger.warning(
-                "DO pricing response had no parseable entries; cost column "
+                "%s pricing response had no parseable entries; cost column "
                 "will be blank. Sample entry: %s",
+                provider,
                 _json.dumps(sample, default=str)[:400],
             )
         return cls(prices)
@@ -276,6 +304,75 @@ def _parse_do_pricing(data: Any) -> dict[str, ModelPrice]:
         for alias in _expand_aliases(str(model_id)):
             prices.setdefault(alias, price)
     return prices
+
+
+def _parse_models_dev_pricing(data: Any) -> dict[str, ModelPrice]:
+    """Parse a models.dev ``api.json`` response into a ModelPrice map.
+
+    models.dev shape (top-level object keyed by provider id)::
+
+        {
+          "anthropic": {
+            "models": {
+              "claude-opus-4-5": {
+                "cost": {"input": 5, "output": 25, "cache_read": 0.5}
+              }
+            }
+          },
+          ...
+        }
+
+    ``cost.*`` values are USD per *million* tokens, so we divide by 1e6 to get a
+    per-token rate. First-party providers use bare model keys, so we register
+    both ``provider/model`` (matching Plano's routing names) and the bare model
+    id as a fallback.
+    """
+    prices: dict[str, ModelPrice] = {}
+    if not isinstance(data, dict):
+        return prices
+
+    for provider_id, provider in data.items():
+        if not isinstance(provider, dict):
+            continue
+        models = provider.get("models")
+        if not isinstance(models, dict):
+            continue
+        for model_key, model in models.items():
+            if not isinstance(model, dict):
+                continue
+            cost = model.get("cost")
+            if not isinstance(cost, dict):
+                continue
+            input_pm = _as_float(cost.get("input"))
+            output_pm = _as_float(cost.get("output"))
+            if input_pm is None or output_pm is None:
+                continue
+            # Skip 0-rate entries so cost falls back to `—` rather than $0.0000.
+            if input_pm == 0 and output_pm == 0:
+                continue
+            cached_pm = _as_float(cost.get("cache_read"))
+            price = ModelPrice(
+                input_per_token_usd=input_pm / 1_000_000,
+                output_per_token_usd=output_pm / 1_000_000,
+                cached_input_per_token_usd=(
+                    cached_pm / 1_000_000 if cached_pm is not None else None
+                ),
+            )
+            composite = f"{provider_id}/{model_key}"
+            prices[composite] = price
+            prices.setdefault(composite.lower(), price)
+            prices.setdefault(str(model_key), price)
+            prices.setdefault(str(model_key).lower(), price)
+    return prices
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _coerce_items(data: Any) -> list[dict]:

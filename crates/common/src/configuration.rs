@@ -177,8 +177,13 @@ pub enum MetricsSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostMetricsConfig {
     pub provider: CostProvider,
+    /// Optional override for the pricing catalog endpoint. When omitted, a
+    /// sensible default is used per provider.
+    pub url: Option<String>,
     pub refresh_interval: Option<u64>,
-    /// Map DO catalog keys (`lowercase(creator)/model_id`) to Plano model names.
+    /// Map catalog keys to Plano model names used in `routing_preferences`.
+    /// DigitalOcean keys look like `lowercase(creator)/model_id`; models.dev
+    /// keys look like `creator/model_id`.
     /// Example: `openai/openai-gpt-oss-120b: openai/gpt-4o`
     pub model_aliases: Option<HashMap<String, String>>,
 }
@@ -187,6 +192,8 @@ pub struct CostMetricsConfig {
 #[serde(rename_all = "snake_case")]
 pub enum CostProvider {
     Digitalocean,
+    #[serde(rename = "models.dev")]
+    ModelsDev,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -738,6 +745,51 @@ mod test {
                     crate::api::open_ai::ParameterType::Bool
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_deserialize_models_dev_cost_source() {
+        let yaml = r#"
+- type: cost
+  provider: models.dev
+  url: https://models.dev/api.json
+  refresh_interval: 3600
+  model_aliases:
+    openai/gpt-oss-120b: openai/gpt-4o
+"#;
+        let sources: Vec<super::MetricsSource> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(sources.len(), 1);
+        match &sources[0] {
+            super::MetricsSource::Cost(cfg) => {
+                assert!(matches!(cfg.provider, super::CostProvider::ModelsDev));
+                assert_eq!(cfg.url.as_deref(), Some("https://models.dev/api.json"));
+                assert_eq!(cfg.refresh_interval, Some(3600));
+                assert_eq!(
+                    cfg.model_aliases
+                        .as_ref()
+                        .and_then(|m| m.get("openai/gpt-oss-120b"))
+                        .map(String::as_str),
+                    Some("openai/gpt-4o")
+                );
+            }
+            other => panic!("expected cost source, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_digitalocean_cost_source_without_url() {
+        let yaml = r#"
+- type: cost
+  provider: digitalocean
+"#;
+        let sources: Vec<super::MetricsSource> = serde_yaml::from_str(yaml).unwrap();
+        match &sources[0] {
+            super::MetricsSource::Cost(cfg) => {
+                assert!(matches!(cfg.provider, super::CostProvider::Digitalocean));
+                assert_eq!(cfg.url, None);
+            }
+            other => panic!("expected cost source, got {other:?}"),
         }
     }
 

@@ -115,6 +115,18 @@ model_aliases:
     target: gpt-4o-mini
   smart-llm:
     target: gpt-4o
+model_metrics_sources:
+- model_aliases:
+    openai/gpt-oss-120b: openai/gpt-4o
+  provider: models.dev
+  refresh_interval: 3600
+  type: cost
+  url: https://models.dev/api.json
+- provider: prometheus
+  query: avg by (model_name) (rate(plano_llm_latency_seconds_sum[5m]))
+  refresh_interval: 60
+  type: latency
+  url: http://prometheus:9090
 model_providers:
 - access_key: $OPENAI_API_KEY
   default: true
