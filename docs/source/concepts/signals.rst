@@ -334,35 +334,6 @@ Emitted per category, only when ``count > 0``. One ``.count`` and one
    * - ``signals.environment.exhaustion.severity``
      - "
 
-Legacy attributes (deprecated, still emitted)
----------------------------------------------
-
-The following aggregate keys pre-date the paper taxonomy and are still
-emitted for one release so existing dashboards keep working. They are
-derived from the layered counts above and will be removed in a future
-release. Migrate to the layered keys when convenient.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 50 50
-
-   * - Legacy attribute
-     - Layered equivalent
-   * - ``signals.follow_up.repair.count``
-     - ``signals.interaction.misalignment.count``
-   * - ``signals.follow_up.repair.ratio``
-     - (computed: ``misalignment.count / max(user_turns, 1)``)
-   * - ``signals.frustration.count``
-     - Count of ``disengagement.negative_stance`` instances
-   * - ``signals.frustration.severity``
-     - Derived severity bucket of the above
-   * - ``signals.repetition.count``
-     - ``signals.interaction.stagnation.count``
-   * - ``signals.escalation.requested``
-     - True if any ``disengagement.escalation`` or ``disengagement.quit`` fired
-   * - ``signals.positive_feedback.count``
-     - ``signals.interaction.satisfaction.count``
-
 Span Events
 ===========
 
@@ -520,11 +491,6 @@ event::
     signals.interaction.disengagement.count    = 6
     signals.interaction.disengagement.severity = 3
 
-    # Legacy (deprecated, emitted while dual-emit is on)
-    signals.frustration.count     = 4
-    signals.frustration.severity  = 2
-    signals.escalation.requested  = true
-
     # Per-instance span events
     event: signal.interaction.disengagement.escalation
       signal.type          = "interaction.disengagement.escalation"
@@ -537,8 +503,7 @@ Building Dashboards
 ===================
 
 Use signal attributes to build monitoring dashboards in Grafana, Honeycomb,
-Datadog, etc. Prefer the layered keys — they align with the paper taxonomy
-and will outlive the legacy keys.
+Datadog, etc. The layered keys align with the paper taxonomy.
 
 - **Quality distribution**: Count of traces by ``signals.quality``
 - **P95 turn count**: 95th percentile of ``signals.turn_count``

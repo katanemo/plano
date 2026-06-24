@@ -153,7 +153,7 @@ In your observability platform (Jaeger, Grafana Tempo, Datadog, etc.), filter tr
 - Find external issues: ``signals.environment.exhaustion.count > 0``
 - Find inefficient flows: ``signals.efficiency_score < 0.5``
 
-For complete details on all 20 leaf signal types, severity scheme, legacy attribute deprecation, and best practices, see the :doc:`../../concepts/signals` guide.
+For complete details on all 20 leaf signal types, severity scheme, and best practices, see the :doc:`../../concepts/signals` guide.
 
 
 Custom Span Attributes
