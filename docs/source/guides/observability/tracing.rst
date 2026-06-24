@@ -335,8 +335,8 @@ plane.
 **Multiple destinations**
 
 ``exporters`` is a list, so you can fan out to several backends (and combine
-with an OTLP collector). Set ``enabled: false`` on an entry to keep it in the
-config without exporting.
+with an OTLP collector). A common use is shipping to multiple PostHog instances
+(for example separate EU and US projects for data-residency).
 
 
 Benefits of Using ``Traceparent`` Headers

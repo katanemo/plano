@@ -90,16 +90,13 @@ pub fn init_tracer(tracing_config: Option<&Tracing>) -> &'static SdkTracerProvid
 
         let random_sampling = tracing_config.and_then(|t| t.random_sampling).unwrap_or(0);
 
-        // Collect enabled PostHog export destinations from `tracing.exporters`.
+        // Collect PostHog export destinations from `tracing.exporters`.
         let posthog_exporters: Vec<PosthogExporter> = tracing_config
             .and_then(|t| t.exporters.as_ref())
             .map(|exporters| {
                 exporters
                     .iter()
-                    .filter_map(|exporter| match exporter {
-                        Exporter::Posthog(posthog) if posthog.is_enabled() => Some(posthog.clone()),
-                        _ => None,
-                    })
+                    .map(|Exporter::Posthog(posthog)| posthog.clone())
                     .collect()
             })
             .unwrap_or_default();

@@ -258,7 +258,6 @@ tracing:
   - api_key: $POSTHOG_API_KEY
     capture_messages: false
     distinct_id_header: x-user-id
-    enabled: true
     type: posthog
     url: https://us.i.posthog.com
   opentracing_grpc_endpoint: http://localhost:4317

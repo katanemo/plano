@@ -462,8 +462,6 @@ properties:
                   type: string
                 distinct_id_header:
                   type: string
-                enabled:
-                  type: boolean
                 capture_messages:
                   type: boolean
               additionalProperties: false

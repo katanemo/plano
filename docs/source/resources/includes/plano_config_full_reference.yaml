@@ -256,5 +256,3 @@ tracing:
       distinct_id_header: x-user-id
       # Optional: include the (truncated) user message as $ai_input. Defaults to false.
       capture_messages: false
-      # Optional: set to false to keep the config but disable export. Defaults to true.
-      enabled: true
