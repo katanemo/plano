@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from pathlib import Path
 from planoai.utils import convert_legacy_listeners
 from jinja2 import Environment, FileSystemLoader
 import yaml
@@ -8,6 +9,14 @@ from jsonschema import validate, ValidationError
 from urllib.parse import urlparse
 from copy import deepcopy
 from planoai.consts import DEFAULT_OTEL_TRACING_GRPC_ENDPOINT
+from planoai.skills import (
+    MAX_CATALOG_BYTES,
+    Skill,
+    discover_skills,
+    find_project_root,
+    is_project_trusted,
+    total_catalog_size,
+)
 
 SUPPORTED_PROVIDERS_WITH_BASE_URL = [
     "azure_openai",
@@ -198,6 +207,127 @@ def _version_tuple(version_string):
     return tuple(out)
 
 
+def materialize_skills_in_config(config_yaml: dict, project_root: Path) -> None:
+    """Discover and inline Agent Skills referenced by `config_yaml`.
+
+    Mutates `config_yaml` in place. The user's source config may declare
+    `skills:` as a list of strings (skill names) or omit it entirely. After
+    this call, `config_yaml["skills"]` is either absent or a list of fully
+    materialized objects with `name`, `description`, `path`, `body`, etc.
+
+    Project-scope skills under `<project_root>/.plano/skills/` are only loaded
+    when the project has been marked trusted via `planoai skills trust`.
+
+    Per-route `routing_preferences[].skills` allow-lists are preserved as-is
+    so brightstaff can scope the catalog when that route is selected.
+    """
+    requested = config_yaml.get("skills")
+    user_only = not is_project_trusted(project_root)
+
+    discovered, diagnostics = discover_skills(
+        project_root=project_root, include_user_scope=True
+    )
+    for diag in diagnostics:
+        prefix = "error" if diag.severity == "error" else "warning"
+        print(f"[skills] {prefix}: {diag.path}: {diag.message}")
+
+    if user_only:
+        project_skills = [s for s in discovered if s.scope == "project"]
+        if project_skills:
+            print(
+                "[skills] note: project-scope skills are present but the project is "
+                "not trusted yet; run `planoai skills trust` to enable them."
+            )
+        # Keep all non-project scopes (user + agents) — both are user-tier and
+        # auto-trusted, so they always load regardless of project trust state.
+        discovered = [s for s in discovered if s.scope != "project"]
+
+    skills_by_name: dict[str, Skill] = {s.name: s for s in discovered}
+
+    if requested is None:
+        # Default: auto-include every discovered skill.
+        selected: list[Skill] = list(discovered)
+    else:
+        if not isinstance(requested, list):
+            raise Exception("`skills:` must be a list of strings or skill objects")
+        selected = []
+        seen: set[str] = set()
+        for entry in requested:
+            if isinstance(entry, str):
+                name = entry
+            elif isinstance(entry, dict):
+                name = entry.get("name")
+                if not isinstance(name, str):
+                    raise Exception(
+                        "skill entries with object form must include a string `name`"
+                    )
+            else:
+                raise Exception(
+                    f"unsupported entry in `skills:` (expected str or mapping, got {type(entry).__name__})"
+                )
+            if name in seen:
+                continue
+            seen.add(name)
+            skill = skills_by_name.get(name)
+            if skill is None:
+                print(
+                    f"[skills] warning: skill '{name}' is declared in config but no "
+                    f"SKILL.md was discovered under .plano/skills/ or ~/.plano/skills/"
+                )
+                continue
+            selected.append(skill)
+
+    if not selected:
+        config_yaml.pop("skills", None)
+        _strip_unknown_route_skills(config_yaml, set())
+        return
+
+    catalog_bytes = total_catalog_size(selected)
+    if catalog_bytes > MAX_CATALOG_BYTES:
+        print(
+            f"[skills] warning: skill catalog size is {catalog_bytes} bytes, "
+            f"above the recommended cap of {MAX_CATALOG_BYTES}. Consider trimming "
+            f"`routing_preferences[].skills` to the smallest useful set per route."
+        )
+
+    config_yaml["skills"] = [s.to_dict() for s in selected]
+    _strip_unknown_route_skills(config_yaml, {s.name for s in selected})
+
+
+def _strip_unknown_route_skills(config_yaml: dict, known: set) -> None:
+    """Drop unknown skill names from `routing_preferences[*].skills` allow-lists.
+
+    The orchestrator only ever sees skills referenced under some
+    `routing_preferences[].skills`; an unknown name there would render the
+    `<skills>` block with a stale entry the runtime can't resolve, so filter
+    them out here with a warning instead.
+    """
+    routes = config_yaml.get("routing_preferences")
+    if not isinstance(routes, list):
+        return
+    for route in routes:
+        if not isinstance(route, dict):
+            continue
+        allow = route.get("skills")
+        if not isinstance(allow, list):
+            continue
+        filtered = []
+        for name in allow:
+            if not isinstance(name, str):
+                continue
+            if name in known:
+                filtered.append(name)
+            else:
+                print(
+                    f"[skills] warning: routing_preference '{route.get('name')}' "
+                    f"references unknown skill '{name}'; dropping from allow-list."
+                )
+        if filtered:
+            route["skills"] = filtered
+        else:
+            route.pop("skills", None)
+
+
 def validate_and_render_schema():
     ENVOY_CONFIG_TEMPLATE_FILE = os.getenv(
         "ENVOY_CONFIG_TEMPLATE_FILE", "envoy.template.yaml"
@@ -231,6 +361,13 @@ def validate_and_render_schema():
     config_yaml = yaml.safe_load(plano_config)
     _ = yaml.safe_load(plano_config_schema)
     inferred_clusters = {}
+
+    # Materialize Agent Skills before further processing so the rest of the
+    # pipeline (Jinja2 envoy template, dump to plano_config_rendered.yaml) sees
+    # the inlined body / description / path.
+    plano_config_path = Path(PLANO_CONFIG_FILE).resolve()
+    project_root = find_project_root(plano_config_path.parent)
+    materialize_skills_in_config(config_yaml, project_root)
 
     # Convert legacy llm_providers to model_providers
     if "llm_providers" in config_yaml:

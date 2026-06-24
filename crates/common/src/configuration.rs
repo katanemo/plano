@@ -163,6 +163,12 @@ pub struct TopLevelRoutingPreference {
     pub name: String,
     pub description: String,
     pub models: Vec<String>,
+    /// Agent Skills associated with this route. When Plano-Orchestrator
+    /// selects this route, every skill listed here is also offered to the
+    /// orchestrator in the `<skills>` block; selected skills have their
+    /// SKILL.md body prepended to the upstream system prompt.
+    #[serde(default)]
+    pub skills: Option<Vec<String>>,
     #[serde(default)]
     pub selection_policy: SelectionPolicy,
 }
@@ -231,6 +237,17 @@ pub struct Configuration {
     pub state_storage: Option<StateStorageConfig>,
     pub routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
     pub model_metrics_sources: Option<Vec<MetricsSource>>,
+    /// Agent Skills (https://agentskills.io) installed for this project.
+    ///
+    /// The Plano CLI discovers `.plano/skills/<name>/SKILL.md` files at render
+    /// time and materializes them into this list with `body` already loaded so
+    /// downstream consumers do not need filesystem access. Skills are scoped
+    /// to specific routes via `routing_preferences[].skills`; Plano-Orchestrator
+    /// receives a `<skills>` block alongside `<routes>` for any skills attached
+    /// to candidate routes, and selected skills have their SKILL.md body
+    /// injected into the upstream system prompt.
+    #[serde(default)]
+    pub skills: Option<Vec<SkillRef>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -624,6 +641,45 @@ pub struct PromptTarget {
     pub auto_llm_dispatch_on_response: Option<bool>,
 }
 
+/// An Agent Skill (https://agentskills.io) as materialized by the Plano CLI.
+///
+/// At runtime brightstaff and the WASM filters reason over the catalog
+/// (`name` + `description`) and, when a skill is selected, inject the
+/// pre-loaded `body` into the downstream system prompt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkillRef {
+    pub name: String,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_dir: Option<String>,
+    /// Full SKILL.md markdown body (post-frontmatter). Inlined here at render
+    /// time so the WASM sandbox does not need filesystem access.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compatibility: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<String>,
+}
+
+impl SkillRef {
+    /// Best-effort short summary suitable for the `<skills>` block sent to
+    /// Plano-Orchestrator: only the public-facing description, never the
+    /// full SKILL.md body. The body is injected separately, after a skill
+    /// has been selected.
+    pub fn catalog_description(&self) -> &str {
+        &self.description
+    }
+}
+
 // convert PromptTarget to ChatCompletionTool
 impl From<&PromptTarget> for ChatCompletionTool {
     fn from(val: &PromptTarget) -> Self {
@@ -864,5 +920,35 @@ disable_signals: false
         let yaml_missing = "{}";
         let overrides: super::Overrides = serde_yaml::from_str(yaml_missing).unwrap();
         assert_eq!(overrides.disable_signals, None);
+    }
+
+    #[test]
+    fn test_top_level_routing_preference_skills_deserialize() {
+        let yaml = r#"
+name: code review
+description: reviewing, analyzing, and suggesting improvements to existing code
+models:
+  - openai/gpt-4o
+skills:
+  - code-review-skill
+"#;
+        let pref: super::TopLevelRoutingPreference = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(pref.name, "code review");
+        assert_eq!(
+            pref.skills.as_deref(),
+            Some(&["code-review-skill".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn test_top_level_routing_preference_skills_optional() {
+        let yaml = r#"
+name: code generation
+description: generating new code
+models:
+  - openai/gpt-4o
+"#;
+        let pref: super::TopLevelRoutingPreference = serde_yaml::from_str(yaml).unwrap();
+        assert!(pref.skills.is_none());
     }
 }

@@ -63,4 +63,5 @@ Built by contributors to the widely adopted `Envoy Proxy <https://www.envoyproxy
       resources/deployment
       resources/configuration_reference
       resources/cli_reference
+      resources/skills
       resources/llms_txt
