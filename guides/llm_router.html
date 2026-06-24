@@ -353,6 +353,174 @@
 </section>
 </section>
 </section>
+<section id="cost-and-latency-aware-selection">
+<span id="cost-latency-aware-selection"></span><h2>Cost- and latency-aware selection<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#cost-and-latency-aware-selection" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#cost-and-latency-aware-selection'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>When a route lists more than one candidate model, you can let Plano reorder that
+candidate pool using <strong>live cost or latency data</strong> instead of relying solely on the
+order you wrote them in. This is controlled per route with <code class="docutils literal notranslate"><span class="pre">selection_policy</span></code> and
+backed by one or more <code class="docutils literal notranslate"><span class="pre">model_metrics_sources</span></code>.</p>
+<p>This is useful when several models are equally capable for a route and you want Plano
+to always reach for the cheapest (or fastest) option first, with the others kept as
+fallbacks.</p>
+<section id="selection-policy">
+<h3>Selection policy<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#selection-policy" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#selection-policy'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>Attach an optional <code class="docutils literal notranslate"><span class="pre">selection_policy</span></code> to any entry in <code class="docutils literal notranslate"><span class="pre">routing_preferences</span></code>:</p>
+<div class="literal-block-wrapper docutils container" id="id12">
+<div class="code-block-caption"><span class="caption-text">Per-route selection policy</span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id12"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">routing_preferences</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code review</span>
+</span><span id="line-3"><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reviewing, analyzing, and suggesting improvements to existing code</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">models</span><span class="p">:</span>
+</span><span id="line-5"><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anthropic/claude-sonnet-4-5</span>
+</span><span id="line-6"><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">groq/llama-3.3-70b-versatile</span>
+</span><span id="line-7"><span class="w">    </span><span class="nt">selection_policy</span><span class="p">:</span>
+</span><span id="line-8"><span class="w">      </span><span class="nt">prefer</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cheapest</span><span class="w">   </span><span class="c1"># cheapest | fastest | none</span>
+</span></code></pre></div>
+</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">prefer</span></code> accepts:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">cheapest</span></code> — order candidates by total price (input + output rate) ascending, using a <code class="docutils literal notranslate"><span class="pre">cost</span></code> metrics source.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fastest</span></code> — order candidates by observed latency ascending, using a <code class="docutils literal notranslate"><span class="pre">latency</span></code> metrics source.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">none</span></code> (default) — keep the order you declared; no reordering.</p></li>
+</ul>
+<p>Models that have no data in the selected source are ranked <strong>last</strong>, in their original
+order, so routing always degrades gracefully rather than dropping a candidate.</p>
+</section>
+<section id="configuring-the-pricing-source">
+<h3>Configuring the pricing source<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#configuring-the-pricing-source" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#configuring-the-pricing-source'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">cheapest</span></code> routing needs a price catalog. Plano’s <strong>default pricing provider is
+DigitalOcean</strong> — its GenAI model catalog is public (no API key, no signup), so cost data
+is available out of the box and is what <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">obs</span></code> uses if you don’t configure
+anything. The pricing source is fully swappable: point Plano at <a class="reference external" href="https://models.dev/" rel="nofollow noopener">models.dev<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>,
+or at <strong>any endpoint that exposes a supported pricing structure</strong>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">provider</span></code> field selects which response schema Plano expects (and therefore how it
+parses the catalog); the optional <code class="docutils literal notranslate"><span class="pre">url</span></code> lets you override the endpoint — for example to
+use a mirror, a cached copy, or an internal catalog service that returns the same shape.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 18.0%"/>
+<col style="width: 34.0%"/>
+<col style="width: 28.0%"/>
+<col style="width: 20.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p><code class="docutils literal notranslate"><span class="pre">provider</span></code></p></th>
+<th class="head"><p>Default catalog URL</p></th>
+<th class="head"><p>Key format</p></th>
+<th class="head"><p>Expected structure</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">digitalocean</span></code> <em>(default)</em></p></td>
+<td><p>DigitalOcean GenAI model catalog</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">lowercase(creator)/model_id</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">data:</span> <span class="pre">[</span> <span class="pre">{</span> <span class="pre">model_id,</span> <span class="pre">pricing:</span> <span class="pre">{</span> <span class="pre">input_price_per_million,</span> <span class="pre">output_price_per_million</span> <span class="pre">}</span> <span class="pre">}</span> <span class="pre">]</span> <span class="pre">}</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">models.dev</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">https://models.dev/api.json</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">creator/model</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">anthropic/claude-sonnet-4-5</span></code>)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&lt;provider&gt;:</span> <span class="pre">{</span> <span class="pre">models:</span> <span class="pre">{</span> <span class="pre">&lt;model&gt;:</span> <span class="pre">{</span> <span class="pre">cost:</span> <span class="pre">{</span> <span class="pre">input,</span> <span class="pre">output</span> <span class="pre">}</span> <span class="pre">}</span> <span class="pre">}</span> <span class="pre">}</span> <span class="pre">}</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Because the source is selected per <code class="docutils literal notranslate"><span class="pre">provider</span></code>, switching is a one-line change. To stay
+on the default DigitalOcean catalog you can omit <code class="docutils literal notranslate"><span class="pre">model_metrics_sources</span></code> entirely for
+<code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">obs</span></code>, or declare it explicitly for routing:</p>
+<div class="literal-block-wrapper docutils container" id="id13">
+<div class="code-block-caption"><span class="caption-text">Default cost source (DigitalOcean)</span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id13"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">model_metrics_sources</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cost</span>
+</span><span id="line-3"><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">digitalocean</span><span class="w">   </span><span class="c1"># default; uses the public DO GenAI catalog</span>
+</span></code></pre></div>
+</div>
+</div>
+<p>To switch to models.dev — an open, community-maintained catalog covering a broad range of
+providers and models — change the <code class="docutils literal notranslate"><span class="pre">provider</span></code> (and optionally <code class="docutils literal notranslate"><span class="pre">url</span></code>):</p>
+<div class="literal-block-wrapper docutils container" id="id14">
+<div class="code-block-caption"><span class="caption-text">Cost source backed by models.dev</span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id14"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">model_metrics_sources</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cost</span>
+</span><span id="line-3"><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">models.dev</span><span class="w">               </span><span class="c1"># models.dev | digitalocean</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://models.dev/api.json</span><span class="w">    </span><span class="c1"># optional; defaults per provider</span>
+</span><span id="line-5"><span class="w">    </span><span class="nt">refresh_interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span><span class="w">              </span><span class="c1"># optional, seconds; refetch on this interval</span>
+</span><span id="line-6"><span class="w">    </span><span class="nt">model_aliases</span><span class="p">:</span><span class="w">                      </span><span class="c1"># optional; see below</span>
+</span><span id="line-7"><span class="w">      </span><span class="nt">openai/gpt-oss-120b</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
+</span></code></pre></div>
+</div>
+</div>
+<p>To use your own endpoint, pick the <code class="docutils literal notranslate"><span class="pre">provider</span></code> whose structure your endpoint matches and
+override <code class="docutils literal notranslate"><span class="pre">url</span></code> — Plano parses the response with that provider’s schema:</p>
+<div class="literal-block-wrapper docutils container" id="id15">
+<div class="code-block-caption"><span class="caption-text">Custom endpoint exposing the DigitalOcean catalog structure</span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id15"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">model_metrics_sources</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cost</span>
+</span><span id="line-3"><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">digitalocean</span><span class="w">                       </span><span class="c1"># selects the DO response schema</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://catalog.internal.example.com/pricing</span>
+</span></code></pre></div>
+</div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The cost metric used for ranking is the sum of the input and output per-million-token
+rates — a relative signal for ordering candidates, not a per-request bill. For actual
+per-request cost, see the observability console below.</p>
+</div>
+</section>
+<section id="matching-catalog-keys-to-your-models">
+<h3>Matching catalog keys to your models<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#matching-catalog-keys-to-your-models" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#matching-catalog-keys-to-your-models'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>The router looks up each candidate model by the exact name you use in
+<code class="docutils literal notranslate"><span class="pre">routing_preferences</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">anthropic/claude-sonnet-4-5</span></code>). models.dev keys models as
+<code class="docutils literal notranslate"><span class="pre">creator/model</span></code>, which lines up with Plano’s <code class="docutils literal notranslate"><span class="pre">provider/model</span></code> naming, so most models
+match automatically.</p>
+<p>When a catalog key does not match your model name — for example a version skew, or an
+open-weight model you serve under a different provider — use <code class="docutils literal notranslate"><span class="pre">model_aliases</span></code> to map the
+<strong>catalog key</strong> to the <strong>Plano model name</strong> used in your routing preferences:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">model_metrics_sources</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cost</span>
+</span><span id="line-3"><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">models.dev</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">model_aliases</span><span class="p">:</span>
+</span><span id="line-5"><span class="w">      </span><span class="c1"># catalog key            : plano model name</span>
+</span><span id="line-6"><span class="w">      </span><span class="nt">openai/gpt-oss-120b</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai/gpt-4o</span>
+</span></code></pre></div>
+</div>
+</section>
+<section id="latency-source">
+<h3>Latency source<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#latency-source" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#latency-source'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">fastest</span></code> routing reads observed latency from a Prometheus instance. Provide the query
+that returns a per-model latency value (lower is faster), labelled by <code class="docutils literal notranslate"><span class="pre">model_name</span></code>:</p>
+<div class="literal-block-wrapper docutils container" id="id16">
+<div class="code-block-caption"><span class="caption-text">Latency source backed by Prometheus</span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id16"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">model_metrics_sources</span><span class="p">:</span>
+</span><span id="line-2"><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">latency</span>
+</span><span id="line-3"><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prometheus</span>
+</span><span id="line-4"><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://prometheus:9090</span>
+</span><span id="line-5"><span class="w">    </span><span class="nt">query</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">avg by (model_name) (rate(plano_llm_latency_seconds_sum[5m]))</span>
+</span><span id="line-6"><span class="w">    </span><span class="nt">refresh_interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+</span></code></pre></div>
+</div>
+</div>
+<p>You can declare both a <code class="docutils literal notranslate"><span class="pre">cost</span></code> and a <code class="docutils literal notranslate"><span class="pre">latency</span></code> source at the same time; each route
+picks whichever it needs based on its <code class="docutils literal notranslate"><span class="pre">selection_policy</span></code>.</p>
+</section>
+<section id="cost-in-the-observability-console">
+<h3>Cost in the observability console<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#cost-in-the-observability-console" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#cost-in-the-observability-console'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">obs</span></code> displays a per-request USD cost column derived from the same pricing
+catalog. By default it reads the <code class="docutils literal notranslate"><span class="pre">cost</span></code> source from your config (the first
+<code class="docutils literal notranslate"><span class="pre">type:</span> <span class="pre">cost</span></code> entry under <code class="docutils literal notranslate"><span class="pre">model_metrics_sources</span></code>); you can also override it on the
+command line:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="c1"># Use the cost source from ./config.yaml (default)</span>
+</span><span id="line-2">planoai<span class="w"> </span>obs
+</span><span id="line-3">
+</span><span id="line-4"><span class="c1"># Or override the provider / endpoint explicitly</span>
+</span><span id="line-5">planoai<span class="w"> </span>obs<span class="w"> </span>--pricing-provider<span class="w"> </span>models.dev
+</span><span id="line-6">planoai<span class="w"> </span>obs<span class="w"> </span>--pricing-url<span class="w"> </span>https://models.dev/api.json
+</span></code></pre></div>
+</div>
+<p>If no source is configured and no override is given, <code class="docutils literal notranslate"><span class="pre">planoai</span> <span class="pre">obs</span></code> falls back to the
+DigitalOcean catalog so the cost column still populates out of the box.</p>
+</section>
+</section>
 <section id="id7">
 <h2>Plano-Orchestrator<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id7" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#id7'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>Plano-Orchestrator is a <strong>preference-based routing model</strong> specifically designed to address the limitations of traditional LLM routing. It delivers production-ready performance with low latency and high accuracy while solving key routing challenges.</p>
@@ -587,8 +755,8 @@ instead of a file.</p></li>
 <section id="combining-routing-methods">
 <h2>Combining Routing Methods<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#combining-routing-methods" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#combining-routing-methods'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>You can combine static model selection with dynamic routing preferences for maximum flexibility:</p>
-<div class="literal-block-wrapper docutils container" id="id12">
-<div class="code-block-caption"><span class="caption-text">Hybrid Routing Configuration</span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id12"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
+<div class="literal-block-wrapper docutils container" id="id17">
+<div class="code-block-caption"><span class="caption-text">Hybrid Routing Configuration</span><a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#id17"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></div>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><code><span id="line-1"><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v0.4.0</span>
 </span><span id="line-2">
 </span><span id="line-3"><span class="nt">model_providers</span><span class="p">:</span>
@@ -721,6 +889,14 @@ instead of a file.</p></li>
 <li><a :data-current="activeSection === '#id6'" class="reference internal" href="#id6">Client usage</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a :data-current="activeSection === '#cost-and-latency-aware-selection'" class="reference internal" href="#cost-and-latency-aware-selection">Cost- and latency-aware selection</a><ul>
+<li><a :data-current="activeSection === '#selection-policy'" class="reference internal" href="#selection-policy">Selection policy</a></li>
+<li><a :data-current="activeSection === '#configuring-the-pricing-source'" class="reference internal" href="#configuring-the-pricing-source">Configuring the pricing source</a></li>
+<li><a :data-current="activeSection === '#matching-catalog-keys-to-your-models'" class="reference internal" href="#matching-catalog-keys-to-your-models">Matching catalog keys to your models</a></li>
+<li><a :data-current="activeSection === '#latency-source'" class="reference internal" href="#latency-source">Latency source</a></li>
+<li><a :data-current="activeSection === '#cost-in-the-observability-console'" class="reference internal" href="#cost-in-the-observability-console">Cost in the observability console</a></li>
 </ul>
 </li>
 <li><a :data-current="activeSection === '#id7'" class="reference internal" href="#id7">Plano-Orchestrator</a></li>
