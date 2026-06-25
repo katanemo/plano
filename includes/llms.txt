@@ -1,6 +1,6 @@
 Plano Docs v0.4.25
 llms.txt (auto-generated)
-Generated (UTC): 2026-06-25T17:33:52.229971+00:00
+Generated (UTC): 2026-06-25T17:34:17.881342+00:00
 
 Table of contents
 - Agents (concepts/agents)
@@ -5215,6 +5215,100 @@ X-Other-User-Id: usr_999
 
 Result: no attributes are captured from X-Other-User-Id.
 
+Exporting Telemetry Anywhere
+
+Beyond the OTLP/gRPC collector, Plano can stream LLM telemetry directly to
+third-party observability backends through tracing.exporters. The list is
+provider-agnostic: each entry is tagged by its type and points at a URL, so
+new destinations can be added without changing anything else. Exporters run in
+addition to opentracing_grpc_endpoint — you can use one, the other, or both.
+
+PostHog
+
+PostHog is supported as a first-class integration. Every LLM call is captured as
+a PostHog $ai_generation
+event and POSTed to PostHog’s capture API. Setup is intentionally minimal —
+point at your PostHog URL and project token:
+
+tracing:
+  random_sampling: 100
+  exporters:
+    - type: posthog
+      url: https://us.i.posthog.com   # /batch/ is appended automatically
+      api_key: $POSTHOG_API_KEY        # PostHog project token (env expansion supported)
+      distinct_id_header: x-user-id    # optional; omit for anonymous capture
+      capture_messages: false          # optional; send user message as $ai_input
+
+That’s all that’s required. When random_sampling is greater than 0 and at
+least one exporter (or opentracing_grpc_endpoint) is configured, tracing is
+enabled and $ai_generation events begin flowing. They appear under PostHog’s
+AI Observability in the Traces and Generations tabs.
+
+Captured properties
+
+Plano maps span data onto PostHog $ai_* properties:
+
+
+
+
+
+PostHog property
+
+Source
+
+$ai_model
+
+Resolved upstream model (llm.model)
+
+$ai_provider
+
+Provider derived from the resolved model (llm.provider)
+
+$ai_latency
+
+Total call duration in seconds (llm.duration_ms)
+
+$ai_time_to_first_token
+
+Time to first token in seconds, streaming only
+
+$ai_input_tokens / $ai_output_tokens
+
+Prompt / completion token usage
+
+$ai_http_status / $ai_is_error
+
+Upstream HTTP status and error flag
+
+$ai_trace_id / $ai_parent_id
+
+Trace and parent span identifiers
+
+distinct_id
+
+Value of distinct_id_header (else anonymous)
+
+Identifying users
+
+Set distinct_id_header to the request header carrying your user identity
+(for example x-user-id). When present, Plano stamps the value as the PostHog
+distinct_id. When the header is missing — or distinct_id_header is not
+configured — the event is captured anonymously ($process_person_profile is
+set to false), matching PostHog’s anonymous vs. identified semantics.
+
+Capturing message content
+
+By default Plano does not send prompt content off-box. Set
+capture_messages: true to include the (truncated) user message preview as
+$ai_input. Leave it false when prompt content must not leave your data
+plane.
+
+Multiple destinations
+
+exporters is a list, so you can fan out to several backends (and combine
+with an OTLP collector). A common use is shipping to multiple PostHog instances
+(for example separate EU and US projects for data-residency).
+
 Benefits of Using Traceparent Headers
 
 Standardization: The W3C Trace Context standard ensures compatibility across ecosystem tools, allowing
@@ -7370,6 +7464,19 @@ tracing:
     static:
       environment: production
       service.team: platform
+  # Provider-agnostic export destinations. LLM spans are streamed to each of
+  # these in addition to any opentracing_grpc_endpoint above.
+  exporters:
+    # PostHog AI observability: each LLM call is captured as an $ai_generation event.
+    - type: posthog
+      # PostHog host. The /batch/ capture path is appended automatically.
+      url: https://us.i.posthog.com
+      # PostHog project API key (token). Supports $ENV_VAR expansion.
+      api_key: $POSTHOG_API_KEY
+      # Optional: request header used as the PostHog distinct_id. Omit for anonymous capture.
+      distinct_id_header: x-user-id
+      # Optional: include the (truncated) user message as $ai_input. Defaults to false.
+      capture_messages: false
 
 ---
 

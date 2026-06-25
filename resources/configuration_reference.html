@@ -448,6 +448,19 @@ credentials.</p>
 </span><span id="line-261"><span class="linenos">261</span><span class="w">    </span><span class="nt">static</span><span class="p">:</span>
 </span><span id="line-262"><span class="linenos">262</span><span class="w">      </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
 </span><span id="line-263"><span class="linenos">263</span><span class="w">      </span><span class="nt">service.team</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">platform</span>
+</span><span id="line-264"><span class="linenos">264</span><span class="w">  </span><span class="c1"># Provider-agnostic export destinations. LLM spans are streamed to each of</span>
+</span><span id="line-265"><span class="linenos">265</span><span class="w">  </span><span class="c1"># these in addition to any opentracing_grpc_endpoint above.</span>
+</span><span id="line-266"><span class="linenos">266</span><span class="w">  </span><span class="nt">exporters</span><span class="p">:</span>
+</span><span id="line-267"><span class="linenos">267</span><span class="w">    </span><span class="c1"># PostHog AI observability: each LLM call is captured as an $ai_generation event.</span>
+</span><span id="line-268"><span class="linenos">268</span><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">posthog</span>
+</span><span id="line-269"><span class="linenos">269</span><span class="w">      </span><span class="c1"># PostHog host. The /batch/ capture path is appended automatically.</span>
+</span><span id="line-270"><span class="linenos">270</span><span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://us.i.posthog.com</span>
+</span><span id="line-271"><span class="linenos">271</span><span class="w">      </span><span class="c1"># PostHog project API key (token). Supports $ENV_VAR expansion.</span>
+</span><span id="line-272"><span class="linenos">272</span><span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">$POSTHOG_API_KEY</span>
+</span><span id="line-273"><span class="linenos">273</span><span class="w">      </span><span class="c1"># Optional: request header used as the PostHog distinct_id. Omit for anonymous capture.</span>
+</span><span id="line-274"><span class="linenos">274</span><span class="w">      </span><span class="nt">distinct_id_header</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">x-user-id</span>
+</span><span id="line-275"><span class="linenos">275</span><span class="w">      </span><span class="c1"># Optional: include the (truncated) user message as $ai_input. Defaults to false.</span>
+</span><span id="line-276"><span class="linenos">276</span><span class="w">      </span><span class="nt">capture_messages</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 </span></code></pre></div>
 </div>
 </div>

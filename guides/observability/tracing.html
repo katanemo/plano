@@ -393,6 +393,89 @@ attribute key matches a static key, the header value overrides the static value.
 <p>Result: no attributes are captured from <code class="docutils literal notranslate"><span class="pre">X-Other-User-Id</span></code>.</p>
 </section>
 </section>
+<section id="exporting-telemetry-anywhere">
+<h2>Exporting Telemetry Anywhere<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#exporting-telemetry-anywhere" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#exporting-telemetry-anywhere'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
+<p>Beyond the OTLP/gRPC collector, Plano can stream LLM telemetry directly to
+third-party observability backends through <code class="docutils literal notranslate"><span class="pre">tracing.exporters</span></code>. The list is
+provider-agnostic: each entry is tagged by its <code class="docutils literal notranslate"><span class="pre">type</span></code> and points at a URL, so
+new destinations can be added without changing anything else. Exporters run in
+addition to <code class="docutils literal notranslate"><span class="pre">opentracing_grpc_endpoint</span></code> — you can use one, the other, or both.</p>
+<section id="posthog">
+<h3>PostHog<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#posthog" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#posthog'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
+<p>PostHog is supported as a first-class integration. Every LLM call is captured as
+a PostHog <a class="reference external" href="https://posthog.com/docs/ai-observability/generations" rel="nofollow noopener">$ai_generation<svg fill="currentColor" height="1em" stroke="none" viewbox="0 96 960 960" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M188 868q-11-11-11-28t11-28l436-436H400q-17 0-28.5-11.5T360 336q0-17 11.5-28.5T400 296h320q17 0 28.5 11.5T760 336v320q0 17-11.5 28.5T720 696q-17 0-28.5-11.5T680 656V432L244 868q-11 11-28 11t-28-11Z"></path></svg></a>
+event and POSTed to PostHog’s capture API. Setup is intentionally minimal —
+point at your PostHog URL and project token:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><code><span id="line-1">tracing:
+</span><span id="line-2">  random_sampling: 100
+</span><span id="line-3">  exporters:
+</span><span id="line-4">    - type: posthog
+</span><span id="line-5">      url: https://us.i.posthog.com   # /batch/ is appended automatically
+</span><span id="line-6">      api_key: $POSTHOG_API_KEY        # PostHog project token (env expansion supported)
+</span><span id="line-7">      distinct_id_header: x-user-id    # optional; omit for anonymous capture
+</span><span id="line-8">      capture_messages: false          # optional; send user message as $ai_input
+</span></code></pre></div>
+</div>
+<p>That’s all that’s required. When <code class="docutils literal notranslate"><span class="pre">random_sampling</span></code> is greater than <code class="docutils literal notranslate"><span class="pre">0</span></code> and at
+least one exporter (or <code class="docutils literal notranslate"><span class="pre">opentracing_grpc_endpoint</span></code>) is configured, tracing is
+enabled and <code class="docutils literal notranslate"><span class="pre">$ai_generation</span></code> events begin flowing. They appear under PostHog’s
+<strong>AI Observability</strong> in the Traces and Generations tabs.</p>
+<p><strong>Captured properties</strong></p>
+<p>Plano maps span data onto PostHog <code class="docutils literal notranslate"><span class="pre">$ai_*</span></code> properties:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%"/>
+<col style="width: 70.0%"/>
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>PostHog property</p></th>
+<th class="head"><p>Source</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">$ai_model</span></code></p></td>
+<td><p>Resolved upstream model (<code class="docutils literal notranslate"><span class="pre">llm.model</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">$ai_provider</span></code></p></td>
+<td><p>Provider derived from the resolved model (<code class="docutils literal notranslate"><span class="pre">llm.provider</span></code>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">$ai_latency</span></code></p></td>
+<td><p>Total call duration in seconds (<code class="docutils literal notranslate"><span class="pre">llm.duration_ms</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">$ai_time_to_first_token</span></code></p></td>
+<td><p>Time to first token in seconds, streaming only</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">$ai_input_tokens</span></code> / <code class="docutils literal notranslate"><span class="pre">$ai_output_tokens</span></code></p></td>
+<td><p>Prompt / completion token usage</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">$ai_http_status</span></code> / <code class="docutils literal notranslate"><span class="pre">$ai_is_error</span></code></p></td>
+<td><p>Upstream HTTP status and error flag</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">$ai_trace_id</span></code> / <code class="docutils literal notranslate"><span class="pre">$ai_parent_id</span></code></p></td>
+<td><p>Trace and parent span identifiers</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">distinct_id</span></code></p></td>
+<td><p>Value of <code class="docutils literal notranslate"><span class="pre">distinct_id_header</span></code> (else anonymous)</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Identifying users</strong></p>
+<p>Set <code class="docutils literal notranslate"><span class="pre">distinct_id_header</span></code> to the request header carrying your user identity
+(for example <code class="docutils literal notranslate"><span class="pre">x-user-id</span></code>). When present, Plano stamps the value as the PostHog
+<code class="docutils literal notranslate"><span class="pre">distinct_id</span></code>. When the header is missing — or <code class="docutils literal notranslate"><span class="pre">distinct_id_header</span></code> is not
+configured — the event is captured anonymously (<code class="docutils literal notranslate"><span class="pre">$process_person_profile</span></code> is
+set to <code class="docutils literal notranslate"><span class="pre">false</span></code>), matching PostHog’s anonymous vs. identified semantics.</p>
+<p><strong>Capturing message content</strong></p>
+<p>By default Plano does not send prompt content off-box. Set
+<code class="docutils literal notranslate"><span class="pre">capture_messages:</span> <span class="pre">true</span></code> to include the (truncated) user message preview as
+<code class="docutils literal notranslate"><span class="pre">$ai_input</span></code>. Leave it <code class="docutils literal notranslate"><span class="pre">false</span></code> when prompt content must not leave your data
+plane.</p>
+<p><strong>Multiple destinations</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">exporters</span></code> is a list, so you can fan out to several backends (and combine
+with an OTLP collector). A common use is shipping to multiple PostHog instances
+(for example separate EU and US projects for data-residency).</p>
+</section>
+</section>
 <section id="benefits-of-using-traceparent-headers">
 <h2>Benefits of Using <code class="docutils literal notranslate"><span class="pre">Traceparent</span></code> Headers<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#benefits-of-using-traceparent-headers" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#benefits-of-using-traceparent-headers'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <ul class="simple">
@@ -766,6 +849,10 @@ tools like AWS X-Ray and Datadog, enhancing observability and facilitating faste
 <li><a :data-current="activeSection === '#how-it-works'" class="reference internal" href="#how-it-works">How It Works</a></li>
 <li><a :data-current="activeSection === '#configuration'" class="reference internal" href="#configuration">Configuration</a></li>
 <li><a :data-current="activeSection === '#notes-and-examples'" class="reference internal" href="#notes-and-examples">Notes and Examples</a></li>
+</ul>
+</li>
+<li><a :data-current="activeSection === '#exporting-telemetry-anywhere'" class="reference internal" href="#exporting-telemetry-anywhere">Exporting Telemetry Anywhere</a><ul>
+<li><a :data-current="activeSection === '#posthog'" class="reference internal" href="#posthog">PostHog</a></li>
 </ul>
 </li>
 <li><a :data-current="activeSection === '#benefits-of-using-traceparent-headers'" class="reference internal" href="#benefits-of-using-traceparent-headers">Benefits of Using <code class="docutils literal notranslate"><span class="pre">Traceparent</span></code> Headers</a></li>
