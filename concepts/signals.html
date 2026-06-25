@@ -569,47 +569,6 @@ then decays: <code class="docutils literal notranslate"><span class="pre">1</spa
 </tbody>
 </table>
 </section>
-<section id="legacy-attributes-deprecated-still-emitted">
-<h3>Legacy attributes (deprecated, still emitted)<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#legacy-attributes-deprecated-still-emitted" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#legacy-attributes-deprecated-still-emitted'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h3>
-<p>The following aggregate keys pre-date the paper taxonomy and are still
-emitted for one release so existing dashboards keep working. They are
-derived from the layered counts above and will be removed in a future
-release. Migrate to the layered keys when convenient.</p>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 50.0%"/>
-<col style="width: 50.0%"/>
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>Legacy attribute</p></th>
-<th class="head"><p>Layered equivalent</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.follow_up.repair.count</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.misalignment.count</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.follow_up.repair.ratio</span></code></p></td>
-<td><p>(computed: <code class="docutils literal notranslate"><span class="pre">misalignment.count</span> <span class="pre">/</span> <span class="pre">max(user_turns,</span> <span class="pre">1)</span></code>)</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.frustration.count</span></code></p></td>
-<td><p>Count of <code class="docutils literal notranslate"><span class="pre">disengagement.negative_stance</span></code> instances</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.frustration.severity</span></code></p></td>
-<td><p>Derived severity bucket of the above</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.repetition.count</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.stagnation.count</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">signals.escalation.requested</span></code></p></td>
-<td><p>True if any <code class="docutils literal notranslate"><span class="pre">disengagement.escalation</span></code> or <code class="docutils literal notranslate"><span class="pre">disengagement.quit</span></code> fired</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">signals.positive_feedback.count</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">signals.interaction.satisfaction.count</span></code></p></td>
-</tr>
-</tbody>
-</table>
-</section>
 </section>
 <section id="span-events">
 <h2>Span Events<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#span-events" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#span-events'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
@@ -764,26 +723,20 @@ event:</p>
 </span><span id="line-10"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">count</span>    <span class="o">=</span> <span class="mi">6</span>
 </span><span id="line-11"><span class="n">signals</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">severity</span> <span class="o">=</span> <span class="mi">3</span>
 </span><span id="line-12">
-</span><span id="line-13"><span class="c1"># Legacy (deprecated, emitted while dual-emit is on)</span>
-</span><span id="line-14"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">count</span>     <span class="o">=</span> <span class="mi">4</span>
-</span><span id="line-15"><span class="n">signals</span><span class="o">.</span><span class="n">frustration</span><span class="o">.</span><span class="n">severity</span>  <span class="o">=</span> <span class="mi">2</span>
-</span><span id="line-16"><span class="n">signals</span><span class="o">.</span><span class="n">escalation</span><span class="o">.</span><span class="n">requested</span>  <span class="o">=</span> <span class="n">true</span>
-</span><span id="line-17">
-</span><span id="line-18"><span class="c1"># Per-instance span events</span>
-</span><span id="line-19"><span class="n">event</span><span class="p">:</span> <span class="n">signal</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">escalation</span>
-</span><span id="line-20">  <span class="n">signal</span><span class="o">.</span><span class="n">type</span>          <span class="o">=</span> <span class="s2">"interaction.disengagement.escalation"</span>
-</span><span id="line-21">  <span class="n">signal</span><span class="o">.</span><span class="n">message_index</span> <span class="o">=</span> <span class="mi">6</span>
-</span><span id="line-22">  <span class="n">signal</span><span class="o">.</span><span class="n">confidence</span>    <span class="o">=</span> <span class="mf">1.0</span>
-</span><span id="line-23">  <span class="n">signal</span><span class="o">.</span><span class="n">snippet</span>       <span class="o">=</span> <span class="s2">"get me a human"</span>
-</span><span id="line-24">  <span class="n">signal</span><span class="o">.</span><span class="n">metadata</span>      <span class="o">=</span> <span class="p">{</span><span class="s2">"pattern_type"</span><span class="p">:</span><span class="s2">"escalation"</span><span class="p">}</span>
+</span><span id="line-13"><span class="c1"># Per-instance span events</span>
+</span><span id="line-14"><span class="n">event</span><span class="p">:</span> <span class="n">signal</span><span class="o">.</span><span class="n">interaction</span><span class="o">.</span><span class="n">disengagement</span><span class="o">.</span><span class="n">escalation</span>
+</span><span id="line-15">  <span class="n">signal</span><span class="o">.</span><span class="n">type</span>          <span class="o">=</span> <span class="s2">"interaction.disengagement.escalation"</span>
+</span><span id="line-16">  <span class="n">signal</span><span class="o">.</span><span class="n">message_index</span> <span class="o">=</span> <span class="mi">6</span>
+</span><span id="line-17">  <span class="n">signal</span><span class="o">.</span><span class="n">confidence</span>    <span class="o">=</span> <span class="mf">1.0</span>
+</span><span id="line-18">  <span class="n">signal</span><span class="o">.</span><span class="n">snippet</span>       <span class="o">=</span> <span class="s2">"get me a human"</span>
+</span><span id="line-19">  <span class="n">signal</span><span class="o">.</span><span class="n">metadata</span>      <span class="o">=</span> <span class="p">{</span><span class="s2">"pattern_type"</span><span class="p">:</span><span class="s2">"escalation"</span><span class="p">}</span>
 </span></code></pre></div>
 </div>
 </section>
 <section id="building-dashboards">
 <h2>Building Dashboards<a @click.prevent="window.navigator.clipboard.writeText($el.href); $el.setAttribute('data-tooltip', 'Copied!'); setTimeout(() =&gt; $el.setAttribute('data-tooltip', 'Copy link to this element'), 2000)" aria-label="Copy link to this element" class="headerlink" data-tooltip="Copy link to this element" href="#building-dashboards" x-intersect.margin.0%.0%.-70%.0%="activeSection = '#building-dashboards'"><svg height="1em" viewbox="0 0 24 24" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"></path></svg></a></h2>
 <p>Use signal attributes to build monitoring dashboards in Grafana, Honeycomb,
-Datadog, etc. Prefer the layered keys — they align with the paper taxonomy
-and will outlive the legacy keys.</p>
+Datadog, etc. The layered keys align with the paper taxonomy.</p>
 <ul class="simple">
 <li><p><strong>Quality distribution</strong>: Count of traces by <code class="docutils literal notranslate"><span class="pre">signals.quality</span></code></p></li>
 <li><p><strong>P95 turn count</strong>: 95th percentile of <code class="docutils literal notranslate"><span class="pre">signals.turn_count</span></code></p></li>
@@ -918,7 +871,6 @@ systems</p></li>
 <li><a :data-current="activeSection === '#otel-span-attributes'" class="reference internal" href="#otel-span-attributes">OTel Span Attributes</a><ul>
 <li><a :data-current="activeSection === '#top-level-attributes'" class="reference internal" href="#top-level-attributes">Top-level attributes</a></li>
 <li><a :data-current="activeSection === '#layered-attributes'" class="reference internal" href="#layered-attributes">Layered attributes</a></li>
-<li><a :data-current="activeSection === '#legacy-attributes-deprecated-still-emitted'" class="reference internal" href="#legacy-attributes-deprecated-still-emitted">Legacy attributes (deprecated, still emitted)</a></li>
 </ul>
 </li>
 <li><a :data-current="activeSection === '#span-events'" class="reference internal" href="#span-events">Span Events</a><ul>
@@ -943,7 +895,7 @@ systems</p></li>
 </div><footer class="py-6 border-t border-border md:py-0">
 <div class="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
 <div class="flex flex-col items-center gap-4 px-8 md:flex-row md:gap-2 md:px-0">
-<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Jun 24, 2026. </p>
+<p class="text-sm leading-loose text-center text-muted-foreground md:text-left">© 2026, Katanemo Labs, a DigitalOcean Company Last updated: Jun 25, 2026. </p>
 </div>
 </div>
 </footer>
