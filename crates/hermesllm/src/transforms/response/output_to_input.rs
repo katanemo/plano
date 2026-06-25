@@ -18,7 +18,9 @@ pub fn convert_responses_output_to_input_items(output: &OutputItem) -> Option<In
                 .iter()
                 .filter_map(|c| match c {
                     OutputContent::OutputText { text, .. } => {
-                        Some(InputContent::InputText { text: text.clone() })
+                        // Assistant (output-role) content must round-trip as
+                        // output_text; the Responses API rejects input_text here.
+                        Some(InputContent::OutputText { text: text.clone() })
                     }
                     OutputContent::OutputAudio { data, .. } => Some(InputContent::InputAudio {
                         data: data.clone(),
@@ -59,7 +61,7 @@ pub fn convert_responses_output_to_input_items(output: &OutputItem) -> Option<In
 
             Some(InputItem::Message(InputMessage {
                 role: MessageRole::Assistant,
-                content: MessageContent::Items(vec![InputContent::InputText {
+                content: MessageContent::Items(vec![InputContent::OutputText {
                     text: tool_call_text,
                 }]),
             }))
@@ -104,8 +106,8 @@ mod tests {
                     MessageContent::Items(items) => {
                         assert_eq!(items.len(), 1);
                         match &items[0] {
-                            InputContent::InputText { text } => assert_eq!(text, "Hello!"),
-                            _ => panic!("Expected InputText"),
+                            InputContent::OutputText { text } => assert_eq!(text, "Hello!"),
+                            _ => panic!("Expected OutputText"),
                         }
                     }
                     _ => panic!("Expected MessageContent::Items"),
@@ -132,10 +134,10 @@ mod tests {
                 assert!(matches!(msg.role, MessageRole::Assistant));
                 match &msg.content {
                     MessageContent::Items(items) => match &items[0] {
-                        InputContent::InputText { text } => {
+                        InputContent::OutputText { text } => {
                             assert!(text.contains("get_weather"));
                         }
-                        _ => panic!("Expected InputText"),
+                        _ => panic!("Expected OutputText"),
                     },
                     _ => panic!("Expected MessageContent::Items"),
                 }
