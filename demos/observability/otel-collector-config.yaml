@@ -1,0 +1,40 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+connectors:
+  spanmetrics:
+    dimensions:
+      - name: llm.model
+      - name: agent_id
+      - name: selection.listener
+      - name: http.method
+      - name: http.status_code
+    histogram:
+      explicit:
+        buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo, spanmetrics]
+    metrics/spanmetrics:
+      receivers: [spanmetrics]
+      exporters: [prometheus]
