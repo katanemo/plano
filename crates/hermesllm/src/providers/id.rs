@@ -50,6 +50,7 @@ pub enum ProviderId {
     OpenRouter,
     Astraflow,
     AstraflowCN,
+    Minimax,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -85,6 +86,7 @@ impl TryFrom<&str> for ProviderId {
             "openrouter" => Ok(ProviderId::OpenRouter),
             "astraflow" => Ok(ProviderId::Astraflow),
             "astraflow_cn" => Ok(ProviderId::AstraflowCN),
+            "minimax" => Ok(ProviderId::Minimax),
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -111,6 +113,7 @@ impl ProviderId {
             ProviderId::Qwen => "qwen",
             ProviderId::ChatGPT => "chatgpt",
             ProviderId::DigitalOcean => "digitalocean",
+            ProviderId::Minimax => "minimax",
             ProviderId::Astraflow | ProviderId::AstraflowCN => return Vec::new(),
             _ => return Vec::new(),
         };
@@ -181,7 +184,8 @@ impl ProviderId {
                 | ProviderId::OpenRouter
                 | ProviderId::ChatGPT
                 | ProviderId::Astraflow
-                | ProviderId::AstraflowCN,
+                | ProviderId::AstraflowCN
+                | ProviderId::Minimax,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -205,7 +209,8 @@ impl ProviderId {
                 | ProviderId::OpenRouter
                 | ProviderId::ChatGPT
                 | ProviderId::Astraflow
-                | ProviderId::AstraflowCN,
+                | ProviderId::AstraflowCN
+                | ProviderId::Minimax,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -278,6 +283,7 @@ impl Display for ProviderId {
             ProviderId::OpenRouter => write!(f, "openrouter"),
             ProviderId::Astraflow => write!(f, "astraflow"),
             ProviderId::AstraflowCN => write!(f, "astraflow_cn"),
+            ProviderId::Minimax => write!(f, "minimax"),
         }
     }
 }
@@ -451,6 +457,46 @@ mod tests {
     fn test_vercel_and_openrouter_empty_models() {
         assert!(ProviderId::Vercel.models().is_empty());
         assert!(ProviderId::OpenRouter.models().is_empty());
+    }
+
+    #[test]
+    fn test_minimax_parsing_and_models() {
+        assert_eq!(ProviderId::try_from("minimax"), Ok(ProviderId::Minimax));
+        assert_eq!(ProviderId::Minimax.to_string(), "minimax");
+
+        let models = ProviderId::Minimax.models();
+        assert!(
+            models.iter().any(|m| m == "MiniMax-M3"),
+            "minimax models should include MiniMax-M3"
+        );
+        for model in &models {
+            assert!(
+                !model.contains('/'),
+                "Model name '{}' should not contain provider prefix",
+                model
+            );
+        }
+    }
+
+    #[test]
+    fn test_minimax_compatible_api() {
+        use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
+
+        let openai_client =
+            SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let upstream = ProviderId::Minimax.compatible_api_for_client(&openai_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "minimax should map OpenAI client to OpenAIChatCompletions upstream"
+        );
+
+        let anthropic_client =
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
+        let upstream = ProviderId::Minimax.compatible_api_for_client(&anthropic_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "minimax should translate Anthropic client to OpenAIChatCompletions upstream"
+        );
     }
 
     #[test]
