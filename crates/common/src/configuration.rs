@@ -186,8 +186,13 @@ pub enum MetricsSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostMetricsConfig {
     pub provider: CostProvider,
+    /// Optional override for the pricing catalog endpoint. When omitted, a
+    /// sensible default is used per provider.
+    pub url: Option<String>,
     pub refresh_interval: Option<u64>,
-    /// Map DO catalog keys (`lowercase(creator)/model_id`) to Plano model names.
+    /// Map catalog keys to Plano model names used in `routing_preferences`.
+    /// DigitalOcean keys look like `lowercase(creator)/model_id`; models.dev
+    /// keys look like `creator/model_id`.
     /// Example: `openai/openai-gpt-oss-120b: openai/gpt-4o`
     pub model_aliases: Option<HashMap<String, String>>,
     /// Cache-write surcharge as a multiple of the input price, applied by the
@@ -201,6 +206,8 @@ pub struct CostMetricsConfig {
 #[serde(rename_all = "snake_case")]
 pub enum CostProvider {
     Digitalocean,
+    #[serde(rename = "models.dev")]
+    ModelsDev,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -358,6 +365,11 @@ pub struct Tracing {
     pub random_sampling: Option<u32>,
     pub opentracing_grpc_endpoint: Option<String>,
     pub span_attributes: Option<SpanAttributes>,
+    /// Provider-agnostic telemetry export destinations. Each entry is tagged by
+    /// its `type` (e.g. `posthog`) so new backends can be added without breaking
+    /// existing configs. LLM spans are translated into each backend's native
+    /// event format and streamed in addition to any `opentracing_grpc_endpoint`.
+    pub exporters: Option<Vec<Exporter>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -365,6 +377,36 @@ pub struct SpanAttributes {
     pub header_prefixes: Option<Vec<String>>,
     #[serde(rename = "static")]
     pub static_attributes: Option<HashMap<String, String>>,
+}
+
+/// A telemetry export destination configured under `tracing.exporters`.
+///
+/// The list is provider-agnostic; each variant is internally tagged by its
+/// `type` field (e.g. `type: posthog`). Additional backends (datadog, raw
+/// otlp, ...) can be added as new variants without breaking existing configs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Exporter {
+    /// PostHog AI observability. LLM spans are converted into PostHog
+    /// `$ai_generation` events and POSTed to the configured `url`.
+    Posthog(PosthogExporter),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PosthogExporter {
+    /// PostHog host, e.g. `https://us.i.posthog.com`. The `/batch/` capture
+    /// path is appended automatically.
+    pub url: String,
+    /// PostHog project API key (token). Supports `$ENV_VAR` expansion at render
+    /// time, e.g. `$POSTHOG_API_KEY`.
+    pub api_key: String,
+    /// Optional request header whose value is used as the PostHog `distinct_id`.
+    /// When unset (or the header is missing on a request) events are captured
+    /// anonymously.
+    pub distinct_id_header: Option<String>,
+    /// When true, include the truncated user message preview as `$ai_input`.
+    /// Defaults to `false` to avoid sending prompt content off-box.
+    pub capture_messages: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
@@ -859,6 +901,51 @@ mod test {
     }
 
     #[test]
+    fn test_deserialize_models_dev_cost_source() {
+        let yaml = r#"
+- type: cost
+  provider: models.dev
+  url: https://models.dev/api.json
+  refresh_interval: 3600
+  model_aliases:
+    openai/gpt-oss-120b: openai/gpt-4o
+"#;
+        let sources: Vec<super::MetricsSource> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(sources.len(), 1);
+        match &sources[0] {
+            super::MetricsSource::Cost(cfg) => {
+                assert!(matches!(cfg.provider, super::CostProvider::ModelsDev));
+                assert_eq!(cfg.url.as_deref(), Some("https://models.dev/api.json"));
+                assert_eq!(cfg.refresh_interval, Some(3600));
+                assert_eq!(
+                    cfg.model_aliases
+                        .as_ref()
+                        .and_then(|m| m.get("openai/gpt-oss-120b"))
+                        .map(String::as_str),
+                    Some("openai/gpt-4o")
+                );
+            }
+            other => panic!("expected cost source, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_digitalocean_cost_source_without_url() {
+        let yaml = r#"
+- type: cost
+  provider: digitalocean
+"#;
+        let sources: Vec<super::MetricsSource> = serde_yaml::from_str(yaml).unwrap();
+        match &sources[0] {
+            super::MetricsSource::Cost(cfg) => {
+                assert!(matches!(cfg.provider, super::CostProvider::Digitalocean));
+                assert_eq!(cfg.url, None);
+            }
+            other => panic!("expected cost source, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_into_models_filters_internal_providers() {
         let providers = vec![
             LlmProvider {
@@ -1058,5 +1145,48 @@ prompt_caching:
         assert!(!effective.enabled);
         assert!(!effective.implicit_session_affinity);
         assert!(!effective.inject_cache_control);
+    }
+
+    #[test]
+    fn test_tracing_posthog_exporter_deserialize() {
+        let yaml = r#"
+random_sampling: 100
+exporters:
+  - type: posthog
+    url: https://us.i.posthog.com
+    api_key: phc_secret
+    distinct_id_header: x-user-id
+    capture_messages: true
+"#;
+        let tracing: super::Tracing = serde_yaml::from_str(yaml).unwrap();
+        let exporters = tracing.exporters.expect("exporters should be parsed");
+        assert_eq!(exporters.len(), 1);
+        match &exporters[0] {
+            super::Exporter::Posthog(posthog) => {
+                assert_eq!(posthog.url, "https://us.i.posthog.com");
+                assert_eq!(posthog.api_key, "phc_secret");
+                assert_eq!(posthog.distinct_id_header.as_deref(), Some("x-user-id"));
+                assert_eq!(posthog.capture_messages, Some(true));
+            }
+        }
+    }
+
+    #[test]
+    fn test_tracing_posthog_exporter_minimal() {
+        let yaml = r#"
+exporters:
+  - type: posthog
+    url: https://eu.i.posthog.com
+    api_key: phc_eu
+"#;
+        let tracing: super::Tracing = serde_yaml::from_str(yaml).unwrap();
+        let exporters = tracing.exporters.unwrap();
+        match &exporters[0] {
+            super::Exporter::Posthog(posthog) => {
+                assert_eq!(posthog.url, "https://eu.i.posthog.com");
+                assert_eq!(posthog.distinct_id_header, None);
+                assert_eq!(posthog.capture_messages, None);
+            }
+        }
     }
 }

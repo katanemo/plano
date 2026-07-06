@@ -519,9 +519,7 @@ impl StreamProcessor for ObservableStreamProcessor {
         self.response_buffer.shrink_to_fit();
 
         // Analyze signals if messages are available and record as span
-        // attributes + per-signal events. We dual-emit legacy aggregate keys
-        // and the new layered taxonomy so existing dashboards keep working
-        // while new consumers can opt into the richer hierarchy.
+        // attributes + per-signal events using the layered signal taxonomy.
         if let Some(ref messages) = self.messages {
             let analyzer = SignalAnalyzer::default();
             let report = analyzer.analyze_openai(messages);

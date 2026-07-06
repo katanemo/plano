@@ -99,6 +99,25 @@ async fn llm_chat_inner(
         }
     });
 
+    // Stamp the caller identity for downstream exporters (e.g. PostHog
+    // `distinct_id`). Sourced from the configured `distinct_id_header`; when the
+    // header is absent the event is exported anonymously.
+    if let Some(header_name) = state.distinct_id_header.as_deref() {
+        if let Some(distinct_id) = request_headers
+            .get(header_name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            get_active_span(|span| {
+                span.set_attribute(opentelemetry::KeyValue::new(
+                    tracing_plano::DISTINCT_ID,
+                    distinct_id.to_string(),
+                ));
+            });
+        }
+    }
+
     let explicit_session_id: Option<String> = request_headers
         .get(MODEL_AFFINITY_HEADER)
         .and_then(|h| h.to_str().ok())
@@ -502,6 +521,19 @@ async fn llm_chat_inner(
         model
     };
     tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
+
+    // Record the provider (derived from the `provider/model` prefix) so
+    // observability exporters can populate provider fields (e.g. PostHog
+    // `$ai_provider`).
+    let (resolved_provider, _) = bs_metrics::split_provider_model(&resolved_model);
+    if resolved_provider != "unknown" {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_llm::PROVIDER,
+                resolved_provider.to_string(),
+            ));
+        });
+    }
 
     // Build the response-side session-pin context.
     let session_pin_ctx: Option<SessionPinCtx> = match (&session_id, pin_action) {

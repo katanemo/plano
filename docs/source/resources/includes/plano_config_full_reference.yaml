@@ -86,6 +86,24 @@ routing_preferences:
     selection_policy:
       prefer: cheapest
 
+# model_metrics_sources: external catalogs the router reads to reorder candidate
+# models for selection_policy.prefer. A `cost` source ranks `prefer: cheapest`;
+# a `latency` source ranks `prefer: fastest`. Both are optional.
+model_metrics_sources:
+  # Cost catalog. provider: models.dev | digitalocean (default url per provider).
+  - type: cost
+    provider: models.dev
+    url: https://models.dev/api.json   # optional; omit to use the provider default
+    refresh_interval: 3600             # optional, seconds
+    model_aliases:                     # optional: catalog key -> Plano model name
+      openai/gpt-oss-120b: openai/gpt-4o
+  # Latency catalog (Prometheus). Used for selection_policy.prefer: fastest.
+  - type: latency
+    provider: prometheus
+    url: http://prometheus:9090
+    query: avg by (model_name) (rate(plano_llm_latency_seconds_sum[5m]))
+    refresh_interval: 60
+
 # HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access
 listeners:
   # Agent listener for routing requests to multiple agents
@@ -243,3 +261,16 @@ tracing:
     static:
       environment: production
       service.team: platform
+  # Provider-agnostic export destinations. LLM spans are streamed to each of
+  # these in addition to any opentracing_grpc_endpoint above.
+  exporters:
+    # PostHog AI observability: each LLM call is captured as an $ai_generation event.
+    - type: posthog
+      # PostHog host. The /batch/ capture path is appended automatically.
+      url: https://us.i.posthog.com
+      # PostHog project API key (token). Supports $ENV_VAR expansion.
+      api_key: $POSTHOG_API_KEY
+      # Optional: request header used as the PostHog distinct_id. Omit for anonymous capture.
+      distinct_id_header: x-user-id
+      # Optional: include the (truncated) user message as $ai_input. Defaults to false.
+      capture_messages: false

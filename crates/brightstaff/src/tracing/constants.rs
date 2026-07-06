@@ -145,6 +145,11 @@ pub mod plano {
     /// "software-engineering"). Absent when the client routed directly
     /// to a concrete model.
     pub const ROUTE_NAME: &str = "plano.route.name";
+
+    /// Caller identity used to populate downstream observability `distinct_id`
+    /// fields (e.g. PostHog). Sourced from the configured
+    /// `tracing.exporters[].distinct_id_header`. Absent for anonymous calls.
+    pub const DISTINCT_ID: &str = "plano.distinct_id";
 }
 
 // =============================================================================
@@ -183,27 +188,6 @@ pub mod signals {
 
     /// Efficiency score (0.0-1.0)
     pub const EFFICIENCY_SCORE: &str = "signals.efficiency_score";
-
-    /// Number of repair attempts detected
-    pub const REPAIR_COUNT: &str = "signals.follow_up.repair.count";
-
-    /// Ratio of repairs to user turns
-    pub const REPAIR_RATIO: &str = "signals.follow_up.repair.ratio";
-
-    /// Number of frustration indicators detected
-    pub const FRUSTRATION_COUNT: &str = "signals.frustration.count";
-
-    /// Frustration severity level (0-3)
-    pub const FRUSTRATION_SEVERITY: &str = "signals.frustration.severity";
-
-    /// Number of repetition instances detected
-    pub const REPETITION_COUNT: &str = "signals.repetition.count";
-
-    /// Whether escalation was requested (user asked for human help)
-    pub const ESCALATION_REQUESTED: &str = "signals.escalation.requested";
-
-    /// Number of positive feedback indicators detected
-    pub const POSITIVE_FEEDBACK_COUNT: &str = "signals.positive_feedback.count";
 }
 
 // =============================================================================

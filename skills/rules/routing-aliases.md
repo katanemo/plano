@@ -47,7 +47,7 @@ model_providers:
     default: true
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
 model_aliases:
@@ -58,7 +58,7 @@ model_aliases:
     target: gpt-4o               # High capability — for complex reasoning
 
   plano.creative.v1:
-    target: claude-sonnet-4-20250514  # Strong creative writing and analysis
+    target: claude-sonnet-4-6  # Strong creative writing and analysis
 
   plano.v1:
     target: gpt-4o               # Default production alias

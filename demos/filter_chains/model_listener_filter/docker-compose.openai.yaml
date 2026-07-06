@@ -1,0 +1,6 @@
+services:
+  plano:
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY environment variable is required but not set}
+    volumes:
+      - ./config.openai.yaml:/app/plano_config.yaml

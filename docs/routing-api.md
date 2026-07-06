@@ -21,7 +21,7 @@ POST /v1/chat/completions
     {
       "name": "code generation",
       "description": "generating new code snippets",
-      "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o", "openai/gpt-4o-mini"]
+      "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o", "openai/gpt-4o-mini"]
     },
     {
       "name": "general questions",
@@ -55,7 +55,7 @@ POST /v1/chat/completions
 ```json
 {
   "models": [
-    "anthropic/claude-sonnet-4-20250514",
+    "anthropic/claude-sonnet-4-6",
     "openai/gpt-4o",
     "openai/gpt-4o-mini"
   ],
@@ -100,7 +100,7 @@ Requires `version: v0.4.0` or above. Models listed under `routing_preferences` m
 version: v0.4.0
 
 model_providers:
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
@@ -112,7 +112,7 @@ routing_preferences:
   - name: code generation
     description: generating new code snippets or boilerplate
     models:
-      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-sonnet-4-6
       - openai/gpt-4o
 
   - name: general questions
@@ -149,7 +149,7 @@ Response when pinned:
 
 ```json
 {
-  "models": ["anthropic/claude-sonnet-4-20250514"],
+  "models": ["anthropic/claude-sonnet-4-6"],
   "route": "code generation",
   "trace_id": "...",
   "session_id": "a1b2c3d4-5678-...",

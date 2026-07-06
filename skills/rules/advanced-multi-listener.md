@@ -42,7 +42,7 @@ model_providers:
       - name: complex reasoning
         description: Multi-step analysis, code generation, research synthesis
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
     routing_preferences:
       - name: long documents

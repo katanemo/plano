@@ -28,7 +28,7 @@ model_providers:
   - model: anthropic/*
     access_key: $ANTHROPIC_API_KEY
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
   - model: anthropic/claude-3-haiku-20240307
@@ -71,7 +71,7 @@ model_aliases:
 
   # Alias for creative tasks -> Claude model
   arch.creative.v1:
-    target: claude-sonnet-4-20250514
+    target: claude-sonnet-4-6
 
   # Alias for quick responses -> fast model
   arch.fast.v1:
@@ -85,7 +85,7 @@ model_aliases:
     target: gpt-5-mini-2025-08-07
 
   creative-model:
-    target: claude-sonnet-4-20250514
+    target: claude-sonnet-4-6
 
   coding-model:
     target: us.amazon.nova-premier-v1:0

@@ -335,6 +335,20 @@ async fn init_app_state(
         .as_ref()
         .and_then(|tracing| tracing.span_attributes.clone());
 
+    // Resolve the distinct_id header from the first PostHog exporter that
+    // declares one, so the LLM handler can stamp `plano.distinct_id` on spans.
+    let distinct_id_header = config
+        .tracing
+        .as_ref()
+        .and_then(|tracing| tracing.exporters.as_ref())
+        .and_then(|exporters| {
+            exporters.iter().find_map(|exporter| match exporter {
+                common::configuration::Exporter::Posthog(posthog) => {
+                    posthog.distinct_id_header.clone()
+                }
+            })
+        });
+
     let signals_enabled = !overrides.disable_signals.unwrap_or(false);
 
     let implicit_affinity_default = config
@@ -352,6 +366,7 @@ async fn init_app_state(
         state_storage,
         llm_provider_url,
         span_attributes,
+        distinct_id_header,
         http_client: reqwest::Client::new(),
         filter_pipeline,
         signals_enabled,

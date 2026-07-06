@@ -489,7 +489,7 @@ def test_openai_responses_api_non_streaming_upstream_anthropic():
     client = openai.OpenAI(api_key="test-key", base_url=f"{base_url}/v1")
 
     resp = client.responses.create(
-        model="claude-sonnet-4-20250514", input="Hello, translate this via grok alias"
+        model="claude-sonnet-4-6", input="Hello, translate this via grok alias"
     )
 
     # Print the response content - handle both responses format and chat completions format
@@ -509,7 +509,7 @@ def test_openai_responses_api_with_streaming_upstream_anthropic():
 
     # Simple streaming responses API request using a direct model (pass-through)
     stream = client.responses.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         input="Write a short haiku about coding",
         stream=True,
     )
@@ -566,7 +566,7 @@ def test_openai_responses_api_non_streaming_with_tools_upstream_anthropic():
     ]
 
     resp = client.responses.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         input="Call the echo tool",
         tools=tools,
     )
@@ -598,7 +598,7 @@ def test_openai_responses_api_streaming_with_tools_upstream_anthropic():
     ]
 
     stream = client.responses.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         input="Call the echo tool with hello_world",
         tools=tools,
         stream=True,

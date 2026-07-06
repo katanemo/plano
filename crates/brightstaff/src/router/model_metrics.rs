@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models/catalog";
+const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
 /// Anthropic's standard cache-write surcharge (5-minute cache). Catalog sources
 /// generally don't publish a write rate, so this multiplier is applied to the input
@@ -58,34 +59,41 @@ impl ModelMetricsService {
 
         for source in sources {
             match source {
-                MetricsSource::Cost(cfg) => match cfg.provider {
-                    CostProvider::Digitalocean => {
-                        if let Some(mult) = cfg.cache_creation_multiplier {
-                            cache_creation_multiplier = mult;
-                        }
-                        let aliases = cfg.model_aliases.clone().unwrap_or_default();
-                        let pricing = fetch_do_pricing(&client, &aliases).await;
-                        info!(models = pricing.len(), "fetched digitalocean pricing");
-                        *cost_data.write().await = summed_cost(&pricing);
-                        *pricing_data.write().await = pricing;
-
-                        if let Some(interval_secs) = cfg.refresh_interval {
-                            let cost_clone = Arc::clone(&cost_data);
-                            let pricing_clone = Arc::clone(&pricing_data);
-                            let client_clone = client.clone();
-                            let interval = Duration::from_secs(interval_secs);
-                            tokio::spawn(async move {
-                                loop {
-                                    tokio::time::sleep(interval).await;
-                                    let pricing = fetch_do_pricing(&client_clone, &aliases).await;
-                                    info!(models = pricing.len(), "refreshed digitalocean pricing");
-                                    *cost_clone.write().await = summed_cost(&pricing);
-                                    *pricing_clone.write().await = pricing;
-                                }
-                            });
-                        }
+                MetricsSource::Cost(cfg) => {
+                    if let Some(mult) = cfg.cache_creation_multiplier {
+                        cache_creation_multiplier = mult;
                     }
-                },
+                    let provider = cfg.provider.clone();
+                    let url = cfg
+                        .url
+                        .clone()
+                        .unwrap_or_else(|| default_cost_url(&provider).to_string());
+                    let aliases = cfg.model_aliases.clone().unwrap_or_default();
+                    let provider_name = cost_provider_name(&provider);
+
+                    let pricing = fetch_cost_pricing(&provider, &url, &client, &aliases).await;
+                    info!(models = pricing.len(), provider = provider_name, url = %url, "fetched cost pricing");
+                    *cost_data.write().await = summed_cost(&pricing);
+                    *pricing_data.write().await = pricing;
+
+                    if let Some(interval_secs) = cfg.refresh_interval {
+                        let cost_clone = Arc::clone(&cost_data);
+                        let pricing_clone = Arc::clone(&pricing_data);
+                        let client_clone = client.clone();
+                        let interval = Duration::from_secs(interval_secs);
+                        tokio::spawn(async move {
+                            loop {
+                                tokio::time::sleep(interval).await;
+                                let pricing =
+                                    fetch_cost_pricing(&provider, &url, &client_clone, &aliases)
+                                        .await;
+                                info!(models = pricing.len(), provider = provider_name, url = %url, "refreshed cost pricing");
+                                *cost_clone.write().await = summed_cost(&pricing);
+                                *pricing_clone.write().await = pricing;
+                            }
+                        });
+                    }
+                }
                 MetricsSource::Latency(cfg) => match cfg.provider {
                     LatencyProvider::Prometheus => {
                         let data = fetch_prometheus_metrics(&cfg.url, &cfg.query, &client).await;
@@ -274,11 +282,59 @@ struct DoPricing {
     cache_read_input_price_per_million: Option<f64>,
 }
 
-async fn fetch_do_pricing(
+#[derive(serde::Deserialize)]
+struct ModelsDevProvider {
+    #[serde(default)]
+    models: HashMap<String, ModelsDevModel>,
+}
+
+#[derive(serde::Deserialize)]
+struct ModelsDevModel {
+    cost: Option<ModelsDevCost>,
+}
+
+#[derive(serde::Deserialize)]
+struct ModelsDevCost {
+    input: Option<f64>,
+    output: Option<f64>,
+    /// Cached-input (cache read) rate, when published. Enables cache-aware routing
+    /// for models.dev-sourced pricing.
+    #[serde(default)]
+    cache_read: Option<f64>,
+}
+
+fn default_cost_url(provider: &CostProvider) -> &'static str {
+    match provider {
+        CostProvider::Digitalocean => DO_PRICING_URL,
+        CostProvider::ModelsDev => MODELS_DEV_URL,
+    }
+}
+
+fn cost_provider_name(provider: &CostProvider) -> &'static str {
+    match provider {
+        CostProvider::Digitalocean => "digitalocean",
+        CostProvider::ModelsDev => "models.dev",
+    }
+}
+
+async fn fetch_cost_pricing(
+    provider: &CostProvider,
+    url: &str,
     client: &reqwest::Client,
     aliases: &HashMap<String, String>,
 ) -> HashMap<String, ModelPricing> {
-    match client.get(DO_PRICING_URL).send().await {
+    match provider {
+        CostProvider::Digitalocean => fetch_do_pricing(url, client, aliases).await,
+        CostProvider::ModelsDev => fetch_models_dev_pricing(url, client, aliases).await,
+    }
+}
+
+async fn fetch_do_pricing(
+    url: &str,
+    client: &reqwest::Client,
+    aliases: &HashMap<String, String>,
+) -> HashMap<String, ModelPricing> {
+    match client.get(url).send().await {
         Ok(resp) => match resp.json::<DoModelList>().await {
             Ok(list) => list
                 .data
@@ -298,15 +354,68 @@ async fn fetch_do_pricing(
                 })
                 .collect(),
             Err(err) => {
-                warn!(error = %err, url = DO_PRICING_URL, "failed to parse digitalocean pricing response");
+                warn!(error = %err, url = %url, "failed to parse digitalocean pricing response");
                 HashMap::new()
             }
         },
         Err(err) => {
-            warn!(error = %err, url = DO_PRICING_URL, "failed to fetch digitalocean pricing");
+            warn!(error = %err, url = %url, "failed to fetch digitalocean pricing");
             HashMap::new()
         }
     }
+}
+
+/// models.dev publishes a top-level object keyed by provider id; each provider
+/// carries a `models` map whose keys are `creator/model` ids and whose `cost`
+/// block holds per-million USD rates. We sum input + output (mirroring the DO
+/// ranking metric) and key the result by `creator/model_id` so it lines up with
+/// Plano's `provider/model` routing names.
+async fn fetch_models_dev_pricing(
+    url: &str,
+    client: &reqwest::Client,
+    aliases: &HashMap<String, String>,
+) -> HashMap<String, ModelPricing> {
+    match client.get(url).send().await {
+        Ok(resp) => match resp.json::<HashMap<String, ModelsDevProvider>>().await {
+            Ok(providers) => parse_models_dev_pricing(providers, aliases),
+            Err(err) => {
+                warn!(error = %err, url = %url, "failed to parse models.dev pricing response");
+                HashMap::new()
+            }
+        },
+        Err(err) => {
+            warn!(error = %err, url = %url, "failed to fetch models.dev pricing");
+            HashMap::new()
+        }
+    }
+}
+
+fn parse_models_dev_pricing(
+    providers: HashMap<String, ModelsDevProvider>,
+    aliases: &HashMap<String, String>,
+) -> HashMap<String, ModelPricing> {
+    let mut out = HashMap::new();
+    for (provider_id, provider) in providers {
+        for (model_key, model) in provider.models {
+            let Some(cost) = model.cost else { continue };
+            let (Some(input), Some(output)) = (cost.input, cost.output) else {
+                continue;
+            };
+            let pricing = ModelPricing {
+                input_per_million: input,
+                output_per_million: output,
+                cached_input_per_million: cost.cache_read,
+            };
+            // First-party providers use bare model keys (`claude-opus-4-5`),
+            // so compose `provider/model` to line up with Plano routing names.
+            let raw_key = format!("{provider_id}/{model_key}");
+            let key = aliases.get(&raw_key).cloned().unwrap_or(raw_key);
+            out.insert(key, pricing.clone());
+            // Also register the bare model id as a fallback lookup.
+            out.entry(model_key).or_insert(pricing);
+        }
+    }
+    out
 }
 
 #[derive(serde::Deserialize)]
@@ -601,6 +710,60 @@ mod tests {
             .rank_models(&models, &make_policy(SelectionPreference::CacheAware), &ctx)
             .await;
         assert_eq!(result, vec!["anthropic/claude-sonnet", "unknown/model"]);
+    }
+
+    #[test]
+    fn test_parse_models_dev_pricing_composes_provider_keys() {
+        let json = r#"{
+            "anthropic": {
+                "models": {
+                    "claude-opus-4-5": {"cost": {"input": 5.0, "output": 25.0}}
+                }
+            },
+            "groq": {
+                "models": {
+                    "llama-3.3-70b-versatile": {"cost": {"input": 0.59, "output": 0.79}},
+                    "whisper-large-v3-turbo": {"cost": null}
+                }
+            }
+        }"#;
+        let providers: HashMap<String, ModelsDevProvider> = serde_json::from_str(json).unwrap();
+        let aliases = HashMap::new();
+        let prices = parse_models_dev_pricing(providers, &aliases);
+        let total = |m: &str| {
+            prices
+                .get(m)
+                .map(|p| p.input_per_million + p.output_per_million)
+        };
+
+        assert_eq!(total("anthropic/claude-opus-4-5"), Some(30.0));
+        assert_eq!(total("groq/llama-3.3-70b-versatile"), Some(1.38));
+        // bare fallback also registered
+        assert_eq!(total("claude-opus-4-5"), Some(30.0));
+        // models with no cost block are skipped
+        assert!(!prices.contains_key("groq/whisper-large-v3-turbo"));
+    }
+
+    #[test]
+    fn test_parse_models_dev_pricing_applies_aliases() {
+        let json = r#"{
+            "openai": {"models": {"gpt-oss-120b": {"cost": {"input": 1.0, "output": 2.0}}}}
+        }"#;
+        let providers: HashMap<String, ModelsDevProvider> = serde_json::from_str(json).unwrap();
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "openai/gpt-oss-120b".to_string(),
+            "openai/gpt-4o".to_string(),
+        );
+        let prices = parse_models_dev_pricing(providers, &aliases);
+
+        assert_eq!(
+            prices
+                .get("openai/gpt-4o")
+                .map(|p| p.input_per_million + p.output_per_million),
+            Some(3.0)
+        );
+        assert!(!prices.contains_key("openai/gpt-oss-120b"));
     }
 
     #[test]

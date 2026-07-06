@@ -112,33 +112,37 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                 ) => {
                                     // Check if it's a single text item (can use simple text format)
                                     if content_items.len() == 1 {
-                                        if let InputContent::InputText { text } = &content_items[0]
-                                        {
-                                            MessageContent::Text(text.clone())
-                                        } else {
-                                            // Single non-text item - use parts format
-                                            MessageContent::Parts(
-                                                content_items
-                                                    .iter()
-                                                    .filter_map(|c| match c {
-                                                        InputContent::InputText { text } => {
-                                                            Some(crate::apis::openai::ContentPart::Text {
-                                                                text: text.clone(),
-                                                            })
-                                                        }
-                                                        InputContent::InputImage { image_url, .. } => {
-                                                            Some(crate::apis::openai::ContentPart::ImageUrl {
-                                                                image_url: crate::apis::openai::ImageUrl {
-                                                                    url: image_url.clone(),
-                                                                    detail: None,
-                                                                },
-                                                            })
-                                                        }
-                                                        InputContent::InputFile { .. } => None, // Skip files for now
-                                                        InputContent::InputAudio { .. } => None, // Skip audio for now
-                                                    })
-                                                    .collect(),
-                                            )
+                                        match &content_items[0] {
+                                            InputContent::InputText { text }
+                                            | InputContent::OutputText { text } => {
+                                                MessageContent::Text(text.clone())
+                                            }
+                                            _ => {
+                                                // Single non-text item - use parts format
+                                                MessageContent::Parts(
+                                                    content_items
+                                                        .iter()
+                                                        .filter_map(|c| match c {
+                                                            InputContent::InputText { text }
+                                                            | InputContent::OutputText { text } => {
+                                                                Some(crate::apis::openai::ContentPart::Text {
+                                                                    text: text.clone(),
+                                                                })
+                                                            }
+                                                            InputContent::InputImage { image_url, .. } => {
+                                                                Some(crate::apis::openai::ContentPart::ImageUrl {
+                                                                    image_url: crate::apis::openai::ImageUrl {
+                                                                        url: image_url.clone(),
+                                                                        detail: None,
+                                                                    },
+                                                                })
+                                                            }
+                                                            InputContent::InputFile { .. } => None, // Skip files for now
+                                                            InputContent::InputAudio { .. } => None, // Skip audio for now
+                                                        })
+                                                        .collect(),
+                                                )
+                                            }
                                         }
                                     } else {
                                         // Multiple content items - convert to parts
@@ -146,7 +150,8 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                             content_items
                                                 .iter()
                                                 .filter_map(|c| match c {
-                                                    InputContent::InputText { text } => {
+                                                    InputContent::InputText { text }
+                                                    | InputContent::OutputText { text } => {
                                                         Some(crate::apis::openai::ContentPart::Text {
                                                             text: text.clone(),
                                                         })

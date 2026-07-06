@@ -486,6 +486,28 @@ properties:
             additionalProperties:
               type: string
         additionalProperties: false
+      exporters:
+        type: array
+        items:
+          oneOf:
+            - type: object
+              properties:
+                type:
+                  type: string
+                  const: posthog
+                url:
+                  type: string
+                api_key:
+                  type: string
+                distinct_id_header:
+                  type: string
+                capture_messages:
+                  type: boolean
+              additionalProperties: false
+              required:
+                - type
+                - url
+                - api_key
     additionalProperties: false
   mode:
     type: string
@@ -629,13 +651,17 @@ properties:
               type: string
               enum:
                 - digitalocean
+                - models.dev
+            url:
+              type: string
+              description: "Optional override for the pricing catalog endpoint. Defaults per provider (digitalocean: DO GenAI catalog; models.dev: https://models.dev/api.json)."
             refresh_interval:
               type: integer
               minimum: 1
               description: "Refresh interval in seconds"
             model_aliases:
               type: object
-              description: "Map DO catalog keys (lowercase(creator)/model_id) to Plano model names used in routing_preferences. Example: 'openai/openai-gpt-oss-120b: openai/gpt-4o'"
+              description: "Map catalog keys to Plano model names used in routing_preferences. DigitalOcean keys are 'lowercase(creator)/model_id'; models.dev keys are 'creator/model_id'. Example: 'openai/openai-gpt-oss-120b: openai/gpt-4o'"
               additionalProperties:
                 type: string
             cache_creation_multiplier:
