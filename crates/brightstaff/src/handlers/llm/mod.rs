@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::{resolve_prompt_caching, FilterPipeline, ModelAlias};
+use common::configuration::{FilterPipeline, ModelAlias};
 use common::consts::{
     ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, MODEL_AFFINITY_HEADER, PLANO_CACHE_HEADER,
     PLANO_PREFIX_HASH_HEADER,
@@ -8,7 +8,7 @@ use common::llm_providers::LlmProviders;
 use hermesllm::apis::openai::Message;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
-use hermesllm::{PromptCacheCapability, ProviderRequest, ProviderRequestType};
+use hermesllm::{cache_marker_strategy, CacheMarkerStrategy, ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::header::{self};
@@ -170,14 +170,10 @@ async fn llm_chat_inner(
     } = parsed;
 
     // --- Phase 1a: Session affinity (explicit header > implicit prefix hash) ---
-    // Route-level overrides can't apply yet (the route is only known after routing);
-    // model/provider/global-scoped overrides do.
-    let prompt_caching = resolve_prompt_caching(
-        state.prompt_caching_overrides.as_deref(),
-        state.implicit_affinity_default,
-        &alias_resolved_model,
-        None,
-    );
+    // Prompt caching is configured once for the whole instance and never influences
+    // which model routing selects — it only keeps a conversation on the same
+    // model/provider so the upstream prompt cache stays warm across turns.
+    let prompt_caching = state.prompt_caching;
 
     // The prefix hash is derived for any session (explicit or implicit) so pins can
     // be validated against prefix drift.
@@ -194,7 +190,7 @@ async fn llm_chat_inner(
 
     let (session_id, is_implicit_session): (Option<String>, bool) = match explicit_session_id {
         Some(sid) => (Some(sid), false),
-        None if prompt_caching.implicit_session_affinity && !cache_off_for_request => (
+        None if prompt_caching.session_affinity && !cache_off_for_request => (
             implicit_affinity.as_ref().map(|a| a.session_key.clone()),
             true,
         ),
@@ -202,10 +198,10 @@ async fn llm_chat_inner(
     };
 
     // Look up the pin; detect prefix drift (stored prefix hash no longer matches —
-    // the provider cache is already lost, so re-routing fresh is safe and correct);
-    // keep logically-expired pins only as a soft switch-penalty hint for ranking.
+    // the provider cache is already lost, so re-routing fresh is safe and correct).
+    // Logically-expired pins are dropped so model selection is never overridden by a
+    // stale cache.
     let mut pinned_route: Option<CachedRoute> = None;
-    let mut previous_model_hint: Option<String> = None;
     if let Some(ref sid) = session_id {
         if let Some(lookup) = state
             .orchestrator_service
@@ -216,10 +212,9 @@ async fn llm_chat_inner(
                 debug!(
                     session_id = %sid,
                     model = %lookup.route.model_name,
-                    "session pin expired — using as soft switch-penalty hint"
+                    "session pin expired — re-routing fresh"
                 );
                 bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_STALE_HINT);
-                previous_model_hint = Some(lookup.route.model_name);
             } else if let (Some(stored), Some(current)) =
                 (lookup.route.prefix_hash, request_prefix_hash)
             {
@@ -354,27 +349,44 @@ async fn llm_chat_inner(
             return Ok(bad_request);
         }
 
-        // Auto-inject cache breakpoints when the upstream requires explicit markers
-        // (Anthropic Messages API). Idempotent — client-supplied markers are
-        // respected — and threshold-guarded against the provider's minimum
-        // cacheable prefix.
+        // Auto-inject cache markers using the strategy resolved from
+        // (gateway × model family × upstream API), so Anthropic-family models cache
+        // whether they arrive over the native Messages API or an OpenAI-compatible
+        // gateway (DigitalOcean, OpenRouter). Idempotent — client-supplied markers are
+        // respected — and threshold-guarded against the provider's minimum cacheable
+        // prefix.
         if prompt_caching.enabled && prompt_caching.inject_cache_control && !cache_off_for_request {
-            if let (
-                ProviderRequestType::MessagesRequest(req),
-                SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
-                PromptCacheCapability::ExplicitMarkers { .. },
-            ) = (
-                &mut client_request,
-                &upstream_api,
-                provider_id.prompt_cache_capability(),
-            ) {
-                if req.inject_cache_breakpoints(prompt_caching.min_prefix_tokens) {
-                    debug!(
-                        model = %alias_resolved_model,
-                        min_prefix_tokens = prompt_caching.min_prefix_tokens,
-                        "injected ephemeral cache breakpoints"
-                    );
+            match cache_marker_strategy(provider_id, &model_name_only, &upstream_api) {
+                CacheMarkerStrategy::AnthropicMessagesBreakpoints {
+                    min_prefix_tokens, ..
+                } => {
+                    if let ProviderRequestType::MessagesRequest(req) = &mut client_request {
+                        let threshold = prompt_caching.min_prefix_tokens.max(min_prefix_tokens);
+                        if req.inject_cache_breakpoints(threshold) {
+                            debug!(
+                                model = %alias_resolved_model,
+                                min_prefix_tokens = threshold,
+                                "injected anthropic ephemeral cache breakpoints"
+                            );
+                        }
+                    }
                 }
+                CacheMarkerStrategy::OpenAiContentPartCacheControl {
+                    min_prefix_tokens,
+                    ttl,
+                } => {
+                    if let ProviderRequestType::ChatCompletionsRequest(req) = &mut client_request {
+                        let threshold = prompt_caching.min_prefix_tokens.max(min_prefix_tokens);
+                        if req.inject_cache_control(ttl, threshold) {
+                            debug!(
+                                model = %alias_resolved_model,
+                                min_prefix_tokens = threshold,
+                                "injected openai content-part cache_control"
+                            );
+                        }
+                    }
+                }
+                CacheMarkerStrategy::Automatic | CacheMarkerStrategy::None => {}
             }
         }
     }
@@ -444,7 +456,6 @@ async fn llm_chat_inner(
                 &request_path,
                 &request_id,
                 inline_routing_preferences,
-                previous_model_hint,
             )
             .await
         }
@@ -479,16 +490,7 @@ async fn llm_chat_inner(
             }
         }
 
-        // Re-resolve caching config now that the route is known (route-scoped
-        // overrides can disable pinning for e.g. quality-critical routes).
-        let caching_for_route = resolve_prompt_caching(
-            state.prompt_caching_overrides.as_deref(),
-            state.implicit_affinity_default,
-            &model,
-            route_name.as_deref(),
-        );
-
-        if session_id.is_some() && caching_for_route.enabled {
+        if session_id.is_some() && prompt_caching.enabled {
             if is_implicit_session {
                 // Pin-after-hit: defer the pin until the response proves the
                 // workload actually benefits from caching.
@@ -507,7 +509,7 @@ async fn llm_chat_inner(
                                 prefix_hash: request_prefix_hash,
                                 observed_cache_hit: false,
                             },
-                            caching_for_route.session_ttl_seconds,
+                            prompt_caching.session_ttl_seconds,
                         )
                         .await;
                 }
@@ -537,25 +539,16 @@ async fn llm_chat_inner(
 
     // Build the response-side session-pin context.
     let session_pin_ctx: Option<SessionPinCtx> = match (&session_id, pin_action) {
-        (Some(sid), Some(action)) => {
-            let ttl_override = resolve_prompt_caching(
-                state.prompt_caching_overrides.as_deref(),
-                state.implicit_affinity_default,
-                &resolved_model,
-                resolved_route_name.as_deref(),
-            )
-            .session_ttl_seconds;
-            Some(SessionPinCtx {
-                orchestrator: Arc::clone(&state.orchestrator_service),
-                session_id: sid.clone(),
-                tenant_id: tenant_id.clone(),
-                model_name: resolved_model.clone(),
-                route_name: resolved_route_name.clone(),
-                prefix_hash: request_prefix_hash,
-                ttl_override_seconds: ttl_override,
-                action,
-            })
-        }
+        (Some(sid), Some(action)) => Some(SessionPinCtx {
+            orchestrator: Arc::clone(&state.orchestrator_service),
+            session_id: sid.clone(),
+            tenant_id: tenant_id.clone(),
+            model_name: resolved_model.clone(),
+            route_name: resolved_route_name.clone(),
+            prefix_hash: request_prefix_hash,
+            ttl_override_seconds: prompt_caching.session_ttl_seconds,
+            action,
+        }),
         _ => None,
     };
 

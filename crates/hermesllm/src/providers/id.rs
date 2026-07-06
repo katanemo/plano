@@ -92,50 +92,132 @@ impl TryFrom<&str> for ProviderId {
     }
 }
 
-/// How a provider's prompt cache works, driving whether Plano needs to inject
-/// explicit cache markers or can rely on automatic prefix caching.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PromptCacheCapability {
-    /// Provider caches stable prompt prefixes automatically; no request markers needed.
-    /// Plano only needs to keep the prefix byte-stable and the model pinned.
+/// How Plano should mark a request for prompt caching, resolved from the *combination*
+/// of gateway provider, the underlying model family, and the upstream API shape — not
+/// the gateway alone. This is what lets DigitalOcean-Anthropic and OpenRouter-Anthropic
+/// (both OpenAI-compatible chat completions fronting Anthropic models) cache through one
+/// path, while OpenAI-family models stay correctly automatic and unimplemented backends
+/// (Bedrock) are an honest `None` rather than a silent no-op.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CacheMarkerStrategy {
+    /// No known prompt-caching support for this combination — do nothing.
+    None,
+    /// Provider caches stable prefixes automatically (OpenAI-family anywhere); no
+    /// request markers are needed. Plano only keeps the prefix byte-stable and pinned.
     Automatic,
-    /// Provider requires explicit `cache_control` breakpoints in the request.
-    ExplicitMarkers {
+    /// OpenAI-compatible chat completions fronting Anthropic-family models
+    /// (DigitalOcean, OpenRouter): attach `cache_control` to content parts.
+    OpenAiContentPartCacheControl {
+        /// Minimum cacheable prefix length in tokens; injecting below this is a no-op.
+        min_prefix_tokens: u32,
+        /// Optional cache lifetime hint ("5m" | "1h").
+        ttl: Option<String>,
+    },
+    /// Native Anthropic Messages API (native `anthropic/*`, Vercel-Anthropic): inject
+    /// ephemeral breakpoints on the Anthropic-shaped request.
+    AnthropicMessagesBreakpoints {
         /// Maximum number of cache breakpoints the provider accepts per request.
         max_breakpoints: u8,
         /// Minimum cacheable prefix length in tokens; injecting below this is a no-op.
         min_prefix_tokens: u32,
     },
-    /// No known prompt-caching support.
-    None,
+    // BedrockCachePoint { .. } // left as explicit `None` until implemented.
 }
 
-impl ProviderId {
-    /// Prompt-cache semantics for this provider.
-    pub fn prompt_cache_capability(&self) -> PromptCacheCapability {
-        match self {
-            // Anthropic: explicit ephemeral markers, max 4 breakpoints, ~1024-token
-            // minimum cacheable prefix (2048 for Haiku-class models; callers may
-            // override the threshold via config).
-            ProviderId::Anthropic => PromptCacheCapability::ExplicitMarkers {
-                max_breakpoints: 4,
-                min_prefix_tokens: 1024,
-            },
-            // Automatic prefix caching, no markers required.
-            ProviderId::OpenAI
+/// Coarse model family, inferred from the model id. Works across gateway naming
+/// conventions (DigitalOcean's `anthropic-claude-…` dash form and OpenRouter's
+/// `anthropic/claude-…` slash form) via substring matching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModelFamily {
+    Anthropic,
+    OpenAI,
+    Other,
+}
+
+fn model_family(model_name: &str) -> ModelFamily {
+    let m = model_name.to_ascii_lowercase();
+    if m.contains("claude") || m.contains("anthropic") {
+        ModelFamily::Anthropic
+    } else if m.contains("gpt") || m.contains("openai") || m.contains("chatgpt") {
+        ModelFamily::OpenAI
+    } else {
+        ModelFamily::Other
+    }
+}
+
+/// Whether a gateway accepts Anthropic-style `cache_control` on OpenAI content parts
+/// over its chat-completions endpoint.
+fn accepts_openai_content_part_cache_control(provider: ProviderId) -> bool {
+    matches!(provider, ProviderId::DigitalOcean | ProviderId::OpenRouter)
+}
+
+/// Whether a gateway/model relies on automatic prefix caching (no markers required)
+/// over an OpenAI-compatible surface.
+fn is_automatic_cache_provider(provider: ProviderId) -> bool {
+    matches!(
+        provider,
+        ProviderId::OpenAI
             | ProviderId::AzureOpenAI
             | ProviderId::ChatGPT
             | ProviderId::Groq
             | ProviderId::Deepseek
             | ProviderId::Gemini
             | ProviderId::Moonshotai
+            | ProviderId::XAI
             | ProviderId::DigitalOcean
             | ProviderId::OpenRouter
-            | ProviderId::XAI => PromptCacheCapability::Automatic,
-            _ => PromptCacheCapability::None,
-        }
-    }
+    )
+}
 
+/// Resolve the cache-marking strategy for a `(gateway provider × underlying model ×
+/// upstream API)` combination.
+///
+/// - `model_name` is the id *after* the gateway prefix (e.g. `anthropic-claude-3-5-sonnet`
+///   for DigitalOcean, `anthropic/claude-3.5-sonnet` for OpenRouter).
+pub fn cache_marker_strategy(
+    provider: ProviderId,
+    model_name: &str,
+    upstream_api: &SupportedUpstreamAPIs,
+) -> CacheMarkerStrategy {
+    // Anthropic minimum cacheable prefix is ~1024 tokens (2048 for Haiku-class);
+    // callers may raise this via config.
+    const ANTHROPIC_MIN_PREFIX_TOKENS: u32 = 1024;
+
+    match upstream_api {
+        // Native Anthropic Messages API — inject ephemeral breakpoints.
+        SupportedUpstreamAPIs::AnthropicMessagesAPI(_) => {
+            CacheMarkerStrategy::AnthropicMessagesBreakpoints {
+                max_breakpoints: 4,
+                min_prefix_tokens: ANTHROPIC_MIN_PREFIX_TOKENS,
+            }
+        }
+        // OpenAI-compatible chat completions — strategy depends on the model family.
+        SupportedUpstreamAPIs::OpenAIChatCompletions(_) => match model_family(model_name) {
+            ModelFamily::Anthropic if accepts_openai_content_part_cache_control(provider) => {
+                CacheMarkerStrategy::OpenAiContentPartCacheControl {
+                    min_prefix_tokens: ANTHROPIC_MIN_PREFIX_TOKENS,
+                    ttl: None,
+                }
+            }
+            // Anthropic-family behind a gateway that doesn't accept content-part
+            // cache_control over chat completions: no honest way to mark it.
+            ModelFamily::Anthropic => CacheMarkerStrategy::None,
+            ModelFamily::OpenAI => CacheMarkerStrategy::Automatic,
+            ModelFamily::Other if is_automatic_cache_provider(provider) => {
+                CacheMarkerStrategy::Automatic
+            }
+            ModelFamily::Other => CacheMarkerStrategy::None,
+        },
+        // OpenAI Responses API — OpenAI-family automatic prefix caching.
+        SupportedUpstreamAPIs::OpenAIResponsesAPI(_) => CacheMarkerStrategy::Automatic,
+        // Bedrock cache points not yet implemented — honest None instead of a
+        // silent no-op.
+        SupportedUpstreamAPIs::AmazonBedrockConverse(_)
+        | SupportedUpstreamAPIs::AmazonBedrockConverseStream(_) => CacheMarkerStrategy::None,
+    }
+}
+
+impl ProviderId {
     /// Get all available models for this provider
     /// Returns model names without the provider prefix (e.g., "gpt-4" not "openai/gpt-4")
     pub fn models(&self) -> Vec<String> {
@@ -334,6 +416,100 @@ impl Display for ProviderId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::apis::{AnthropicApi, OpenAIApi};
+
+    fn chat_completions() -> SupportedUpstreamAPIs {
+        SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions)
+    }
+
+    fn anthropic_messages() -> SupportedUpstreamAPIs {
+        SupportedUpstreamAPIs::AnthropicMessagesAPI(AnthropicApi::Messages)
+    }
+
+    #[test]
+    fn digitalocean_anthropic_uses_openai_content_part_markers() {
+        // DO fronts Anthropic over an OpenAI-compatible surface (dash-form model id).
+        let strategy = cache_marker_strategy(
+            ProviderId::DigitalOcean,
+            "anthropic-claude-3-5-sonnet",
+            &chat_completions(),
+        );
+        assert!(matches!(
+            strategy,
+            CacheMarkerStrategy::OpenAiContentPartCacheControl { .. }
+        ));
+    }
+
+    #[test]
+    fn openrouter_anthropic_uses_openai_content_part_markers() {
+        // OpenRouter uses slash-form model ids after the gateway prefix.
+        let strategy = cache_marker_strategy(
+            ProviderId::OpenRouter,
+            "anthropic/claude-3.5-sonnet",
+            &chat_completions(),
+        );
+        assert!(matches!(
+            strategy,
+            CacheMarkerStrategy::OpenAiContentPartCacheControl { .. }
+        ));
+    }
+
+    #[test]
+    fn openai_family_over_chat_completions_is_automatic() {
+        assert_eq!(
+            cache_marker_strategy(
+                ProviderId::DigitalOcean,
+                "openai-gpt-4o",
+                &chat_completions()
+            ),
+            CacheMarkerStrategy::Automatic
+        );
+        assert_eq!(
+            cache_marker_strategy(ProviderId::OpenAI, "gpt-4o", &chat_completions()),
+            CacheMarkerStrategy::Automatic
+        );
+    }
+
+    #[test]
+    fn native_anthropic_uses_messages_breakpoints() {
+        let strategy = cache_marker_strategy(
+            ProviderId::Anthropic,
+            "claude-3-5-sonnet-20241022",
+            &anthropic_messages(),
+        );
+        assert!(matches!(
+            strategy,
+            CacheMarkerStrategy::AnthropicMessagesBreakpoints { .. }
+        ));
+    }
+
+    #[test]
+    fn anthropic_family_without_content_part_support_is_none() {
+        // An Anthropic-family model over chat completions on a gateway that does not
+        // accept content-part cache_control has no honest marking path.
+        assert_eq!(
+            cache_marker_strategy(
+                ProviderId::Vercel,
+                "anthropic/claude-3.5",
+                &chat_completions()
+            ),
+            CacheMarkerStrategy::None
+        );
+    }
+
+    #[test]
+    fn bedrock_is_honest_none() {
+        assert_eq!(
+            cache_marker_strategy(
+                ProviderId::AmazonBedrock,
+                "anthropic.claude-3-5-sonnet",
+                &SupportedUpstreamAPIs::AmazonBedrockConverse(
+                    crate::apis::AmazonBedrockApi::Converse
+                )
+            ),
+            CacheMarkerStrategy::None
+        );
+    }
 
     #[test]
     fn test_models_loaded_from_yaml() {

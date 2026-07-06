@@ -68,7 +68,10 @@ impl ContentUtils<ToolCall> for Vec<MessagesContentBlock> {
         for block in self {
             match block {
                 MessagesContentBlock::Text { text, .. } => {
-                    content_parts.push(ContentPart::Text { text: text.clone() });
+                    content_parts.push(ContentPart::Text {
+                        text: text.clone(),
+                        cache_control: None,
+                    });
                 }
                 MessagesContentBlock::Image { source } => {
                     let url = convert_image_source_to_url(source);
@@ -198,7 +201,7 @@ pub fn convert_openai_message_to_anthropic_content(
         Some(MessageContent::Parts(parts)) => {
             for part in parts {
                 match part {
-                    ContentPart::Text { text } => {
+                    ContentPart::Text { text, .. } => {
                         blocks.push(MessagesContentBlock::Text {
                             text: text.clone(),
                             cache_control: None,

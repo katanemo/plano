@@ -248,14 +248,6 @@ async fn init_app_state(
                 )
                 .into());
             }
-            if pref.selection_policy.prefer == SelectionPreference::CacheAware && !has_cost_source {
-                return Err(format!(
-                    "routing_preferences route '{}' uses prefer: cache_aware but no cost metrics source is configured — \
-                     add a cost metrics source to model_metrics_sources",
-                    pref.name
-                )
-                .into());
-            }
             if pref.selection_policy.prefer == SelectionPreference::Fastest && !has_latency_source {
                 return Err(format!(
                     "routing_preferences route '{}' uses prefer: fastest but no latency metrics source is configured — \
@@ -351,11 +343,8 @@ async fn init_app_state(
 
     let signals_enabled = !overrides.disable_signals.unwrap_or(false);
 
-    let implicit_affinity_default = config
-        .routing
-        .as_ref()
-        .and_then(|r| r.implicit_session_affinity)
-        .unwrap_or(true);
+    let prompt_caching =
+        common::configuration::EffectivePromptCaching::from_config(config.prompt_caching.as_ref());
 
     Ok(AppState {
         orchestrator_service,
@@ -370,8 +359,7 @@ async fn init_app_state(
         http_client: reqwest::Client::new(),
         filter_pipeline,
         signals_enabled,
-        prompt_caching_overrides: overrides.prompt_caching.clone(),
-        implicit_affinity_default,
+        prompt_caching,
     })
 }
 

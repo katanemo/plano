@@ -324,7 +324,7 @@ fn build_openai_content(
         None
     } else if content_parts.len() == 1 && tool_calls.is_empty() {
         match &content_parts[0] {
-            ContentPart::Text { text } => Some(MessageContent::Text(text.clone())),
+            ContentPart::Text { text, .. } => Some(MessageContent::Text(text.clone())),
             _ => Some(MessageContent::Parts(content_parts)),
         }
     } else if content_parts.is_empty() {

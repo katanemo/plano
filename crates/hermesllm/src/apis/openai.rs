@@ -163,6 +163,112 @@ impl ChatCompletionsRequest {
             self.store = None;
         }
     }
+
+    /// True when any message content part already carries a `cache_control` marker
+    /// (client-supplied or previously injected).
+    pub fn has_cache_control_markers(&self) -> bool {
+        self.messages.iter().any(|m| match &m.content {
+            Some(MessageContent::Parts(parts)) => parts.iter().any(|p| {
+                matches!(
+                    p,
+                    ContentPart::Text {
+                        cache_control: Some(_),
+                        ..
+                    }
+                )
+            }),
+            _ => false,
+        })
+    }
+
+    /// Estimated token length of the stable prompt prefix — the system/developer
+    /// message(s) plus tool definitions — using a chars/4 heuristic. Precision is
+    /// not required; this only gates whether marking the prefix is worthwhile.
+    pub fn estimated_cache_prefix_tokens(&self) -> u32 {
+        const CHARS_PER_TOKEN: usize = 4;
+        let mut chars = 0usize;
+        for m in &self.messages {
+            if matches!(m.role, Role::System | Role::Developer) {
+                if let Some(content) = &m.content {
+                    chars += content.extract_text().len();
+                }
+            }
+        }
+        if let Some(tools) = &self.tools {
+            for t in tools {
+                chars += t.function.name.len();
+                chars += t.function.description.as_deref().map_or(0, str::len);
+                chars += t.function.parameters.to_string().len();
+            }
+        }
+        (chars / CHARS_PER_TOKEN) as u32
+    }
+
+    /// Auto-inject a single ephemeral `cache_control` breakpoint at the end of the
+    /// stable prompt prefix, for OpenAI-compatible gateways that proxy Anthropic-family
+    /// models (DigitalOcean, OpenRouter). The marker is attached to the last text
+    /// content part of the system/developer message (falling back to the first message
+    /// when there is no system prompt), normalizing a plain-string content into a
+    /// one-element content-part array as needed.
+    ///
+    /// Idempotent: a request that already carries any `cache_control` marker is left
+    /// untouched. Threshold-guarded: no-op when the estimated stable prefix is below
+    /// `min_prefix_tokens`. Returns true if a marker was injected.
+    pub fn inject_cache_control(&mut self, ttl: Option<String>, min_prefix_tokens: u32) -> bool {
+        if self.has_cache_control_markers() {
+            return false;
+        }
+        if self.estimated_cache_prefix_tokens() < min_prefix_tokens {
+            return false;
+        }
+
+        let target_idx = self
+            .messages
+            .iter()
+            .position(|m| matches!(m.role, Role::System | Role::Developer))
+            .or(if self.messages.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
+
+        let Some(idx) = target_idx else {
+            return false;
+        };
+        let marker = CacheControl {
+            kind: "ephemeral".to_string(),
+            ttl,
+        };
+        attach_cache_control(&mut self.messages[idx], marker)
+    }
+}
+
+/// Attach a `cache_control` marker to the last text content part of `message`,
+/// normalizing string content into a one-element parts array. Returns false when
+/// there is no text part to mark (e.g. an image-only message).
+fn attach_cache_control(message: &mut Message, marker: CacheControl) -> bool {
+    let mut parts = match message.content.take() {
+        Some(MessageContent::Text(text)) => vec![ContentPart::Text {
+            text,
+            cache_control: None,
+        }],
+        Some(MessageContent::Parts(parts)) => parts,
+        None => return false,
+    };
+
+    let marked = if let Some(ContentPart::Text { cache_control, .. }) = parts
+        .iter_mut()
+        .rev()
+        .find(|p| matches!(p, ContentPart::Text { .. }))
+    {
+        *cache_control = Some(marker);
+        true
+    } else {
+        false
+    };
+
+    message.content = Some(MessageContent::Parts(parts));
+    marked
 }
 
 /// True when the upstream model id is Moonshot's Kimi Code endpoint model.
@@ -277,7 +383,7 @@ impl ExtractText for Vec<ContentPart> {
     fn extract_text(&self) -> String {
         self.iter()
             .filter_map(|part| match part {
-                ContentPart::Text { text } => Some(text.as_str()),
+                ContentPart::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -296,9 +402,30 @@ impl Display for MessageContent {
 #[serde(tag = "type")]
 pub enum ContentPart {
     #[serde(rename = "text")]
-    Text { text: String },
+    Text {
+        text: String,
+        /// Prompt-cache breakpoint for OpenAI-compatible gateways that proxy
+        /// Anthropic-family models (e.g. DigitalOcean, OpenRouter). Round-trips so
+        /// client-supplied markers survive deserialization and are respected by the
+        /// idempotent injector.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
     #[serde(rename = "image_url")]
     ImageUrl { image_url: ImageUrl },
+}
+
+/// Prompt-cache control marker carried on an OpenAI content part. Mirrors the
+/// Anthropic `cache_control` object as accepted by OpenAI-compatible gateways that
+/// front Anthropic models.
+#[skip_serializing_none]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct CacheControl {
+    #[serde(rename = "type")]
+    pub kind: String, // "ephemeral"
+    /// Cache lifetime hint: "5m" | "1h" (DigitalOcean / OpenRouter). Omitted for
+    /// plain Anthropic ephemeral caching (defaults to 5 minutes upstream).
+    pub ttl: Option<String>,
 }
 
 /// Image URL configuration for vision capabilities
@@ -445,11 +572,35 @@ pub struct Usage {
     pub total_tokens: u32,
     pub prompt_tokens_details: Option<PromptTokensDetails>,
     pub completion_tokens_details: Option<CompletionTokensDetails>,
+    /// Anthropic-style cache-read counter emitted by OpenAI-compatible gateways that
+    /// front Anthropic models (e.g. DigitalOcean), which do *not* populate
+    /// `prompt_tokens_details.cached_tokens`. Captured here so it can be surfaced to
+    /// OpenAI clients via [`Usage::normalize_cache_tokens`].
+    pub cache_read_input_tokens: Option<u32>,
+    /// Anthropic-style cache-write counter (see `cache_read_input_tokens`).
+    pub cache_creation_input_tokens: Option<u32>,
+}
+
+impl Usage {
+    /// Fold gateway-specific Anthropic-style `cache_read_input_tokens` into the
+    /// OpenAI-standard `prompt_tokens_details.cached_tokens` so OpenAI-compatible
+    /// clients (and downstream cost accounting) observe the cache hit. No-op when the
+    /// standard field is already populated or no cache-read counter is present.
+    pub fn normalize_cache_tokens(&mut self) {
+        if let Some(read) = self.cache_read_input_tokens {
+            let details = self
+                .prompt_tokens_details
+                .get_or_insert_with(Default::default);
+            if details.cached_tokens.is_none() {
+                details.cached_tokens = Some(read);
+            }
+        }
+    }
 }
 
 /// Detailed breakdown of prompt tokens
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct PromptTokensDetails {
     pub cached_tokens: Option<u32>,
     pub audio_tokens: Option<u32>,
@@ -632,7 +783,15 @@ impl TokenUsage for Usage {
     fn cached_input_tokens(&self) -> Option<usize> {
         self.prompt_tokens_details
             .as_ref()
-            .and_then(|d| d.cached_tokens.map(|t| t as usize))
+            .and_then(|d| d.cached_tokens)
+            // Gateways fronting Anthropic (e.g. DigitalOcean) report cache reads here
+            // instead of prompt_tokens_details.cached_tokens.
+            .or(self.cache_read_input_tokens)
+            .map(|t| t as usize)
+    }
+
+    fn cache_creation_tokens(&self) -> Option<usize> {
+        self.cache_creation_input_tokens.map(|t| t as usize)
     }
 
     fn reasoning_tokens(&self) -> Option<usize> {
@@ -666,7 +825,7 @@ impl ProviderRequest for ChatCompletionsRequest {
                     MessageContent::Parts(parts) => parts
                         .iter()
                         .map(|part| match part {
-                            ContentPart::Text { text } => text.clone(),
+                            ContentPart::Text { text, .. } => text.clone(),
                             ContentPart::ImageUrl { .. } => "[Image]".to_string(),
                         })
                         .collect::<Vec<_>>()
@@ -795,6 +954,137 @@ impl ProviderStreamResponse for ChatCompletionsStreamResponse {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Build a request with a long system prompt (well over the token threshold) plus
+    /// a short user turn.
+    fn request_with_system(system: &str, user: &str) -> ChatCompletionsRequest {
+        ChatCompletionsRequest {
+            model: "anthropic/claude-3.5-sonnet".to_string(),
+            messages: vec![
+                Message {
+                    role: Role::System,
+                    content: Some(MessageContent::Text(system.to_string())),
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                Message {
+                    role: Role::User,
+                    content: Some(MessageContent::Text(user.to_string())),
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn system_cache_control(req: &ChatCompletionsRequest) -> Option<&CacheControl> {
+        match &req.messages[0].content {
+            Some(MessageContent::Parts(parts)) => parts.iter().find_map(|p| match p {
+                ContentPart::Text { cache_control, .. } => cache_control.as_ref(),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn inject_cache_control_normalizes_string_content_and_marks_prefix() {
+        let mut req = request_with_system(&"x".repeat(8000), "hi");
+        let injected = req.inject_cache_control(None, 1024);
+        assert!(injected);
+        // The plain-string system content was normalized into a one-element parts array.
+        let marker = system_cache_control(&req).expect("system content part should be marked");
+        assert_eq!(marker.kind, "ephemeral");
+        assert_eq!(marker.ttl, None);
+        // The user message is untouched.
+        assert!(matches!(
+            req.messages[1].content,
+            Some(MessageContent::Text(_))
+        ));
+    }
+
+    #[test]
+    fn inject_cache_control_is_idempotent() {
+        let mut req = request_with_system(&"x".repeat(8000), "hi");
+        assert!(req.inject_cache_control(Some("1h".to_string()), 1024));
+        // A second pass must be a no-op because a marker already exists.
+        assert!(!req.inject_cache_control(None, 1024));
+        assert_eq!(
+            system_cache_control(&req).and_then(|c| c.ttl.clone()),
+            Some("1h".to_string())
+        );
+    }
+
+    #[test]
+    fn inject_cache_control_respects_min_prefix_threshold() {
+        // A tiny prefix (below the threshold) is not worth marking.
+        let mut req = request_with_system("short system", "hi");
+        assert!(!req.inject_cache_control(None, 1024));
+        assert!(system_cache_control(&req).is_none());
+    }
+
+    #[test]
+    fn client_supplied_cache_control_round_trips_and_blocks_injection() {
+        // A client that already set cache_control must survive deserialization and be
+        // respected (no double injection).
+        let raw = json!({
+            "model": "anthropic/claude-3.5-sonnet",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": "big stable prefix",
+                         "cache_control": {"type": "ephemeral", "ttl": "5m"}}
+                    ]
+                },
+                {"role": "user", "content": "hi"}
+            ]
+        });
+        let mut req: ChatCompletionsRequest = serde_json::from_value(raw).unwrap();
+        assert!(req.has_cache_control_markers());
+        // Injection is a no-op, and re-serialization preserves the client's marker.
+        assert!(!req.inject_cache_control(None, 0));
+        let reserialized = serde_json::to_value(&req).unwrap();
+        let marker = &reserialized["messages"][0]["content"][0]["cache_control"];
+        assert_eq!(marker["type"], "ephemeral");
+        assert_eq!(marker["ttl"], "5m");
+    }
+
+    #[test]
+    fn cache_control_omitted_when_absent() {
+        // A plain text part must not emit a null cache_control field.
+        let part = ContentPart::Text {
+            text: "hello".to_string(),
+            cache_control: None,
+        };
+        let v = serde_json::to_value(&part).unwrap();
+        assert!(v.get("cache_control").is_none());
+    }
+
+    #[test]
+    fn usage_normalizes_gateway_cache_read_into_cached_tokens() {
+        // DigitalOcean-style usage: Anthropic cache_read with no prompt_tokens_details.
+        let raw = json!({
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "cache_read_input_tokens": 80,
+            "cache_creation_input_tokens": 12
+        });
+        let mut usage: Usage = serde_json::from_value(raw).unwrap();
+        // TokenUsage falls back to the gateway field.
+        assert_eq!(usage.cached_input_tokens(), Some(80));
+        assert_eq!(usage.cache_creation_tokens(), Some(12));
+        // Normalization surfaces it as the OpenAI-standard cached_tokens.
+        usage.normalize_cache_tokens();
+        assert_eq!(
+            usage.prompt_tokens_details.and_then(|d| d.cached_tokens),
+            Some(80)
+        );
+    }
 
     #[test]
     fn test_required_fields() {
@@ -995,7 +1285,7 @@ mod tests {
             assert_eq!(content_parts.len(), 2);
 
             // Validate text content part
-            if let ContentPart::Text { text } = &content_parts[0] {
+            if let ContentPart::Text { text, .. } = &content_parts[0] {
                 assert_eq!(text, "What can you see in this image and what's the weather like in the location shown?");
             } else {
                 panic!("Expected text content part");

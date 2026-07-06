@@ -33,10 +33,6 @@ pub struct Routing {
     pub session_ttl_seconds: Option<u64>,
     pub session_max_entries: Option<usize>,
     pub session_cache: Option<SessionCacheConfig>,
-    /// When true (default), requests without an `X-Model-Affinity` header derive an
-    /// implicit session key from the stable prompt prefix (system + tools + first user
-    /// message) so provider prompt caches survive across turns without client changes.
-    pub implicit_session_affinity: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,11 +137,6 @@ pub enum StateStorageType {
 pub enum SelectionPreference {
     Cheapest,
     Fastest,
-    /// Rank by cache-adjusted projected cost: a model whose provider prompt cache is
-    /// already warm (the previously pinned model) is priced at its cached-input rate for
-    /// the repeated prefix, while switching to a cold model is priced at full input rate
-    /// plus the cache-creation surcharge. Requires a cost metrics source.
-    CacheAware,
     /// Return models in the same order they were defined — no reordering.
     #[default]
     #[serde(alias = "")]
@@ -195,11 +186,6 @@ pub struct CostMetricsConfig {
     /// keys look like `creator/model_id`.
     /// Example: `openai/openai-gpt-oss-120b: openai/gpt-4o`
     pub model_aliases: Option<HashMap<String, String>>,
-    /// Cache-write surcharge as a multiple of the input price, applied by the
-    /// cache-aware ranker when projecting the cost of switching to a cold model.
-    /// Catalogs typically don't publish a write rate; defaults to 1.25 (Anthropic's
-    /// standard 5-minute-cache surcharge).
-    pub cache_creation_multiplier: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -232,6 +218,10 @@ pub struct Configuration {
     pub model_aliases: Option<HashMap<String, ModelAlias>>,
     pub overrides: Option<Overrides>,
     pub routing: Option<Routing>,
+    /// Automatic provider prompt caching. Disabled by default; opt in globally with
+    /// `prompt_caching: { enabled: true }`. Applies across the entire Plano instance
+    /// and never changes which model routing selects.
+    pub prompt_caching: Option<PromptCaching>,
     pub system_prompt: Option<String>,
     pub prompt_guards: Option<PromptGuards>,
     pub prompt_targets: Option<Vec<PromptTarget>>,
@@ -256,106 +246,82 @@ pub struct Overrides {
     pub agent_orchestration_model: Option<String>,
     pub orchestrator_model_context_length: Option<usize>,
     pub disable_signals: Option<bool>,
-    /// Scoped prompt-caching overrides. Caching is default-on; entries here override the
-    /// defaults for a provider glob (`anthropic/*`), a specific model, or a route name.
-    pub prompt_caching: Option<Vec<PromptCachingOverride>>,
 }
 
-/// A scoped override for prompt-caching behavior.
+/// Automatic prompt caching, configured once for the whole Plano instance.
 ///
-/// `target` matches (in order of decreasing specificity):
-/// 1. an exact model name (`anthropic/claude-sonnet-4-20250514`)
-/// 2. a provider glob (`anthropic/*`)
-/// 3. a `routing_preferences` route name (`code_generation`)
-/// 4. the global wildcard (`*`)
+/// Prompt caching keeps a multi-turn conversation's stable prefix warm in the
+/// upstream provider's cache. It never influences which model routing selects — it
+/// only (a) auto-injects provider cache-control markers where supported and
+/// (b) derives an implicit session key from the stable prompt prefix so follow-up
+/// turns reuse the same warm cache. An explicit `X-Model-Affinity` header always wins.
 ///
-/// All fields are optional; unset fields inherit from less-specific matches and finally
-/// from the built-in defaults.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PromptCachingOverride {
-    pub target: String,
-    pub enabled: Option<bool>,
-    pub implicit_session_affinity: Option<bool>,
+/// Disabled by default; opt in with `enabled: true`. The remaining knobs are optional
+/// tuning that only take effect while caching is enabled.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PromptCaching {
+    /// Master switch. Defaults to `false` (opt-in).
+    #[serde(default)]
+    pub enabled: bool,
+    /// Derive an implicit session key from the stable prompt prefix so caches survive
+    /// across turns without client changes. Defaults to `true` when caching is enabled.
+    pub session_affinity: Option<bool>,
+    /// Auto-inject provider cache-control markers (e.g. Anthropic `cache_control`).
+    /// Defaults to `true` when caching is enabled.
     pub inject_cache_control: Option<bool>,
+    /// Minimum estimated prefix tokens before a cache breakpoint is injected.
     pub min_prefix_tokens: Option<u32>,
+    /// Session pin TTL; falls back to `routing.session_ttl_seconds` when unset.
     pub session_ttl_seconds: Option<u64>,
 }
 
-/// Fully-resolved prompt-caching settings for one request scope.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Fully-resolved, instance-wide prompt-caching settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EffectivePromptCaching {
     pub enabled: bool,
-    pub implicit_session_affinity: bool,
+    pub session_affinity: bool,
     pub inject_cache_control: bool,
     pub min_prefix_tokens: u32,
-    /// Pin TTL override for this scope; `None` uses `routing.session_ttl_seconds`.
+    /// Pin TTL override; `None` uses `routing.session_ttl_seconds`.
     pub session_ttl_seconds: Option<u64>,
 }
 
 pub const DEFAULT_MIN_PREFIX_TOKENS: u32 = 1024;
 
-impl EffectivePromptCaching {
-    fn defaults(default_implicit_affinity: bool) -> Self {
+impl Default for EffectivePromptCaching {
+    fn default() -> Self {
         EffectivePromptCaching {
-            enabled: true,
-            implicit_session_affinity: default_implicit_affinity,
-            inject_cache_control: true,
+            enabled: false,
+            session_affinity: false,
+            inject_cache_control: false,
             min_prefix_tokens: DEFAULT_MIN_PREFIX_TOKENS,
             session_ttl_seconds: None,
         }
     }
+}
 
-    fn apply(&mut self, entry: &PromptCachingOverride) {
-        if let Some(v) = entry.enabled {
-            self.enabled = v;
+impl PromptCaching {
+    /// Resolve the instance-wide effective settings. When caching is disabled every
+    /// sub-feature is off, regardless of the individual knobs.
+    pub fn resolve(&self) -> EffectivePromptCaching {
+        if !self.enabled {
+            return EffectivePromptCaching::default();
         }
-        if let Some(v) = entry.implicit_session_affinity {
-            self.implicit_session_affinity = v;
-        }
-        if let Some(v) = entry.inject_cache_control {
-            self.inject_cache_control = v;
-        }
-        if let Some(v) = entry.min_prefix_tokens {
-            self.min_prefix_tokens = v;
-        }
-        if let Some(v) = entry.session_ttl_seconds {
-            self.session_ttl_seconds = Some(v);
+        EffectivePromptCaching {
+            enabled: true,
+            session_affinity: self.session_affinity.unwrap_or(true),
+            inject_cache_control: self.inject_cache_control.unwrap_or(true),
+            min_prefix_tokens: self.min_prefix_tokens.unwrap_or(DEFAULT_MIN_PREFIX_TOKENS),
+            session_ttl_seconds: self.session_ttl_seconds,
         }
     }
 }
 
-/// Resolve the effective prompt-caching settings for a `(model, route)` scope by
-/// layering matching overrides from least to most specific.
-pub fn resolve_prompt_caching(
-    overrides: Option<&[PromptCachingOverride]>,
-    default_implicit_affinity: bool,
-    model: &str,
-    route: Option<&str>,
-) -> EffectivePromptCaching {
-    let mut effective = EffectivePromptCaching::defaults(default_implicit_affinity);
-    let Some(entries) = overrides else {
-        return effective;
-    };
-
-    // Least specific → most specific so later applications win.
-    let passes: [&dyn Fn(&str) -> bool; 4] = [
-        &|target: &str| target == "*",
-        &|target: &str| Some(target) == route,
-        &|target: &str| {
-            target
-                .strip_suffix("/*")
-                .is_some_and(|prefix| model.split('/').next() == Some(prefix))
-        },
-        &|target: &str| target == model,
-    ];
-    for matches in passes {
-        for entry in entries {
-            if matches(&entry.target) {
-                effective.apply(entry);
-            }
-        }
+impl EffectivePromptCaching {
+    /// Resolve from an optional config block; `None` means caching is off.
+    pub fn from_config(config: Option<&PromptCaching>) -> Self {
+        config.map(PromptCaching::resolve).unwrap_or_default()
     }
-    effective
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -814,8 +780,8 @@ mod test {
     use std::fs;
 
     use super::{
-        resolve_prompt_caching, IntoModels, LlmProvider, LlmProviderType, PromptCachingOverride,
-        SelectionPreference, DEFAULT_MIN_PREFIX_TOKENS,
+        EffectivePromptCaching, IntoModels, LlmProvider, LlmProviderType, PromptCaching,
+        DEFAULT_MIN_PREFIX_TOKENS,
     };
     use crate::api::open_ai::ToolType;
 
@@ -1019,131 +985,63 @@ disable_signals: false
     }
 
     #[test]
-    fn test_selection_preference_cache_aware_deserialize() {
-        let parsed: SelectionPreference = serde_yaml::from_str("cache_aware").unwrap();
-        assert_eq!(parsed, SelectionPreference::CacheAware);
+    fn test_prompt_caching_disabled_by_default() {
+        // Absent config → everything off.
+        let effective = EffectivePromptCaching::from_config(None);
+        assert!(!effective.enabled);
+        assert!(!effective.session_affinity);
+        assert!(!effective.inject_cache_control);
+
+        // Present but not enabled → still off.
+        let cfg: PromptCaching = serde_yaml::from_str("enabled: false").unwrap();
+        let effective = cfg.resolve();
+        assert!(!effective.enabled);
+        assert!(!effective.session_affinity);
+        assert!(!effective.inject_cache_control);
     }
 
     #[test]
-    fn test_prompt_caching_overrides_deserialize() {
-        let yaml = r#"
-prompt_caching:
-  - target: anthropic/*
-    enabled: true
-    implicit_session_affinity: true
-    inject_cache_control: true
-    min_prefix_tokens: 1024
-    session_ttl_seconds: 3600
-  - target: openai/*
-    inject_cache_control: false
-  - target: high_stakes_legal_review
-    enabled: false
-"#;
-        let overrides: super::Overrides = serde_yaml::from_str(yaml).unwrap();
-        let entries = overrides.prompt_caching.unwrap();
-        assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].target, "anthropic/*");
-        assert_eq!(entries[0].session_ttl_seconds, Some(3600));
-        assert_eq!(entries[1].inject_cache_control, Some(false));
-        assert_eq!(entries[1].enabled, None);
-        assert_eq!(entries[2].enabled, Some(false));
-    }
-
-    #[test]
-    fn test_resolve_prompt_caching_defaults_when_no_overrides() {
-        let effective = resolve_prompt_caching(None, true, "anthropic/claude-sonnet-4", None);
+    fn test_prompt_caching_enabled_defaults() {
+        // A bare `enabled: true` turns everything on with sensible defaults.
+        let cfg: PromptCaching = serde_yaml::from_str("enabled: true").unwrap();
+        let effective = cfg.resolve();
         assert!(effective.enabled);
-        assert!(effective.implicit_session_affinity);
+        assert!(effective.session_affinity);
         assert!(effective.inject_cache_control);
         assert_eq!(effective.min_prefix_tokens, DEFAULT_MIN_PREFIX_TOKENS);
         assert_eq!(effective.session_ttl_seconds, None);
     }
 
     #[test]
-    fn test_resolve_prompt_caching_specificity_order() {
-        let entries = vec![
-            PromptCachingOverride {
-                target: "*".to_string(),
-                enabled: Some(false),
-                implicit_session_affinity: None,
-                inject_cache_control: None,
-                min_prefix_tokens: None,
-                session_ttl_seconds: None,
-            },
-            PromptCachingOverride {
-                target: "anthropic/*".to_string(),
-                enabled: Some(true),
-                implicit_session_affinity: None,
-                inject_cache_control: None,
-                min_prefix_tokens: Some(2048),
-                session_ttl_seconds: None,
-            },
-            PromptCachingOverride {
-                target: "anthropic/claude-sonnet-4".to_string(),
-                enabled: None,
-                implicit_session_affinity: None,
-                inject_cache_control: None,
-                min_prefix_tokens: Some(4096),
-                session_ttl_seconds: Some(3600),
-            },
-        ];
-
-        // Exact model beats provider glob beats wildcard.
-        let effective =
-            resolve_prompt_caching(Some(&entries), true, "anthropic/claude-sonnet-4", None);
+    fn test_prompt_caching_optional_knobs() {
+        let yaml = r#"
+enabled: true
+session_affinity: false
+inject_cache_control: false
+min_prefix_tokens: 2048
+session_ttl_seconds: 3600
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let effective = cfg.resolve();
         assert!(effective.enabled);
-        assert_eq!(effective.min_prefix_tokens, 4096);
-        assert_eq!(effective.session_ttl_seconds, Some(3600));
-
-        // Different anthropic model: glob applies, exact does not.
-        let effective =
-            resolve_prompt_caching(Some(&entries), true, "anthropic/claude-haiku", None);
-        assert!(effective.enabled);
+        assert!(!effective.session_affinity);
+        assert!(!effective.inject_cache_control);
         assert_eq!(effective.min_prefix_tokens, 2048);
-
-        // Non-anthropic model: only wildcard applies.
-        let effective = resolve_prompt_caching(Some(&entries), true, "openai/gpt-4o", None);
-        assert!(!effective.enabled);
-        assert_eq!(effective.min_prefix_tokens, DEFAULT_MIN_PREFIX_TOKENS);
+        assert_eq!(effective.session_ttl_seconds, Some(3600));
     }
 
     #[test]
-    fn test_resolve_prompt_caching_route_target() {
-        let entries = vec![PromptCachingOverride {
-            target: "high_stakes_legal_review".to_string(),
-            enabled: Some(false),
-            implicit_session_affinity: None,
-            inject_cache_control: None,
-            min_prefix_tokens: None,
-            session_ttl_seconds: None,
-        }];
-
-        let effective = resolve_prompt_caching(
-            Some(&entries),
-            true,
-            "openai/gpt-4o",
-            Some("high_stakes_legal_review"),
-        );
+    fn test_prompt_caching_knobs_ignored_when_disabled() {
+        // Knobs only take effect while caching is enabled.
+        let yaml = r#"
+enabled: false
+session_affinity: true
+inject_cache_control: true
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let effective = cfg.resolve();
         assert!(!effective.enabled);
-
-        let effective =
-            resolve_prompt_caching(Some(&entries), true, "openai/gpt-4o", Some("other_route"));
-        assert!(effective.enabled);
-    }
-
-    #[test]
-    fn test_resolve_prompt_caching_kill_switch() {
-        let entries = vec![PromptCachingOverride {
-            target: "*".to_string(),
-            enabled: Some(false),
-            implicit_session_affinity: Some(false),
-            inject_cache_control: Some(false),
-            min_prefix_tokens: None,
-            session_ttl_seconds: None,
-        }];
-        let effective = resolve_prompt_caching(Some(&entries), true, "anthropic/claude", None);
-        assert!(!effective.enabled);
-        assert!(!effective.implicit_session_affinity);
+        assert!(!effective.session_affinity);
         assert!(!effective.inject_cache_control);
     }
 

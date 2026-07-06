@@ -1239,6 +1239,7 @@ impl ArchFunctionHandler {
                 total_tokens: 0,
                 prompt_tokens_details: None,
                 completion_tokens_details: None,
+                ..Default::default()
             },
             system_fingerprint: None,
             service_tier: None,

@@ -247,6 +247,7 @@ impl TryFrom<ConverseStreamEvent> for ChatCompletionsStreamResponse {
                     total_tokens: metadata_event.usage.total_tokens,
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
+                    ..Default::default()
                 };
 
                 Ok(create_openai_chunk(

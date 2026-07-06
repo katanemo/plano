@@ -127,6 +127,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                                             | InputContent::OutputText { text } => {
                                                                 Some(crate::apis::openai::ContentPart::Text {
                                                                     text: text.clone(),
+                                                                    cache_control: None,
                                                                 })
                                                             }
                                                             InputContent::InputImage { image_url, .. } => {
@@ -154,6 +155,7 @@ impl TryFrom<ResponsesInputConverter> for Vec<Message> {
                                                     | InputContent::OutputText { text } => {
                                                         Some(crate::apis::openai::ContentPart::Text {
                                                             text: text.clone(),
+                                                            cache_control: None,
                                                         })
                                                     }
                                                     InputContent::InputImage { image_url, .. } => {
@@ -330,7 +332,7 @@ impl TryFrom<Message> for BedrockMessage {
                         // Convert OpenAI content parts to Bedrock ContentBlocks
                         for part in parts {
                             match part {
-                                crate::apis::openai::ContentPart::Text { text } => {
+                                crate::apis::openai::ContentPart::Text { text, .. } => {
                                     if !text.is_empty() {
                                         content_blocks.push(ContentBlock::Text { text });
                                     }

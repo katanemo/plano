@@ -135,17 +135,14 @@ async fn routing_decision_inner(
         .unwrap_or("unknown")
         .to_string();
 
-    let mut previous_model_hint: Option<String> = None;
     if let Some(ref sid) = session_id {
         if let Some(lookup) = orchestrator_service
             .get_cached_route(sid, tenant_id.as_deref())
             .await
         {
-            if lookup.is_stale {
-                // Logically expired pin: don't short-circuit, but let cache-aware
-                // ranking apply a switch penalty toward the previously-warm model.
-                previous_model_hint = Some(lookup.route.model_name);
-            } else {
+            // A logically-expired pin no longer short-circuits — fall through to
+            // normal routing so model selection is never overridden by a stale cache.
+            if !lookup.is_stale {
                 let cached = lookup.route;
                 info!(
                     session_id = %sid,
@@ -216,7 +213,6 @@ async fn routing_decision_inner(
         &request_path,
         &request_id,
         inline_routing_preferences,
-        previous_model_hint,
     )
     .await;
 

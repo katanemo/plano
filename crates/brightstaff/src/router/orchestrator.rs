@@ -12,7 +12,7 @@ use thiserror::Error;
 use tracing::{debug, info};
 
 use super::http::{self, post_and_extract_content};
-use super::model_metrics::{ModelMetricsService, RankContext};
+use super::model_metrics::ModelMetricsService;
 use super::orchestrator_model::OrchestratorModel;
 
 use crate::metrics as bs_metrics;
@@ -181,7 +181,6 @@ impl OrchestratorService {
         messages: &[Message],
         inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
         request_id: &str,
-        rank_context: &RankContext,
     ) -> Result<Option<(String, Vec<String>)>> {
         if messages.is_empty() {
             return Ok(None);
@@ -236,10 +235,7 @@ impl OrchestratorService {
 
                 if let Some(pref) = top_pref {
                     let ranked = match &self.metrics_service {
-                        Some(svc) => {
-                            svc.rank_models(&pref.models, &pref.selection_policy, rank_context)
-                                .await
-                        }
+                        Some(svc) => svc.rank_models(&pref.models, &pref.selection_policy).await,
                         None => pref.models.clone(),
                     };
                     Some((route_name.clone(), ranked))

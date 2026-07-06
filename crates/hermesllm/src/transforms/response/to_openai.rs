@@ -14,13 +14,18 @@ use crate::transforms::lib::*;
 // Usage Conversions
 impl From<MessagesUsage> for Usage {
     fn from(val: MessagesUsage) -> Self {
-        Usage {
+        let mut usage = Usage {
             prompt_tokens: val.input_tokens,
             completion_tokens: val.output_tokens,
             total_tokens: val.input_tokens + val.output_tokens,
             prompt_tokens_details: None,
             completion_tokens_details: None,
-        }
+            cache_read_input_tokens: val.cache_read_input_tokens,
+            cache_creation_input_tokens: val.cache_creation_input_tokens,
+        };
+        // Surface Anthropic cache reads to OpenAI clients as cached_tokens.
+        usage.normalize_cache_tokens();
+        usage
     }
 }
 
@@ -244,6 +249,7 @@ impl TryFrom<MessagesResponse> for ChatCompletionsResponse {
             total_tokens: resp.usage.input_tokens + resp.usage.output_tokens,
             prompt_tokens_details: None,
             completion_tokens_details: None,
+            ..Default::default()
         };
 
         Ok(ChatCompletionsResponse {
@@ -312,6 +318,7 @@ impl TryFrom<ConverseResponse> for ChatCompletionsResponse {
             total_tokens: resp.usage.total_tokens,
             prompt_tokens_details: None,
             completion_tokens_details: None,
+            ..Default::default()
         };
 
         // Generate a response ID (using timestamp since Bedrock doesn't provide one)
@@ -980,6 +987,7 @@ mod tests {
                 total_tokens: 30,
                 prompt_tokens_details: None,
                 completion_tokens_details: None,
+                ..Default::default()
             },
             system_fingerprint: None,
             service_tier: Some("default".to_string()),
@@ -1061,6 +1069,7 @@ mod tests {
                 total_tokens: 40,
                 prompt_tokens_details: None,
                 completion_tokens_details: None,
+                ..Default::default()
             },
             system_fingerprint: None,
             service_tier: None,
@@ -1134,6 +1143,7 @@ mod tests {
                 total_tokens: 101,
                 prompt_tokens_details: None,
                 completion_tokens_details: None,
+                ..Default::default()
             },
             system_fingerprint: Some("fp_7eeb46f068".to_string()),
             service_tier: Some("default".to_string()),

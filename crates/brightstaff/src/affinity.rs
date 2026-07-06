@@ -92,18 +92,6 @@ pub fn derive_implicit_affinity(
     })
 }
 
-/// Estimate the token count of the stable prompt prefix (system + tools + all but the
-/// final message) using a chars/4 heuristic. Used by cache-aware ranking to weigh the
-/// cost of re-sending vs re-reading the prefix; precision is not required.
-pub fn estimate_prefix_tokens(messages: &[Message]) -> u64 {
-    let upto = messages.len().saturating_sub(1);
-    let chars: usize = messages[..upto]
-        .iter()
-        .filter_map(|m| m.content.as_ref().map(|c| c.to_string().len()))
-        .sum();
-    (chars / 4) as u64
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,16 +177,5 @@ mod tests {
     fn no_user_message_yields_none() {
         assert!(derive_implicit_affinity(&[msg(Role::System, "s")], None, None).is_none());
         assert!(derive_implicit_affinity(&[], None, None).is_none());
-    }
-
-    #[test]
-    fn prefix_token_estimate_excludes_final_turn() {
-        let messages = [
-            msg(Role::System, &"x".repeat(4000)),
-            msg(Role::User, &"y".repeat(400)),
-            msg(Role::User, "new turn"),
-        ];
-        assert_eq!(estimate_prefix_tokens(&messages), 1100);
-        assert_eq!(estimate_prefix_tokens(&[]), 0);
     }
 }
