@@ -269,6 +269,13 @@ static_resources:
                             auto_host_rewrite: true
                             cluster: {{ cluster_name }}
                             timeout: 300s
+                            {% if cluster.prefix_affinity %}
+                            # Feeds the cluster's RING_HASH lb_policy: requests with the
+                            # same prompt-prefix hash stick to the same replica.
+                            hash_policy:
+                              - header:
+                                  header_name: x-plano-prefix-hash
+                            {% endif %}
                         {% endfor %}
                 http_filters:
                   - name: envoy.filters.http.router
@@ -977,9 +984,18 @@ static_resources:
       {% else -%}
       connect_timeout: {{ upstream_connect_timeout | default('5s') }}
       {% endif -%}
+      {% if cluster.prefix_affinity -%}
+      # KV-aware replica stickiness: resolve every replica address and consistent-hash
+      # requests (by x-plano-prefix-hash, see the route-level hash_policy) so the same
+      # prompt prefix lands on the replica holding its warm KV cache.
+      type: STRICT_DNS
+      dns_lookup_family: V4_ONLY
+      lb_policy: RING_HASH
+      {% else -%}
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
       lb_policy: ROUND_ROBIN
+      {% endif -%}
       load_assignment:
         cluster_name: {{ cluster_name }}
         endpoints:

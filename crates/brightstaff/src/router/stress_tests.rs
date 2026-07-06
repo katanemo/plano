@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::router::model_metrics::RankContext;
     use crate::router::orchestrator::OrchestratorService;
     use crate::session_cache::memory::MemorySessionCache;
     use common::configuration::{SelectionPolicy, SelectionPreference, TopLevelRoutingPreference};
@@ -107,7 +108,7 @@ mod tests {
         for _ in 0..10 {
             let msgs = make_messages(5);
             let _ = orchestrator_service
-                .determine_route(&msgs, None, "warmup")
+                .determine_route(&msgs, None, "warmup", &RankContext::default())
                 .await;
         }
 
@@ -124,7 +125,7 @@ mod tests {
                 None
             };
             let _ = orchestrator_service
-                .determine_route(&msgs, inline, &format!("req-{i}"))
+                .determine_route(&msgs, inline, &format!("req-{i}"), &RankContext::default())
                 .await;
         }
 
@@ -198,7 +199,7 @@ mod tests {
         for _ in 0..20 {
             let msgs = make_messages(3);
             let _ = orchestrator_service
-                .determine_route(&msgs, None, "warmup")
+                .determine_route(&msgs, None, "warmup", &RankContext::default())
                 .await;
         }
 
@@ -215,7 +216,12 @@ mod tests {
                 for r in 0..requests_per_task {
                     let msgs = make_messages(3 + (r % 8));
                     let _ = svc
-                        .determine_route(&msgs, None, &format!("req-{t}-{r}"))
+                        .determine_route(
+                            &msgs,
+                            None,
+                            &format!("req-{t}-{r}"),
+                            &RankContext::default(),
+                        )
                         .await;
                 }
             });

@@ -877,6 +877,7 @@ fn convert_openai_tools(tools: Vec<Tool>) -> Vec<MessagesTool> {
             name: tool.function.name,
             description: tool.function.description,
             input_schema: tool.function.parameters,
+            cache_control: None,
         })
         .collect()
 }

@@ -1,3 +1,4 @@
+pub mod affinity;
 pub mod app_state;
 pub mod handlers;
 pub mod metrics;

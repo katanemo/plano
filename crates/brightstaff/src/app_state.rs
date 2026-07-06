@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::configuration::{Agent, FilterPipeline, Listener, ModelAlias, SpanAttributes};
+use common::configuration::{
+    Agent, FilterPipeline, Listener, ModelAlias, PromptCachingOverride, SpanAttributes,
+};
 use common::llm_providers::LlmProviders;
 use tokio::sync::RwLock;
 
@@ -27,4 +29,9 @@ pub struct AppState {
     /// When false, agentic signal analysis is skipped on LLM responses to save CPU.
     /// Controlled by `overrides.disable_signals` in plano config.
     pub signals_enabled: bool,
+    /// Scoped prompt-caching overrides from `overrides.prompt_caching`.
+    pub prompt_caching_overrides: Option<Vec<PromptCachingOverride>>,
+    /// Default for implicit session affinity (`routing.implicit_session_affinity`,
+    /// default true). Per-scope `overrides.prompt_caching` entries can still flip it.
+    pub implicit_affinity_default: bool,
 }

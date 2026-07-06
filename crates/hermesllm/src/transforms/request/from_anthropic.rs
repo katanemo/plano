@@ -562,6 +562,7 @@ mod tests {
                     },
                     "required": ["location"]
                 }),
+                cache_control: None,
             }]),
             tool_choice: Some(MessagesToolChoice {
                 kind: MessagesToolChoiceType::Tool,
@@ -620,6 +621,7 @@ mod tests {
                     "type": "object",
                     "properties": {}
                 }),
+                cache_control: None,
             }]),
             tool_choice: Some(MessagesToolChoice {
                 kind: MessagesToolChoiceType::Auto,

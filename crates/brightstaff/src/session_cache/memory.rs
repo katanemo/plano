@@ -9,7 +9,7 @@ use lru::LruCache;
 use tokio::sync::Mutex;
 use tracing::info;
 
-use super::{CachedRoute, SessionCache};
+use super::{CacheLookup, CachedRoute, SessionCache, STALE_TTL_FACTOR};
 
 type CacheStore = Mutex<LruCache<String, (CachedRoute, Instant, Duration)>>;
 
@@ -38,9 +38,11 @@ impl MemorySessionCache {
 
     async fn evict_expired(store: &CacheStore) {
         let mut cache = store.lock().await;
+        // Entries are kept past their logical TTL (as stale soft hints) and only
+        // physically evicted once the stale window has passed too.
         let expired: Vec<String> = cache
             .iter()
-            .filter(|(_, (_, inserted_at, ttl))| inserted_at.elapsed() >= *ttl)
+            .filter(|(_, (_, inserted_at, ttl))| inserted_at.elapsed() >= *ttl * STALE_TTL_FACTOR)
             .map(|(k, _)| k.clone())
             .collect();
         let removed = expired.len();
@@ -59,11 +61,21 @@ impl MemorySessionCache {
 
 #[async_trait]
 impl SessionCache for MemorySessionCache {
-    async fn get(&self, key: &str) -> Option<CachedRoute> {
+    async fn get(&self, key: &str) -> Option<CacheLookup> {
         let mut cache = self.store.lock().await;
         if let Some((route, inserted_at, ttl)) = cache.get(key) {
-            if inserted_at.elapsed() < *ttl {
-                return Some(route.clone());
+            let elapsed = inserted_at.elapsed();
+            if elapsed < *ttl {
+                return Some(CacheLookup {
+                    route: route.clone(),
+                    is_stale: false,
+                });
+            }
+            if elapsed < *ttl * STALE_TTL_FACTOR {
+                return Some(CacheLookup {
+                    route: route.clone(),
+                    is_stale: true,
+                });
             }
         }
         None

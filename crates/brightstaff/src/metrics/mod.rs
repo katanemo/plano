@@ -18,6 +18,9 @@
 //!   `brightstaff_router_decision_duration_seconds`,
 //!   `brightstaff_routing_service_requests_total`,
 //!   `brightstaff_session_cache_events_total`.
+//! - Prompt caching: `brightstaff_prompt_cache_requests_total`,
+//!   `brightstaff_session_pin_events_total` (cache read/write tokens are emitted as
+//!   `kind=cache_read|cache_write` on `brightstaff_llm_tokens_total`).
 //! - Process: via `metrics-process`.
 //! - Build: `brightstaff_build_info`.
 
@@ -171,6 +174,17 @@ fn describe_all() {
     describe_counter!(
         "brightstaff_session_cache_events_total",
         "Session affinity cache lookups and stores, by outcome."
+    );
+    describe_counter!(
+        "brightstaff_prompt_cache_requests_total",
+        "LLM responses with usage data, by provider, model and prompt-cache outcome \
+         (hit = cache read/creation tokens reported, miss = none). The miss rate is \
+         the silent cache-miss baseline."
+    );
+    describe_counter!(
+        "brightstaff_session_pin_events_total",
+        "Session pin lifecycle events: implicit_commit, refresh, prefix_drift, \
+         stale_hint, validation_failed."
     );
 
     describe_gauge!(
@@ -372,6 +386,27 @@ pub fn record_session_cache_event(outcome: &'static str) {
     counter!(
         "brightstaff_session_cache_events_total",
         "outcome" => outcome,
+    )
+    .increment(1);
+}
+
+/// Record whether a completed LLM response reported prompt-cache activity.
+/// `hit` means the provider billed cache-read or cache-creation tokens.
+pub fn record_prompt_cache_outcome(provider: &str, model: &str, outcome: &'static str) {
+    counter!(
+        "brightstaff_prompt_cache_requests_total",
+        "provider" => provider.to_string(),
+        "model" => model.to_string(),
+        "outcome" => outcome,
+    )
+    .increment(1);
+}
+
+/// Record a session pin lifecycle event (see `metrics::labels::PIN_EVENT_*`).
+pub fn record_session_pin_event(event: &'static str) {
+    counter!(
+        "brightstaff_session_pin_events_total",
+        "event" => event,
     )
     .increment(1);
 }

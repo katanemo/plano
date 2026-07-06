@@ -12,12 +12,36 @@ pub mod redis;
 pub struct CachedRoute {
     pub model_name: String,
     pub route_name: Option<String>,
+    /// Hash of the stable prompt prefix (system + tools) observed when the pin was
+    /// stored. Used to detect prefix drift: if a later request's prefix hash differs,
+    /// the provider cache is already lost and re-routing is safe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix_hash: Option<u64>,
+    /// Whether a response on this pinned session has ever reported cache activity
+    /// (cache read or cache creation tokens). Used for pin validation.
+    #[serde(default)]
+    pub observed_cache_hit: bool,
+}
+
+/// How long expired pins linger as "stale" soft hints, as a multiple of the pin TTL.
+/// A stale pin never short-circuits routing, but its model is passed to cache-aware
+/// ranking as a switch-penalty hint (the provider cache may still be warm).
+pub const STALE_TTL_FACTOR: u32 = 4;
+
+/// Result of a session-cache lookup.
+#[derive(Clone, Debug)]
+pub struct CacheLookup {
+    pub route: CachedRoute,
+    /// True when the pin's logical TTL has expired but the entry is still retained as
+    /// a soft routing hint.
+    pub is_stale: bool,
 }
 
 #[async_trait]
 pub trait SessionCache: Send + Sync {
-    /// Look up a cached routing decision by key.
-    async fn get(&self, key: &str) -> Option<CachedRoute>;
+    /// Look up a cached routing decision by key. Returns entries past their logical
+    /// TTL (up to [`STALE_TTL_FACTOR`] times the TTL) with `is_stale = true`.
+    async fn get(&self, key: &str) -> Option<CacheLookup>;
 
     /// Store a routing decision in the session cache with the given TTL.
     async fn put(&self, key: &str, route: CachedRoute, ttl: Duration);

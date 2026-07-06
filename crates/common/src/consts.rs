@@ -23,6 +23,12 @@ pub const X_ARCH_FC_MODEL_RESPONSE: &str = "x-arch-fc-model-response";
 pub const ARCH_FC_MODEL_NAME: &str = "Arch-Function";
 pub const REQUEST_ID_HEADER: &str = "x-request-id";
 pub const MODEL_AFFINITY_HEADER: &str = "x-model-affinity";
+/// Per-request prompt-caching control. `off` disables implicit session affinity and
+/// cache-control injection for that single request.
+pub const PLANO_CACHE_HEADER: &str = "x-plano-cache";
+/// Hash of the stable prompt prefix, forwarded upstream so self-hosted multi-replica
+/// backends can do KV-aware (consistent-hash) replica routing at the LB/Envoy layer.
+pub const PLANO_PREFIX_HASH_HEADER: &str = "x-plano-prefix-hash";
 pub const ENVOY_ORIGINAL_PATH_HEADER: &str = "x-envoy-original-path";
 pub const TRACE_PARENT_HEADER: &str = "traceparent";
 pub const ARCH_INTERNAL_CLUSTER_NAME: &str = "arch_internal";

@@ -155,6 +155,13 @@ properties:
               - https
           http_host:
             type: string
+          prefix_affinity:
+            type: boolean
+            description: >
+              For self-hosted multi-replica backends (e.g. vLLM): consistent-hash requests
+              to replicas by the x-plano-prefix-hash header so the same prompt prefix lands
+              on the same replica and reuses its KV cache. Uses ring-hash load balancing
+              across all resolved endpoint addresses. Default false.
         additionalProperties: false
         required:
           - endpoint
@@ -316,6 +323,38 @@ properties:
       orchestrator_model_context_length:
         type: integer
         description: "Maximum token length for the orchestrator/routing model context window. Default is 8192."
+      prompt_caching:
+        type: array
+        description: >
+          Scoped prompt-caching overrides. Caching is zero-config and default-on; each entry
+          overrides the defaults for its target scope. Most-specific match wins
+          (exact model > provider glob > route name > "*").
+        items:
+          type: object
+          properties:
+            target:
+              type: string
+              description: 'Provider glob ("anthropic/*"), exact model name, routing_preferences route name, or "*" for all.'
+            enabled:
+              type: boolean
+              description: "Master switch for prompt-caching behavior in this scope (pinning + marker injection). Default true."
+            implicit_session_affinity:
+              type: boolean
+              description: "Auto-derive a session key from the prompt prefix when X-Model-Affinity is absent. Default true."
+            inject_cache_control:
+              type: boolean
+              description: "Auto-insert ephemeral cache_control breakpoints for providers that need explicit markers (Anthropic). Default true."
+            min_prefix_tokens:
+              type: integer
+              minimum: 1
+              description: "Skip breakpoint injection when the estimated stable prefix is below this many tokens. Default 1024."
+            session_ttl_seconds:
+              type: integer
+              minimum: 1
+              description: "Pin lifetime for sessions in this scope; align with the provider cache window (e.g. 3600 for Anthropic 1h caching). Defaults to routing.session_ttl_seconds."
+          additionalProperties: false
+          required:
+            - target
   system_prompt:
     type: string
   prompt_targets:
@@ -464,6 +503,13 @@ properties:
         type: integer
         minimum: 1
         description: TTL in seconds for session-pinned routing cache entries. Default 600 (10 minutes).
+      implicit_session_affinity:
+        type: boolean
+        description: >
+          Derive a session-affinity key automatically from the stable prompt prefix
+          (system + tools + first user message) when no X-Model-Affinity header is present,
+          keeping multi-turn conversations pinned for prompt-cache reuse. Default true.
+          Per-scope overrides live under overrides.prompt_caching.
       session_max_entries:
         type: integer
         minimum: 1
@@ -559,6 +605,7 @@ properties:
               enum:
                 - cheapest
                 - fastest
+                - cache_aware
                 - none
           additionalProperties: false
           required:
@@ -591,6 +638,13 @@ properties:
               description: "Map DO catalog keys (lowercase(creator)/model_id) to Plano model names used in routing_preferences. Example: 'openai/openai-gpt-oss-120b: openai/gpt-4o'"
               additionalProperties:
                 type: string
+            cache_creation_multiplier:
+              type: number
+              exclusiveMinimum: 0
+              description: >
+                Surcharge multiplier applied to the input price for cache-write tokens in
+                cache_aware ranking. The DO catalog publishes cache-read but not cache-write
+                rates; Anthropic's standard 5-minute-cache surcharge is 1.25x input (the default).
           required:
             - type
             - provider

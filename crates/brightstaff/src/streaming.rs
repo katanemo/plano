@@ -22,10 +22,13 @@ const STREAM_BUFFER_SIZE: usize = 16;
 const USAGE_BUFFER_MAX: usize = 2 * 1024 * 1024;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
+use crate::router::orchestrator::OrchestratorService;
+use crate::session_cache::CachedRoute;
 use crate::signals::otel::emit_signals_to_span;
 use crate::signals::{SignalAnalyzer, FLAG_MARKER};
 use crate::tracing::{llm, set_service_name};
 use hermesllm::apis::openai::Message;
+use std::sync::Arc;
 
 /// Parsed usage + resolved-model details from a provider response.
 #[derive(Debug, Default, Clone)]
@@ -187,6 +190,33 @@ pub struct LlmMetricsCtx {
     pub upstream_status: u16,
 }
 
+/// What to do with the session pin once the response's cache-usage signal is known.
+#[derive(Debug, Clone)]
+pub enum PinAction {
+    /// Implicit session that is not pinned yet: commit the pin only after the
+    /// response reports cache activity (pin-after-hit), so workloads that never
+    /// benefit from caching keep routing freely.
+    CommitOnCacheActivity,
+    /// Session already pinned: refresh the TTL, update the observed-hit state, and
+    /// flag when a session that used to produce cache hits stops producing them
+    /// (prefix changed upstream or the provider cache expired).
+    Refresh { previously_observed_hit: bool },
+}
+
+/// Response-side session-pin context: closes the loop between the cache-usage signal
+/// (only available in the response) and the routing pin (decided on the request).
+pub struct SessionPinCtx {
+    pub orchestrator: Arc<OrchestratorService>,
+    pub session_id: String,
+    pub tenant_id: Option<String>,
+    /// Provider-qualified model this request actually ran on.
+    pub model_name: String,
+    pub route_name: Option<String>,
+    pub prefix_hash: Option<u64>,
+    pub ttl_override_seconds: Option<u64>,
+    pub action: PinAction,
+}
+
 /// A processor that tracks streaming metrics
 pub struct ObservableStreamProcessor {
     service_name: String,
@@ -201,6 +231,7 @@ pub struct ObservableStreamProcessor {
     /// from the buffer (they still pass through to the client).
     response_buffer: Vec<u8>,
     llm_metrics: Option<LlmMetricsCtx>,
+    session_pin: Option<SessionPinCtx>,
     metrics_recorded: bool,
 }
 
@@ -237,6 +268,7 @@ impl ObservableStreamProcessor {
             messages,
             response_buffer: Vec::new(),
             llm_metrics: None,
+            session_pin: None,
             metrics_recorded: false,
         }
     }
@@ -246,6 +278,90 @@ impl ObservableStreamProcessor {
     pub fn with_llm_metrics(mut self, ctx: LlmMetricsCtx) -> Self {
         self.llm_metrics = Some(ctx);
         self
+    }
+
+    /// Attach session-pin context so the processor commits/refreshes/validates the
+    /// session pin based on the cache-usage signal in the response.
+    pub fn with_session_pin(mut self, ctx: SessionPinCtx) -> Self {
+        self.session_pin = Some(ctx);
+        self
+    }
+
+    /// Close the cache feedback loop once usage is known.
+    fn handle_session_pin(&mut self, usage: &ExtractedUsage) {
+        let Some(pin) = self.session_pin.take() else {
+            return;
+        };
+        let SessionPinCtx {
+            orchestrator,
+            session_id,
+            tenant_id,
+            model_name,
+            route_name,
+            prefix_hash,
+            ttl_override_seconds,
+            action,
+        } = pin;
+
+        let cache_read = usage.cached_input_tokens.unwrap_or(0);
+        let cache_write = usage.cache_creation_tokens.unwrap_or(0);
+        let saw_cache_activity = cache_read > 0 || cache_write > 0;
+        // Without a usage block we know nothing — leave the pin state untouched.
+        let usage_known = usage.prompt_tokens.is_some();
+
+        let (observed_hit, event) = match action {
+            PinAction::CommitOnCacheActivity => {
+                if !saw_cache_activity {
+                    return;
+                }
+                info!(
+                    session_id = %session_id,
+                    model = %model_name,
+                    cache_read_tokens = cache_read,
+                    cache_creation_tokens = cache_write,
+                    "cache activity observed — committing implicit session pin"
+                );
+                (true, metric_labels::PIN_EVENT_IMPLICIT_COMMIT)
+            }
+            PinAction::Refresh {
+                previously_observed_hit,
+            } => {
+                if previously_observed_hit && usage_known && !saw_cache_activity {
+                    warn!(
+                        session_id = %session_id,
+                        model = %model_name,
+                        "pinned session stopped producing cache hits — provider cache \
+                         likely expired or the prompt prefix changed upstream"
+                    );
+                    bs_metrics::record_session_pin_event(
+                        metric_labels::PIN_EVENT_VALIDATION_FAILED,
+                    );
+                }
+                (
+                    previously_observed_hit || saw_cache_activity,
+                    metric_labels::PIN_EVENT_REFRESH,
+                )
+            }
+        };
+
+        bs_metrics::record_session_pin_event(event);
+        let route = CachedRoute {
+            model_name,
+            route_name,
+            prefix_hash,
+            observed_cache_hit: observed_hit,
+        };
+        // Fire-and-forget: pin bookkeeping must not delay stream completion.
+        tokio::spawn(async move {
+            orchestrator
+                .cache_route(
+                    &session_id,
+                    tenant_id.as_deref(),
+                    route,
+                    ttl_override_seconds,
+                )
+                .await;
+        });
     }
 }
 
@@ -357,11 +473,47 @@ impl StreamProcessor for ObservableStreamProcessor {
                     v.max(0) as u64,
                 );
             }
+            // Prompt-cache token counters + hit/miss baseline (cache-blindness is
+            // invisible without these: a reroute that burns a warm cache shows up
+            // here as a miss with zero cache_read tokens).
+            if let Some(v) = usage.cached_input_tokens {
+                bs_metrics::record_llm_tokens(
+                    &ctx.provider,
+                    &ctx.model,
+                    metric_labels::TOKEN_KIND_CACHE_READ,
+                    v.max(0) as u64,
+                );
+            }
+            if let Some(v) = usage.cache_creation_tokens {
+                bs_metrics::record_llm_tokens(
+                    &ctx.provider,
+                    &ctx.model,
+                    metric_labels::TOKEN_KIND_CACHE_WRITE,
+                    v.max(0) as u64,
+                );
+            }
+            if usage.prompt_tokens.is_some() {
+                let cache_active = usage.cached_input_tokens.unwrap_or(0) > 0
+                    || usage.cache_creation_tokens.unwrap_or(0) > 0;
+                bs_metrics::record_prompt_cache_outcome(
+                    &ctx.provider,
+                    &ctx.model,
+                    if cache_active {
+                        metric_labels::PROMPT_CACHE_HIT
+                    } else {
+                        metric_labels::PROMPT_CACHE_MISS
+                    },
+                );
+            }
             if usage.prompt_tokens.is_none() && usage.completion_tokens.is_none() {
                 bs_metrics::record_llm_tokens_usage_missing(&ctx.provider, &ctx.model);
             }
             self.metrics_recorded = true;
         }
+
+        // Session pin feedback: commit implicit pins after the first observed cache
+        // hit, refresh existing pins, and validate that expected hits still occur.
+        self.handle_session_pin(&usage);
         // Release the buffered bytes early; nothing downstream needs them.
         self.response_buffer.clear();
         self.response_buffer.shrink_to_fit();

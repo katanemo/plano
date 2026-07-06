@@ -5,8 +5,10 @@ use hyper::StatusCode;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
+use crate::affinity::estimate_prefix_tokens;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
+use crate::router::model_metrics::RankContext;
 use crate::router::orchestrator::OrchestratorService;
 use crate::streaming::truncate_message;
 use crate::tracing::routing;
@@ -56,6 +58,7 @@ pub async fn router_chat_get_upstream_model(
     request_path: &str,
     request_id: &str,
     inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
+    previous_model_hint: Option<String>,
 ) -> Result<RoutingResult, RoutingError> {
     // Convert to ChatCompletionsRequest for routing (regardless of input type)
     let chat_request = match ProviderRequestType::try_from((
@@ -112,11 +115,19 @@ pub async fn router_chat_get_upstream_model(
     // Capture start time for routing span
     let routing_start_time = std::time::Instant::now();
 
+    // Cache-aware ranking context: the previously-pinned model (whose provider
+    // cache may still be warm) and the size of the repeated prompt prefix.
+    let rank_context = RankContext {
+        previous_model: previous_model_hint,
+        prefix_tokens: Some(estimate_prefix_tokens(&chat_request.messages)),
+    };
+
     let routing_result = orchestrator_service
         .determine_route(
             &chat_request.messages,
             inline_routing_preferences,
             request_id,
+            &rank_context,
         )
         .await;
 

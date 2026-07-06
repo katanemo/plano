@@ -90,7 +90,50 @@ impl TryFrom<&str> for ProviderId {
     }
 }
 
+/// How a provider's prompt cache works, driving whether Plano needs to inject
+/// explicit cache markers or can rely on automatic prefix caching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptCacheCapability {
+    /// Provider caches stable prompt prefixes automatically; no request markers needed.
+    /// Plano only needs to keep the prefix byte-stable and the model pinned.
+    Automatic,
+    /// Provider requires explicit `cache_control` breakpoints in the request.
+    ExplicitMarkers {
+        /// Maximum number of cache breakpoints the provider accepts per request.
+        max_breakpoints: u8,
+        /// Minimum cacheable prefix length in tokens; injecting below this is a no-op.
+        min_prefix_tokens: u32,
+    },
+    /// No known prompt-caching support.
+    None,
+}
+
 impl ProviderId {
+    /// Prompt-cache semantics for this provider.
+    pub fn prompt_cache_capability(&self) -> PromptCacheCapability {
+        match self {
+            // Anthropic: explicit ephemeral markers, max 4 breakpoints, ~1024-token
+            // minimum cacheable prefix (2048 for Haiku-class models; callers may
+            // override the threshold via config).
+            ProviderId::Anthropic => PromptCacheCapability::ExplicitMarkers {
+                max_breakpoints: 4,
+                min_prefix_tokens: 1024,
+            },
+            // Automatic prefix caching, no markers required.
+            ProviderId::OpenAI
+            | ProviderId::AzureOpenAI
+            | ProviderId::ChatGPT
+            | ProviderId::Groq
+            | ProviderId::Deepseek
+            | ProviderId::Gemini
+            | ProviderId::Moonshotai
+            | ProviderId::DigitalOcean
+            | ProviderId::OpenRouter
+            | ProviderId::XAI => PromptCacheCapability::Automatic,
+            _ => PromptCacheCapability::None,
+        }
+    }
+
     /// Get all available models for this provider
     /// Returns model names without the provider prefix (e.g., "gpt-4" not "openai/gpt-4")
     pub fn models(&self) -> Vec<String> {

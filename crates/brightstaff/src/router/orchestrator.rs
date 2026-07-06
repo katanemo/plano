@@ -12,13 +12,13 @@ use thiserror::Error;
 use tracing::{debug, info};
 
 use super::http::{self, post_and_extract_content};
-use super::model_metrics::ModelMetricsService;
+use super::model_metrics::{ModelMetricsService, RankContext};
 use super::orchestrator_model::OrchestratorModel;
 
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
 use crate::router::orchestrator_model_v1;
-use crate::session_cache::SessionCache;
+use crate::session_cache::{CacheLookup, SessionCache};
 
 pub use crate::session_cache::CachedRoute;
 
@@ -126,37 +126,48 @@ impl OrchestratorService {
         }
     }
 
+    /// Look up a session pin. Returns fresh pins as `is_stale = false`; pins past
+    /// their logical TTL (but within the stale retention window) as `is_stale = true`
+    /// so callers can use them as soft switch-penalty hints without short-circuiting
+    /// routing.
     pub async fn get_cached_route(
         &self,
         session_id: &str,
         tenant_id: Option<&str>,
-    ) -> Option<CachedRoute> {
+    ) -> Option<CacheLookup> {
         let cache = self.session_cache.as_ref()?;
         let result = cache.get(&Self::session_key(tenant_id, session_id)).await;
-        bs_metrics::record_session_cache_event(if result.is_some() {
-            metric_labels::SESSION_CACHE_HIT
-        } else {
-            metric_labels::SESSION_CACHE_MISS
+        bs_metrics::record_session_cache_event(match result {
+            Some(CacheLookup {
+                is_stale: false, ..
+            }) => metric_labels::SESSION_CACHE_HIT,
+            _ => metric_labels::SESSION_CACHE_MISS,
         });
         result
     }
 
+    /// The pin TTL for a session: the per-scope override when provided (e.g. aligned
+    /// to the provider's cache window via `overrides.prompt_caching`), otherwise the
+    /// global `routing.session_ttl_seconds`.
+    pub fn effective_session_ttl(&self, ttl_override_seconds: Option<u64>) -> Duration {
+        ttl_override_seconds
+            .map(Duration::from_secs)
+            .unwrap_or(self.session_ttl)
+    }
+
     pub async fn cache_route(
         &self,
-        session_id: String,
+        session_id: &str,
         tenant_id: Option<&str>,
-        model_name: String,
-        route_name: Option<String>,
+        route: CachedRoute,
+        ttl_override_seconds: Option<u64>,
     ) {
         if let Some(ref cache) = self.session_cache {
             cache
                 .put(
-                    &Self::session_key(tenant_id, &session_id),
-                    CachedRoute {
-                        model_name,
-                        route_name,
-                    },
-                    self.session_ttl,
+                    &Self::session_key(tenant_id, session_id),
+                    route,
+                    self.effective_session_ttl(ttl_override_seconds),
                 )
                 .await;
             bs_metrics::record_session_cache_event(metric_labels::SESSION_CACHE_STORE);
@@ -170,6 +181,7 @@ impl OrchestratorService {
         messages: &[Message],
         inline_routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
         request_id: &str,
+        rank_context: &RankContext,
     ) -> Result<Option<(String, Vec<String>)>> {
         if messages.is_empty() {
             return Ok(None);
@@ -224,7 +236,10 @@ impl OrchestratorService {
 
                 if let Some(pref) = top_pref {
                     let ranked = match &self.metrics_service {
-                        Some(svc) => svc.rank_models(&pref.models, &pref.selection_policy).await,
+                        Some(svc) => {
+                            svc.rank_models(&pref.models, &pref.selection_policy, rank_context)
+                                .await
+                        }
                         None => pref.models.clone(),
                     };
                     Some((route_name.clone(), ranked))
@@ -348,6 +363,15 @@ mod tests {
         )
     }
 
+    fn route(model: &str, route_name: Option<&str>) -> CachedRoute {
+        CachedRoute {
+            model_name: model.to_string(),
+            route_name: route_name.map(|r| r.to_string()),
+            prefix_hash: None,
+            observed_cache_hit: false,
+        }
+    }
+
     #[tokio::test]
     async fn test_cache_miss_returns_none() {
         let svc = make_orchestrator_service(600, 100);
@@ -360,23 +384,19 @@ mod tests {
     #[tokio::test]
     async fn test_cache_hit_returns_cached_route() {
         let svc = make_orchestrator_service(600, 100);
-        svc.cache_route(
-            "s1".to_string(),
-            None,
-            "gpt-4o".to_string(),
-            Some("code".to_string()),
-        )
-        .await;
+        svc.cache_route("s1", None, route("gpt-4o", Some("code")), None)
+            .await;
 
         let cached = svc.get_cached_route("s1", None).await.unwrap();
-        assert_eq!(cached.model_name, "gpt-4o");
-        assert_eq!(cached.route_name, Some("code".to_string()));
+        assert!(!cached.is_stale);
+        assert_eq!(cached.route.model_name, "gpt-4o");
+        assert_eq!(cached.route.route_name, Some("code".to_string()));
     }
 
     #[tokio::test]
     async fn test_cache_expired_entry_returns_none() {
         let svc = make_orchestrator_service(0, 100);
-        svc.cache_route("s1".to_string(), None, "gpt-4o".to_string(), None)
+        svc.cache_route("s1", None, route("gpt-4o", None), None)
             .await;
         assert!(svc.get_cached_route("s1", None).await.is_none());
     }
@@ -384,9 +404,9 @@ mod tests {
     #[tokio::test]
     async fn test_expired_entries_not_returned() {
         let svc = make_orchestrator_service(0, 100);
-        svc.cache_route("s1".to_string(), None, "gpt-4o".to_string(), None)
+        svc.cache_route("s1", None, route("gpt-4o", None), None)
             .await;
-        svc.cache_route("s2".to_string(), None, "claude".to_string(), None)
+        svc.cache_route("s2", None, route("claude", None), None)
             .await;
 
         assert!(svc.get_cached_route("s1", None).await.is_none());
@@ -396,13 +416,13 @@ mod tests {
     #[tokio::test]
     async fn test_cache_evicts_oldest_when_full() {
         let svc = make_orchestrator_service(600, 2);
-        svc.cache_route("s1".to_string(), None, "model-a".to_string(), None)
+        svc.cache_route("s1", None, route("model-a", None), None)
             .await;
         tokio::time::sleep(Duration::from_millis(10)).await;
-        svc.cache_route("s2".to_string(), None, "model-b".to_string(), None)
+        svc.cache_route("s2", None, route("model-b", None), None)
             .await;
 
-        svc.cache_route("s3".to_string(), None, "model-c".to_string(), None)
+        svc.cache_route("s3", None, route("model-c", None), None)
             .await;
 
         assert!(svc.get_cached_route("s1", None).await.is_none());
@@ -413,21 +433,40 @@ mod tests {
     #[tokio::test]
     async fn test_cache_update_existing_session_does_not_evict() {
         let svc = make_orchestrator_service(600, 2);
-        svc.cache_route("s1".to_string(), None, "model-a".to_string(), None)
+        svc.cache_route("s1", None, route("model-a", None), None)
             .await;
-        svc.cache_route("s2".to_string(), None, "model-b".to_string(), None)
+        svc.cache_route("s2", None, route("model-b", None), None)
             .await;
 
-        svc.cache_route(
-            "s1".to_string(),
-            None,
-            "model-a-updated".to_string(),
-            Some("route".to_string()),
-        )
-        .await;
+        svc.cache_route("s1", None, route("model-a-updated", Some("route")), None)
+            .await;
 
         let s1 = svc.get_cached_route("s1", None).await.unwrap();
-        assert_eq!(s1.model_name, "model-a-updated");
+        assert_eq!(s1.route.model_name, "model-a-updated");
         assert!(svc.get_cached_route("s2", None).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_ttl_override_extends_pin_lifetime() {
+        // Global TTL of 0 would expire immediately; the per-scope override keeps it.
+        let svc = make_orchestrator_service(0, 100);
+        svc.cache_route("s1", None, route("gpt-4o", None), Some(600))
+            .await;
+        let cached = svc.get_cached_route("s1", None).await.unwrap();
+        assert!(!cached.is_stale);
+        assert_eq!(cached.route.model_name, "gpt-4o");
+    }
+
+    #[tokio::test]
+    async fn test_prefix_hash_round_trips_through_cache() {
+        let svc = make_orchestrator_service(600, 100);
+        let mut r = route("gpt-4o", None);
+        r.prefix_hash = Some(0xdead_beef);
+        r.observed_cache_hit = true;
+        svc.cache_route("s1", None, r, None).await;
+
+        let cached = svc.get_cached_route("s1", None).await.unwrap();
+        assert_eq!(cached.route.prefix_hash, Some(0xdead_beef));
+        assert!(cached.route.observed_cache_hit);
     }
 }

@@ -285,6 +285,7 @@ pub struct MessagesTool {
     pub name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    pub cache_control: Option<MessagesCacheControl>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -303,6 +304,155 @@ pub struct MessagesToolChoice {
     pub kind: MessagesToolChoiceType,
     pub name: Option<String>,
     pub disable_parallel_tool_use: Option<bool>,
+}
+
+/// Rough chars-per-token heuristic used to threshold-guard cache-marker injection.
+/// Injection below the provider's minimum cacheable prefix is a provider-side no-op,
+/// so a cheap estimate is sufficient here.
+const CHARS_PER_TOKEN: usize = 4;
+
+fn block_cache_control(block: &MessagesContentBlock) -> Option<&MessagesCacheControl> {
+    match block {
+        MessagesContentBlock::Text { cache_control, .. }
+        | MessagesContentBlock::Thinking { cache_control, .. }
+        | MessagesContentBlock::ToolUse { cache_control, .. }
+        | MessagesContentBlock::ToolResult { cache_control, .. } => cache_control.as_ref(),
+        _ => None,
+    }
+}
+
+/// Set `cache_control: ephemeral` on the last block that supports it.
+/// Returns true if a marker was placed.
+fn mark_last_cacheable_block(blocks: &mut [MessagesContentBlock]) -> bool {
+    for block in blocks.iter_mut().rev() {
+        match block {
+            MessagesContentBlock::Text { cache_control, .. }
+            | MessagesContentBlock::Thinking { cache_control, .. }
+            | MessagesContentBlock::ToolUse { cache_control, .. }
+            | MessagesContentBlock::ToolResult { cache_control, .. } => {
+                *cache_control = Some(MessagesCacheControl::Ephemeral);
+                return true;
+            }
+            _ => continue,
+        }
+    }
+    false
+}
+
+impl MessagesRequest {
+    /// True when the client already supplied any `cache_control` marker
+    /// (on system blocks, tools, or message content blocks).
+    pub fn has_cache_markers(&self) -> bool {
+        let system_marked = match &self.system {
+            Some(MessagesSystemPrompt::Blocks(blocks)) => {
+                blocks.iter().any(|b| block_cache_control(b).is_some())
+            }
+            _ => false,
+        };
+        let tools_marked = self
+            .tools
+            .as_ref()
+            .is_some_and(|tools| tools.iter().any(|t| t.cache_control.is_some()));
+        let messages_marked = self.messages.iter().any(|m| match &m.content {
+            MessagesMessageContent::Blocks(blocks) => {
+                blocks.iter().any(|b| block_cache_control(b).is_some())
+            }
+            MessagesMessageContent::Single(_) => false,
+        });
+        system_marked || tools_marked || messages_marked
+    }
+
+    /// Estimated token length of the stable prompt prefix (tools + system), which is
+    /// what precedes conversation history in Anthropic's prompt ordering.
+    pub fn estimated_prefix_tokens(&self) -> u32 {
+        let mut chars = 0usize;
+        if let Some(tools) = &self.tools {
+            for tool in tools {
+                chars += tool.name.len();
+                chars += tool.description.as_deref().map_or(0, str::len);
+                chars += tool.input_schema.to_string().len();
+            }
+        }
+        match &self.system {
+            Some(MessagesSystemPrompt::Single(text)) => chars += text.len(),
+            Some(MessagesSystemPrompt::Blocks(blocks)) => {
+                chars += blocks.extract_text().len();
+            }
+            None => {}
+        }
+        (chars / CHARS_PER_TOKEN) as u32
+    }
+
+    /// Auto-inject ephemeral cache breakpoints for providers that require explicit
+    /// markers (Anthropic-shaped requests):
+    ///
+    /// 1. at the end of the system prompt (covering the fully-stable tools + system
+    ///    prefix), falling back to the last tool when there is no system prompt, and
+    /// 2. a rolling breakpoint on the last content block of the final message, so each
+    ///    turn's cache write becomes the next turn's cache read as history grows.
+    ///
+    /// Idempotent: a request that already carries any client-supplied `cache_control`
+    /// marker is left untouched. Threshold-guarded: no-op when the estimated stable
+    /// prefix is below `min_prefix_tokens` (injection below the provider's minimum
+    /// cacheable prefix is wasted bytes).
+    ///
+    /// Returns true if any marker was injected.
+    pub fn inject_cache_breakpoints(&mut self, min_prefix_tokens: u32) -> bool {
+        if self.has_cache_markers() {
+            return false;
+        }
+        if self.estimated_prefix_tokens() < min_prefix_tokens {
+            return false;
+        }
+
+        let mut injected = false;
+
+        // Breakpoint 1: end of the stable prefix.
+        match self.system.take() {
+            Some(MessagesSystemPrompt::Single(text)) => {
+                self.system = Some(MessagesSystemPrompt::Blocks(vec![
+                    MessagesContentBlock::Text {
+                        text,
+                        cache_control: Some(MessagesCacheControl::Ephemeral),
+                    },
+                ]));
+                injected = true;
+            }
+            Some(MessagesSystemPrompt::Blocks(mut blocks)) => {
+                injected |= mark_last_cacheable_block(&mut blocks);
+                self.system = Some(MessagesSystemPrompt::Blocks(blocks));
+            }
+            None => {
+                if let Some(last_tool) = self.tools.as_mut().and_then(|t| t.last_mut()) {
+                    last_tool.cache_control = Some(MessagesCacheControl::Ephemeral);
+                    injected = true;
+                }
+            }
+        }
+
+        // Breakpoint 2: rolling tail of conversation history.
+        if let Some(last_msg) = self.messages.last_mut() {
+            let content = std::mem::replace(
+                &mut last_msg.content,
+                MessagesMessageContent::Single(String::new()),
+            );
+            last_msg.content = match content {
+                MessagesMessageContent::Single(text) => {
+                    injected = true;
+                    MessagesMessageContent::Blocks(vec![MessagesContentBlock::Text {
+                        text,
+                        cache_control: Some(MessagesCacheControl::Ephemeral),
+                    }])
+                }
+                MessagesMessageContent::Blocks(mut blocks) => {
+                    injected |= mark_last_cacheable_block(&mut blocks);
+                    MessagesMessageContent::Blocks(blocks)
+                }
+            };
+        }
+
+        injected
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -679,6 +829,134 @@ impl ProviderStreamResponse for MessagesStreamEvent {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn cache_test_request(system: Option<MessagesSystemPrompt>) -> MessagesRequest {
+        MessagesRequest {
+            model: "claude-sonnet-4".to_string(),
+            messages: vec![
+                MessagesMessage {
+                    role: MessagesRole::User,
+                    content: MessagesMessageContent::Single("first user turn".to_string()),
+                },
+                MessagesMessage {
+                    role: MessagesRole::Assistant,
+                    content: MessagesMessageContent::Single("assistant reply".to_string()),
+                },
+                MessagesMessage {
+                    role: MessagesRole::User,
+                    content: MessagesMessageContent::Single("second user turn".to_string()),
+                },
+            ],
+            max_tokens: 100,
+            container: None,
+            mcp_servers: None,
+            system,
+            metadata: None,
+            service_tier: None,
+            thinking: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            stream: None,
+            stop_sequences: None,
+            tools: None,
+            tool_choice: None,
+        }
+    }
+
+    #[test]
+    fn test_inject_cache_breakpoints_marks_system_and_tail() {
+        let long_system = "x".repeat(8192); // ~2048 estimated tokens
+        let mut req = cache_test_request(Some(MessagesSystemPrompt::Single(long_system)));
+
+        assert!(req.inject_cache_breakpoints(1024));
+
+        // System converted to a marked block.
+        match &req.system {
+            Some(MessagesSystemPrompt::Blocks(blocks)) => {
+                assert_eq!(blocks.len(), 1);
+                assert!(matches!(
+                    &blocks[0],
+                    MessagesContentBlock::Text {
+                        cache_control: Some(MessagesCacheControl::Ephemeral),
+                        ..
+                    }
+                ));
+            }
+            other => panic!("expected marked system blocks, got {:?}", other),
+        }
+
+        // Rolling breakpoint on the last message.
+        match &req.messages.last().unwrap().content {
+            MessagesMessageContent::Blocks(blocks) => {
+                assert!(matches!(
+                    &blocks[0],
+                    MessagesContentBlock::Text {
+                        cache_control: Some(MessagesCacheControl::Ephemeral),
+                        ..
+                    }
+                ));
+            }
+            other => panic!("expected marked tail blocks, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_inject_cache_breakpoints_below_threshold_is_noop() {
+        let mut req = cache_test_request(Some(MessagesSystemPrompt::Single(
+            "short system".to_string(),
+        )));
+        assert!(!req.inject_cache_breakpoints(1024));
+        assert!(matches!(req.system, Some(MessagesSystemPrompt::Single(_))));
+    }
+
+    #[test]
+    fn test_inject_cache_breakpoints_respects_client_markers() {
+        let long_system = "x".repeat(8192);
+        let mut req = cache_test_request(Some(MessagesSystemPrompt::Blocks(vec![
+            MessagesContentBlock::Text {
+                text: long_system,
+                cache_control: Some(MessagesCacheControl::Ephemeral),
+            },
+        ])));
+        // Client already placed a marker: injection must be a no-op.
+        assert!(!req.inject_cache_breakpoints(1024));
+        // Tail message untouched.
+        assert!(matches!(
+            req.messages.last().unwrap().content,
+            MessagesMessageContent::Single(_)
+        ));
+    }
+
+    #[test]
+    fn test_inject_cache_breakpoints_marks_last_tool_when_no_system() {
+        let mut req = cache_test_request(None);
+        req.tools = Some(vec![MessagesTool {
+            name: "big_tool".to_string(),
+            description: Some("d".repeat(8192)),
+            input_schema: json!({"type": "object"}),
+            cache_control: None,
+        }]);
+
+        assert!(req.inject_cache_breakpoints(1024));
+        assert_eq!(
+            req.tools.as_ref().unwrap().last().unwrap().cache_control,
+            Some(MessagesCacheControl::Ephemeral)
+        );
+    }
+
+    #[test]
+    fn test_tool_cache_control_roundtrip() {
+        // Client-supplied cache_control on tools must survive serde passthrough.
+        let tool_json = json!({
+            "name": "get_weather",
+            "input_schema": {"type": "object"},
+            "cache_control": {"type": "ephemeral"}
+        });
+        let tool: MessagesTool = serde_json::from_value(tool_json.clone()).unwrap();
+        assert_eq!(tool.cache_control, Some(MessagesCacheControl::Ephemeral));
+        assert_eq!(serde_json::to_value(&tool).unwrap(), tool_json);
+    }
 
     #[test]
     fn test_anthropic_required_fields() {

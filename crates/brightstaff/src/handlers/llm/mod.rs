@@ -1,11 +1,14 @@
 use bytes::Bytes;
-use common::configuration::{FilterPipeline, ModelAlias};
-use common::consts::{ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, MODEL_AFFINITY_HEADER};
+use common::configuration::{resolve_prompt_caching, FilterPipeline, ModelAlias};
+use common::consts::{
+    ARCH_IS_STREAMING_HEADER, ARCH_PROVIDER_HINT_HEADER, MODEL_AFFINITY_HEADER, PLANO_CACHE_HEADER,
+    PLANO_PREFIX_HASH_HEADER,
+};
 use common::llm_providers::LlmProviders;
 use hermesllm::apis::openai::Message;
 use hermesllm::apis::openai_responses::InputParam;
 use hermesllm::clients::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
-use hermesllm::{ProviderRequest, ProviderRequestType};
+use hermesllm::{PromptCacheCapability, ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::header::{self};
@@ -20,18 +23,21 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 pub(crate) mod model_selection;
 
+use crate::affinity::derive_implicit_affinity;
 use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
 use crate::handlers::extract_request_id;
 use crate::handlers::full;
 use crate::metrics as bs_metrics;
+use crate::metrics::labels as metric_labels;
+use crate::session_cache::CachedRoute;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
     extract_input_items, retrieve_and_combine_input, StateStorage, StateStorageError,
 };
 use crate::streaming::{
     create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
-    LlmMetricsCtx, ObservableStreamProcessor, StreamProcessor,
+    LlmMetricsCtx, ObservableStreamProcessor, PinAction, SessionPinCtx, StreamProcessor,
 };
 use crate::tracing::{
     collect_custom_trace_attributes, llm as tracing_llm, operation_component,
@@ -93,8 +99,7 @@ async fn llm_chat_inner(
         }
     });
 
-    // Session pinning: extract session ID and check cache before routing
-    let session_id: Option<String> = request_headers
+    let explicit_session_id: Option<String> = request_headers
         .get(MODEL_AFFINITY_HEADER)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
@@ -104,40 +109,17 @@ async fn llm_chat_inner(
         .and_then(|hdr| request_headers.get(hdr))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let cached_route = if let Some(ref sid) = session_id {
-        state
-            .orchestrator_service
-            .get_cached_route(sid, tenant_id.as_deref())
-            .await
-    } else {
-        None
-    };
-    let (pinned_model, pinned_route_name): (Option<String>, Option<String>) = match cached_route {
-        Some(c) => (Some(c.model_name), c.route_name),
-        None => (None, None),
-    };
-
-    // Record session id on the LLM span for the observability console.
-    if let Some(ref sid) = session_id {
-        get_active_span(|span| {
-            span.set_attribute(opentelemetry::KeyValue::new(
-                tracing_plano::SESSION_ID,
-                sid.clone(),
-            ));
-        });
-    }
-    if let Some(ref route_name) = pinned_route_name {
-        get_active_span(|span| {
-            span.set_attribute(opentelemetry::KeyValue::new(
-                tracing_plano::ROUTE_NAME,
-                route_name.clone(),
-            ));
-        });
-    }
+    // `X-Plano-Cache: off` disables implicit pinning + marker injection for one call.
+    let cache_off_for_request = request_headers
+        .get(PLANO_CACHE_HEADER)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("off"));
 
     let full_qualified_llm_provider_url = format!("{}{}", state.llm_provider_url, request_path);
 
     // --- Phase 1: Parse and validate the incoming request ---
+    // (Parsing happens before session-key derivation: the implicit affinity key is
+    // computed from the request body's stable prompt prefix.)
     let parsed = match parse_and_validate_request(
         request,
         &request_path,
@@ -167,6 +149,94 @@ async fn llm_chat_inner(
         client_api,
         provider_id,
     } = parsed;
+
+    // --- Phase 1a: Session affinity (explicit header > implicit prefix hash) ---
+    // Route-level overrides can't apply yet (the route is only known after routing);
+    // model/provider/global-scoped overrides do.
+    let prompt_caching = resolve_prompt_caching(
+        state.prompt_caching_overrides.as_deref(),
+        state.implicit_affinity_default,
+        &alias_resolved_model,
+        None,
+    );
+
+    // The prefix hash is derived for any session (explicit or implicit) so pins can
+    // be validated against prefix drift.
+    let implicit_affinity = if prompt_caching.enabled && !cache_off_for_request {
+        derive_implicit_affinity(
+            &client_request.get_messages(),
+            tool_names.as_deref(),
+            tenant_id.as_deref(),
+        )
+    } else {
+        None
+    };
+    let request_prefix_hash: Option<u64> = implicit_affinity.as_ref().map(|a| a.prefix_hash);
+
+    let (session_id, is_implicit_session): (Option<String>, bool) = match explicit_session_id {
+        Some(sid) => (Some(sid), false),
+        None if prompt_caching.implicit_session_affinity && !cache_off_for_request => (
+            implicit_affinity.as_ref().map(|a| a.session_key.clone()),
+            true,
+        ),
+        None => (None, false),
+    };
+
+    // Look up the pin; detect prefix drift (stored prefix hash no longer matches —
+    // the provider cache is already lost, so re-routing fresh is safe and correct);
+    // keep logically-expired pins only as a soft switch-penalty hint for ranking.
+    let mut pinned_route: Option<CachedRoute> = None;
+    let mut previous_model_hint: Option<String> = None;
+    if let Some(ref sid) = session_id {
+        if let Some(lookup) = state
+            .orchestrator_service
+            .get_cached_route(sid, tenant_id.as_deref())
+            .await
+        {
+            if lookup.is_stale {
+                debug!(
+                    session_id = %sid,
+                    model = %lookup.route.model_name,
+                    "session pin expired — using as soft switch-penalty hint"
+                );
+                bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_STALE_HINT);
+                previous_model_hint = Some(lookup.route.model_name);
+            } else if let (Some(stored), Some(current)) =
+                (lookup.route.prefix_hash, request_prefix_hash)
+            {
+                if stored != current {
+                    info!(
+                        session_id = %sid,
+                        model = %lookup.route.model_name,
+                        "prompt prefix drifted — provider cache already lost, re-routing fresh"
+                    );
+                    bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_PREFIX_DRIFT);
+                } else {
+                    pinned_route = Some(lookup.route);
+                }
+            } else {
+                pinned_route = Some(lookup.route);
+            }
+        }
+    }
+
+    // Record session id on the LLM span for the observability console.
+    if let Some(ref sid) = session_id {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::SESSION_ID,
+                sid.clone(),
+            ));
+        });
+    }
+    if let Some(route_name) = pinned_route.as_ref().and_then(|r| r.route_name.clone()) {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::ROUTE_NAME,
+                route_name,
+            ));
+        });
+    }
 
     // Record LLM-specific span attributes
     let span = tracing::Span::current();
@@ -264,6 +334,30 @@ async fn llm_chat_inner(
             *bad_request.status_mut() = StatusCode::BAD_REQUEST;
             return Ok(bad_request);
         }
+
+        // Auto-inject cache breakpoints when the upstream requires explicit markers
+        // (Anthropic Messages API). Idempotent — client-supplied markers are
+        // respected — and threshold-guarded against the provider's minimum
+        // cacheable prefix.
+        if prompt_caching.enabled && prompt_caching.inject_cache_control && !cache_off_for_request {
+            if let (
+                ProviderRequestType::MessagesRequest(req),
+                SupportedUpstreamAPIs::AnthropicMessagesAPI(_),
+                PromptCacheCapability::ExplicitMarkers { .. },
+            ) = (
+                &mut client_request,
+                &upstream_api,
+                provider_id.prompt_cache_capability(),
+            ) {
+                if req.inject_cache_breakpoints(prompt_caching.min_prefix_tokens) {
+                    debug!(
+                        model = %alias_resolved_model,
+                        min_prefix_tokens = prompt_caching.min_prefix_tokens,
+                        "injected ephemeral cache breakpoints"
+                    );
+                }
+            }
+        }
     }
 
     // --- Phase 2: Resolve conversation state (v1/responses API) ---
@@ -295,13 +389,23 @@ async fn llm_chat_inner(
         };
 
     // --- Phase 3: Route the request (or use pinned model from session cache) ---
-    let resolved_model = if let Some(cached_model) = pinned_model {
+    // The response-side pin action closes the loop with the cache-usage signal:
+    // implicit sessions commit their pin only after observed cache activity
+    // (pin-after-hit); pinned sessions refresh their TTL and get validated.
+    let mut pin_action: Option<PinAction> = None;
+    let resolved_route_name: Option<String>;
+
+    let resolved_model = if let Some(ref pinned) = pinned_route {
         info!(
             session_id = %session_id.as_deref().unwrap_or(""),
-            model = %cached_model,
+            model = %pinned.model_name,
             "using pinned routing decision from cache"
         );
-        cached_model
+        pin_action = Some(PinAction::Refresh {
+            previously_observed_hit: pinned.observed_cache_hit,
+        });
+        resolved_route_name = pinned.route_name.clone();
+        pinned.model_name.clone()
     } else {
         let routing_span = info_span!(
             "routing",
@@ -321,6 +425,7 @@ async fn llm_chat_inner(
                 &request_path,
                 &request_id,
                 inline_routing_preferences,
+                previous_model_hint,
             )
             .await
         }
@@ -355,16 +460,84 @@ async fn llm_chat_inner(
             }
         }
 
-        if let Some(ref sid) = session_id {
-            state
-                .orchestrator_service
-                .cache_route(sid.clone(), tenant_id.as_deref(), model.clone(), route_name)
-                .await;
+        // Re-resolve caching config now that the route is known (route-scoped
+        // overrides can disable pinning for e.g. quality-critical routes).
+        let caching_for_route = resolve_prompt_caching(
+            state.prompt_caching_overrides.as_deref(),
+            state.implicit_affinity_default,
+            &model,
+            route_name.as_deref(),
+        );
+
+        if session_id.is_some() && caching_for_route.enabled {
+            if is_implicit_session {
+                // Pin-after-hit: defer the pin until the response proves the
+                // workload actually benefits from caching.
+                pin_action = Some(PinAction::CommitOnCacheActivity);
+            } else {
+                // Explicit sessions keep today's pin-on-turn-1 behavior.
+                if let Some(ref sid) = session_id {
+                    state
+                        .orchestrator_service
+                        .cache_route(
+                            sid,
+                            tenant_id.as_deref(),
+                            CachedRoute {
+                                model_name: model.clone(),
+                                route_name: route_name.clone(),
+                                prefix_hash: request_prefix_hash,
+                                observed_cache_hit: false,
+                            },
+                            caching_for_route.session_ttl_seconds,
+                        )
+                        .await;
+                }
+                pin_action = Some(PinAction::Refresh {
+                    previously_observed_hit: false,
+                });
+            }
         }
+        resolved_route_name = route_name;
 
         model
     };
     tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
+
+    // Build the response-side session-pin context.
+    let session_pin_ctx: Option<SessionPinCtx> = match (&session_id, pin_action) {
+        (Some(sid), Some(action)) => {
+            let ttl_override = resolve_prompt_caching(
+                state.prompt_caching_overrides.as_deref(),
+                state.implicit_affinity_default,
+                &resolved_model,
+                resolved_route_name.as_deref(),
+            )
+            .session_ttl_seconds;
+            Some(SessionPinCtx {
+                orchestrator: Arc::clone(&state.orchestrator_service),
+                session_id: sid.clone(),
+                tenant_id: tenant_id.clone(),
+                model_name: resolved_model.clone(),
+                route_name: resolved_route_name.clone(),
+                prefix_hash: request_prefix_hash,
+                ttl_override_seconds: ttl_override,
+                action,
+            })
+        }
+        _ => None,
+    };
+
+    // Forward the prefix hash so self-hosted multi-replica backends can do
+    // KV-aware replica stickiness (consistent-hash on this header at the
+    // cluster layer).
+    if let Some(hash) = request_prefix_hash {
+        if let Ok(val) = header::HeaderValue::from_str(&format!("{hash:016x}")) {
+            request_headers.insert(
+                header::HeaderName::from_static(PLANO_PREFIX_HASH_HEADER),
+                val,
+            );
+        }
+    }
 
     // --- Phase 4: Forward to upstream and stream back ---
     send_upstream(
@@ -383,6 +556,7 @@ async fn llm_chat_inner(
         state.state_storage.clone(),
         request_id,
         &state.filter_pipeline,
+        session_pin_ctx,
     )
     .await
 }
@@ -660,6 +834,7 @@ async fn send_upstream(
     state_storage: Option<Arc<dyn StateStorage>>,
     request_id: String,
     filter_pipeline: &Arc<FilterPipeline>,
+    session_pin_ctx: Option<SessionPinCtx>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let span_name = if model_from_request == resolved_model {
         format!("POST {} {}", request_path, resolved_model)
@@ -775,7 +950,7 @@ async fn send_upstream(
     let byte_stream = llm_response.bytes_stream();
 
     // Create base processor for metrics and tracing
-    let base_processor = ObservableStreamProcessor::new(
+    let mut base_processor = ObservableStreamProcessor::new(
         operation_component::LLM,
         span_name,
         request_start_time,
@@ -786,6 +961,13 @@ async fn send_upstream(
         model: metric_model.clone(),
         upstream_status: upstream_status.as_u16(),
     });
+    // Only wire the pin feedback loop for successful responses — errors carry no
+    // usage block and must not refresh or commit pins.
+    if upstream_status.is_success() {
+        if let Some(pin_ctx) = session_pin_ctx {
+            base_processor = base_processor.with_session_pin(pin_ctx);
+        }
+    }
 
     let output_filter_request_headers = if filter_pipeline.has_output_filters() {
         Some(request_headers.clone())
