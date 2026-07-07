@@ -11,6 +11,10 @@ use tracing::{debug, info, warn};
 const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models/catalog";
 const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
+/// DigitalOcean publishes prices per token; scale to the per-million convention
+/// that `ModelRates` and the absolute-USD consumers (cache-regret gate) expect.
+const TOKENS_PER_MILLION: f64 = 1_000_000.0;
+
 /// Structured per-million-token USD rates for one model, as published by the cost
 /// feed. Kept alongside the blended ranking metric so cost-sensitive features (e.g.
 /// the session-stickiness cache-regret gate) can reason about input vs cached-input
@@ -220,10 +224,14 @@ struct DoModel {
     pricing: Option<DoPricing>,
 }
 
+/// DigitalOcean catalog pricing. Despite the `_per_million` field names, the DO
+/// API returns these as USD **per token** (e.g. gpt-4o input `2.5e-6`), so they
+/// are scaled to per-million at ingestion to match `ModelRates`' convention.
 #[derive(serde::Deserialize)]
 struct DoPricing {
     input_price_per_million: Option<f64>,
     output_price_per_million: Option<f64>,
+    cache_read_input_price_per_million: Option<f64>,
 }
 
 #[derive(serde::Deserialize)]
@@ -277,22 +285,7 @@ async fn fetch_do_pricing(
 ) -> HashMap<String, ModelRates> {
     match client.get(url).send().await {
         Ok(resp) => match resp.json::<DoModelList>().await {
-            Ok(list) => list
-                .data
-                .into_iter()
-                .filter_map(|m| {
-                    let pricing = m.pricing?;
-                    let raw_key = m.model_id.clone();
-                    let key = aliases.get(&raw_key).cloned().unwrap_or(raw_key);
-                    let rates = ModelRates {
-                        input_per_million: pricing.input_price_per_million.unwrap_or(0.0),
-                        output_per_million: pricing.output_price_per_million.unwrap_or(0.0),
-                        // The DO catalog does not publish a cached-read rate.
-                        cache_read_per_million: None,
-                    };
-                    Some((key, rates))
-                })
-                .collect(),
+            Ok(list) => parse_do_pricing(list, aliases),
             Err(err) => {
                 warn!(error = %err, url = %url, "failed to parse digitalocean pricing response");
                 HashMap::new()
@@ -303,6 +296,35 @@ async fn fetch_do_pricing(
             HashMap::new()
         }
     }
+}
+
+/// Map the DO catalog into `ModelRates`, scaling DO's per-token prices into the
+/// per-million convention the rest of the router uses.
+fn parse_do_pricing(
+    list: DoModelList,
+    aliases: &HashMap<String, String>,
+) -> HashMap<String, ModelRates> {
+    list.data
+        .into_iter()
+        .filter_map(|m| {
+            let pricing = m.pricing?;
+            let raw_key = m.model_id.clone();
+            let key = aliases.get(&raw_key).cloned().unwrap_or(raw_key);
+            // DO reports prices per token; scale to per-million so the
+            // absolute-USD consumers (the cache-regret gate) are correct.
+            // Relative ranking via `blended()` is unaffected either way.
+            let rates = ModelRates {
+                input_per_million: pricing.input_price_per_million.unwrap_or(0.0)
+                    * TOKENS_PER_MILLION,
+                output_per_million: pricing.output_price_per_million.unwrap_or(0.0)
+                    * TOKENS_PER_MILLION,
+                cache_read_per_million: pricing
+                    .cache_read_input_price_per_million
+                    .map(|r| r * TOKENS_PER_MILLION),
+            };
+            Some((key, rates))
+        })
+        .collect()
 }
 
 /// models.dev publishes a top-level object keyed by provider id; each provider
@@ -534,6 +556,52 @@ mod tests {
             .await;
         // none → original order, despite gpt-4o-mini being cheaper
         assert_eq!(result, vec!["gpt-4o", "gpt-4o-mini"]);
+    }
+
+    #[test]
+    fn test_parse_do_pricing_scales_per_token_to_per_million() {
+        // DO's catalog returns USD *per token* despite the `_per_million` names.
+        // These are the real values from the live catalog.
+        let json = r#"{
+            "data": [
+                {
+                    "model_id": "digitalocean/anthropic-claude-4.6-sonnet",
+                    "pricing": {
+                        "input_price_per_million": 3e-6,
+                        "output_price_per_million": 15e-6,
+                        "cache_read_input_price_per_million": 3e-7
+                    }
+                },
+                {
+                    "model_id": "digitalocean/openai-gpt-4o",
+                    "pricing": {
+                        "input_price_per_million": 2.5e-6,
+                        "output_price_per_million": 10e-6
+                    }
+                }
+            ]
+        }"#;
+        let list: DoModelList = serde_json::from_str(json).unwrap();
+        let rates = parse_do_pricing(list, &HashMap::new());
+
+        // Scaled to per-million so the cache-regret gate compares real dollars.
+        let sonnet = rates
+            .get("digitalocean/anthropic-claude-4.6-sonnet")
+            .unwrap();
+        assert!((sonnet.input_per_million - 3.0).abs() < 1e-9);
+        assert!((sonnet.output_per_million - 15.0).abs() < 1e-9);
+        // DO *does* publish a cached-read rate — it must be captured, not dropped.
+        assert_eq!(sonnet.cache_read_per_million, Some(0.3));
+
+        let gpt4o = rates.get("digitalocean/openai-gpt-4o").unwrap();
+        assert!((gpt4o.input_per_million - 2.5).abs() < 1e-9);
+        assert_eq!(gpt4o.cache_read_per_million, None);
+
+        // Regression: a ~5k-token switch off warm sonnet to cold gpt-4o must now
+        // cost real dollars, not ~1e-8. This is the bug the live gate test caught.
+        let regret =
+            5_000.0 / 1_000_000.0 * (gpt4o.input_per_million - sonnet.cached_input_rate(0.1));
+        assert!(regret > 0.01, "expected ~$0.011 of regret, got {regret}");
     }
 
     #[test]
