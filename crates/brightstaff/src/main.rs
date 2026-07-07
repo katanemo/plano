@@ -344,7 +344,26 @@ async fn init_app_state(
     let signals_enabled = !overrides.disable_signals.unwrap_or(false);
 
     let prompt_caching =
-        common::configuration::EffectivePromptCaching::from_config(config.prompt_caching.as_ref());
+        common::configuration::EffectivePromptCaching::from_config(config.prompt_caching.as_ref())?;
+
+    // The session-stickiness cost gate needs per-model pricing to compute regret.
+    if prompt_caching.session_stickiness.is_some() {
+        use common::configuration::MetricsSource;
+        let has_cost_source = config
+            .model_metrics_sources
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|s| matches!(s, MetricsSource::Cost(_)));
+        if !has_cost_source {
+            return Err(
+                "prompt_caching.session_stickiness is enabled but no cost metrics source is \
+                 configured — add a cost source (e.g. models.dev) to model_metrics_sources so \
+                 per-model input/cached rates are available for the regret calculation"
+                    .into(),
+            );
+        }
+    }
 
     Ok(AppState {
         orchestrator_service,

@@ -410,3 +410,13 @@ pub fn record_session_pin_event(event: &'static str) {
     )
     .increment(1);
 }
+
+/// Record a session-stickiness cost-gate decision on a proposed model switch
+/// (see `metrics::labels::SWITCH_DECISION_*`).
+pub fn record_session_switch_decision(decision: &'static str) {
+    counter!(
+        "brightstaff_session_switch_decisions_total",
+        "decision" => decision,
+    )
+    .increment(1);
+}

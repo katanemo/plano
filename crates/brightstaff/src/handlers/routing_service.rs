@@ -3,7 +3,7 @@ use common::configuration::{SpanAttributes, TopLevelRoutingPreference};
 use common::consts::{MODEL_AFFINITY_HEADER, REQUEST_ID_HEADER};
 use common::errors::BrightStaffError;
 use hermesllm::clients::SupportedAPIsFromClient;
-use hermesllm::ProviderRequestType;
+use hermesllm::{ProviderRequest, ProviderRequestType};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, Response, StatusCode};
@@ -11,6 +11,7 @@ use std::sync::Arc;
 use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::extract_or_generate_traceparent;
+use crate::affinity::derive_implicit_affinity;
 use crate::handlers::llm::model_selection::router_chat_get_upstream_model;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
@@ -135,42 +136,9 @@ async fn routing_decision_inner(
         .unwrap_or("unknown")
         .to_string();
 
-    if let Some(ref sid) = session_id {
-        if let Some(lookup) = orchestrator_service
-            .get_cached_route(sid, tenant_id.as_deref())
-            .await
-        {
-            // A logically-expired pin no longer short-circuits — fall through to
-            // normal routing so model selection is never overridden by a stale cache.
-            if !lookup.is_stale {
-                let cached = lookup.route;
-                info!(
-                    session_id = %sid,
-                    model = %cached.model_name,
-                    route = ?cached.route_name,
-                    "returning pinned routing decision from cache"
-                );
-                let response = RoutingDecisionResponse {
-                    models: vec![cached.model_name],
-                    route: cached.route_name,
-                    trace_id,
-                    session_id: Some(sid.clone()),
-                    pinned: true,
-                };
-                let json = serde_json::to_string(&response).unwrap();
-                let body = Full::new(Bytes::from(json))
-                    .map_err(|never| match never {})
-                    .boxed();
-                return Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "application/json")
-                    .body(body)
-                    .unwrap());
-            }
-        }
-    }
-
-    // Parse request body
+    // Parse the request body up front so a pin can be validated against prefix drift
+    // and a fresh pin can be stored with its prefix hash. This endpoint shares the
+    // session cache with the LLM handler, so both must key drift the same way.
     let raw_bytes = request.collect().await?.to_bytes();
 
     debug!(
@@ -207,6 +175,63 @@ async fn routing_decision_inner(
         }
     };
 
+    // Prefix hash over the stable prompt prefix (system + tools + first user
+    // message), computed identically to the LLM handler so pins interoperate. Used
+    // to detect drift on an existing pin and persisted with a freshly-routed pin.
+    let request_prefix_hash: Option<u64> = derive_implicit_affinity(
+        &client_request.get_messages(),
+        client_request.get_tool_names().as_deref(),
+        tenant_id.as_deref(),
+    )
+    .map(|a| a.prefix_hash);
+
+    if let Some(ref sid) = session_id {
+        if let Some(lookup) = orchestrator_service
+            .get_cached_route(sid, tenant_id.as_deref())
+            .await
+        {
+            // A logically-expired pin no longer short-circuits. Neither does a pin
+            // whose stored prefix hash no longer matches the current request — the
+            // provider cache is already lost, so re-routing fresh is correct. Both
+            // fall through to normal routing.
+            let prefix_drifted = match (lookup.route.prefix_hash, request_prefix_hash) {
+                (Some(stored), Some(current)) => stored != current,
+                _ => false,
+            };
+            if !lookup.is_stale && !prefix_drifted {
+                let cached = lookup.route;
+                info!(
+                    session_id = %sid,
+                    model = %cached.model_name,
+                    route = ?cached.route_name,
+                    "returning pinned routing decision from cache"
+                );
+                let response = RoutingDecisionResponse {
+                    models: vec![cached.model_name],
+                    route: cached.route_name,
+                    trace_id,
+                    session_id: Some(sid.clone()),
+                    pinned: true,
+                };
+                let json = serde_json::to_string(&response).unwrap();
+                let body = Full::new(Bytes::from(json))
+                    .map_err(|never| match never {})
+                    .boxed();
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/json")
+                    .body(body)
+                    .unwrap());
+            } else if prefix_drifted {
+                info!(
+                    session_id = %sid,
+                    model = %lookup.route.model_name,
+                    "prompt prefix drifted — re-routing fresh for routing decision"
+                );
+            }
+        }
+    }
+
     let routing_result = router_chat_get_upstream_model(
         Arc::clone(&orchestrator_service),
         client_request,
@@ -226,7 +251,7 @@ async fn routing_decision_inner(
                         CachedRoute {
                             model_name: result.model_name.clone(),
                             route_name: result.route_name.clone(),
-                            prefix_hash: None,
+                            prefix_hash: request_prefix_hash,
                             observed_cache_hit: false,
                         },
                         None,

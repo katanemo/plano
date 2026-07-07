@@ -30,6 +30,7 @@ use crate::handlers::extract_request_id;
 use crate::handlers::full;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
+use crate::router::cache_regret;
 use crate::session_cache::CachedRoute;
 use crate::state::response_state_processor::ResponsesStateProcessor;
 use crate::state::{
@@ -46,6 +47,22 @@ use crate::tracing::{
 use model_selection::router_chat_get_upstream_model;
 
 const PERPLEXITY_PROVIDER_PREFIX: &str = "perplexity/";
+
+/// Estimate the request's context size in tokens for the cache-regret gate.
+/// Uses the tiktoken-based counter when available, falling back to the chars/4
+/// heuristic. Precision is not critical — the estimate only feeds a threshold
+/// comparison, and both sides of the regret formula scale with the same number.
+fn estimate_context_tokens(messages: &[Message], model: &str) -> u64 {
+    let text: String = messages
+        .iter()
+        .filter_map(|m| m.content.as_ref().map(|c| c.to_string()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    match common::tokenizer::token_count(model, &text) {
+        Ok(count) => count as u64,
+        Err(_) => (text.len() / 4) as u64,
+    }
+}
 
 pub async fn llm_chat(
     request: Request<hyper::body::Incoming>,
@@ -169,88 +186,13 @@ async fn llm_chat_inner(
         provider_id,
     } = parsed;
 
-    // --- Phase 1a: Session affinity (explicit header > implicit prefix hash) ---
     // Prompt caching is configured once for the whole instance and never influences
     // which model routing selects — it only keeps a conversation on the same
-    // model/provider so the upstream prompt cache stays warm across turns.
+    // model/provider so the upstream prompt cache stays warm across turns. Note:
+    // session affinity and pin lookup are derived later (Phase 2a), *after* input
+    // filters and Responses-API state merge, so the prefix hash reflects the exact
+    // stable prefix sent upstream rather than the pre-filter request body.
     let prompt_caching = state.prompt_caching;
-
-    // The prefix hash is derived for any session (explicit or implicit) so pins can
-    // be validated against prefix drift.
-    let implicit_affinity = if prompt_caching.enabled && !cache_off_for_request {
-        derive_implicit_affinity(
-            &client_request.get_messages(),
-            tool_names.as_deref(),
-            tenant_id.as_deref(),
-        )
-    } else {
-        None
-    };
-    let request_prefix_hash: Option<u64> = implicit_affinity.as_ref().map(|a| a.prefix_hash);
-
-    let (session_id, is_implicit_session): (Option<String>, bool) = match explicit_session_id {
-        Some(sid) => (Some(sid), false),
-        None if prompt_caching.session_affinity && !cache_off_for_request => (
-            implicit_affinity.as_ref().map(|a| a.session_key.clone()),
-            true,
-        ),
-        None => (None, false),
-    };
-
-    // Look up the pin; detect prefix drift (stored prefix hash no longer matches —
-    // the provider cache is already lost, so re-routing fresh is safe and correct).
-    // Logically-expired pins are dropped so model selection is never overridden by a
-    // stale cache.
-    let mut pinned_route: Option<CachedRoute> = None;
-    if let Some(ref sid) = session_id {
-        if let Some(lookup) = state
-            .orchestrator_service
-            .get_cached_route(sid, tenant_id.as_deref())
-            .await
-        {
-            if lookup.is_stale {
-                debug!(
-                    session_id = %sid,
-                    model = %lookup.route.model_name,
-                    "session pin expired — re-routing fresh"
-                );
-                bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_STALE_HINT);
-            } else if let (Some(stored), Some(current)) =
-                (lookup.route.prefix_hash, request_prefix_hash)
-            {
-                if stored != current {
-                    info!(
-                        session_id = %sid,
-                        model = %lookup.route.model_name,
-                        "prompt prefix drifted — provider cache already lost, re-routing fresh"
-                    );
-                    bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_PREFIX_DRIFT);
-                } else {
-                    pinned_route = Some(lookup.route);
-                }
-            } else {
-                pinned_route = Some(lookup.route);
-            }
-        }
-    }
-
-    // Record session id on the LLM span for the observability console.
-    if let Some(ref sid) = session_id {
-        get_active_span(|span| {
-            span.set_attribute(opentelemetry::KeyValue::new(
-                tracing_plano::SESSION_ID,
-                sid.clone(),
-            ));
-        });
-    }
-    if let Some(route_name) = pinned_route.as_ref().and_then(|r| r.route_name.clone()) {
-        get_active_span(|span| {
-            span.set_attribute(opentelemetry::KeyValue::new(
-                tracing_plano::ROUTE_NAME,
-                route_name,
-            ));
-        });
-    }
 
     // Record LLM-specific span attributes
     let span = tracing::Span::current();
@@ -407,6 +349,104 @@ async fn llm_chat_inner(
         Err(response) => return Ok(response),
     };
 
+    // --- Phase 2a: Session affinity (explicit header > implicit prefix hash) ---
+    // Derived here, after input filters and Responses-API state merge, so the
+    // implicit session key and prefix hash are computed over the exact stable
+    // prefix (system + tools + first user message) that is actually sent upstream —
+    // the same bytes the provider's prompt cache is keyed on.
+    //
+    // The prefix hash is derived independently of `prompt_caching.enabled`: it feeds
+    // the `x-plano-prefix-hash` header used for cluster-level RING_HASH replica
+    // stickiness (`prefix_affinity`), which must work even when prompt caching is
+    // off. Only `X-Plano-Cache: off` (or an unparseable prompt) suppresses it.
+    let implicit_affinity = if cache_off_for_request {
+        None
+    } else {
+        derive_implicit_affinity(
+            &client_request.get_messages(),
+            tool_names.as_deref(),
+            tenant_id.as_deref(),
+        )
+    };
+    let request_prefix_hash: Option<u64> = implicit_affinity.as_ref().map(|a| a.prefix_hash);
+
+    // Implicit session pinning stays gated on prompt caching + session affinity
+    // (both are false unless caching is enabled); an explicit affinity header always
+    // pins regardless.
+    let (session_id, is_implicit_session): (Option<String>, bool) = match explicit_session_id {
+        Some(sid) => (Some(sid), false),
+        None if prompt_caching.session_affinity && !cache_off_for_request => (
+            implicit_affinity.as_ref().map(|a| a.session_key.clone()),
+            true,
+        ),
+        None => (None, false),
+    };
+
+    // Look up the pin; detect prefix drift (stored prefix hash no longer matches —
+    // the provider cache is already lost, so re-routing fresh is safe and correct).
+    // Logically-expired pins never short-circuit routing, but they are retained as
+    // `previous_route` so the cache-regret gate can weigh the cost of abandoning a
+    // plausibly-warm provider cache when the router proposes a different model.
+    let mut pinned_route: Option<CachedRoute> = None;
+    let mut previous_route: Option<CachedRoute> = None;
+    let mut previous_prefix_drifted = false;
+    if let Some(ref sid) = session_id {
+        if let Some(lookup) = state
+            .orchestrator_service
+            .get_cached_route(sid, tenant_id.as_deref())
+            .await
+        {
+            // Prefix drift is independent of staleness: a stored prefix hash that no
+            // longer matches means the provider cache is already cold, so the
+            // regret gate must not treat the previous pin as plausibly warm.
+            let prefix_drifted = match (lookup.route.prefix_hash, request_prefix_hash) {
+                (Some(stored), Some(current)) => stored != current,
+                _ => false,
+            };
+
+            if lookup.is_stale {
+                debug!(
+                    session_id = %sid,
+                    model = %lookup.route.model_name,
+                    prefix_drifted,
+                    "session pin expired — re-routing fresh"
+                );
+                bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_STALE_HINT);
+                previous_prefix_drifted = prefix_drifted;
+                previous_route = Some(lookup.route);
+            } else if prefix_drifted {
+                info!(
+                    session_id = %sid,
+                    model = %lookup.route.model_name,
+                    "prompt prefix drifted — provider cache already lost, re-routing fresh"
+                );
+                bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_PREFIX_DRIFT);
+                previous_prefix_drifted = true;
+                previous_route = Some(lookup.route);
+            } else {
+                pinned_route = Some(lookup.route);
+            }
+        }
+    }
+
+    // Record session id on the LLM span for the observability console.
+    if let Some(ref sid) = session_id {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::SESSION_ID,
+                sid.clone(),
+            ));
+        });
+    }
+    if let Some(route_name) = pinned_route.as_ref().and_then(|r| r.route_name.clone()) {
+        get_active_span(|span| {
+            span.set_attribute(opentelemetry::KeyValue::new(
+                tracing_plano::ROUTE_NAME,
+                route_name,
+            ));
+        });
+    }
+
     // Serialize request for upstream BEFORE router consumes it
     let client_request_bytes_for_upstream: Bytes =
         match ProviderRequestType::to_bytes(&client_request) {
@@ -417,6 +457,16 @@ async fn llm_chat_inner(
                 *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                 return Ok(r);
             }
+        };
+
+    // Context size for the cache-regret gate, estimated before the router consumes
+    // the request. Only computed when the gate could actually fire (stickiness
+    // configured and a previous pin exists to compare against).
+    let est_context_tokens: u64 =
+        if prompt_caching.session_stickiness.is_some() && previous_route.is_some() {
+            estimate_context_tokens(&client_request.get_messages(), &model_name_only)
+        } else {
+            0
         };
 
     // --- Phase 3: Route the request (or use pinned model from session cache) ---
@@ -472,11 +522,111 @@ async fn llm_chat_inner(
 
         let (router_selected_model, route_name) =
             (routing_result.model_name, routing_result.route_name);
-        let model = if router_selected_model != "none" {
+        let mut model = if router_selected_model != "none" {
             router_selected_model
         } else {
             alias_resolved_model.clone()
         };
+        let mut route_name = route_name;
+        // Set when the cache-regret gate keeps a previously-pinned model whose
+        // provider cache was observed warm; used below so re-pinning the retained
+        // model preserves its `observed_cache_hit` state instead of resetting it.
+        let mut retained_previous_observed_hit = false;
+
+        // Cache-regret gate (session stickiness): the router has proposed a model,
+        // but if the previous pin's provider cache is plausibly still warm (it
+        // observed cache activity and the prefix has NOT drifted), abandoning it
+        // forces the candidate to re-ingest the full context at its uncached input
+        // rate. Only switch when that regret is within the developer's threshold;
+        // otherwise retain the previous model. Quality and cost stay separate — the
+        // gate never picks a "better" model, it only vetoes an unaffordable switch.
+        if let (Some(stickiness), Some(previous)) = (
+            prompt_caching.session_stickiness,
+            previous_route
+                .as_ref()
+                .filter(|prev| cache_regret::gate_applies(prev, previous_prefix_drifted, &model)),
+        ) {
+            let previous_rates = state
+                .orchestrator_service
+                .model_rates(&previous.model_name)
+                .await;
+            let candidate_rates = state.orchestrator_service.model_rates(&model).await;
+            match (previous_rates, candidate_rates) {
+                (Some(prev_rates), Some(cand_rates)) => {
+                    let evaluation = cache_regret::evaluate_switch(
+                        &stickiness.switch_cost,
+                        est_context_tokens,
+                        prev_rates.cached_input_rate(stickiness.cache_read_discount),
+                        cand_rates.input_per_million,
+                    );
+                    get_active_span(|span| {
+                        span.set_attribute(opentelemetry::KeyValue::new(
+                            tracing_plano::SWITCH_REGRET_USD,
+                            evaluation.regret_usd,
+                        ));
+                        span.set_attribute(opentelemetry::KeyValue::new(
+                            tracing_plano::SWITCH_THRESHOLD_USD,
+                            evaluation.threshold_usd,
+                        ));
+                    });
+                    match evaluation.decision {
+                        cache_regret::SwitchDecision::Allow => {
+                            info!(
+                                previous_model = %previous.model_name,
+                                candidate_model = %model,
+                                regret_usd = evaluation.regret_usd,
+                                threshold_usd = evaluation.threshold_usd,
+                                "switch allowed — regret within threshold"
+                            );
+                            bs_metrics::record_session_switch_decision(
+                                metric_labels::SWITCH_DECISION_ALLOWED,
+                            );
+                            get_active_span(|span| {
+                                span.set_attribute(opentelemetry::KeyValue::new(
+                                    tracing_plano::SWITCH_DECISION,
+                                    metric_labels::SWITCH_DECISION_ALLOWED,
+                                ));
+                            });
+                        }
+                        cache_regret::SwitchDecision::RetainPrevious => {
+                            info!(
+                                previous_model = %previous.model_name,
+                                candidate_model = %model,
+                                regret_usd = evaluation.regret_usd,
+                                threshold_usd = evaluation.threshold_usd,
+                                est_context_tokens,
+                                "switch vetoed — cache regret exceeds threshold, retaining previous model"
+                            );
+                            bs_metrics::record_session_switch_decision(
+                                metric_labels::SWITCH_DECISION_RETAINED,
+                            );
+                            get_active_span(|span| {
+                                span.set_attribute(opentelemetry::KeyValue::new(
+                                    tracing_plano::SWITCH_DECISION,
+                                    metric_labels::SWITCH_DECISION_RETAINED,
+                                ));
+                            });
+                            model = previous.model_name.clone();
+                            route_name = previous.route_name.clone();
+                            // gate_applies guarantees the previous pin observed a
+                            // cache hit; keep that warm-state so the refreshed pin
+                            // isn't demoted to cold.
+                            retained_previous_observed_hit = previous.observed_cache_hit;
+                        }
+                    }
+                }
+                _ => {
+                    // Without pricing for both sides the regret is unknowable —
+                    // fail open (switch freely) rather than silently overriding
+                    // the router on guesswork.
+                    debug!(
+                        previous_model = %previous.model_name,
+                        candidate_model = %model,
+                        "cache-regret gate skipped — missing pricing data for one or both models"
+                    );
+                }
+            }
+        }
 
         // Record route name on the LLM span (only when the orchestrator produced one).
         if let Some(ref rn) = route_name {
@@ -496,7 +646,9 @@ async fn llm_chat_inner(
                 // workload actually benefits from caching.
                 pin_action = Some(PinAction::CommitOnCacheActivity);
             } else {
-                // Explicit sessions keep today's pin-on-turn-1 behavior.
+                // Explicit sessions keep today's pin-on-turn-1 behavior. When the
+                // gate retained a warm previous model, carry its observed-hit state
+                // forward so the pin stays warm rather than resetting to cold.
                 if let Some(ref sid) = session_id {
                     state
                         .orchestrator_service
@@ -507,14 +659,14 @@ async fn llm_chat_inner(
                                 model_name: model.clone(),
                                 route_name: route_name.clone(),
                                 prefix_hash: request_prefix_hash,
-                                observed_cache_hit: false,
+                                observed_cache_hit: retained_previous_observed_hit,
                             },
                             prompt_caching.session_ttl_seconds,
                         )
                         .await;
                 }
                 pin_action = Some(PinAction::Refresh {
-                    previously_observed_hit: false,
+                    previously_observed_hit: retained_previous_observed_hit,
                 });
             }
         }

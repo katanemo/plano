@@ -349,6 +349,48 @@ properties:
         type: integer
         minimum: 1
         description: "Pin lifetime for implicit/explicit sessions; align with the provider cache window (e.g. 3600 for Anthropic 1h caching). Defaults to routing.session_ttl_seconds."
+      session_stickiness:
+        type: object
+        description: >
+          Cache-regret cost gate on session re-routes. When a re-route is being
+          considered (stale pin or prefix drift) and the previous model's provider
+          cache is plausibly still warm, only switch models if the input-cost regret
+          of abandoning the cache — context_tokens x (candidate_uncached_input_rate -
+          previous_cached_input_rate) — stays within the developer-defined switch_cost
+          threshold. Requires a cost source in model_metrics_sources. The warm+stable
+          stick path is unaffected.
+        properties:
+          enabled:
+            type: boolean
+            description: "Master switch for the cost gate. Default false."
+          switch_cost:
+            type: object
+            description: >
+              Developer-defined threshold for the maximum acceptable cache-regret per
+              switch. Required when enabled — Plano never invents a default.
+            properties:
+              type:
+                type: string
+                enum: ["max_regret_usd", "max_regret_pct_of_cached"]
+                description: >
+                  max_regret_usd: absolute USD ceiling per request.
+                  max_regret_pct_of_cached: ceiling as a percent of the cached
+                  baseline cost (what staying on the warm model would cost).
+              value:
+                type: number
+                minimum: 0
+                description: "Threshold value: dollars for max_regret_usd, percent for max_regret_pct_of_cached."
+            required: ["type", "value"]
+            additionalProperties: false
+          cache_read_discount:
+            type: number
+            minimum: 0
+            maximum: 1
+            description: >
+              Fallback used to estimate a model's cached input rate when the pricing
+              feed doesn't publish one (cached_rate = input_rate x discount). A
+              pricing detail, not a cost policy. Default 0.1.
+        additionalProperties: false
     additionalProperties: false
   system_prompt:
     type: string

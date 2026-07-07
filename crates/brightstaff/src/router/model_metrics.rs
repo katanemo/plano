@@ -11,14 +11,51 @@ use tracing::{debug, info, warn};
 const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models/catalog";
 const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
+/// Structured per-million-token USD rates for one model, as published by the cost
+/// feed. Kept alongside the blended ranking metric so cost-sensitive features (e.g.
+/// the session-stickiness cache-regret gate) can reason about input vs cached-input
+/// pricing without touching `rank_models`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModelRates {
+    pub input_per_million: f64,
+    pub output_per_million: f64,
+    /// Cached (prompt-cache read) input rate. Present when the feed publishes it
+    /// (models.dev `cost.cache_read`); absent for feeds that don't (DO catalog).
+    pub cache_read_per_million: Option<f64>,
+}
+
+impl ModelRates {
+    /// Blended input+output metric used for `prefer: cheapest` ranking.
+    fn blended(&self) -> f64 {
+        self.input_per_million + self.output_per_million
+    }
+
+    /// Cached input rate, falling back to `input * cache_read_discount` when the
+    /// feed doesn't publish a cached rate.
+    pub fn cached_input_rate(&self, cache_read_discount: f64) -> f64 {
+        self.cache_read_per_million
+            .unwrap_or(self.input_per_million * cache_read_discount)
+    }
+}
+
+/// Derive the blended ranking map from the structured rates map.
+fn blended_costs(rates: &HashMap<String, ModelRates>) -> HashMap<String, f64> {
+    rates
+        .iter()
+        .map(|(k, r)| (k.clone(), r.blended()))
+        .collect()
+}
+
 pub struct ModelMetricsService {
     cost: Arc<RwLock<HashMap<String, f64>>>,
+    rates: Arc<RwLock<HashMap<String, ModelRates>>>,
     latency: Arc<RwLock<HashMap<String, f64>>>,
 }
 
 impl ModelMetricsService {
     pub async fn new(sources: &[MetricsSource], client: reqwest::Client) -> Self {
         let cost_data = Arc::new(RwLock::new(HashMap::new()));
+        let rates_data = Arc::new(RwLock::new(HashMap::new()));
         let latency_data = Arc::new(RwLock::new(HashMap::new()));
 
         for source in sources {
@@ -34,10 +71,12 @@ impl ModelMetricsService {
 
                     let data = fetch_cost_pricing(&provider, &url, &client, &aliases).await;
                     info!(models = data.len(), provider = provider_name, url = %url, "fetched cost pricing");
-                    *cost_data.write().await = data;
+                    *cost_data.write().await = blended_costs(&data);
+                    *rates_data.write().await = data;
 
                     if let Some(interval_secs) = cfg.refresh_interval {
                         let cost_clone = Arc::clone(&cost_data);
+                        let rates_clone = Arc::clone(&rates_data);
                         let client_clone = client.clone();
                         let interval = Duration::from_secs(interval_secs);
                         tokio::spawn(async move {
@@ -47,7 +86,8 @@ impl ModelMetricsService {
                                     fetch_cost_pricing(&provider, &url, &client_clone, &aliases)
                                         .await;
                                 info!(models = data.len(), provider = provider_name, url = %url, "refreshed cost pricing");
-                                *cost_clone.write().await = data;
+                                *cost_clone.write().await = blended_costs(&data);
+                                *rates_clone.write().await = data;
                             }
                         });
                     }
@@ -81,8 +121,21 @@ impl ModelMetricsService {
 
         ModelMetricsService {
             cost: cost_data,
+            rates: rates_data,
             latency: latency_data,
         }
+    }
+
+    /// Structured per-million rates for a model, if the cost feed published them.
+    /// Falls back to the bare model id (without `provider/` prefix) like the
+    /// blended cost map does.
+    pub async fn model_rates(&self, model: &str) -> Option<ModelRates> {
+        let rates = self.rates.read().await;
+        rates.get(model).copied().or_else(|| {
+            model
+                .split_once('/')
+                .and_then(|(_, bare)| rates.get(bare).copied())
+        })
     }
 
     /// Rank `models` by `policy`, returning them in preference order.
@@ -188,6 +241,7 @@ struct ModelsDevModel {
 struct ModelsDevCost {
     input: Option<f64>,
     output: Option<f64>,
+    cache_read: Option<f64>,
 }
 
 fn default_cost_url(provider: &CostProvider) -> &'static str {
@@ -209,7 +263,7 @@ async fn fetch_cost_pricing(
     url: &str,
     client: &reqwest::Client,
     aliases: &HashMap<String, String>,
-) -> HashMap<String, f64> {
+) -> HashMap<String, ModelRates> {
     match provider {
         CostProvider::Digitalocean => fetch_do_pricing(url, client, aliases).await,
         CostProvider::ModelsDev => fetch_models_dev_pricing(url, client, aliases).await,
@@ -220,7 +274,7 @@ async fn fetch_do_pricing(
     url: &str,
     client: &reqwest::Client,
     aliases: &HashMap<String, String>,
-) -> HashMap<String, f64> {
+) -> HashMap<String, ModelRates> {
     match client.get(url).send().await {
         Ok(resp) => match resp.json::<DoModelList>().await {
             Ok(list) => list
@@ -230,9 +284,13 @@ async fn fetch_do_pricing(
                     let pricing = m.pricing?;
                     let raw_key = m.model_id.clone();
                     let key = aliases.get(&raw_key).cloned().unwrap_or(raw_key);
-                    let cost = pricing.input_price_per_million.unwrap_or(0.0)
-                        + pricing.output_price_per_million.unwrap_or(0.0);
-                    Some((key, cost))
+                    let rates = ModelRates {
+                        input_per_million: pricing.input_price_per_million.unwrap_or(0.0),
+                        output_per_million: pricing.output_price_per_million.unwrap_or(0.0),
+                        // The DO catalog does not publish a cached-read rate.
+                        cache_read_per_million: None,
+                    };
+                    Some((key, rates))
                 })
                 .collect(),
             Err(err) => {
@@ -249,14 +307,14 @@ async fn fetch_do_pricing(
 
 /// models.dev publishes a top-level object keyed by provider id; each provider
 /// carries a `models` map whose keys are `creator/model` ids and whose `cost`
-/// block holds per-million USD rates. We sum input + output (mirroring the DO
-/// ranking metric) and key the result by `creator/model_id` so it lines up with
-/// Plano's `provider/model` routing names.
+/// block holds per-million USD rates. We keep the structured rates (including
+/// `cache_read` when published) and key the result by `creator/model_id` so it
+/// lines up with Plano's `provider/model` routing names.
 async fn fetch_models_dev_pricing(
     url: &str,
     client: &reqwest::Client,
     aliases: &HashMap<String, String>,
-) -> HashMap<String, f64> {
+) -> HashMap<String, ModelRates> {
     match client.get(url).send().await {
         Ok(resp) => match resp.json::<HashMap<String, ModelsDevProvider>>().await {
             Ok(providers) => parse_models_dev_pricing(providers, aliases),
@@ -275,7 +333,7 @@ async fn fetch_models_dev_pricing(
 fn parse_models_dev_pricing(
     providers: HashMap<String, ModelsDevProvider>,
     aliases: &HashMap<String, String>,
-) -> HashMap<String, f64> {
+) -> HashMap<String, ModelRates> {
     let mut out = HashMap::new();
     for (provider_id, provider) in providers {
         for (model_key, model) in provider.models {
@@ -286,11 +344,15 @@ fn parse_models_dev_pricing(
             // First-party providers use bare model keys (`claude-opus-4-5`),
             // so compose `provider/model` to line up with Plano routing names.
             let raw_key = format!("{provider_id}/{model_key}");
-            let total = input + output;
+            let rates = ModelRates {
+                input_per_million: input,
+                output_per_million: output,
+                cache_read_per_million: cost.cache_read,
+            };
             let key = aliases.get(&raw_key).cloned().unwrap_or(raw_key);
-            out.insert(key, total);
+            out.insert(key, rates);
             // Also register the bare model id as a fallback lookup.
-            out.entry(model_key).or_insert(total);
+            out.entry(model_key).or_insert(rates);
         }
     }
     out
@@ -356,6 +418,17 @@ mod tests {
         SelectionPolicy { prefer }
     }
 
+    fn service_with(
+        cost: HashMap<String, f64>,
+        latency: HashMap<String, f64>,
+    ) -> ModelMetricsService {
+        ModelMetricsService {
+            cost: Arc::new(RwLock::new(cost)),
+            rates: Arc::new(RwLock::new(HashMap::new())),
+            latency: Arc::new(RwLock::new(latency)),
+        }
+    }
+
     #[test]
     fn test_rank_by_ascending_metric_picks_lowest_first() {
         let models = vec!["a".to_string(), "b".to_string(), "c".to_string()];
@@ -386,15 +459,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_rank_models_cheapest() {
-        let service = ModelMetricsService {
-            cost: Arc::new(RwLock::new({
+        let service = service_with(
+            {
                 let mut m = HashMap::new();
                 m.insert("gpt-4o".to_string(), 0.005);
                 m.insert("gpt-4o-mini".to_string(), 0.0001);
                 m
-            })),
-            latency: Arc::new(RwLock::new(HashMap::new())),
-        };
+            },
+            HashMap::new(),
+        );
         let models = vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()];
         let result = service
             .rank_models(&models, &make_policy(SelectionPreference::Cheapest))
@@ -404,15 +477,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_rank_models_fastest() {
-        let service = ModelMetricsService {
-            cost: Arc::new(RwLock::new(HashMap::new())),
-            latency: Arc::new(RwLock::new({
-                let mut m = HashMap::new();
-                m.insert("gpt-4o".to_string(), 200.0);
-                m.insert("claude-sonnet".to_string(), 120.0);
-                m
-            })),
-        };
+        let service = service_with(HashMap::new(), {
+            let mut m = HashMap::new();
+            m.insert("gpt-4o".to_string(), 200.0);
+            m.insert("claude-sonnet".to_string(), 120.0);
+            m
+        });
         let models = vec!["gpt-4o".to_string(), "claude-sonnet".to_string()];
         let result = service
             .rank_models(&models, &make_policy(SelectionPreference::Fastest))
@@ -422,10 +492,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rank_models_fallback_no_metrics() {
-        let service = ModelMetricsService {
-            cost: Arc::new(RwLock::new(HashMap::new())),
-            latency: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let service = service_with(HashMap::new(), HashMap::new());
         let models = vec!["model-a".to_string(), "model-b".to_string()];
         let result = service
             .rank_models(&models, &make_policy(SelectionPreference::Cheapest))
@@ -435,14 +502,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_rank_models_partial_data_appended_last() {
-        let service = ModelMetricsService {
-            cost: Arc::new(RwLock::new({
+        let service = service_with(
+            {
                 let mut m = HashMap::new();
                 m.insert("gpt-4o".to_string(), 0.005);
                 m
-            })),
-            latency: Arc::new(RwLock::new(HashMap::new())),
-        };
+            },
+            HashMap::new(),
+        );
         let models = vec!["gpt-4o-mini".to_string(), "gpt-4o".to_string()];
         let result = service
             .rank_models(&models, &make_policy(SelectionPreference::Cheapest))
@@ -452,15 +519,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_rank_models_none_preserves_order() {
-        let service = ModelMetricsService {
-            cost: Arc::new(RwLock::new({
+        let service = service_with(
+            {
                 let mut m = HashMap::new();
                 m.insert("gpt-4o-mini".to_string(), 0.0001);
                 m.insert("gpt-4o".to_string(), 0.005);
                 m
-            })),
-            latency: Arc::new(RwLock::new(HashMap::new())),
-        };
+            },
+            HashMap::new(),
+        );
         let models = vec!["gpt-4o".to_string(), "gpt-4o-mini".to_string()];
         let result = service
             .rank_models(&models, &make_policy(SelectionPreference::None))
@@ -474,7 +541,7 @@ mod tests {
         let json = r#"{
             "anthropic": {
                 "models": {
-                    "claude-opus-4-5": {"cost": {"input": 5.0, "output": 25.0}}
+                    "claude-opus-4-5": {"cost": {"input": 5.0, "output": 25.0, "cache_read": 0.5}}
                 }
             },
             "groq": {
@@ -486,14 +553,21 @@ mod tests {
         }"#;
         let providers: HashMap<String, ModelsDevProvider> = serde_json::from_str(json).unwrap();
         let aliases = HashMap::new();
-        let prices = parse_models_dev_pricing(providers, &aliases);
+        let rates = parse_models_dev_pricing(providers, &aliases);
 
-        assert_eq!(prices.get("anthropic/claude-opus-4-5"), Some(&30.0));
-        assert_eq!(prices.get("groq/llama-3.3-70b-versatile"), Some(&1.38));
+        let opus = rates.get("anthropic/claude-opus-4-5").unwrap();
+        assert_eq!(opus.blended(), 30.0);
+        assert_eq!(opus.cache_read_per_million, Some(0.5));
+        let llama = rates.get("groq/llama-3.3-70b-versatile").unwrap();
+        assert_eq!(llama.blended(), 1.38);
+        assert_eq!(llama.cache_read_per_million, None);
         // bare fallback also registered
-        assert_eq!(prices.get("claude-opus-4-5"), Some(&30.0));
+        assert_eq!(
+            rates.get("claude-opus-4-5").map(|r| r.blended()),
+            Some(30.0)
+        );
         // models with no cost block are skipped
-        assert!(!prices.contains_key("groq/whisper-large-v3-turbo"));
+        assert!(!rates.contains_key("groq/whisper-large-v3-turbo"));
     }
 
     #[test]
@@ -507,10 +581,53 @@ mod tests {
             "openai/gpt-oss-120b".to_string(),
             "openai/gpt-4o".to_string(),
         );
-        let prices = parse_models_dev_pricing(providers, &aliases);
+        let rates = parse_models_dev_pricing(providers, &aliases);
 
-        assert_eq!(prices.get("openai/gpt-4o"), Some(&3.0));
-        assert!(!prices.contains_key("openai/gpt-oss-120b"));
+        assert_eq!(rates.get("openai/gpt-4o").map(|r| r.blended()), Some(3.0));
+        assert!(!rates.contains_key("openai/gpt-oss-120b"));
+    }
+
+    #[test]
+    fn test_cached_input_rate_prefers_published_rate() {
+        let with_feed = ModelRates {
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: Some(0.3),
+        };
+        // Published cache_read wins; the discount is ignored.
+        assert_eq!(with_feed.cached_input_rate(0.5), 0.3);
+
+        let without_feed = ModelRates {
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: None,
+        };
+        // Falls back to input * discount.
+        assert!((without_feed.cached_input_rate(0.1) - 0.3).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_model_rates_falls_back_to_bare_model_id() {
+        let service = ModelMetricsService {
+            cost: Arc::new(RwLock::new(HashMap::new())),
+            rates: Arc::new(RwLock::new({
+                let mut m = HashMap::new();
+                m.insert(
+                    "claude-sonnet-4-5".to_string(),
+                    ModelRates {
+                        input_per_million: 3.0,
+                        output_per_million: 15.0,
+                        cache_read_per_million: Some(0.3),
+                    },
+                );
+                m
+            })),
+            latency: Arc::new(RwLock::new(HashMap::new())),
+        };
+        // provider-prefixed lookup falls back to the bare id
+        let rates = service.model_rates("vercel/claude-sonnet-4-5").await;
+        assert_eq!(rates.map(|r| r.input_per_million), Some(3.0));
+        assert!(service.model_rates("unknown/model").await.is_none());
     }
 
     #[test]

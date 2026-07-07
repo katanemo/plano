@@ -1,3 +1,4 @@
+pub mod cache_regret;
 pub(crate) mod http;
 pub mod model_metrics;
 pub mod orchestrator;

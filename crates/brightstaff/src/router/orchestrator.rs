@@ -174,6 +174,12 @@ impl OrchestratorService {
         }
     }
 
+    /// Structured per-million pricing for a model, from the configured cost feed.
+    /// `None` when no cost source is configured or the model is unknown to the feed.
+    pub async fn model_rates(&self, model: &str) -> Option<super::model_metrics::ModelRates> {
+        self.metrics_service.as_ref()?.model_rates(model).await
+    }
+
     // ---- LLM routing ----
 
     pub async fn determine_route(

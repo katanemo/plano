@@ -56,3 +56,9 @@ pub const PIN_EVENT_PREFIX_DRIFT: &str = "prefix_drift";
 pub const PIN_EVENT_STALE_HINT: &str = "stale_hint";
 /// A pinned session that previously produced cache hits stopped producing them.
 pub const PIN_EVENT_VALIDATION_FAILED: &str = "validation_failed";
+
+// Session-stickiness cost-gate decisions (brightstaff_session_switch_decisions_total).
+/// The proposed switch was within the developer's switch-cost threshold.
+pub const SWITCH_DECISION_ALLOWED: &str = "allowed";
+/// The regret exceeded the threshold — the previous model was retained.
+pub const SWITCH_DECISION_RETAINED: &str = "retained";

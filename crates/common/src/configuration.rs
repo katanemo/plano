@@ -273,10 +273,99 @@ pub struct PromptCaching {
     pub min_prefix_tokens: Option<u32>,
     /// Session pin TTL; falls back to `routing.session_ttl_seconds` when unset.
     pub session_ttl_seconds: Option<u64>,
+    /// Cache-regret cost gate on session re-routes. Opt-in; when enabled the
+    /// developer must supply `switch_cost` — Plano never invents a threshold.
+    pub session_stickiness: Option<SessionStickiness>,
+}
+
+/// Cost gate governing when a session may switch away from a model whose provider
+/// prompt cache is plausibly still warm.
+///
+/// Applies only when a re-route is already being considered (stale pin or prefix
+/// drift); the warm+stable stick path never re-routes and is unaffected. The gate
+/// compares the input-token regret of abandoning the warm cache —
+/// `context_tokens x (candidate_uncached_input_rate - previous_cached_input_rate)` —
+/// against the developer-defined `switch_cost` threshold. Requires a cost source in
+/// `model_metrics_sources` so per-model rates are available.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionStickiness {
+    /// Master switch for the cost gate. Defaults to `false`.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Developer-defined switch cost threshold. Required when `enabled: true` —
+    /// there is no built-in default; startup fails if omitted.
+    pub switch_cost: Option<SwitchCostThreshold>,
+    /// Fallback used to estimate a model's cached input rate when the pricing feed
+    /// doesn't publish one: `cached_rate = input_rate * cache_read_discount`. A
+    /// pricing detail, not a cost policy. Defaults to 0.1 (cached reads at 10% of
+    /// input, typical for Anthropic-style caches).
+    pub cache_read_discount: Option<f64>,
+}
+
+/// How the developer expresses the maximum acceptable cache-regret for one switch.
+/// Tagged (`type:`/`value:`) so new threshold forms can be added without breaking
+/// existing configs.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SwitchCostThreshold {
+    /// Absolute ceiling in USD: allow a switch only when the estimated input-cost
+    /// regret is at most `value` dollars for this request.
+    MaxRegretUsd { value: f64 },
+    /// Relative ceiling: allow a switch only when the regret is at most `value`
+    /// percent of the cached baseline cost (what staying and re-reading the context
+    /// at the cached rate would cost).
+    MaxRegretPctOfCached { value: f64 },
+}
+
+/// Fully-resolved session-stickiness gate settings (present only when enabled and
+/// valid).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectiveSessionStickiness {
+    pub switch_cost: SwitchCostThreshold,
+    pub cache_read_discount: f64,
+}
+
+pub const DEFAULT_CACHE_READ_DISCOUNT: f64 = 0.1;
+
+impl SessionStickiness {
+    /// Resolve to effective settings. `Ok(None)` when disabled; `Err` when enabled
+    /// without a developer-supplied threshold (no default is ever invented).
+    pub fn resolve(&self) -> Result<Option<EffectiveSessionStickiness>, String> {
+        if !self.enabled {
+            return Ok(None);
+        }
+        let switch_cost = self.switch_cost.ok_or_else(|| {
+            "prompt_caching.session_stickiness: `switch_cost` is required when enabled — \
+             set e.g. `switch_cost: { type: max_regret_usd, value: 0.10 }` \
+             or `{ type: max_regret_pct_of_cached, value: 200 }`"
+                .to_string()
+        })?;
+        let value = match switch_cost {
+            SwitchCostThreshold::MaxRegretUsd { value } => value,
+            SwitchCostThreshold::MaxRegretPctOfCached { value } => value,
+        };
+        if !value.is_finite() || value < 0.0 {
+            return Err(format!(
+                "prompt_caching.session_stickiness.switch_cost: value must be a non-negative number, got {value}"
+            ));
+        }
+        let cache_read_discount = self
+            .cache_read_discount
+            .unwrap_or(DEFAULT_CACHE_READ_DISCOUNT);
+        if !(0.0..=1.0).contains(&cache_read_discount) {
+            return Err(format!(
+                "prompt_caching.session_stickiness.cache_read_discount: must be between 0.0 and 1.0, got {cache_read_discount}"
+            ));
+        }
+        Ok(Some(EffectiveSessionStickiness {
+            switch_cost,
+            cache_read_discount,
+        }))
+    }
 }
 
 /// Fully-resolved, instance-wide prompt-caching settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectivePromptCaching {
     pub enabled: bool,
     pub session_affinity: bool,
@@ -284,6 +373,8 @@ pub struct EffectivePromptCaching {
     pub min_prefix_tokens: u32,
     /// Pin TTL override; `None` uses `routing.session_ttl_seconds`.
     pub session_ttl_seconds: Option<u64>,
+    /// Cache-regret cost gate; `None` when disabled.
+    pub session_stickiness: Option<EffectiveSessionStickiness>,
 }
 
 pub const DEFAULT_MIN_PREFIX_TOKENS: u32 = 1024;
@@ -296,31 +387,49 @@ impl Default for EffectivePromptCaching {
             inject_cache_control: false,
             min_prefix_tokens: DEFAULT_MIN_PREFIX_TOKENS,
             session_ttl_seconds: None,
+            session_stickiness: None,
         }
     }
 }
 
 impl PromptCaching {
     /// Resolve the instance-wide effective settings. When caching is disabled every
-    /// sub-feature is off, regardless of the individual knobs.
-    pub fn resolve(&self) -> EffectivePromptCaching {
+    /// sub-feature is off, regardless of the individual knobs. Fails when the
+    /// session-stickiness gate is enabled but misconfigured (missing threshold).
+    pub fn resolve(&self) -> Result<EffectivePromptCaching, String> {
         if !self.enabled {
-            return EffectivePromptCaching::default();
+            if self.session_stickiness.as_ref().is_some_and(|s| s.enabled) {
+                return Err(
+                    "prompt_caching.session_stickiness requires prompt_caching.enabled: true"
+                        .to_string(),
+                );
+            }
+            return Ok(EffectivePromptCaching::default());
         }
-        EffectivePromptCaching {
+        let session_stickiness = self
+            .session_stickiness
+            .as_ref()
+            .map(SessionStickiness::resolve)
+            .transpose()?
+            .flatten();
+        Ok(EffectivePromptCaching {
             enabled: true,
             session_affinity: self.session_affinity.unwrap_or(true),
             inject_cache_control: self.inject_cache_control.unwrap_or(true),
             min_prefix_tokens: self.min_prefix_tokens.unwrap_or(DEFAULT_MIN_PREFIX_TOKENS),
             session_ttl_seconds: self.session_ttl_seconds,
-        }
+            session_stickiness,
+        })
     }
 }
 
 impl EffectivePromptCaching {
     /// Resolve from an optional config block; `None` means caching is off.
-    pub fn from_config(config: Option<&PromptCaching>) -> Self {
-        config.map(PromptCaching::resolve).unwrap_or_default()
+    pub fn from_config(config: Option<&PromptCaching>) -> Result<Self, String> {
+        config
+            .map(PromptCaching::resolve)
+            .transpose()
+            .map(Option::unwrap_or_default)
     }
 }
 
@@ -781,7 +890,7 @@ mod test {
 
     use super::{
         EffectivePromptCaching, IntoModels, LlmProvider, LlmProviderType, PromptCaching,
-        DEFAULT_MIN_PREFIX_TOKENS,
+        SwitchCostThreshold, DEFAULT_CACHE_READ_DISCOUNT, DEFAULT_MIN_PREFIX_TOKENS,
     };
     use crate::api::open_ai::ToolType;
 
@@ -987,14 +1096,15 @@ disable_signals: false
     #[test]
     fn test_prompt_caching_disabled_by_default() {
         // Absent config → everything off.
-        let effective = EffectivePromptCaching::from_config(None);
+        let effective = EffectivePromptCaching::from_config(None).unwrap();
         assert!(!effective.enabled);
         assert!(!effective.session_affinity);
         assert!(!effective.inject_cache_control);
+        assert!(effective.session_stickiness.is_none());
 
         // Present but not enabled → still off.
         let cfg: PromptCaching = serde_yaml::from_str("enabled: false").unwrap();
-        let effective = cfg.resolve();
+        let effective = cfg.resolve().unwrap();
         assert!(!effective.enabled);
         assert!(!effective.session_affinity);
         assert!(!effective.inject_cache_control);
@@ -1004,12 +1114,14 @@ disable_signals: false
     fn test_prompt_caching_enabled_defaults() {
         // A bare `enabled: true` turns everything on with sensible defaults.
         let cfg: PromptCaching = serde_yaml::from_str("enabled: true").unwrap();
-        let effective = cfg.resolve();
+        let effective = cfg.resolve().unwrap();
         assert!(effective.enabled);
         assert!(effective.session_affinity);
         assert!(effective.inject_cache_control);
         assert_eq!(effective.min_prefix_tokens, DEFAULT_MIN_PREFIX_TOKENS);
         assert_eq!(effective.session_ttl_seconds, None);
+        // The cost gate is opt-in and never on by default.
+        assert!(effective.session_stickiness.is_none());
     }
 
     #[test]
@@ -1022,7 +1134,7 @@ min_prefix_tokens: 2048
 session_ttl_seconds: 3600
 "#;
         let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let effective = cfg.resolve();
+        let effective = cfg.resolve().unwrap();
         assert!(effective.enabled);
         assert!(!effective.session_affinity);
         assert!(!effective.inject_cache_control);
@@ -1039,10 +1151,124 @@ session_affinity: true
 inject_cache_control: true
 "#;
         let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let effective = cfg.resolve();
+        let effective = cfg.resolve().unwrap();
         assert!(!effective.enabled);
         assert!(!effective.session_affinity);
         assert!(!effective.inject_cache_control);
+    }
+
+    #[test]
+    fn test_session_stickiness_usd_threshold_parses() {
+        let yaml = r#"
+enabled: true
+session_stickiness:
+  enabled: true
+  switch_cost:
+    type: max_regret_usd
+    value: 0.10
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let effective = cfg.resolve().unwrap();
+        let stickiness = effective.session_stickiness.expect("gate should be on");
+        assert_eq!(
+            stickiness.switch_cost,
+            SwitchCostThreshold::MaxRegretUsd { value: 0.10 }
+        );
+        assert_eq!(stickiness.cache_read_discount, DEFAULT_CACHE_READ_DISCOUNT);
+    }
+
+    #[test]
+    fn test_session_stickiness_pct_threshold_parses() {
+        let yaml = r#"
+enabled: true
+session_stickiness:
+  enabled: true
+  switch_cost:
+    type: max_regret_pct_of_cached
+    value: 200
+  cache_read_discount: 0.25
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let effective = cfg.resolve().unwrap();
+        let stickiness = effective.session_stickiness.expect("gate should be on");
+        assert_eq!(
+            stickiness.switch_cost,
+            SwitchCostThreshold::MaxRegretPctOfCached { value: 200.0 }
+        );
+        assert_eq!(stickiness.cache_read_discount, 0.25);
+    }
+
+    #[test]
+    fn test_session_stickiness_enabled_without_threshold_rejected() {
+        // No built-in default: enabling the gate without a threshold must fail.
+        let yaml = r#"
+enabled: true
+session_stickiness:
+  enabled: true
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let err = cfg.resolve().unwrap_err();
+        assert!(err.contains("switch_cost"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_session_stickiness_requires_prompt_caching_enabled() {
+        let yaml = r#"
+enabled: false
+session_stickiness:
+  enabled: true
+  switch_cost:
+    type: max_regret_usd
+    value: 0.10
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let err = cfg.resolve().unwrap_err();
+        assert!(
+            err.contains("prompt_caching.enabled"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_session_stickiness_disabled_block_is_ignored() {
+        let yaml = r#"
+enabled: true
+session_stickiness:
+  enabled: false
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let effective = cfg.resolve().unwrap();
+        assert!(effective.session_stickiness.is_none());
+    }
+
+    #[test]
+    fn test_session_stickiness_invalid_values_rejected() {
+        let negative: PromptCaching = serde_yaml::from_str(
+            r#"
+enabled: true
+session_stickiness:
+  enabled: true
+  switch_cost:
+    type: max_regret_usd
+    value: -1.0
+"#,
+        )
+        .unwrap();
+        assert!(negative.resolve().is_err());
+
+        let bad_discount: PromptCaching = serde_yaml::from_str(
+            r#"
+enabled: true
+session_stickiness:
+  enabled: true
+  switch_cost:
+    type: max_regret_usd
+    value: 0.10
+  cache_read_discount: 1.5
+"#,
+        )
+        .unwrap();
+        assert!(bad_discount.resolve().is_err());
     }
 
     #[test]

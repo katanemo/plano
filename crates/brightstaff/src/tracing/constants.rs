@@ -150,6 +150,16 @@ pub mod plano {
     /// fields (e.g. PostHog). Sourced from the configured
     /// `tracing.exporters[].distinct_id_header`. Absent for anonymous calls.
     pub const DISTINCT_ID: &str = "plano.distinct_id";
+
+    /// Estimated input-cost regret (USD) of the proposed model switch evaluated by
+    /// the session-stickiness cost gate. Negative when the candidate is cheaper.
+    pub const SWITCH_REGRET_USD: &str = "plano.switch.regret_usd";
+
+    /// The resolved switch-cost ceiling (USD) the regret was compared against.
+    pub const SWITCH_THRESHOLD_USD: &str = "plano.switch.threshold_usd";
+
+    /// Cost-gate outcome for the proposed switch: "allowed" or "retained".
+    pub const SWITCH_DECISION: &str = "plano.switch.decision";
 }
 
 // =============================================================================

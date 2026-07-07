@@ -23,17 +23,18 @@ pub struct CachedRoute {
     pub observed_cache_hit: bool,
 }
 
-/// How long expired pins linger as "stale" soft hints, as a multiple of the pin TTL.
-/// A stale pin never short-circuits routing, but its model is passed to cache-aware
-/// ranking as a switch-penalty hint (the provider cache may still be warm).
+/// How long expired pins linger as "stale" entries, as a multiple of the pin TTL.
+/// A stale pin never short-circuits routing, but it is retained as the previous
+/// route so the session-stickiness cache-regret gate can weigh the cost of
+/// abandoning a plausibly-warm provider cache when the router proposes a switch.
 pub const STALE_TTL_FACTOR: u32 = 4;
 
 /// Result of a session-cache lookup.
 #[derive(Clone, Debug)]
 pub struct CacheLookup {
     pub route: CachedRoute,
-    /// True when the pin's logical TTL has expired but the entry is still retained as
-    /// a soft routing hint.
+    /// True when the pin's logical TTL has expired but the entry is still retained
+    /// for the cache-regret gate.
     pub is_stale: bool,
 }
 
