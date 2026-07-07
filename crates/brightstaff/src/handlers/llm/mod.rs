@@ -606,6 +606,25 @@ async fn llm_chat_inner(
                                     metric_labels::SWITCH_DECISION_RETAINED,
                                 ));
                             });
+                            // Counterfactual: `model`/`route_name` still hold the
+                            // router's pick — the route we *would* have taken had the
+                            // switch been allowed. Record it (telemetry only) before
+                            // overwriting with the retained model, so evals can
+                            // quantify the road not taken.
+                            if stickiness.record_counterfactual {
+                                let counterfactual_route = match route_name.as_deref() {
+                                    Some(rn) if !rn.is_empty() && rn != "none" => {
+                                        format!("{model} ({rn})")
+                                    }
+                                    _ => model.clone(),
+                                };
+                                get_active_span(|span| {
+                                    span.set_attribute(opentelemetry::KeyValue::new(
+                                        tracing_plano::SWITCH_COUNTERFACTUAL_ROUTE,
+                                        counterfactual_route,
+                                    ));
+                                });
+                            }
                             model = previous.model_name.clone();
                             route_name = previous.route_name.clone();
                             // gate_applies guarantees the previous pin observed a

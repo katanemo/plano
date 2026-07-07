@@ -68,5 +68,11 @@ prompt_caching:
     # A pricing detail, not a cost policy. Default 0.1.
     # cache_read_discount: 0.1
 
+    # Record the route the gate WOULD have taken when it vetoes a switch, as the
+    # `plano.switch.counterfactual_route` trace attribute. Telemetry only -- the
+    # counterfactual model is never dispatched. Handy for evals that want to
+    # measure the road not taken. Default false.
+    record_counterfactual: true
+
 tracing:
   random_sampling: 100

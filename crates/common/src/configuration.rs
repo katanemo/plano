@@ -300,6 +300,13 @@ pub struct SessionStickiness {
     /// pricing detail, not a cost policy. Defaults to 0.1 (cached reads at 10% of
     /// input, typical for Anthropic-style caches).
     pub cache_read_discount: Option<f64>,
+    /// When true, a vetoed switch records the route the gate *would* have taken had
+    /// the switch been allowed, as the `plano.switch.counterfactual_route` span
+    /// attribute. Telemetry only — the counterfactual model is never dispatched.
+    /// Useful for evals/benchmarks that want to quantify the road not taken.
+    /// Defaults to `false`.
+    #[serde(default)]
+    pub record_counterfactual: bool,
 }
 
 /// How the developer expresses the maximum acceptable cache-regret for one switch.
@@ -323,6 +330,8 @@ pub enum SwitchCostThreshold {
 pub struct EffectiveSessionStickiness {
     pub switch_cost: SwitchCostThreshold,
     pub cache_read_discount: f64,
+    /// Emit `plano.switch.counterfactual_route` on vetoed switches. Telemetry only.
+    pub record_counterfactual: bool,
 }
 
 pub const DEFAULT_CACHE_READ_DISCOUNT: f64 = 0.1;
@@ -360,6 +369,7 @@ impl SessionStickiness {
         Ok(Some(EffectiveSessionStickiness {
             switch_cost,
             cache_read_discount,
+            record_counterfactual: self.record_counterfactual,
         }))
     }
 }
@@ -1175,6 +1185,25 @@ session_stickiness:
             SwitchCostThreshold::MaxRegretUsd { value: 0.10 }
         );
         assert_eq!(stickiness.cache_read_discount, DEFAULT_CACHE_READ_DISCOUNT);
+        // Counterfactual recording is opt-in; off unless requested.
+        assert!(!stickiness.record_counterfactual);
+    }
+
+    #[test]
+    fn test_session_stickiness_record_counterfactual_parses() {
+        let yaml = r#"
+enabled: true
+session_stickiness:
+  enabled: true
+  switch_cost:
+    type: max_regret_usd
+    value: 0.10
+  record_counterfactual: true
+"#;
+        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
+        let effective = cfg.resolve().unwrap();
+        let stickiness = effective.session_stickiness.expect("gate should be on");
+        assert!(stickiness.record_counterfactual);
     }
 
     #[test]

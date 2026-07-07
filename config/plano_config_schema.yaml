@@ -390,6 +390,13 @@ properties:
               Fallback used to estimate a model's cached input rate when the pricing
               feed doesn't publish one (cached_rate = input_rate x discount). A
               pricing detail, not a cost policy. Default 0.1.
+          record_counterfactual:
+            type: boolean
+            description: >
+              When true, a vetoed switch records the route the gate would have taken
+              had the switch been allowed, as the plano.switch.counterfactual_route
+              span attribute. Telemetry only — the counterfactual model is never
+              dispatched. Useful for evals/benchmarks. Default false.
         additionalProperties: false
     additionalProperties: false
   system_prompt:

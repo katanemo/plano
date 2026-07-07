@@ -160,6 +160,12 @@ pub mod plano {
 
     /// Cost-gate outcome for the proposed switch: "allowed" or "retained".
     pub const SWITCH_DECISION: &str = "plano.switch.decision";
+
+    /// The route (`provider/model`, plus route name when routed) the session-stickiness
+    /// gate *would* have selected had the switch been allowed. Recorded only on a
+    /// `retained` decision when `session_stickiness.record_counterfactual` is enabled.
+    /// Telemetry only — the counterfactual model is never dispatched.
+    pub const SWITCH_COUNTERFACTUAL_ROUTE: &str = "plano.switch.counterfactual_route";
 }
 
 // =============================================================================
