@@ -47,10 +47,13 @@ FROM docker.io/envoyproxy/envoy:${ENVOY_VERSION} AS envoy
 
 FROM python:3.14-slim AS arch
 
+# Install runtime deps first, then upgrade — so security patches also land on
+# packages pulled in transitively here (e.g. curl -> libssh2-1t64), not just those
+# already present in the base image.
 RUN set -eux; \
   apt-get update; \
-  apt-get upgrade -y; \
   apt-get install -y --no-install-recommends gettext-base curl procps; \
+  apt-get upgrade -y; \
   apt-get clean; rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir supervisor
