@@ -18,7 +18,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use common::configuration::{EffectivePromptCaching, EffectiveSessionStickiness};
+use common::configuration::EffectiveRoutingBudget;
 use hermesllm::apis::openai::Message;
 use hermesllm::{provider_cache_capability, ProviderCacheCapability, ProviderId};
 use opentelemetry::trace::get_active_span;
@@ -45,15 +45,18 @@ pub struct SessionResolution {
 }
 
 /// Resolve the session key and prefix hash from the (already filtered / state-merged)
-/// request. An explicit affinity header always anchors; implicit affinity is gated on
-/// prompt caching + `session_affinity`. The prefix hash is derived even when caching is
-/// off (only `X-Plano-Cache: off` or an unanchorable prompt suppresses it).
+/// request. An explicit affinity header always anchors; the implicit key is derived
+/// when `implicit_affinity_enabled` is set — true when either prompt caching's
+/// `session_affinity` or the routing budget is active, so stickiness works whether or
+/// not prompt caching is enabled. The prefix hash is derived regardless (only
+/// `X-Plano-Cache: off` or an unanchorable prompt suppresses it) so the
+/// `x-plano-prefix-hash` RING_HASH replica-stickiness header still works.
 pub fn resolve_session(
     explicit_session_id: Option<String>,
     messages: &[Message],
     tool_names: Option<&[String]>,
     tenant_id: Option<&str>,
-    prompt_caching: &EffectivePromptCaching,
+    implicit_affinity_enabled: bool,
     cache_off_for_request: bool,
 ) -> SessionResolution {
     let implicit_affinity = if cache_off_for_request {
@@ -65,7 +68,7 @@ pub fn resolve_session(
 
     let session_id = match explicit_session_id {
         Some(sid) => Some(sid),
-        None if prompt_caching.session_affinity && !cache_off_for_request => {
+        None if implicit_affinity_enabled && !cache_off_for_request => {
             implicit_affinity.as_ref().map(|a| a.session_key.clone())
         }
         None => None,
@@ -173,7 +176,7 @@ fn warmth(
 /// response side reuses when it refreshes the binding from real usage.
 pub async fn route(
     orchestrator: &OrchestratorService,
-    stickiness: Option<&EffectiveSessionStickiness>,
+    routing_budget: Option<&EffectiveRoutingBudget>,
     facts: RouteFacts<'_>,
 ) -> RouteDecision {
     let now = SystemTime::now();
@@ -208,7 +211,7 @@ pub async fn route(
     };
     let effective_warm = warm && !drifted;
 
-    let seed = stickiness.map(|s| s.seed_usd).unwrap_or(0.0);
+    let seed = routing_budget.map(|s| s.seed_usd).unwrap_or(0.0);
 
     // Resolve the final model, budget, switch count, and decision telemetry.
     let mut model = facts.candidate_model.to_string();
@@ -230,18 +233,18 @@ pub async fn route(
                 // Router agrees with the anchor — stick, no cost.
                 decision_label = metric_labels::SWITCH_DECISION_ALLOWED;
                 reason = metric_labels::SWITCH_REASON_SAME_ANCHOR;
-            } else if let Some(st) = stickiness {
+            } else if let Some(cfg) = routing_budget {
                 let context_tokens = if b.cached_tokens > 0 {
                     b.cached_tokens
                 } else {
                     facts.est_context_tokens
                 };
                 match orchestrator
-                    .estimate_switch_cost_usd(
+                    .estimate_switch_cost_in_usd(
                         context_tokens,
                         &b.anchor_model,
                         facts.candidate_model,
-                        st.cache_read_discount,
+                        cfg.cache_read_discount,
                     )
                     .await
                 {
@@ -261,7 +264,7 @@ pub async fn route(
                         cost_opt = Some(cost);
                         if cost <= 0.0 {
                             // Outright cheaper: free switch, credit the budget back.
-                            if st.credit_negative {
+                            if cfg.credit_negative {
                                 budget -= cost; // cost is negative → budget grows
                             }
                             switches += 1;
@@ -270,7 +273,7 @@ pub async fn route(
                             info!(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
-                                switch_cost_usd = cost,
+                                switch_cost_in_usd = cost,
                                 "switch allowed — candidate undercuts the cached rate"
                             );
                         } else if cost <= budget {
@@ -281,13 +284,13 @@ pub async fn route(
                             info!(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
-                                switch_cost_usd = cost,
-                                budget_remaining_usd = budget,
+                                switch_cost_in_usd = cost,
+                                budget_remaining_in_usd = budget,
                                 "switch allowed — within session switch budget"
                             );
                         } else {
                             // Unaffordable: retain the warm anchor.
-                            if st.record_counterfactual {
+                            if cfg.record_counterfactual {
                                 counterfactual = Some(match route_name.as_deref() {
                                     Some(rn) if !rn.is_empty() && rn != "none" => {
                                         format!("{} ({rn})", facts.candidate_model)
@@ -302,8 +305,8 @@ pub async fn route(
                             info!(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
-                                switch_cost_usd = cost,
-                                budget_remaining_usd = budget,
+                                switch_cost_in_usd = cost,
+                                budget_remaining_in_usd = budget,
                                 "switch vetoed — cost exceeds remaining budget, retaining anchor"
                             );
                         }
@@ -321,8 +324,8 @@ pub async fn route(
             // Cold (or no binding, or drifted): honor the candidate and (re)seed a
             // fresh warm episode. Switches reset — this is a new cache lifetime.
             budget_before = seed;
-            budget = match (stickiness, existing.as_ref()) {
-                (Some(st), Some(b)) if !st.replenish_on_rebind => b.switch_budget_usd,
+            budget = match (routing_budget, existing.as_ref()) {
+                (Some(cfg), Some(b)) if !cfg.replenish_on_rebind => b.switch_budget_usd,
                 _ => seed,
             };
             switches = 0;
@@ -344,9 +347,9 @@ pub async fn route(
             tracing_plano::CACHE_IDLE_MS,
             idle.as_millis() as i64,
         ));
-        if stickiness.is_some() {
+        if routing_budget.is_some() {
             span.set_attribute(KeyValue::new(
-                tracing_plano::SESSION_BUDGET_REMAINING_USD,
+                tracing_plano::SESSION_BUDGET_REMAINING_IN_USD,
                 budget,
             ));
             span.set_attribute(KeyValue::new(
@@ -355,9 +358,9 @@ pub async fn route(
             ));
         }
         if let Some(cost) = cost_opt {
-            span.set_attribute(KeyValue::new(tracing_plano::SWITCH_COST_USD, cost));
+            span.set_attribute(KeyValue::new(tracing_plano::SWITCH_COST_IN_USD, cost));
             span.set_attribute(KeyValue::new(
-                tracing_plano::SWITCH_THRESHOLD_USD,
+                tracing_plano::SWITCH_THRESHOLD_IN_USD,
                 budget_before,
             ));
             span.set_attribute(KeyValue::new(
@@ -513,8 +516,8 @@ mod tests {
         )
     }
 
-    fn stickiness(seed: f64) -> EffectiveSessionStickiness {
-        EffectiveSessionStickiness {
+    fn routing_budget(seed: f64) -> EffectiveRoutingBudget {
+        EffectiveRoutingBudget {
             seed_usd: seed,
             replenish_on_rebind: true,
             credit_negative: true,
@@ -556,7 +559,7 @@ mod tests {
     async fn paid_switch_within_budget_is_allowed_and_debits() {
         let orch = orch_with_rates();
         seed_warm_binding(&orch, 1.0, 30).await;
-        let st = stickiness(1.0);
+        let st = routing_budget(1.0);
         let d = route(&orch, Some(&st), facts_for("openai/pricey")).await;
 
         assert_eq!(d.model, "openai/pricey");
@@ -573,7 +576,7 @@ mod tests {
     async fn paid_switch_over_budget_retains_anchor() {
         let orch = orch_with_rates();
         seed_warm_binding(&orch, 0.10, 30).await;
-        let st = stickiness(0.10);
+        let st = routing_budget(0.10);
         let d = route(&orch, Some(&st), facts_for("openai/pricey")).await;
 
         assert_eq!(d.model, "anthropic/expensive");
@@ -586,7 +589,7 @@ mod tests {
     async fn cheaper_switch_is_free_and_credits_budget() {
         let orch = orch_with_rates();
         seed_warm_binding(&orch, 0.10, 30).await;
-        let st = stickiness(0.10);
+        let st = routing_budget(0.10);
         let d = route(&orch, Some(&st), facts_for("google/cheap")).await;
 
         assert_eq!(d.model, "google/cheap");
@@ -605,7 +608,7 @@ mod tests {
         let orch = orch_with_rates();
         // 10 minutes idle: past Anthropic's 5m idle window -> cold. Budget was drained.
         seed_warm_binding(&orch, 0.0, 600).await;
-        let st = stickiness(1.0);
+        let st = routing_budget(1.0);
         let d = route(&orch, Some(&st), facts_for("openai/pricey")).await;
 
         assert_eq!(d.model, "openai/pricey");
@@ -621,7 +624,7 @@ mod tests {
     #[tokio::test]
     async fn no_session_honors_candidate() {
         let orch = orch_with_rates();
-        let st = stickiness(1.0);
+        let st = routing_budget(1.0);
         let facts = RouteFacts {
             session_id: None,
             tenant_id: None,

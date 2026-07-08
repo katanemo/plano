@@ -3,8 +3,8 @@
 //! This module owns the "make the upstream provider's prompt cache work" concern:
 //! resolving the correct cache-marking strategy for the `(gateway × model family ×
 //! upstream API)` combination and injecting the markers into the outbound request.
-//! It never influences routing — see [`super::session_stickiness`] for the pinning /
-//! switch-cost concern.
+//! It never influences routing — see [`super::session_router`] for the session-cache
+//! lookup and the routing-budget switch-cost concern.
 
 use common::configuration::EffectivePromptCaching;
 use hermesllm::clients::SupportedUpstreamAPIs;

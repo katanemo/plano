@@ -1,15 +1,15 @@
-# How-To: See Prompt Caching + Session Stickiness in Action
+# How-To: See Prompt Caching + Routing Budget in Action
 
-A hands-on guide for running Plano's automatic prompt caching and the switch-cost gate locally, and for measuring the win in evals/benchmarks (e.g. on DigitalOcean models).
+A hands-on guide for running Plano's automatic prompt caching and the routing budget locally, and for measuring the win in evals/benchmarks (e.g. on DigitalOcean models).
 
-There are two behaviors to observe:
+There are two independent behaviors to observe:
 
 1. **Automatic prompt caching** — staying on one model keeps the stable prefix
   warm, so per-turn input cost drops sharply across a multi-turn conversation.
-2. **Session stickiness + switch budget** — the router still runs every turn, but
-  when it proposes a *different* model while the session's cache is plausibly warm,
-  Plano only switches while the session's cumulative switch budget covers the
-  input-cost of abandoning that cache.
+2. **Routing budget** — the router still runs every turn, but when it proposes a
+  *different* model while the session's cache is plausibly warm, Plano only switches
+  while the session's cumulative budget covers the input-cost of abandoning that
+  cache. This is a routing concern and works whether or not prompt caching is on.
 
 ---
 
@@ -32,24 +32,26 @@ There are two behaviors to observe:
 Start from `[config.yaml](config.yaml)` in this folder. The parts that matter:
 
 ```yaml
-# Per-model pricing is REQUIRED for the cost gate — the switch cost math needs each
-# model's input and cached-input rates.
+# Per-model pricing is REQUIRED for the routing budget — the switch cost math needs
+# each model's input and cached-input rates.
 model_metrics_sources:
   - type: cost
     provider: models.dev          # publishes real cache_read rates
     refresh_interval: 86400
 
 prompt_caching:
-  enabled: true                   # automatic caching + session affinity (opt-in)
+  enabled: true                   # automatic caching + session affinity (separate concern)
 
-  session_stickiness:
-    enabled: true
-    switch_budget:                # no default — you must set one
-      seed_usd: 0.50              # cumulative budget for quality-driven switches
-      # replenish_on_rebind: true # re-seed when a cold session re-binds
-      # credit_negative: true     # cheaper switches credit the budget back
+routing:
+  routing_budget:                 # no default — presence turns it on
+    seed_usd: 0.50                # cumulative budget for quality-driven switches
+    # replenish_on_rebind: true   # re-seed when a cold session re-binds
+    # credit_negative: true       # cheaper switches credit the budget back
     # cache_read_discount: 0.1    # fallback when a feed omits cache_read
 ```
+
+The routing budget lives under `routing` and is independent of prompt caching — it
+applies whether or not `prompt_caching.enabled` is set.
 
 
 
@@ -126,7 +128,7 @@ this is exactly the ~4× per-turn drop in the caching-ON vs -OFF comparison.
 
 
 
-## 5. See the switch budget in action (model switch)
+## 5. See the routing budget in action (model switch)
 
 The budget is consulted only when the router proposes a model that differs from
 the session's warm anchor. Warmth is inferred from how long ago the session was
@@ -173,10 +175,10 @@ curl -s localhost:9092/metrics | grep -E 'session_switch_decisions|prompt_cache_
 
 - `plano.cache.warm` — whether the session's cache was considered warm this turn
 - `plano.cache.idle_ms` — how long since the session was last used
-- `plano.switch.cost_usd` — estimated input-cost of the proposed switch
-- `plano.switch.threshold_usd` — budget remaining when the switch was evaluated
+- `plano.switch.cost_in_usd` — actual input-token cost of the proposed switch (output excluded)
+- `plano.switch.threshold_in_usd` — budget remaining when the switch was evaluated
 - `plano.switch.decision` — `allowed` or `retained`
-- `plano.session.budget_remaining_usd` — switch budget left after this turn
+- `plano.session.budget_remaining_in_usd` — switch budget left after this turn
 - `plano.session.switches` — switches taken so far this session
 - `plano.switch.counterfactual_route` — on a `retained` decision, the route the gate
   *would* have taken had the switch been allowed (only when `record_counterfactual: true`)
@@ -223,17 +225,17 @@ curl -s localhost:12000/v1/chat/completions \
 ## 8. Knobs to sweep
 
 
-| Setting                                                    | Effect                                                                          |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `prompt_caching.session_stickiness.switch_budget.seed_usd` | Cumulative budget per session (higher = quality-first, more switching)          |
-| `switch_budget.replenish_on_rebind`                        | Re-seed the budget when a cold session re-binds                                 |
-| `switch_budget.credit_negative`                            | Credit the budget back on outright-cheaper switches                             |
-| `cache_read_discount`                                      | Assumed cached rate when a feed omits `cache_read` (DO fallback)                |
-| `record_counterfactual`                                    | Emit `plano.switch.counterfactual_route` on vetoed switches (the road not taken)|
-| `prompt_caching.session_ttl_seconds`                       | Session binding GC lifetime                                                     |
-| `prompt_caching.min_prefix_tokens`                         | Minimum stable-prefix size before markers are injected                          |
-| Header `X-Model-Affinity: <id>`                            | Explicit session key (overrides the implicit prefix hash)                       |
-| Header `X-Plano-Cache: off`                                | Per-request bypass for baseline runs                                            |
+| Setting                                          | Effect                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `routing.routing_budget.seed_usd`                | Cumulative budget per session (higher = quality-first, more switching)          |
+| `routing.routing_budget.replenish_on_rebind`     | Re-seed the budget when a cold session re-binds                                 |
+| `routing.routing_budget.credit_negative`         | Credit the budget back on outright-cheaper switches                             |
+| `routing.routing_budget.cache_read_discount`     | Assumed cached rate when a feed omits `cache_read` (DO fallback)                |
+| `routing.routing_budget.record_counterfactual`   | Emit `plano.switch.counterfactual_route` on vetoed switches (the road not taken)|
+| `prompt_caching.session_ttl_seconds`             | Session binding GC lifetime                                                     |
+| `prompt_caching.min_prefix_tokens`               | Minimum stable-prefix size before markers are injected                          |
+| Header `X-Model-Affinity: <id>`                  | Explicit session key (overrides the implicit prefix hash)                       |
+| Header `X-Plano-Cache: off`                      | Per-request bypass for baseline runs                                            |
 
 
 ---
@@ -244,5 +246,6 @@ curl -s localhost:12000/v1/chat/completions \
 
 - Caching **never** changes which model routing selects — the router still makes
 the quality call; the budget only vetoes a switch that the session can't afford.
-- Stickiness is fully opt-in and has **no baked-in budget**: enabling it without
-a `switch_budget` (or without a cost source) fails startup with a clear message.
+- The routing budget is independent of prompt caching (it lives under `routing`) and
+is fully opt-in with **no baked-in budget**: configuring it without a `seed_usd`
+(or without a cost source) fails startup with a clear message.

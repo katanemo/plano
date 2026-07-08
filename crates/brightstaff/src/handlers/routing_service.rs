@@ -1,5 +1,7 @@
 use bytes::Bytes;
-use common::configuration::{EffectivePromptCaching, SpanAttributes, TopLevelRoutingPreference};
+use common::configuration::{
+    EffectivePromptCaching, EffectiveRoutingBudget, SpanAttributes, TopLevelRoutingPreference,
+};
 use common::consts::{MODEL_AFFINITY_HEADER, REQUEST_ID_HEADER};
 use common::errors::BrightStaffError;
 use hermesllm::clients::SupportedAPIsFromClient;
@@ -61,12 +63,14 @@ struct RoutingDecisionResponse {
     pinned: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn routing_decision(
     request: Request<hyper::body::Incoming>,
     orchestrator_service: Arc<OrchestratorService>,
     request_path: String,
     span_attributes: &Option<SpanAttributes>,
     prompt_caching: EffectivePromptCaching,
+    routing_budget: Option<EffectiveRoutingBudget>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let request_headers = request.headers().clone();
     let request_id: String = request_headers
@@ -106,6 +110,7 @@ pub async fn routing_decision(
         explicit_session_id,
         tenant_id,
         prompt_caching,
+        routing_budget,
     )
     .instrument(request_span)
     .await
@@ -122,6 +127,7 @@ async fn routing_decision_inner(
     explicit_session_id: Option<String>,
     tenant_id: Option<String>,
     prompt_caching: EffectivePromptCaching,
+    routing_budget: Option<EffectiveRoutingBudget>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     set_service_name(operation_component::ROUTING);
     opentelemetry::trace::get_active_span(|span| {
@@ -190,6 +196,9 @@ async fn routing_decision_inner(
 
     // Session key + prefix hash resolved identically to the LLM handler so pins
     // interoperate across the full-proxy and decision paths.
+    // Derive the implicit session key when either prompt-caching affinity or the routing
+    // budget is active, so the budget works the same way with caching off.
+    let implicit_affinity_enabled = prompt_caching.session_affinity || routing_budget.is_some();
     let session_router::SessionResolution {
         request_prefix_hash,
         session_id,
@@ -198,12 +207,11 @@ async fn routing_decision_inner(
         &request_messages,
         tool_names.as_deref(),
         tenant_id.as_deref(),
-        &prompt_caching,
+        implicit_affinity_enabled,
         cache_off_for_request,
     );
-    let stickiness = prompt_caching.session_stickiness;
 
-    let est_context_tokens: u64 = if session_id.is_some() && stickiness.is_some() {
+    let est_context_tokens: u64 = if session_id.is_some() && routing_budget.is_some() {
         session_router::estimate_context_tokens(&request_messages, client_request.model())
     } else {
         0
@@ -223,7 +231,7 @@ async fn routing_decision_inner(
             let candidate_model = result.model_name.clone();
             let decision = session_router::route(
                 &orchestrator_service,
-                stickiness.as_ref(),
+                routing_budget.as_ref(),
                 session_router::RouteFacts {
                     session_id: session_id.as_deref(),
                     tenant_id: tenant_id.as_deref(),

@@ -23,7 +23,7 @@ model_providers:
       - name: code generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
 
-# Per-model pricing is required for session stickiness: the switch-cost
+# Per-model pricing is required for the routing budget: the switch-cost
 # calculation needs each model's input and cached-input rates.
 model_metrics_sources:
   - type: cost
@@ -32,37 +32,38 @@ model_metrics_sources:
 
 # Automatic prompt caching (opt-in). Keeps a conversation pinned to the same
 # model so the upstream provider's prompt cache stays warm across turns, and
-# auto-injects cache-control markers where the provider needs them.
+# auto-injects cache-control markers where the provider needs them. This is a
+# separate concern from the routing budget below.
 prompt_caching:
   enabled: true
 
-  # Session stickiness with a cumulative per-session switch budget. The default
-  # posture is to stick to the warm model. When routing proposes a *different*
-  # model while the session's provider cache is plausibly still warm (inferred
-  # from how long ago the session was last used vs. the provider's cache window),
-  # the input-cost of abandoning the cache:
+routing:
+  # Per-session cost gate on model switching. Independent of prompt caching: it
+  # applies whenever configured, and presence of this block turns it on. The
+  # default posture is to stick to the model a session is warm on. When routing
+  # proposes a *different* model while that session's provider cache is plausibly
+  # still warm (inferred from how long ago the session was last used vs. the
+  # provider's cache window), the actual input-token cost of abandoning the cache:
   #
   #   switch_cost = context_tokens x (candidate_uncached_input - anchor_cached_input)
   #
-  # is drawn from the session's switch budget. A paid switch is allowed only while
-  # budget remains; an outright-cheaper switch is free and credits the budget back.
-  # The budget is yours to define -- Plano never invents one, and startup fails if
-  # stickiness is enabled without a switch_budget (or without a cost source).
-  session_stickiness:
-    enabled: true
-
+  # (output cost deliberately excluded) is drawn from the session's budget. A paid
+  # switch is allowed only while budget remains; an outright-cheaper switch is free
+  # and credits the budget back. The budget is yours to define -- Plano never
+  # invents one, and startup fails without it (or without a cost source).
+  routing_budget:
     # Cumulative budget (USD) for quality-driven switches over a session. 0 means
     # "never pay to switch"; larger values buy more switches before sticking.
-    switch_budget:
-      seed_usd: 0.50
-      # Re-seed the budget when a cold session re-binds (new warm episode). Default true.
-      # replenish_on_rebind: true
-      # Credit the budget back on outright-cheaper (negative-cost) switches. Default true.
-      # credit_negative: true
+    seed_usd: 0.50
 
-    # Fallback used only when the pricing feed doesn't publish a cached-read
-    # rate for a model: cached_rate = input_rate x cache_read_discount.
-    # A pricing detail, not a cost policy. Default 0.1.
+    # Re-seed the budget when a cold session re-binds (new warm episode). Default true.
+    # replenish_on_rebind: true
+
+    # Credit the budget back on outright-cheaper (negative-cost) switches. Default true.
+    # credit_negative: true
+
+    # Fallback used only when the pricing feed doesn't publish a cached-read rate for
+    # a model: cached_rate = input_rate x cache_read_discount. Default 0.1.
     # cache_read_discount: 0.1
 
     # Record the route the gate WOULD have taken when it vetoes a switch, as the

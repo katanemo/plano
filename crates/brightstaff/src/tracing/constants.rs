@@ -160,24 +160,25 @@ pub mod plano {
     pub const CACHE_IDLE_MS: &str = "plano.cache.idle_ms";
 
     /// Remaining cumulative switch budget (USD) for the session after this decision.
-    pub const SESSION_BUDGET_REMAINING_USD: &str = "plano.session.budget_remaining_usd";
+    pub const SESSION_BUDGET_REMAINING_IN_USD: &str = "plano.session.budget_remaining_in_usd";
 
     /// Cumulative number of model switches taken during this warm session.
     pub const SESSION_SWITCHES: &str = "plano.session.switches";
 
-    /// Estimated input-cost (USD) of the proposed model switch. Negative when the
-    /// candidate is outright cheaper than staying on the warm anchor.
-    pub const SWITCH_COST_USD: &str = "plano.switch.cost_usd";
+    /// Actual input-cost (USD) of the proposed model switch — computed from input-token
+    /// pricing only, output-token cost deliberately excluded. Negative when the candidate
+    /// is outright cheaper than staying on the warm anchor.
+    pub const SWITCH_COST_IN_USD: &str = "plano.switch.cost_in_usd";
 
     /// The switch budget (USD) available when the switch cost was evaluated.
-    pub const SWITCH_THRESHOLD_USD: &str = "plano.switch.threshold_usd";
+    pub const SWITCH_THRESHOLD_IN_USD: &str = "plano.switch.threshold_in_usd";
 
     /// Switch outcome: "allowed" or "retained".
     pub const SWITCH_DECISION: &str = "plano.switch.decision";
 
-    /// The route (`provider/model`, plus route name when routed) the session-stickiness
-    /// gate *would* have selected had the switch been allowed. Recorded only on a
-    /// `retained` decision when `session_stickiness.record_counterfactual` is enabled.
+    /// The route (`provider/model`, plus route name when routed) the routing-budget gate
+    /// *would* have selected had the switch been allowed. Recorded only on a `retained`
+    /// decision when `routing.routing_budget.record_counterfactual` is enabled.
     /// Telemetry only — the counterfactual model is never dispatched.
     pub const SWITCH_COUNTERFACTUAL_ROUTE: &str = "plano.switch.counterfactual_route";
 }

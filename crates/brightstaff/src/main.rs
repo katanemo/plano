@@ -346,8 +346,16 @@ async fn init_app_state(
     let prompt_caching =
         common::configuration::EffectivePromptCaching::from_config(config.prompt_caching.as_ref())?;
 
-    // The session-stickiness cost gate needs per-model pricing to compute switch cost.
-    if prompt_caching.session_stickiness.is_some() {
+    // Routing budget lives under `routing` and is independent of prompt caching.
+    let routing_budget = common::configuration::EffectiveRoutingBudget::from_config(
+        config
+            .routing
+            .as_ref()
+            .and_then(|r| r.routing_budget.as_ref()),
+    )?;
+
+    // The routing-budget cost gate needs per-model pricing to compute switch cost.
+    if routing_budget.is_some() {
         use common::configuration::MetricsSource;
         let has_cost_source = config
             .model_metrics_sources
@@ -357,7 +365,7 @@ async fn init_app_state(
             .any(|s| matches!(s, MetricsSource::Cost(_)));
         if !has_cost_source {
             return Err(
-                "prompt_caching.session_stickiness is enabled but no cost metrics source is \
+                "routing.routing_budget is configured but no cost metrics source is \
                  configured — add a cost source (e.g. models.dev) to model_metrics_sources so \
                  per-model input/cached rates are available for the switch-cost calculation"
                     .into(),
@@ -379,6 +387,7 @@ async fn init_app_state(
         filter_pipeline,
         signals_enabled,
         prompt_caching,
+        routing_budget,
     })
 }
 
@@ -551,6 +560,7 @@ async fn dispatch(
                 stripped,
                 &state.span_attributes,
                 state.prompt_caching,
+                state.routing_budget,
             )
             .with_context(parent_cx)
             .await;

@@ -349,58 +349,6 @@ properties:
         type: integer
         minimum: 1
         description: "Pin lifetime for implicit/explicit sessions; align with the provider cache window (e.g. 3600 for Anthropic 1h caching). Defaults to routing.session_ttl_seconds."
-      session_stickiness:
-        type: object
-        description: >
-          Session stickiness with a cumulative per-session switch budget. The default
-          posture is to stick to a warm model. When routing proposes a different model
-          while the session's provider cache is plausibly still warm (inferred from the
-          idle gap vs. the provider's cache window), the input-cost of abandoning the
-          cache — context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate)
-          — is drawn from the session's switch budget: a paid switch is allowed only
-          while budget remains, and an outright-cheaper switch is free and can credit the
-          budget back. Requires a cost source in model_metrics_sources.
-        properties:
-          enabled:
-            type: boolean
-            description: "Master switch for stickiness. Default false."
-          switch_budget:
-            type: object
-            description: >
-              Developer-defined cumulative switch budget (USD) per session. Required
-              when enabled — Plano never invents a default.
-            properties:
-              seed_usd:
-                type: number
-                minimum: 0
-                description: >
-                  Initial budget (USD) granted to a session. 0 means never pay to
-                  switch (only outright-cheaper switches are allowed); larger values buy
-                  more quality-driven switches over the session.
-              replenish_on_rebind:
-                type: boolean
-                description: "Re-seed the budget to seed_usd when a cold session re-binds. Default true."
-              credit_negative:
-                type: boolean
-                description: "Credit the budget back when a switch is outright cheaper (negative cost). Default true."
-            required: ["seed_usd"]
-            additionalProperties: false
-          cache_read_discount:
-            type: number
-            minimum: 0
-            maximum: 1
-            description: >
-              Fallback used to estimate a model's cached input rate when the pricing
-              feed doesn't publish one (cached_rate = input_rate x discount). A
-              pricing detail, not a cost policy. Default 0.1.
-          record_counterfactual:
-            type: boolean
-            description: >
-              When true, a vetoed switch records the route the gate would have taken
-              had the switch been allowed, as the plano.switch.counterfactual_route
-              span attribute. Telemetry only — the counterfactual model is never
-              dispatched. Useful for evals/benchmarks. Default false.
-        additionalProperties: false
     additionalProperties: false
   system_prompt:
     type: string
@@ -595,6 +543,51 @@ properties:
             description: >
               Optional HTTP header name whose value is used as a tenant prefix in the cache key.
               When set, keys are scoped as plano:affinity:{tenant_id}:{session_id}.
+        additionalProperties: false
+      routing_budget:
+        type: object
+        description: >
+          Per-session cost gate on model switching. Independent of prompt caching — it
+          applies whenever configured (presence of this block turns it on). The default
+          posture is to stick to the model a session is warm on. When routing proposes a
+          different model while that session's provider cache is plausibly still warm
+          (inferred from the idle gap vs. the provider's cache window), the actual
+          input-token cost of abandoning the cache —
+          context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate),
+          output cost deliberately excluded — is drawn from the session's budget: a paid
+          switch is allowed only while budget remains, and an outright-cheaper switch is
+          free and can credit the budget back. Requires a cost source in
+          model_metrics_sources.
+        properties:
+          seed_usd:
+            type: number
+            minimum: 0
+            description: >
+              Initial cumulative budget (USD) granted to a session. 0 means never pay to
+              switch (only outright-cheaper switches are allowed); larger values buy more
+              quality-driven switches over the session.
+          replenish_on_rebind:
+            type: boolean
+            description: "Re-seed the budget to seed_usd when a cold session re-binds. Default true."
+          credit_negative:
+            type: boolean
+            description: "Credit the budget back when a switch is outright cheaper (negative cost). Default true."
+          cache_read_discount:
+            type: number
+            minimum: 0
+            maximum: 1
+            description: >
+              Fallback used to estimate a model's cached input rate when the pricing feed
+              doesn't publish one (cached_rate = input_rate x discount). A pricing detail,
+              not a cost policy. Default 0.1.
+          record_counterfactual:
+            type: boolean
+            description: >
+              When true, a vetoed switch records the route the gate would have taken had
+              the switch been allowed, as the plano.switch.counterfactual_route span
+              attribute. Telemetry only — the counterfactual model is never dispatched.
+              Useful for evals/benchmarks. Default false.
+        required: ["seed_usd"]
         additionalProperties: false
     additionalProperties: false
   state_storage:

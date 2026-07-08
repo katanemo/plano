@@ -309,6 +309,10 @@ async fn llm_chat_inner(
     // the same bytes the provider's prompt cache is keyed on. The prefix hash is
     // derived even when caching is off, so the `x-plano-prefix-hash` RING_HASH
     // replica-stickiness header still works.
+    let routing_budget = state.routing_budget;
+    // Derive the implicit session key when either prompt-caching affinity or the
+    // routing budget is active — the budget needs a session anchor even with caching off.
+    let implicit_affinity_enabled = prompt_caching.session_affinity || routing_budget.is_some();
     let request_messages = client_request.get_messages();
     let session_router::SessionResolution {
         request_prefix_hash,
@@ -318,10 +322,9 @@ async fn llm_chat_inner(
         &request_messages,
         tool_names.as_deref(),
         tenant_id.as_deref(),
-        &prompt_caching,
+        implicit_affinity_enabled,
         cache_off_for_request,
     );
-    let stickiness = prompt_caching.session_stickiness;
 
     // Record session id on the LLM span for the observability console.
     if let Some(ref sid) = session_id {
@@ -347,7 +350,7 @@ async fn llm_chat_inner(
 
     // Context size for the switch-cost estimate, computed before the router consumes
     // the request. Only needed when stickiness could act on a session.
-    let est_context_tokens: u64 = if session_id.is_some() && stickiness.is_some() {
+    let est_context_tokens: u64 = if session_id.is_some() && routing_budget.is_some() {
         session_router::estimate_context_tokens(&request_messages, &model_name_only)
     } else {
         0
@@ -397,7 +400,7 @@ async fn llm_chat_inner(
 
     let decision = session_router::route(
         &state.orchestrator_service,
-        stickiness.as_ref(),
+        routing_budget.as_ref(),
         session_router::RouteFacts {
             session_id: session_id.as_deref(),
             tenant_id: tenant_id.as_deref(),

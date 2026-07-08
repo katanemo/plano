@@ -33,6 +33,10 @@ pub struct Routing {
     pub session_ttl_seconds: Option<u64>,
     pub session_max_entries: Option<usize>,
     pub session_cache: Option<SessionCacheConfig>,
+    /// Cost gate on model switching within a session. Independent of prompt caching:
+    /// this is a routing decision that applies whenever it is configured, whether or
+    /// not `prompt_caching` is enabled. Presence of this block turns it on.
+    pub routing_budget: Option<RoutingBudget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,30 +277,35 @@ pub struct PromptCaching {
     pub min_prefix_tokens: Option<u32>,
     /// Session pin TTL; falls back to `routing.session_ttl_seconds` when unset.
     pub session_ttl_seconds: Option<u64>,
-    /// Session stickiness with a cumulative switch budget. Opt-in; when enabled the
-    /// developer must supply `switch_budget` — Plano never invents a budget.
-    pub session_stickiness: Option<SessionStickiness>,
 }
 
-/// Session stickiness governed by a cumulative per-session switch budget.
+/// A cumulative per-session budget (USD) governing when routing may switch models.
 ///
-/// The default posture is to stick to a warm model. When routing proposes a
-/// *different* model while the session's provider cache is plausibly still warm,
-/// switching forces the candidate to re-ingest the whole context at its uncached
-/// input rate. That input-token cost —
+/// This is a routing concern, not a caching one: it applies whenever configured,
+/// regardless of whether `prompt_caching` is enabled. The default posture is to stick
+/// to the model a session is warm on. When routing proposes a *different* model while
+/// that session's provider cache is plausibly still warm, switching forces the
+/// candidate to re-ingest the whole context at its uncached input rate. That
+/// input-token cost —
 /// `context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate)` —
 /// is drawn down from the session's remaining budget: a paid switch is allowed only
 /// while budget remains, and a switch that is outright cheaper (negative cost) can
 /// credit the budget back. Requires a cost source in `model_metrics_sources` so
-/// per-model rates are available.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SessionStickiness {
-    /// Master switch for stickiness. Defaults to `false`.
-    #[serde(default)]
-    pub enabled: bool,
-    /// Developer-defined cumulative switch budget. Required when `enabled: true` —
-    /// there is no built-in default; startup fails if omitted.
-    pub switch_budget: Option<SwitchBudget>,
+/// per-model rates are available. Presence of the block turns it on.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct RoutingBudget {
+    /// Initial budget (USD) granted to a session. `0.0` means "never pay to switch"
+    /// (only outright-cheaper switches are ever allowed); larger values buy more
+    /// quality-driven switches over the session.
+    pub seed_usd: f64,
+    /// Re-seed the budget back to `seed_usd` when a session goes cold and re-binds
+    /// (a fresh warm episode). Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub replenish_on_rebind: bool,
+    /// Credit the budget back when a switch is outright cheaper (negative cost) — the
+    /// candidate's uncached rate undercuts the anchor's cached rate. Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub credit_negative: bool,
     /// Fallback used to estimate a model's cached input rate when the pricing feed
     /// doesn't publish one: `cached_rate = input_rate * cache_read_discount`. A
     /// pricing detail, not a cost policy. Defaults to 0.1 (cached reads at 10% of
@@ -315,27 +324,9 @@ fn default_true() -> bool {
     true
 }
 
-/// A session's cumulative switch budget, in USD. Seeded when a session first binds to
-/// a warm model and drawn down by paid switches over the life of the session.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub struct SwitchBudget {
-    /// Initial budget (USD) granted to a session. `0.0` means "never pay to switch"
-    /// (only outright-cheaper switches are ever allowed); larger values buy more
-    /// quality-driven switches over the session.
-    pub seed_usd: f64,
-    /// Re-seed the budget back to `seed_usd` when a session goes cold and re-binds
-    /// (a fresh warm episode). Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub replenish_on_rebind: bool,
-    /// Credit the budget back when a switch is outright cheaper (negative cost) — the
-    /// candidate's uncached rate undercuts the anchor's cached rate. Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub credit_negative: bool,
-}
-
-/// Fully-resolved session-stickiness settings (present only when enabled and valid).
+/// Fully-resolved routing-budget settings (present only when configured and valid).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EffectiveSessionStickiness {
+pub struct EffectiveRoutingBudget {
     /// Initial per-session switch budget (USD).
     pub seed_usd: f64,
     /// Re-seed the budget on cold->warm re-bind.
@@ -349,22 +340,13 @@ pub struct EffectiveSessionStickiness {
 
 pub const DEFAULT_CACHE_READ_DISCOUNT: f64 = 0.1;
 
-impl SessionStickiness {
-    /// Resolve to effective settings. `Ok(None)` when disabled; `Err` when enabled
-    /// without a developer-supplied budget (no default is ever invented).
-    pub fn resolve(&self) -> Result<Option<EffectiveSessionStickiness>, String> {
-        if !self.enabled {
-            return Ok(None);
-        }
-        let budget = self.switch_budget.ok_or_else(|| {
-            "prompt_caching.session_stickiness: `switch_budget` is required when enabled — \
-             set e.g. `switch_budget: { seed_usd: 0.50 }`"
-                .to_string()
-        })?;
-        if !budget.seed_usd.is_finite() || budget.seed_usd < 0.0 {
+impl RoutingBudget {
+    /// Resolve to effective settings, validating the seed and cache-read discount.
+    pub fn resolve(&self) -> Result<EffectiveRoutingBudget, String> {
+        if !self.seed_usd.is_finite() || self.seed_usd < 0.0 {
             return Err(format!(
-                "prompt_caching.session_stickiness.switch_budget.seed_usd: must be a non-negative number, got {}",
-                budget.seed_usd
+                "routing.routing_budget.seed_usd: must be a non-negative number, got {}",
+                self.seed_usd
             ));
         }
         let cache_read_discount = self
@@ -372,16 +354,23 @@ impl SessionStickiness {
             .unwrap_or(DEFAULT_CACHE_READ_DISCOUNT);
         if !(0.0..=1.0).contains(&cache_read_discount) {
             return Err(format!(
-                "prompt_caching.session_stickiness.cache_read_discount: must be between 0.0 and 1.0, got {cache_read_discount}"
+                "routing.routing_budget.cache_read_discount: must be between 0.0 and 1.0, got {cache_read_discount}"
             ));
         }
-        Ok(Some(EffectiveSessionStickiness {
-            seed_usd: budget.seed_usd,
-            replenish_on_rebind: budget.replenish_on_rebind,
-            credit_negative: budget.credit_negative,
+        Ok(EffectiveRoutingBudget {
+            seed_usd: self.seed_usd,
+            replenish_on_rebind: self.replenish_on_rebind,
+            credit_negative: self.credit_negative,
             cache_read_discount,
             record_counterfactual: self.record_counterfactual,
-        }))
+        })
+    }
+}
+
+impl EffectiveRoutingBudget {
+    /// Resolve from an optional config block; `None` means the gate is off.
+    pub fn from_config(config: Option<&RoutingBudget>) -> Result<Option<Self>, String> {
+        config.map(RoutingBudget::resolve).transpose()
     }
 }
 
@@ -394,8 +383,6 @@ pub struct EffectivePromptCaching {
     pub min_prefix_tokens: u32,
     /// Pin TTL override; `None` uses `routing.session_ttl_seconds`.
     pub session_ttl_seconds: Option<u64>,
-    /// Switch-cost gate; `None` when disabled.
-    pub session_stickiness: Option<EffectiveSessionStickiness>,
 }
 
 pub const DEFAULT_MIN_PREFIX_TOKENS: u32 = 1024;
@@ -408,38 +395,23 @@ impl Default for EffectivePromptCaching {
             inject_cache_control: false,
             min_prefix_tokens: DEFAULT_MIN_PREFIX_TOKENS,
             session_ttl_seconds: None,
-            session_stickiness: None,
         }
     }
 }
 
 impl PromptCaching {
     /// Resolve the instance-wide effective settings. When caching is disabled every
-    /// sub-feature is off, regardless of the individual knobs. Fails when the
-    /// session-stickiness gate is enabled but misconfigured (missing threshold).
+    /// sub-feature is off, regardless of the individual knobs.
     pub fn resolve(&self) -> Result<EffectivePromptCaching, String> {
         if !self.enabled {
-            if self.session_stickiness.as_ref().is_some_and(|s| s.enabled) {
-                return Err(
-                    "prompt_caching.session_stickiness requires prompt_caching.enabled: true"
-                        .to_string(),
-                );
-            }
             return Ok(EffectivePromptCaching::default());
         }
-        let session_stickiness = self
-            .session_stickiness
-            .as_ref()
-            .map(SessionStickiness::resolve)
-            .transpose()?
-            .flatten();
         Ok(EffectivePromptCaching {
             enabled: true,
             session_affinity: self.session_affinity.unwrap_or(true),
             inject_cache_control: self.inject_cache_control.unwrap_or(true),
             min_prefix_tokens: self.min_prefix_tokens.unwrap_or(DEFAULT_MIN_PREFIX_TOKENS),
             session_ttl_seconds: self.session_ttl_seconds,
-            session_stickiness,
         })
     }
 }
@@ -910,8 +882,8 @@ mod test {
     use std::fs;
 
     use super::{
-        EffectivePromptCaching, IntoModels, LlmProvider, LlmProviderType, PromptCaching,
-        DEFAULT_CACHE_READ_DISCOUNT, DEFAULT_MIN_PREFIX_TOKENS,
+        EffectivePromptCaching, EffectiveRoutingBudget, IntoModels, LlmProvider, LlmProviderType,
+        PromptCaching, RoutingBudget, DEFAULT_CACHE_READ_DISCOUNT, DEFAULT_MIN_PREFIX_TOKENS,
     };
     use crate::api::open_ai::ToolType;
 
@@ -1121,7 +1093,6 @@ disable_signals: false
         assert!(!effective.enabled);
         assert!(!effective.session_affinity);
         assert!(!effective.inject_cache_control);
-        assert!(effective.session_stickiness.is_none());
 
         // Present but not enabled → still off.
         let cfg: PromptCaching = serde_yaml::from_str("enabled: false").unwrap();
@@ -1141,8 +1112,6 @@ disable_signals: false
         assert!(effective.inject_cache_control);
         assert_eq!(effective.min_prefix_tokens, DEFAULT_MIN_PREFIX_TOKENS);
         assert_eq!(effective.session_ttl_seconds, None);
-        // The cost gate is opt-in and never on by default.
-        assert!(effective.session_stickiness.is_none());
     }
 
     #[test]
@@ -1179,133 +1148,63 @@ inject_cache_control: true
     }
 
     #[test]
-    fn test_session_stickiness_budget_parses() {
+    fn test_routing_budget_parses() {
         let yaml = r#"
-enabled: true
-session_stickiness:
-  enabled: true
-  switch_budget:
-    seed_usd: 0.50
+seed_usd: 0.50
 "#;
-        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let effective = cfg.resolve().unwrap();
-        let stickiness = effective
-            .session_stickiness
-            .expect("stickiness should be on");
-        assert_eq!(stickiness.seed_usd, 0.50);
+        let cfg: RoutingBudget = serde_yaml::from_str(yaml).unwrap();
+        let budget = cfg.resolve().unwrap();
+        assert_eq!(budget.seed_usd, 0.50);
         // Replenish + credit-negative default on.
-        assert!(stickiness.replenish_on_rebind);
-        assert!(stickiness.credit_negative);
-        assert_eq!(stickiness.cache_read_discount, DEFAULT_CACHE_READ_DISCOUNT);
+        assert!(budget.replenish_on_rebind);
+        assert!(budget.credit_negative);
+        assert_eq!(budget.cache_read_discount, DEFAULT_CACHE_READ_DISCOUNT);
         // Counterfactual recording is opt-in; off unless requested.
-        assert!(!stickiness.record_counterfactual);
+        assert!(!budget.record_counterfactual);
     }
 
     #[test]
-    fn test_session_stickiness_record_counterfactual_parses() {
+    fn test_routing_budget_record_counterfactual_parses() {
         let yaml = r#"
-enabled: true
-session_stickiness:
-  enabled: true
-  switch_budget:
-    seed_usd: 0.50
-  record_counterfactual: true
+seed_usd: 0.50
+record_counterfactual: true
 "#;
-        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let effective = cfg.resolve().unwrap();
-        let stickiness = effective
-            .session_stickiness
-            .expect("stickiness should be on");
-        assert!(stickiness.record_counterfactual);
+        let cfg: RoutingBudget = serde_yaml::from_str(yaml).unwrap();
+        let budget = cfg.resolve().unwrap();
+        assert!(budget.record_counterfactual);
     }
 
     #[test]
-    fn test_session_stickiness_budget_flags_parse() {
+    fn test_routing_budget_flags_parse() {
         let yaml = r#"
-enabled: true
-session_stickiness:
-  enabled: true
-  switch_budget:
-    seed_usd: 1.0
-    replenish_on_rebind: false
-    credit_negative: false
-  cache_read_discount: 0.25
+seed_usd: 1.0
+replenish_on_rebind: false
+credit_negative: false
+cache_read_discount: 0.25
 "#;
-        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let effective = cfg.resolve().unwrap();
-        let stickiness = effective
-            .session_stickiness
-            .expect("stickiness should be on");
-        assert_eq!(stickiness.seed_usd, 1.0);
-        assert!(!stickiness.replenish_on_rebind);
-        assert!(!stickiness.credit_negative);
-        assert_eq!(stickiness.cache_read_discount, 0.25);
+        let cfg: RoutingBudget = serde_yaml::from_str(yaml).unwrap();
+        let budget = cfg.resolve().unwrap();
+        assert_eq!(budget.seed_usd, 1.0);
+        assert!(!budget.replenish_on_rebind);
+        assert!(!budget.credit_negative);
+        assert_eq!(budget.cache_read_discount, 0.25);
     }
 
     #[test]
-    fn test_session_stickiness_enabled_without_budget_rejected() {
-        // No built-in default: enabling stickiness without a budget must fail.
-        let yaml = r#"
-enabled: true
-session_stickiness:
-  enabled: true
-"#;
-        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let err = cfg.resolve().unwrap_err();
-        assert!(err.contains("switch_budget"), "unexpected error: {err}");
+    fn test_routing_budget_absent_is_off() {
+        // No block configured → gate is off.
+        assert!(EffectiveRoutingBudget::from_config(None).unwrap().is_none());
     }
 
     #[test]
-    fn test_session_stickiness_requires_prompt_caching_enabled() {
-        let yaml = r#"
-enabled: false
-session_stickiness:
-  enabled: true
-  switch_budget:
-    seed_usd: 0.50
-"#;
-        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let err = cfg.resolve().unwrap_err();
-        assert!(
-            err.contains("prompt_caching.enabled"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn test_session_stickiness_disabled_block_is_ignored() {
-        let yaml = r#"
-enabled: true
-session_stickiness:
-  enabled: false
-"#;
-        let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
-        let effective = cfg.resolve().unwrap();
-        assert!(effective.session_stickiness.is_none());
-    }
-
-    #[test]
-    fn test_session_stickiness_invalid_values_rejected() {
-        let negative: PromptCaching = serde_yaml::from_str(
-            r#"
-enabled: true
-session_stickiness:
-  enabled: true
-  switch_budget:
-    seed_usd: -1.0
-"#,
-        )
-        .unwrap();
+    fn test_routing_budget_invalid_values_rejected() {
+        let negative: RoutingBudget = serde_yaml::from_str("seed_usd: -1.0").unwrap();
         assert!(negative.resolve().is_err());
 
-        let bad_discount: PromptCaching = serde_yaml::from_str(
+        let bad_discount: RoutingBudget = serde_yaml::from_str(
             r#"
-enabled: true
-session_stickiness:
-  enabled: true
-  switch_budget:
-    seed_usd: 0.50
-  cache_read_discount: 1.5
+seed_usd: 0.50
+cache_read_discount: 1.5
 "#,
         )
         .unwrap();

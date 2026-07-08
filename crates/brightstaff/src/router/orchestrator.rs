@@ -32,7 +32,7 @@ const TOKENS_PER_MILLION: f64 = 1_000_000.0;
 /// are never credited. Negative when the candidate's uncached input rate undercuts the
 /// anchor's cached rate — those switches are outright cheaper. Rates are USD per million
 /// tokens; the caller draws a positive cost down from the session's switch budget.
-pub fn switch_cost_usd(
+pub fn switch_cost_in_usd(
     est_context_tokens: u64,
     anchor_cached_rate: f64,
     candidate_uncached_rate: f64,
@@ -201,7 +201,7 @@ impl OrchestratorService {
     /// open (switch freely) rather than veto the router on guesswork.
     /// `cache_read_discount` estimates the anchor's cached-read rate when the feed
     /// doesn't publish one. Negative when the switch is outright cheaper.
-    pub async fn estimate_switch_cost_usd(
+    pub async fn estimate_switch_cost_in_usd(
         &self,
         est_context_tokens: u64,
         anchor_model: &str,
@@ -210,7 +210,7 @@ impl OrchestratorService {
     ) -> Option<f64> {
         let anchor = self.model_rates(anchor_model).await?;
         let candidate = self.model_rates(candidate_model).await?;
-        Some(switch_cost_usd(
+        Some(switch_cost_in_usd(
             est_context_tokens,
             anchor.cached_input_rate(cache_read_discount),
             candidate.input_per_million,
@@ -528,7 +528,7 @@ mod tests {
     fn negative_cost_when_candidate_undercuts_cached_rate() {
         // Anchor opus (cached 1.5) -> haiku (uncached 1.0) over 100k context:
         // cost = 0.1M x (1.0 - 1.5) = -$0.05 — cheaper even after re-reading.
-        let cost = switch_cost_usd(100_000, 1.5, 1.0);
+        let cost = switch_cost_in_usd(100_000, 1.5, 1.0);
         assert!((cost - (-0.05)).abs() < 1e-9);
     }
 
@@ -536,7 +536,7 @@ mod tests {
     fn positive_cost_when_candidate_pricier_than_cached_rate() {
         // Anchor opus (cached 1.5) -> gpt-4.1 (uncached 2.0) over 100k:
         // cost = 0.1M x (2.0 - 1.5) = +$0.05.
-        let cost = switch_cost_usd(100_000, 1.5, 2.0);
+        let cost = switch_cost_in_usd(100_000, 1.5, 2.0);
         assert!((cost - 0.05).abs() < 1e-9);
     }
 
@@ -544,21 +544,21 @@ mod tests {
     fn large_context_amplifies_cost() {
         // Anchor sonnet (cached 0.3) -> gpt-5.5-class (uncached 5.0) over 150k:
         // cost = 0.15M x (5.0 - 0.3) = +$0.705.
-        let cost = switch_cost_usd(150_000, 0.3, 5.0);
+        let cost = switch_cost_in_usd(150_000, 0.3, 5.0);
         assert!((cost - 0.705).abs() < 1e-9);
     }
 
     #[test]
     fn cost_scales_linearly_with_context() {
-        let small = switch_cost_usd(10_000, 0.3, 0.8);
-        let large = switch_cost_usd(1_000_000, 0.3, 0.8);
+        let small = switch_cost_in_usd(10_000, 0.3, 0.8);
+        let large = switch_cost_in_usd(1_000_000, 0.3, 0.8);
         assert!((large / small - 100.0).abs() < 1e-6);
     }
 
     #[test]
     fn tiny_context_cost_is_negligible() {
         // 2k-token chat: even an expensive candidate costs ~$0.009.
-        let cost = switch_cost_usd(2_000, 0.3, 5.0);
+        let cost = switch_cost_in_usd(2_000, 0.3, 5.0);
         assert!(cost < 0.01);
     }
 }
