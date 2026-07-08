@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 static PROVIDER_MODELS_YAML: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -214,6 +215,67 @@ pub fn cache_marker_strategy(
         // silent no-op.
         SupportedUpstreamAPIs::AmazonBedrockConverse(_)
         | SupportedUpstreamAPIs::AmazonBedrockConverseStream(_) => CacheMarkerStrategy::None,
+    }
+}
+
+/// Provider prompt-cache retention behavior, used to decide whether a session's
+/// upstream cache is still plausibly warm from the time since it was last used.
+///
+/// This is deliberately time/behavior only — it says nothing about *how* to mark a
+/// request for caching (that's [`CacheMarkerStrategy`]). Warmth is a function of the
+/// idle gap vs the provider's cache window, so the session router can reason about
+/// stickiness without ever seeing a provider response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderCacheCapability {
+    /// Sliding idle window: the cache stays warm as long as it is touched at least
+    /// this often. Anthropic's default ephemeral cache is 5 minutes.
+    pub idle_ttl: Duration,
+    /// Absolute ceiling on how long a cache entry can live regardless of activity.
+    /// Conservative default of 1h matches Anthropic's extended (1h) tier ceiling.
+    pub hard_ttl: Duration,
+    /// Whether the provider (as configured) actually retains caches out to the
+    /// extended window. Off by default — extended retention is opt-in per provider.
+    pub extended_retention: bool,
+    /// The extended idle window when `extended_retention` is enabled (e.g. 1h).
+    pub extended_ttl: Duration,
+}
+
+impl Default for ProviderCacheCapability {
+    fn default() -> Self {
+        // Conservative, provider-agnostic defaults: a 5-minute sliding window capped
+        // at 1 hour, no extended retention. Anything unknown is treated as short-lived
+        // so the router doesn't over-stick to a cache that has likely gone cold.
+        ProviderCacheCapability {
+            idle_ttl: Duration::from_secs(5 * 60),
+            hard_ttl: Duration::from_secs(60 * 60),
+            extended_retention: false,
+            extended_ttl: Duration::from_secs(60 * 60),
+        }
+    }
+}
+
+/// Resolve the prompt-cache retention window for a gateway provider. Data-driven so
+/// tuning a provider's window needs no code changes at the call sites — only this
+/// table. Unknown providers fall back to the conservative [`ProviderCacheCapability::default`].
+pub fn provider_cache_capability(provider: ProviderId) -> ProviderCacheCapability {
+    match provider {
+        // Anthropic-family caches (native or fronted): 5-minute sliding default,
+        // 1-hour hard ceiling. Extended (1h) retention is opt-in and left off here.
+        ProviderId::Anthropic
+        | ProviderId::DigitalOcean
+        | ProviderId::OpenRouter
+        | ProviderId::Vercel => ProviderCacheCapability::default(),
+        // OpenAI-family automatic prefix caching also lives on the order of minutes;
+        // the conservative default holds.
+        ProviderId::OpenAI
+        | ProviderId::AzureOpenAI
+        | ProviderId::ChatGPT
+        | ProviderId::Groq
+        | ProviderId::Deepseek
+        | ProviderId::Gemini
+        | ProviderId::Moonshotai
+        | ProviderId::XAI => ProviderCacheCapability::default(),
+        _ => ProviderCacheCapability::default(),
     }
 }
 

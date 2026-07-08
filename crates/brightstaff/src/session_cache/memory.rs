@@ -9,9 +9,9 @@ use lru::LruCache;
 use tokio::sync::Mutex;
 use tracing::info;
 
-use super::{CacheLookup, CachedRoute, SessionCache, STALE_TTL_FACTOR};
+use super::{SessionBinding, SessionCache};
 
-type CacheStore = Mutex<LruCache<String, (CachedRoute, Instant, Duration)>>;
+type CacheStore = Mutex<LruCache<String, (SessionBinding, Instant, Duration)>>;
 
 pub struct MemorySessionCache {
     store: Arc<CacheStore>,
@@ -38,11 +38,11 @@ impl MemorySessionCache {
 
     async fn evict_expired(store: &CacheStore) {
         let mut cache = store.lock().await;
-        // Entries are kept past their logical TTL (as stale soft hints) and only
-        // physically evicted once the stale window has passed too.
+        // The TTL is only a GC bound: drop bindings once they've outlived the window
+        // in which they could plausibly still be warm.
         let expired: Vec<String> = cache
             .iter()
-            .filter(|(_, (_, inserted_at, ttl))| inserted_at.elapsed() >= *ttl * STALE_TTL_FACTOR)
+            .filter(|(_, (_, inserted_at, ttl))| inserted_at.elapsed() >= *ttl)
             .map(|(k, _)| k.clone())
             .collect();
         let removed = expired.len();
@@ -61,31 +61,21 @@ impl MemorySessionCache {
 
 #[async_trait]
 impl SessionCache for MemorySessionCache {
-    async fn get(&self, key: &str) -> Option<CacheLookup> {
+    async fn get(&self, key: &str) -> Option<SessionBinding> {
         let mut cache = self.store.lock().await;
-        if let Some((route, inserted_at, ttl)) = cache.get(key) {
-            let elapsed = inserted_at.elapsed();
-            if elapsed < *ttl {
-                return Some(CacheLookup {
-                    route: route.clone(),
-                    is_stale: false,
-                });
-            }
-            if elapsed < *ttl * STALE_TTL_FACTOR {
-                return Some(CacheLookup {
-                    route: route.clone(),
-                    is_stale: true,
-                });
+        if let Some((binding, inserted_at, ttl)) = cache.get(key) {
+            if inserted_at.elapsed() < *ttl {
+                return Some(binding.clone());
             }
         }
         None
     }
 
-    async fn put(&self, key: &str, route: CachedRoute, ttl: Duration) {
+    async fn put(&self, key: &str, binding: SessionBinding, ttl: Duration) {
         self.store
             .lock()
             .await
-            .put(key.to_string(), (route, Instant::now(), ttl));
+            .put(key.to_string(), (binding, Instant::now(), ttl));
     }
 
     async fn remove(&self, key: &str) {

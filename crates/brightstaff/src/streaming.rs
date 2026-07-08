@@ -23,12 +23,13 @@ const USAGE_BUFFER_MAX: usize = 2 * 1024 * 1024;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
 use crate::router::orchestrator::OrchestratorService;
-use crate::session_cache::CachedRoute;
+use crate::session_cache::SessionBinding;
 use crate::signals::otel::emit_signals_to_span;
 use crate::signals::{SignalAnalyzer, FLAG_MARKER};
 use crate::tracing::{llm, set_service_name};
 use hermesllm::apis::openai::Message;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 /// Parsed usage + resolved-model details from a provider response.
 #[derive(Debug, Default, Clone)]
@@ -190,31 +191,27 @@ pub struct LlmMetricsCtx {
     pub upstream_status: u16,
 }
 
-/// What to do with the session pin once the response's cache-usage signal is known.
-#[derive(Debug, Clone)]
-pub enum PinAction {
-    /// Implicit session that is not pinned yet: commit the pin only after the
-    /// response reports cache activity (pin-after-hit), so workloads that never
-    /// benefit from caching keep routing freely.
-    CommitOnCacheActivity,
-    /// Session already pinned: refresh the TTL, update the observed-hit state, and
-    /// flag when a session that used to produce cache hits stops producing them
-    /// (prefix changed upstream or the provider cache expired).
-    Refresh { previously_observed_hit: bool },
-}
-
-/// Response-side session-pin context: closes the loop between the cache-usage signal
-/// (only available in the response) and the routing pin (decided on the request).
-pub struct SessionPinCtx {
+/// Response-side session-update context: refreshes the session binding once the real
+/// response is in hand, so `last_used` and the context-size estimate (`cached_tokens`)
+/// reflect the turn that just completed. The routing decision (model, budget, switches)
+/// was already made and persisted on the request side by [`super::handlers::llm::session_router`];
+/// this only refines the fields that need the response.
+pub struct SessionUpdateCtx {
     pub orchestrator: Arc<OrchestratorService>,
     pub session_id: String,
     pub tenant_id: Option<String>,
-    /// Provider-qualified model this request actually ran on.
-    pub model_name: String,
+    /// Provider-qualified model this request actually ran on (the router's final pick).
+    pub anchor_model: String,
     pub route_name: Option<String>,
     pub prefix_hash: Option<u64>,
-    pub ttl_override_seconds: Option<u64>,
-    pub action: PinAction,
+    /// Remaining switch budget from the routing decision — preserved across the refresh.
+    pub switch_budget_usd: f64,
+    /// Cumulative switch count from the routing decision — preserved across the refresh.
+    pub switches: u32,
+    /// Context-size estimate to fall back to when the response carries no usage block.
+    pub est_context_tokens: u64,
+    /// GC bound to store the refreshed binding with.
+    pub gc_ttl: Duration,
 }
 
 /// A processor that tracks streaming metrics
@@ -231,7 +228,7 @@ pub struct ObservableStreamProcessor {
     /// from the buffer (they still pass through to the client).
     response_buffer: Vec<u8>,
     llm_metrics: Option<LlmMetricsCtx>,
-    session_pin: Option<SessionPinCtx>,
+    session_update: Option<SessionUpdateCtx>,
     metrics_recorded: bool,
 }
 
@@ -268,7 +265,7 @@ impl ObservableStreamProcessor {
             messages,
             response_buffer: Vec::new(),
             llm_metrics: None,
-            session_pin: None,
+            session_update: None,
             metrics_recorded: false,
         }
     }
@@ -280,86 +277,54 @@ impl ObservableStreamProcessor {
         self
     }
 
-    /// Attach session-pin context so the processor commits/refreshes/validates the
-    /// session pin based on the cache-usage signal in the response.
-    pub fn with_session_pin(mut self, ctx: SessionPinCtx) -> Self {
-        self.session_pin = Some(ctx);
+    /// Attach session-update context so the processor refreshes `last_used` and the
+    /// context-size estimate from the real response once usage is known.
+    pub fn with_session_update(mut self, ctx: SessionUpdateCtx) -> Self {
+        self.session_update = Some(ctx);
         self
     }
 
-    /// Close the cache feedback loop once usage is known.
-    fn handle_session_pin(&mut self, usage: &ExtractedUsage) {
-        let Some(pin) = self.session_pin.take() else {
+    /// Refresh the session binding from the response so warmth (`last_used`) and the
+    /// context-size estimate (`cached_tokens`) reflect the completed turn.
+    fn handle_session_update(&mut self, usage: &ExtractedUsage) {
+        let Some(update) = self.session_update.take() else {
             return;
         };
-        let SessionPinCtx {
+        let SessionUpdateCtx {
             orchestrator,
             session_id,
             tenant_id,
-            model_name,
+            anchor_model,
             route_name,
             prefix_hash,
-            ttl_override_seconds,
-            action,
-        } = pin;
+            switch_budget_usd,
+            switches,
+            est_context_tokens,
+            gc_ttl,
+        } = update;
 
-        let cache_read = usage.cached_input_tokens.unwrap_or(0);
-        let cache_write = usage.cache_creation_tokens.unwrap_or(0);
-        let saw_cache_activity = cache_read > 0 || cache_write > 0;
-        // Without a usage block we know nothing — leave the pin state untouched.
-        let usage_known = usage.prompt_tokens.is_some();
+        // Prefer the real prompt-token count (the tokens a future switch would re-read)
+        // over the request-side estimate; fall back to the estimate when absent.
+        let cached_tokens = usage
+            .prompt_tokens
+            .filter(|&p| p > 0)
+            .map(|p| p as u64)
+            .unwrap_or(est_context_tokens);
 
-        let (observed_hit, event) = match action {
-            PinAction::CommitOnCacheActivity => {
-                if !saw_cache_activity {
-                    return;
-                }
-                info!(
-                    session_id = %session_id,
-                    model = %model_name,
-                    cache_read_tokens = cache_read,
-                    cache_creation_tokens = cache_write,
-                    "cache activity observed — committing implicit session pin"
-                );
-                (true, metric_labels::PIN_EVENT_IMPLICIT_COMMIT)
-            }
-            PinAction::Refresh {
-                previously_observed_hit,
-            } => {
-                if previously_observed_hit && usage_known && !saw_cache_activity {
-                    warn!(
-                        session_id = %session_id,
-                        model = %model_name,
-                        "pinned session stopped producing cache hits — provider cache \
-                         likely expired or the prompt prefix changed upstream"
-                    );
-                    bs_metrics::record_session_pin_event(
-                        metric_labels::PIN_EVENT_VALIDATION_FAILED,
-                    );
-                }
-                (
-                    previously_observed_hit || saw_cache_activity,
-                    metric_labels::PIN_EVENT_REFRESH,
-                )
-            }
-        };
-
-        bs_metrics::record_session_pin_event(event);
-        let route = CachedRoute {
-            model_name,
+        bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_REFRESH);
+        let binding = SessionBinding {
+            anchor_model,
             route_name,
             prefix_hash,
-            observed_cache_hit: observed_hit,
+            last_used: SystemTime::now(),
+            cached_tokens,
+            switch_budget_usd,
+            switches,
         };
-        // Fire-and-forget: pin bookkeeping must not delay stream completion.
+        // Fire-and-forget: binding bookkeeping must not delay stream completion.
         tokio::spawn(async move {
             orchestrator
-                .cache_route(
-                    &session_id,
-                    tenant_id.as_deref(),
-                    route,
-                    ttl_override_seconds,
-                )
+                .store_binding(&session_id, tenant_id.as_deref(), binding, Some(gc_ttl))
                 .await;
         });
     }
@@ -511,9 +476,9 @@ impl StreamProcessor for ObservableStreamProcessor {
             self.metrics_recorded = true;
         }
 
-        // Session pin feedback: commit implicit pins after the first observed cache
-        // hit, refresh existing pins, and validate that expected hits still occur.
-        self.handle_session_pin(&usage);
+        // Session-binding refresh: update `last_used` + the context-size estimate from
+        // the completed turn (the routing decision itself was made request-side).
+        self.handle_session_update(&usage);
         // Release the buffered bytes early; nothing downstream needs them.
         self.response_buffer.clear();
         self.response_buffer.shrink_to_fit();

@@ -346,7 +346,7 @@ async fn init_app_state(
     let prompt_caching =
         common::configuration::EffectivePromptCaching::from_config(config.prompt_caching.as_ref())?;
 
-    // The session-stickiness cost gate needs per-model pricing to compute regret.
+    // The session-stickiness cost gate needs per-model pricing to compute switch cost.
     if prompt_caching.session_stickiness.is_some() {
         use common::configuration::MetricsSource;
         let has_cost_source = config
@@ -359,7 +359,7 @@ async fn init_app_state(
             return Err(
                 "prompt_caching.session_stickiness is enabled but no cost metrics source is \
                  configured — add a cost source (e.g. models.dev) to model_metrics_sources so \
-                 per-model input/cached rates are available for the regret calculation"
+                 per-model input/cached rates are available for the switch-cost calculation"
                     .into(),
             );
         }
@@ -550,6 +550,7 @@ async fn dispatch(
                 Arc::clone(&state.orchestrator_service),
                 stripped,
                 &state.span_attributes,
+                state.prompt_caching,
             )
             .with_context(parent_cx)
             .await;

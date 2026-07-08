@@ -12,12 +12,12 @@ const DO_PRICING_URL: &str = "https://api.digitalocean.com/v2/gen-ai/models/cata
 const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
 /// DigitalOcean publishes prices per token; scale to the per-million convention
-/// that `ModelRates` and the absolute-USD consumers (cache-regret gate) expect.
+/// that `ModelRates` and the absolute-USD consumers (switch-cost gate) expect.
 const TOKENS_PER_MILLION: f64 = 1_000_000.0;
 
 /// Structured per-million-token USD rates for one model, as published by the cost
 /// feed. Kept alongside the blended ranking metric so cost-sensitive features (e.g.
-/// the session-stickiness cache-regret gate) can reason about input vs cached-input
+/// the session-stickiness switch-cost gate) can reason about input vs cached-input
 /// pricing without touching `rank_models`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelRates {
@@ -127,6 +127,17 @@ impl ModelMetricsService {
             cost: cost_data,
             rates: rates_data,
             latency: latency_data,
+        }
+    }
+
+    /// Build a service directly from a rates map (no network). Test-only: lets
+    /// handler/router tests exercise switch-cost math with deterministic pricing.
+    #[cfg(test)]
+    pub fn from_rates_for_test(rates: HashMap<String, ModelRates>) -> Self {
+        ModelMetricsService {
+            cost: Arc::new(RwLock::new(blended_costs(&rates))),
+            rates: Arc::new(RwLock::new(rates)),
+            latency: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -311,7 +322,7 @@ fn parse_do_pricing(
             let raw_key = m.model_id.clone();
             let key = aliases.get(&raw_key).cloned().unwrap_or(raw_key);
             // DO reports prices per token; scale to per-million so the
-            // absolute-USD consumers (the cache-regret gate) are correct.
+            // absolute-USD consumers (the switch-cost gate) are correct.
             // Relative ranking via `blended()` is unaffected either way.
             let rates = ModelRates {
                 input_per_million: pricing.input_price_per_million.unwrap_or(0.0)
@@ -584,7 +595,7 @@ mod tests {
         let list: DoModelList = serde_json::from_str(json).unwrap();
         let rates = parse_do_pricing(list, &HashMap::new());
 
-        // Scaled to per-million so the cache-regret gate compares real dollars.
+        // Scaled to per-million so the switch-cost gate compares real dollars.
         let sonnet = rates
             .get("digitalocean/anthropic-claude-4.6-sonnet")
             .unwrap();
@@ -599,9 +610,12 @@ mod tests {
 
         // Regression: a ~5k-token switch off warm sonnet to cold gpt-4o must now
         // cost real dollars, not ~1e-8. This is the bug the live gate test caught.
-        let regret =
+        let switch_cost =
             5_000.0 / 1_000_000.0 * (gpt4o.input_per_million - sonnet.cached_input_rate(0.1));
-        assert!(regret > 0.01, "expected ~$0.011 of regret, got {regret}");
+        assert!(
+            switch_cost > 0.01,
+            "expected ~$0.011 of switch cost, got {switch_cost}"
+        );
     }
 
     #[test]

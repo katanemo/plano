@@ -1,14 +1,15 @@
 # How-To: See Prompt Caching + Session Stickiness in Action
 
-A hands-on guide for running Plano's automatic prompt caching and the cache-regret cost gate locally, and for measuring the win in evals/benchmarks (e.g. on DigitalOcean models).
+A hands-on guide for running Plano's automatic prompt caching and the switch-cost gate locally, and for measuring the win in evals/benchmarks (e.g. on DigitalOcean models).
 
 There are two behaviors to observe:
 
 1. **Automatic prompt caching** — staying on one model keeps the stable prefix
   warm, so per-turn input cost drops sharply across a multi-turn conversation.
-2. **Session stickiness + cache-regret cost gate** — when the router would
-  re-route to a *different* model, Plano only switches if the input-cost of
-   abandoning the warm cache stays within a threshold you define.
+2. **Session stickiness + switch budget** — the router still runs every turn, but
+  when it proposes a *different* model while the session's cache is plausibly warm,
+  Plano only switches while the session's cumulative switch budget covers the
+  input-cost of abandoning that cache.
 
 ---
 
@@ -31,7 +32,7 @@ There are two behaviors to observe:
 Start from `[config.yaml](config.yaml)` in this folder. The parts that matter:
 
 ```yaml
-# Per-model pricing is REQUIRED for the cost gate — the regret math needs each
+# Per-model pricing is REQUIRED for the cost gate — the switch cost math needs each
 # model's input and cached-input rates.
 model_metrics_sources:
   - type: cost
@@ -43,9 +44,10 @@ prompt_caching:
 
   session_stickiness:
     enabled: true
-    switch_cost:                  # no default — you must set one
-      type: max_regret_usd        # or: max_regret_pct_of_cached
-      value: 0.10
+    switch_budget:                # no default — you must set one
+      seed_usd: 0.50              # cumulative budget for quality-driven switches
+      # replenish_on_rebind: true # re-seed when a cold session re-binds
+      # credit_negative: true     # cheaper switches credit the budget back
     # cache_read_discount: 0.1    # fallback when a feed omits cache_read
 ```
 
@@ -124,21 +126,27 @@ this is exactly the ~4× per-turn drop in the caching-ON vs -OFF comparison.
 
 
 
-## 5. See the cost gate in action (model switch)
+## 5. See the switch budget in action (model switch)
 
-The gate fires only on a **re-route** (the pin expired or the prefix drifted)
-where the previous model's cache was warm. To observe it:
+The budget is consulted only when the router proposes a model that differs from
+the session's warm anchor. Warmth is inferred from how long ago the session was
+last used vs. the provider's cache window (no per-call cache-hit signal needed).
+To observe it:
 
-- **Vetoed switch (Case 3):** with a warm pin on an expensive model and a large
-context, a re-route to a pricier candidate produces regret above your
-`max_regret_usd` → Plano **retains** the previous model.
-- **Allowed switch (Case 1):** a re-route to a model whose *uncached* input rate
-undercuts the previous model's *cached* rate → regret ≤ 0 → Plano **switches**.
-- **Free switch (drift):** change the system prompt (stable prefix changes) → the
-old cache is already cold → Plano re-routes with no gate penalty.
+- **Vetoed switch (paid, over budget):** with a warm session on an expensive model
+and a large context, a switch to a pricier candidate costs more than the session's
+remaining budget → Plano **retains** the anchor.
+- **Paid switch (within budget):** the same switch while budget remains → Plano
+**switches** and debits `switch_cost` from the session budget.
+- **Free switch (cheaper candidate):** a candidate whose *uncached* input rate
+undercuts the anchor's *cached* rate → switch cost ≤ 0 → Plano **switches** for free
+(and, with `credit_negative`, credits the budget back).
+- **Cold session:** the session went idle past the provider cache window → treated
+as cold → the router's pick is dispatched with no budget penalty (and the budget
+re-seeds on `replenish_on_rebind`).
 
-Each decision is logged (`switch vetoed …` / `switch allowed …`) and emitted to
-metrics and traces (below).
+Each decision is emitted to metrics and traces (below) with a `reason` label
+(`same_anchor | free | within_budget | over_budget | no_pricing`).
 
 ---
 
@@ -150,12 +158,11 @@ metrics and traces (below).
 (Envoy admin/stats on **:9901/stats**):
 
 
-| Metric                                                                         | What it tells you                                                                              |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `brightstaff_session_switch_decisions_total{decision="allowed"|"retained"}`    | How often the gate let a switch through vs. vetoed it                                          |
-| `brightstaff_prompt_cache_requests_total{provider,model,outcome="hit"|"miss"}` | Real provider cache hit rate                                                                   |
-| `brightstaff_session_pin_events_total{event}`                                  | Pin lifecycle: `implicit_commit`, `refresh`, `prefix_drift`, `stale_hint`, `validation_failed` |
-| `brightstaff_session_cache_events_total{outcome}`                              | Session pin lookups/stores                                                                     |
+| Metric                                                                             | What it tells you                                                    |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `brightstaff_session_switch_decisions_total{decision="allowed"|"retained",reason}` | How often the budget let a switch through vs. vetoed it, and why      |
+| `brightstaff_prompt_cache_requests_total{provider,model,outcome="hit"|"miss"}`     | Real provider cache hit rate                                         |
+| `brightstaff_session_cache_events_total{outcome}`                                  | Session binding lookups/stores                                      |
 
 
 ```bash
@@ -164,9 +171,13 @@ curl -s localhost:9092/metrics | grep -E 'session_switch_decisions|prompt_cache_
 
 **Traces** — run with `--with-tracing` and inspect the routing span per request:
 
-- `plano.switch.regret_usd` — estimated input-cost regret of the proposed switch
-- `plano.switch.threshold_usd` — the resolved ceiling it was compared against
+- `plano.cache.warm` — whether the session's cache was considered warm this turn
+- `plano.cache.idle_ms` — how long since the session was last used
+- `plano.switch.cost_usd` — estimated input-cost of the proposed switch
+- `plano.switch.threshold_usd` — budget remaining when the switch was evaluated
 - `plano.switch.decision` — `allowed` or `retained`
+- `plano.session.budget_remaining_usd` — switch budget left after this turn
+- `plano.session.switches` — switches taken so far this session
 - `plano.switch.counterfactual_route` — on a `retained` decision, the route the gate
   *would* have taken had the switch been allowed (only when `record_counterfactual: true`)
 - `plano.session_id`, `plano.route.name`
@@ -212,16 +223,17 @@ curl -s localhost:12000/v1/chat/completions \
 ## 8. Knobs to sweep
 
 
-| Setting                                               | Effect                                                                                    |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `prompt_caching.session_stickiness.switch_cost.value` | How much cache regret you'll tolerate per switch (higher = quality-first, more switching) |
-| `switch_cost.type`                                    | Absolute USD vs. percent-of-cached (scales with context size)                             |
-| `cache_read_discount`                                 | Assumed cached rate when a feed omits `cache_read` (DO fallback)                          |
-| `record_counterfactual`                               | Emit `plano.switch.counterfactual_route` on vetoed switches (the road not taken)          |
-| `prompt_caching.session_ttl_seconds`                  | Pin lifetime; align with the provider's cache window                                      |
-| `prompt_caching.min_prefix_tokens`                    | Minimum stable-prefix size before markers are injected                                    |
-| Header `X-Model-Affinity: <id>`                       | Explicit session pin (overrides the implicit prefix hash)                                 |
-| Header `X-Plano-Cache: off`                           | Per-request bypass for baseline runs                                                      |
+| Setting                                                    | Effect                                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `prompt_caching.session_stickiness.switch_budget.seed_usd` | Cumulative budget per session (higher = quality-first, more switching)          |
+| `switch_budget.replenish_on_rebind`                        | Re-seed the budget when a cold session re-binds                                 |
+| `switch_budget.credit_negative`                            | Credit the budget back on outright-cheaper switches                             |
+| `cache_read_discount`                                      | Assumed cached rate when a feed omits `cache_read` (DO fallback)                |
+| `record_counterfactual`                                    | Emit `plano.switch.counterfactual_route` on vetoed switches (the road not taken)|
+| `prompt_caching.session_ttl_seconds`                       | Session binding GC lifetime                                                     |
+| `prompt_caching.min_prefix_tokens`                         | Minimum stable-prefix size before markers are injected                          |
+| Header `X-Model-Affinity: <id>`                            | Explicit session key (overrides the implicit prefix hash)                       |
+| Header `X-Plano-Cache: off`                                | Per-request bypass for baseline runs                                            |
 
 
 ---
@@ -231,6 +243,6 @@ curl -s localhost:12000/v1/chat/completions \
 ## Notes
 
 - Caching **never** changes which model routing selects — the router still makes
-the quality call; the gate only vetoes a switch that isn't affordable.
-- The gate is fully opt-in and has **no baked-in threshold**: enabling it without
-a `switch_cost` (or without a cost source) fails startup with a clear message.
+the quality call; the budget only vetoes a switch that the session can't afford.
+- Stickiness is fully opt-in and has **no baked-in budget**: enabling it without
+a `switch_budget` (or without a cost source) fails startup with a clear message.

@@ -273,28 +273,30 @@ pub struct PromptCaching {
     pub min_prefix_tokens: Option<u32>,
     /// Session pin TTL; falls back to `routing.session_ttl_seconds` when unset.
     pub session_ttl_seconds: Option<u64>,
-    /// Cache-regret cost gate on session re-routes. Opt-in; when enabled the
-    /// developer must supply `switch_cost` — Plano never invents a threshold.
+    /// Session stickiness with a cumulative switch budget. Opt-in; when enabled the
+    /// developer must supply `switch_budget` — Plano never invents a budget.
     pub session_stickiness: Option<SessionStickiness>,
 }
 
-/// Cost gate governing when a session may switch away from a model whose provider
-/// prompt cache is plausibly still warm.
+/// Session stickiness governed by a cumulative per-session switch budget.
 ///
-/// Applies only when a re-route is already being considered (stale pin or prefix
-/// drift); the warm+stable stick path never re-routes and is unaffected. The gate
-/// compares the input-token regret of abandoning the warm cache —
-/// `context_tokens x (candidate_uncached_input_rate - previous_cached_input_rate)` —
-/// against the developer-defined `switch_cost` threshold. Requires a cost source in
-/// `model_metrics_sources` so per-model rates are available.
+/// The default posture is to stick to a warm model. When routing proposes a
+/// *different* model while the session's provider cache is plausibly still warm,
+/// switching forces the candidate to re-ingest the whole context at its uncached
+/// input rate. That input-token cost —
+/// `context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate)` —
+/// is drawn down from the session's remaining budget: a paid switch is allowed only
+/// while budget remains, and a switch that is outright cheaper (negative cost) can
+/// credit the budget back. Requires a cost source in `model_metrics_sources` so
+/// per-model rates are available.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionStickiness {
-    /// Master switch for the cost gate. Defaults to `false`.
+    /// Master switch for stickiness. Defaults to `false`.
     #[serde(default)]
     pub enabled: bool,
-    /// Developer-defined switch cost threshold. Required when `enabled: true` —
+    /// Developer-defined cumulative switch budget. Required when `enabled: true` —
     /// there is no built-in default; startup fails if omitted.
-    pub switch_cost: Option<SwitchCostThreshold>,
+    pub switch_budget: Option<SwitchBudget>,
     /// Fallback used to estimate a model's cached input rate when the pricing feed
     /// doesn't publish one: `cached_rate = input_rate * cache_read_discount`. A
     /// pricing detail, not a cost policy. Defaults to 0.1 (cached reads at 10% of
@@ -309,26 +311,37 @@ pub struct SessionStickiness {
     pub record_counterfactual: bool,
 }
 
-/// How the developer expresses the maximum acceptable cache-regret for one switch.
-/// Tagged (`type:`/`value:`) so new threshold forms can be added without breaking
-/// existing configs.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum SwitchCostThreshold {
-    /// Absolute ceiling in USD: allow a switch only when the estimated input-cost
-    /// regret is at most `value` dollars for this request.
-    MaxRegretUsd { value: f64 },
-    /// Relative ceiling: allow a switch only when the regret is at most `value`
-    /// percent of the cached baseline cost (what staying and re-reading the context
-    /// at the cached rate would cost).
-    MaxRegretPctOfCached { value: f64 },
+fn default_true() -> bool {
+    true
 }
 
-/// Fully-resolved session-stickiness gate settings (present only when enabled and
-/// valid).
+/// A session's cumulative switch budget, in USD. Seeded when a session first binds to
+/// a warm model and drawn down by paid switches over the life of the session.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct SwitchBudget {
+    /// Initial budget (USD) granted to a session. `0.0` means "never pay to switch"
+    /// (only outright-cheaper switches are ever allowed); larger values buy more
+    /// quality-driven switches over the session.
+    pub seed_usd: f64,
+    /// Re-seed the budget back to `seed_usd` when a session goes cold and re-binds
+    /// (a fresh warm episode). Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub replenish_on_rebind: bool,
+    /// Credit the budget back when a switch is outright cheaper (negative cost) — the
+    /// candidate's uncached rate undercuts the anchor's cached rate. Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub credit_negative: bool,
+}
+
+/// Fully-resolved session-stickiness settings (present only when enabled and valid).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EffectiveSessionStickiness {
-    pub switch_cost: SwitchCostThreshold,
+    /// Initial per-session switch budget (USD).
+    pub seed_usd: f64,
+    /// Re-seed the budget on cold->warm re-bind.
+    pub replenish_on_rebind: bool,
+    /// Credit negative-cost switches back to the budget.
+    pub credit_negative: bool,
     pub cache_read_discount: f64,
     /// Emit `plano.switch.counterfactual_route` on vetoed switches. Telemetry only.
     pub record_counterfactual: bool,
@@ -338,24 +351,20 @@ pub const DEFAULT_CACHE_READ_DISCOUNT: f64 = 0.1;
 
 impl SessionStickiness {
     /// Resolve to effective settings. `Ok(None)` when disabled; `Err` when enabled
-    /// without a developer-supplied threshold (no default is ever invented).
+    /// without a developer-supplied budget (no default is ever invented).
     pub fn resolve(&self) -> Result<Option<EffectiveSessionStickiness>, String> {
         if !self.enabled {
             return Ok(None);
         }
-        let switch_cost = self.switch_cost.ok_or_else(|| {
-            "prompt_caching.session_stickiness: `switch_cost` is required when enabled — \
-             set e.g. `switch_cost: { type: max_regret_usd, value: 0.10 }` \
-             or `{ type: max_regret_pct_of_cached, value: 200 }`"
+        let budget = self.switch_budget.ok_or_else(|| {
+            "prompt_caching.session_stickiness: `switch_budget` is required when enabled — \
+             set e.g. `switch_budget: { seed_usd: 0.50 }`"
                 .to_string()
         })?;
-        let value = match switch_cost {
-            SwitchCostThreshold::MaxRegretUsd { value } => value,
-            SwitchCostThreshold::MaxRegretPctOfCached { value } => value,
-        };
-        if !value.is_finite() || value < 0.0 {
+        if !budget.seed_usd.is_finite() || budget.seed_usd < 0.0 {
             return Err(format!(
-                "prompt_caching.session_stickiness.switch_cost: value must be a non-negative number, got {value}"
+                "prompt_caching.session_stickiness.switch_budget.seed_usd: must be a non-negative number, got {}",
+                budget.seed_usd
             ));
         }
         let cache_read_discount = self
@@ -367,7 +376,9 @@ impl SessionStickiness {
             ));
         }
         Ok(Some(EffectiveSessionStickiness {
-            switch_cost,
+            seed_usd: budget.seed_usd,
+            replenish_on_rebind: budget.replenish_on_rebind,
+            credit_negative: budget.credit_negative,
             cache_read_discount,
             record_counterfactual: self.record_counterfactual,
         }))
@@ -383,7 +394,7 @@ pub struct EffectivePromptCaching {
     pub min_prefix_tokens: u32,
     /// Pin TTL override; `None` uses `routing.session_ttl_seconds`.
     pub session_ttl_seconds: Option<u64>,
-    /// Cache-regret cost gate; `None` when disabled.
+    /// Switch-cost gate; `None` when disabled.
     pub session_stickiness: Option<EffectiveSessionStickiness>,
 }
 
@@ -900,7 +911,7 @@ mod test {
 
     use super::{
         EffectivePromptCaching, IntoModels, LlmProvider, LlmProviderType, PromptCaching,
-        SwitchCostThreshold, DEFAULT_CACHE_READ_DISCOUNT, DEFAULT_MIN_PREFIX_TOKENS,
+        DEFAULT_CACHE_READ_DISCOUNT, DEFAULT_MIN_PREFIX_TOKENS,
     };
     use crate::api::open_ai::ToolType;
 
@@ -1168,22 +1179,23 @@ inject_cache_control: true
     }
 
     #[test]
-    fn test_session_stickiness_usd_threshold_parses() {
+    fn test_session_stickiness_budget_parses() {
         let yaml = r#"
 enabled: true
 session_stickiness:
   enabled: true
-  switch_cost:
-    type: max_regret_usd
-    value: 0.10
+  switch_budget:
+    seed_usd: 0.50
 "#;
         let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
         let effective = cfg.resolve().unwrap();
-        let stickiness = effective.session_stickiness.expect("gate should be on");
-        assert_eq!(
-            stickiness.switch_cost,
-            SwitchCostThreshold::MaxRegretUsd { value: 0.10 }
-        );
+        let stickiness = effective
+            .session_stickiness
+            .expect("stickiness should be on");
+        assert_eq!(stickiness.seed_usd, 0.50);
+        // Replenish + credit-negative default on.
+        assert!(stickiness.replenish_on_rebind);
+        assert!(stickiness.credit_negative);
         assert_eq!(stickiness.cache_read_discount, DEFAULT_CACHE_READ_DISCOUNT);
         // Counterfactual recording is opt-in; off unless requested.
         assert!(!stickiness.record_counterfactual);
@@ -1195,41 +1207,44 @@ session_stickiness:
 enabled: true
 session_stickiness:
   enabled: true
-  switch_cost:
-    type: max_regret_usd
-    value: 0.10
+  switch_budget:
+    seed_usd: 0.50
   record_counterfactual: true
 "#;
         let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
         let effective = cfg.resolve().unwrap();
-        let stickiness = effective.session_stickiness.expect("gate should be on");
+        let stickiness = effective
+            .session_stickiness
+            .expect("stickiness should be on");
         assert!(stickiness.record_counterfactual);
     }
 
     #[test]
-    fn test_session_stickiness_pct_threshold_parses() {
+    fn test_session_stickiness_budget_flags_parse() {
         let yaml = r#"
 enabled: true
 session_stickiness:
   enabled: true
-  switch_cost:
-    type: max_regret_pct_of_cached
-    value: 200
+  switch_budget:
+    seed_usd: 1.0
+    replenish_on_rebind: false
+    credit_negative: false
   cache_read_discount: 0.25
 "#;
         let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
         let effective = cfg.resolve().unwrap();
-        let stickiness = effective.session_stickiness.expect("gate should be on");
-        assert_eq!(
-            stickiness.switch_cost,
-            SwitchCostThreshold::MaxRegretPctOfCached { value: 200.0 }
-        );
+        let stickiness = effective
+            .session_stickiness
+            .expect("stickiness should be on");
+        assert_eq!(stickiness.seed_usd, 1.0);
+        assert!(!stickiness.replenish_on_rebind);
+        assert!(!stickiness.credit_negative);
         assert_eq!(stickiness.cache_read_discount, 0.25);
     }
 
     #[test]
-    fn test_session_stickiness_enabled_without_threshold_rejected() {
-        // No built-in default: enabling the gate without a threshold must fail.
+    fn test_session_stickiness_enabled_without_budget_rejected() {
+        // No built-in default: enabling stickiness without a budget must fail.
         let yaml = r#"
 enabled: true
 session_stickiness:
@@ -1237,7 +1252,7 @@ session_stickiness:
 "#;
         let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
         let err = cfg.resolve().unwrap_err();
-        assert!(err.contains("switch_cost"), "unexpected error: {err}");
+        assert!(err.contains("switch_budget"), "unexpected error: {err}");
     }
 
     #[test]
@@ -1246,9 +1261,8 @@ session_stickiness:
 enabled: false
 session_stickiness:
   enabled: true
-  switch_cost:
-    type: max_regret_usd
-    value: 0.10
+  switch_budget:
+    seed_usd: 0.50
 "#;
         let cfg: PromptCaching = serde_yaml::from_str(yaml).unwrap();
         let err = cfg.resolve().unwrap_err();
@@ -1277,9 +1291,8 @@ session_stickiness:
 enabled: true
 session_stickiness:
   enabled: true
-  switch_cost:
-    type: max_regret_usd
-    value: -1.0
+  switch_budget:
+    seed_usd: -1.0
 "#,
         )
         .unwrap();
@@ -1290,9 +1303,8 @@ session_stickiness:
 enabled: true
 session_stickiness:
   enabled: true
-  switch_cost:
-    type: max_regret_usd
-    value: 0.10
+  switch_budget:
+    seed_usd: 0.50
   cache_read_discount: 1.5
 "#,
         )

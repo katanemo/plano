@@ -23,7 +23,7 @@ use tracing::{debug, info, info_span, warn, Instrument};
 
 pub(crate) mod model_selection;
 pub(crate) mod prompt_caching;
-pub(crate) mod session_stickiness;
+pub(crate) mod session_router;
 
 use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
@@ -36,7 +36,7 @@ use crate::state::{
 };
 use crate::streaming::{
     create_streaming_response, create_streaming_response_with_output_filter, truncate_message,
-    LlmMetricsCtx, ObservableStreamProcessor, PinAction, SessionPinCtx, StreamProcessor,
+    LlmMetricsCtx, ObservableStreamProcessor, SessionUpdateCtx, StreamProcessor,
 };
 use crate::tracing::{
     collect_custom_trace_attributes, llm as tracing_llm, operation_component,
@@ -302,7 +302,7 @@ async fn llm_chat_inner(
         Err(response) => return Ok(response),
     };
 
-    // --- Phase 2a: Session affinity + pin lookup (see `session_stickiness`) ---
+    // --- Phase 2a: Session affinity (see `session_router`) ---
     // Derived here, after input filters and Responses-API state merge, so the
     // implicit session key and prefix hash are computed over the exact stable
     // prefix (system + tools + first user message) that is actually sent upstream —
@@ -310,11 +310,10 @@ async fn llm_chat_inner(
     // derived even when caching is off, so the `x-plano-prefix-hash` RING_HASH
     // replica-stickiness header still works.
     let request_messages = client_request.get_messages();
-    let session_stickiness::SessionResolution {
+    let session_router::SessionResolution {
         request_prefix_hash,
         session_id,
-        is_implicit_session,
-    } = session_stickiness::resolve_session(
+    } = session_router::resolve_session(
         explicit_session_id,
         &request_messages,
         tool_names.as_deref(),
@@ -322,18 +321,7 @@ async fn llm_chat_inner(
         &prompt_caching,
         cache_off_for_request,
     );
-
-    let session_stickiness::PinLookup {
-        pinned_route,
-        previous_route,
-        previous_prefix_drifted,
-    } = session_stickiness::lookup_session_pin(
-        &state.orchestrator_service,
-        session_id.as_deref(),
-        tenant_id.as_deref(),
-        request_prefix_hash,
-    )
-    .await;
+    let stickiness = prompt_caching.session_stickiness;
 
     // Record session id on the LLM span for the observability console.
     if let Some(ref sid) = session_id {
@@ -341,14 +329,6 @@ async fn llm_chat_inner(
             span.set_attribute(opentelemetry::KeyValue::new(
                 tracing_plano::SESSION_ID,
                 sid.clone(),
-            ));
-        });
-    }
-    if let Some(route_name) = pinned_route.as_ref().and_then(|r| r.route_name.clone()) {
-        get_active_span(|span| {
-            span.set_attribute(opentelemetry::KeyValue::new(
-                tracing_plano::ROUTE_NAME,
-                route_name,
             ));
         });
     }
@@ -365,118 +345,85 @@ async fn llm_chat_inner(
             }
         };
 
-    // Context size for the cache-regret gate, estimated before the router consumes
-    // the request. Only computed when the gate could actually fire (stickiness
-    // configured and a previous pin exists to compare against).
-    let est_context_tokens: u64 =
-        if prompt_caching.session_stickiness.is_some() && previous_route.is_some() {
-            session_stickiness::estimate_context_tokens(&request_messages, &model_name_only)
-        } else {
-            0
-        };
-
-    // --- Phase 3: Route the request (or use pinned model from session cache) ---
-    // The response-side pin action closes the loop with the cache-usage signal:
-    // implicit sessions commit their pin only after observed cache activity
-    // (pin-after-hit); pinned sessions refresh their TTL and get validated.
-    let pin_action: Option<PinAction>;
-    let resolved_route_name: Option<String>;
-
-    let resolved_model = if let Some(ref pinned) = pinned_route {
-        info!(
-            session_id = %session_id.as_deref().unwrap_or(""),
-            model = %pinned.model_name,
-            "using pinned routing decision from cache"
-        );
-        pin_action = Some(PinAction::Refresh {
-            previously_observed_hit: pinned.observed_cache_hit,
-        });
-        resolved_route_name = pinned.route_name.clone();
-        pinned.model_name.clone()
+    // Context size for the switch-cost estimate, computed before the router consumes
+    // the request. Only needed when stickiness could act on a session.
+    let est_context_tokens: u64 = if session_id.is_some() && stickiness.is_some() {
+        session_router::estimate_context_tokens(&request_messages, &model_name_only)
     } else {
-        let routing_span = info_span!(
-            "routing",
-            component = "routing",
-            http.method = "POST",
-            http.target = %request_path,
-            model.requested = %model_from_request,
-            model.alias_resolved = %alias_resolved_model,
-            route.selected_model = tracing::field::Empty,
-            routing.determination_ms = tracing::field::Empty,
-        );
-        let routing_result = match async {
-            set_service_name(operation_component::ROUTING);
-            router_chat_get_upstream_model(
-                Arc::clone(&state.orchestrator_service),
-                client_request,
-                &request_path,
-                &request_id,
-                inline_routing_preferences,
-            )
-            .await
-        }
-        .instrument(routing_span)
-        .await
-        {
-            Ok(result) => result,
-            Err(err) => {
-                let mut internal_error = Response::new(full(err.message));
-                *internal_error.status_mut() = err.status_code;
-                return Ok(internal_error);
-            }
-        };
-
-        let (router_selected_model, route_name) =
-            (routing_result.model_name, routing_result.route_name);
-        let mut model = if router_selected_model != "none" {
-            router_selected_model
-        } else {
-            alias_resolved_model.clone()
-        };
-        let mut route_name = route_name;
-
-        // Cache-regret gate (session stickiness): may retain a warm previous model in
-        // place of the router's pick when the switch cost exceeds the threshold.
-        // Returns whether the retained model's warm state must survive re-pinning.
-        let retained_previous_observed_hit = session_stickiness::apply_cache_regret_gate(
-            prompt_caching.session_stickiness,
-            previous_route.as_ref(),
-            previous_prefix_drifted,
-            est_context_tokens,
-            &state.orchestrator_service,
-            &mut model,
-            &mut route_name,
-        )
-        .await;
-
-        // Record route name on the LLM span (only when the orchestrator produced one).
-        if let Some(ref rn) = route_name {
-            if !rn.is_empty() && rn != "none" {
-                get_active_span(|span| {
-                    span.set_attribute(opentelemetry::KeyValue::new(
-                        tracing_plano::ROUTE_NAME,
-                        rn.clone(),
-                    ));
-                });
-            }
-        }
-
-        pin_action = session_stickiness::plan_pin_after_routing(
-            &state.orchestrator_service,
-            &prompt_caching,
-            session_id.as_deref(),
-            is_implicit_session,
-            tenant_id.as_deref(),
-            &model,
-            route_name.as_deref(),
-            request_prefix_hash,
-            retained_previous_observed_hit,
-        )
-        .await;
-        resolved_route_name = route_name;
-
-        model
+        0
     };
+
+    // --- Phase 3: Route the request (quality), then apply the session-cache decision ---
+    // Routing stays cache-blind: the quality router always picks a candidate. The
+    // session router then honors it or sticks to the warm anchor (see `session_router`).
+    let routing_span = info_span!(
+        "routing",
+        component = "routing",
+        http.method = "POST",
+        http.target = %request_path,
+        model.requested = %model_from_request,
+        model.alias_resolved = %alias_resolved_model,
+        route.selected_model = tracing::field::Empty,
+        routing.determination_ms = tracing::field::Empty,
+    );
+    let routing_result = match async {
+        set_service_name(operation_component::ROUTING);
+        router_chat_get_upstream_model(
+            Arc::clone(&state.orchestrator_service),
+            client_request,
+            &request_path,
+            &request_id,
+            inline_routing_preferences,
+        )
+        .await
+    }
+    .instrument(routing_span)
+    .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            let mut internal_error = Response::new(full(err.message));
+            *internal_error.status_mut() = err.status_code;
+            return Ok(internal_error);
+        }
+    };
+
+    let candidate_model = if routing_result.model_name != "none" {
+        routing_result.model_name
+    } else {
+        alias_resolved_model.clone()
+    };
+    let candidate_route = routing_result.route_name;
+
+    let decision = session_router::route(
+        &state.orchestrator_service,
+        stickiness.as_ref(),
+        session_router::RouteFacts {
+            session_id: session_id.as_deref(),
+            tenant_id: tenant_id.as_deref(),
+            prefix_hash: request_prefix_hash,
+            est_context_tokens,
+            candidate_model: &candidate_model,
+            candidate_route: candidate_route.as_deref(),
+        },
+    )
+    .await;
+
+    let resolved_model = decision.model;
+    let resolved_route_name = decision.route_name;
+
+    // Record route name on the LLM span (only when a real route was produced).
+    if let Some(ref rn) = resolved_route_name {
+        if !rn.is_empty() && rn != "none" {
+            get_active_span(|span| {
+                span.set_attribute(opentelemetry::KeyValue::new(
+                    tracing_plano::ROUTE_NAME,
+                    rn.clone(),
+                ));
+            });
+        }
+    }
+
     tracing::Span::current().record(tracing_llm::MODEL_NAME, resolved_model.as_str());
 
     // Record the provider (derived from the `provider/model` prefix) so
@@ -492,20 +439,21 @@ async fn llm_chat_inner(
         });
     }
 
-    // Build the response-side session-pin context.
-    let session_pin_ctx: Option<SessionPinCtx> = match (&session_id, pin_action) {
-        (Some(sid), Some(action)) => Some(SessionPinCtx {
+    // Response-side refresh: update `last_used` + the context-size estimate from the
+    // real response. The routing decision itself was already persisted by `route()`.
+    let session_update_ctx: Option<SessionUpdateCtx> =
+        session_id.as_ref().map(|sid| SessionUpdateCtx {
             orchestrator: Arc::clone(&state.orchestrator_service),
             session_id: sid.clone(),
             tenant_id: tenant_id.clone(),
-            model_name: resolved_model.clone(),
+            anchor_model: resolved_model.clone(),
             route_name: resolved_route_name.clone(),
             prefix_hash: request_prefix_hash,
-            ttl_override_seconds: prompt_caching.session_ttl_seconds,
-            action,
-        }),
-        _ => None,
-    };
+            switch_budget_usd: decision.switch_budget_usd,
+            switches: decision.switches,
+            est_context_tokens: decision.cached_tokens,
+            gc_ttl: decision.gc_ttl,
+        });
 
     // Forward the prefix hash so self-hosted multi-replica backends can do
     // KV-aware replica stickiness (consistent-hash on this header at the
@@ -536,7 +484,7 @@ async fn llm_chat_inner(
         state.state_storage.clone(),
         request_id,
         &state.filter_pipeline,
-        session_pin_ctx,
+        session_update_ctx,
     )
     .await
 }
@@ -814,7 +762,7 @@ async fn send_upstream(
     state_storage: Option<Arc<dyn StateStorage>>,
     request_id: String,
     filter_pipeline: &Arc<FilterPipeline>,
-    session_pin_ctx: Option<SessionPinCtx>,
+    session_update_ctx: Option<SessionUpdateCtx>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let span_name = if model_from_request == resolved_model {
         format!("POST {} {}", request_path, resolved_model)
@@ -941,11 +889,11 @@ async fn send_upstream(
         model: metric_model.clone(),
         upstream_status: upstream_status.as_u16(),
     });
-    // Only wire the pin feedback loop for successful responses — errors carry no
-    // usage block and must not refresh or commit pins.
+    // Only refresh the session binding for successful responses — errors carry no
+    // usage block and shouldn't reset the warmth clock.
     if upstream_status.is_success() {
-        if let Some(pin_ctx) = session_pin_ctx {
-            base_processor = base_processor.with_session_pin(pin_ctx);
+        if let Some(update_ctx) = session_update_ctx {
+            base_processor = base_processor.with_session_update(update_ctx);
         }
     }
 

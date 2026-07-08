@@ -151,14 +151,28 @@ pub mod plano {
     /// `tracing.exporters[].distinct_id_header`. Absent for anonymous calls.
     pub const DISTINCT_ID: &str = "plano.distinct_id";
 
-    /// Estimated input-cost regret (USD) of the proposed model switch evaluated by
-    /// the session-stickiness cost gate. Negative when the candidate is cheaper.
-    pub const SWITCH_REGRET_USD: &str = "plano.switch.regret_usd";
+    /// Whether the session's provider cache was inferred warm at decision time
+    /// (from the idle gap vs. the provider's cache window).
+    pub const CACHE_WARM: &str = "plano.cache.warm";
 
-    /// The resolved switch-cost ceiling (USD) the regret was compared against.
+    /// How long (ms) since the session was last used — the idle gap warmth is measured
+    /// against.
+    pub const CACHE_IDLE_MS: &str = "plano.cache.idle_ms";
+
+    /// Remaining cumulative switch budget (USD) for the session after this decision.
+    pub const SESSION_BUDGET_REMAINING_USD: &str = "plano.session.budget_remaining_usd";
+
+    /// Cumulative number of model switches taken during this warm session.
+    pub const SESSION_SWITCHES: &str = "plano.session.switches";
+
+    /// Estimated input-cost (USD) of the proposed model switch. Negative when the
+    /// candidate is outright cheaper than staying on the warm anchor.
+    pub const SWITCH_COST_USD: &str = "plano.switch.cost_usd";
+
+    /// The switch budget (USD) available when the switch cost was evaluated.
     pub const SWITCH_THRESHOLD_USD: &str = "plano.switch.threshold_usd";
 
-    /// Cost-gate outcome for the proposed switch: "allowed" or "retained".
+    /// Switch outcome: "allowed" or "retained".
     pub const SWITCH_DECISION: &str = "plano.switch.decision";
 
     /// The route (`provider/model`, plus route name when routed) the session-stickiness

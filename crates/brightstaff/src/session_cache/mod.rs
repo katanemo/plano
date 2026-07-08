@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use common::configuration::Configuration;
@@ -8,46 +9,74 @@ use tracing::{debug, info};
 pub mod memory;
 pub mod redis;
 
+/// A conversation's binding to a model, plus the state the session router needs to
+/// reason about cache warmth and switch affordability across turns.
+///
+/// Warmth is no longer derived from the cache's own expiry — the entry is kept alive
+/// as a plain KV value (subject only to a GC bound) and the router decides warmth from
+/// [`SessionBinding::last_used`] against the provider's cache window. This is what lets
+/// the decision path reason about warmth without ever seeing a provider response.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct CachedRoute {
-    pub model_name: String,
+pub struct SessionBinding {
+    /// Provider-qualified model this session is anchored to (e.g. `openai/gpt-4o`).
+    pub anchor_model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_name: Option<String>,
-    /// Hash of the stable prompt prefix (system + tools) observed when the pin was
+    /// Hash of the stable prompt prefix (system + tools) observed when the binding was
     /// stored. Used to detect prefix drift: if a later request's prefix hash differs,
-    /// the provider cache is already lost and re-routing is safe.
+    /// the provider cache is already lost so a switch is free.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix_hash: Option<u64>,
-    /// Whether a response on this pinned session has ever reported cache activity
-    /// (cache read or cache creation tokens). Used for pin validation.
+    /// When this session was last dispatched. Warmth = `now - last_used` compared
+    /// against the provider's idle/hard cache window.
+    #[serde(default = "SystemTime::now", with = "epoch_secs")]
+    pub last_used: SystemTime,
+    /// Best estimate of the cacheable context size (input tokens) — the tokens a switch
+    /// would have to re-ingest at the uncached rate. Refined from real usage on the
+    /// full-proxy path; the tokenizer estimate on the decision path.
     #[serde(default)]
-    pub observed_cache_hit: bool,
+    pub cached_tokens: u64,
+    /// Remaining cumulative switch budget (USD) for this session. Seeded on the first
+    /// warm binding and depleted by paid switches; free switches can credit it back.
+    #[serde(default)]
+    pub switch_budget_usd: f64,
+    /// Number of model switches taken during this warm session (observability).
+    #[serde(default)]
+    pub switches: u32,
 }
 
-/// How long expired pins linger as "stale" entries, as a multiple of the pin TTL.
-/// A stale pin never short-circuits routing, but it is retained as the previous
-/// route so the session-stickiness cache-regret gate can weigh the cost of
-/// abandoning a plausibly-warm provider cache when the router proposes a switch.
-pub const STALE_TTL_FACTOR: u32 = 4;
+/// Serde helper: persist `SystemTime` as whole epoch seconds so the Redis wire format
+/// is stable and compact (the default `SystemTime` representation is version-fragile).
+mod epoch_secs {
+    use super::{Duration, SystemTime, UNIX_EPOCH};
+    use serde::{Deserialize, Deserializer, Serializer};
 
-/// Result of a session-cache lookup.
-#[derive(Clone, Debug)]
-pub struct CacheLookup {
-    pub route: CachedRoute,
-    /// True when the pin's logical TTL has expired but the entry is still retained
-    /// for the cache-regret gate.
-    pub is_stale: bool,
+    pub fn serialize<S: Serializer>(t: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
+        let secs = t
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        s.serialize_u64(secs)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<SystemTime, D::Error> {
+        let secs = u64::deserialize(d)?;
+        Ok(UNIX_EPOCH + Duration::from_secs(secs))
+    }
 }
 
 #[async_trait]
 pub trait SessionCache: Send + Sync {
-    /// Look up a cached routing decision by key. Returns entries past their logical
-    /// TTL (up to [`STALE_TTL_FACTOR`] times the TTL) with `is_stale = true`.
-    async fn get(&self, key: &str) -> Option<CacheLookup>;
+    /// Look up a session binding by key. `None` when absent or GC-evicted. Warmth is
+    /// the caller's concern (time since `last_used`), not the cache's.
+    async fn get(&self, key: &str) -> Option<SessionBinding>;
 
-    /// Store a routing decision in the session cache with the given TTL.
-    async fn put(&self, key: &str, route: CachedRoute, ttl: Duration);
+    /// Store a session binding with the given GC TTL. The TTL is only a memory bound
+    /// (keep the entry around at least as long as it could plausibly be warm); it does
+    /// not define warmth.
+    async fn put(&self, key: &str, binding: SessionBinding, ttl: Duration);
 
-    /// Remove a cached routing decision by key.
+    /// Remove a session binding by key.
     async fn remove(&self, key: &str);
 }
 
