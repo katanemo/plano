@@ -57,6 +57,7 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          META_MODELS_API_KEY: ${{ secrets.META_MODELS_API_KEY }}
         run: cargo run --bin fetch_models --features model-fetch
 
       - name: Create pull request
