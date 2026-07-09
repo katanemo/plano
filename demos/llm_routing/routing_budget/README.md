@@ -23,8 +23,8 @@ switch_cost_in_usd = context_tokens x (candidate_uncached_input - anchor_cached_
 ```
 
 - **Switch cost <= 0** — the candidate's uncached rate undercuts the anchor's
-  cached rate. Losing the cache costs nothing; switch freely (and, with
-  `credit_negative`, credit the budget back).
+  cached rate. Losing the cache costs nothing; switch freely. The budget is not
+  credited back — the "saving" is vs a path we didn't take, not real spendable money.
 - **Switch cost > 0** — drawn from the session's remaining budget. If the budget
   covers it, the switch proceeds and the budget is debited; otherwise Plano
   retains the anchor and its warm cache.
@@ -52,7 +52,6 @@ See [config.yaml](config.yaml). Requirements:
 |---|---|
 | `seed_usd` | Cumulative budget (USD) per session. `0` = never pay to switch |
 | `replenish_on_rebind` | Re-seed the budget when a cold session re-binds (default true) |
-| `credit_negative` | Credit the budget back on outright-cheaper switches (default true) |
 | `cache_read_discount` | Assumed cached rate when a feed omits `cache_read` (default 0.1) |
 | `record_counterfactual` | Record the switch that was vetoed, as a trace attribute (default false) |
 

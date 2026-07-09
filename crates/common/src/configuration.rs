@@ -289,9 +289,10 @@ pub struct PromptCaching {
 /// input-token cost —
 /// `context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate)` —
 /// is drawn down from the session's remaining budget: a paid switch is allowed only
-/// while budget remains, and a switch that is outright cheaper (negative cost) can
-/// credit the budget back. Requires a cost source in `model_metrics_sources` so
-/// per-model rates are available. Presence of the block turns it on.
+/// while budget remains. A switch that is outright cheaper (negative cost) is free
+/// but never credits the pool — the "saving" is vs a path we didn't take, not real
+/// spendable money. Requires a cost source in `model_metrics_sources` so per-model
+/// rates are available. Presence of the block turns it on.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct RoutingBudget {
     /// Initial budget (USD) granted to a session. `0.0` means "never pay to switch"
@@ -302,10 +303,6 @@ pub struct RoutingBudget {
     /// (a fresh warm episode). Defaults to `true`.
     #[serde(default = "default_true")]
     pub replenish_on_rebind: bool,
-    /// Credit the budget back when a switch is outright cheaper (negative cost) — the
-    /// candidate's uncached rate undercuts the anchor's cached rate. Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub credit_negative: bool,
     /// Fallback used to estimate a model's cached input rate when the pricing feed
     /// doesn't publish one: `cached_rate = input_rate * cache_read_discount`. A
     /// pricing detail, not a cost policy. Defaults to 0.1 (cached reads at 10% of
@@ -331,8 +328,6 @@ pub struct EffectiveRoutingBudget {
     pub seed_usd: f64,
     /// Re-seed the budget on cold->warm re-bind.
     pub replenish_on_rebind: bool,
-    /// Credit negative-cost switches back to the budget.
-    pub credit_negative: bool,
     pub cache_read_discount: f64,
     /// Emit `plano.switch.counterfactual_route` on vetoed switches. Telemetry only.
     pub record_counterfactual: bool,
@@ -360,7 +355,6 @@ impl RoutingBudget {
         Ok(EffectiveRoutingBudget {
             seed_usd: self.seed_usd,
             replenish_on_rebind: self.replenish_on_rebind,
-            credit_negative: self.credit_negative,
             cache_read_discount,
             record_counterfactual: self.record_counterfactual,
         })
@@ -1155,9 +1149,8 @@ seed_usd: 0.50
         let cfg: RoutingBudget = serde_yaml::from_str(yaml).unwrap();
         let budget = cfg.resolve().unwrap();
         assert_eq!(budget.seed_usd, 0.50);
-        // Replenish + credit-negative default on.
+        // Replenish defaults on.
         assert!(budget.replenish_on_rebind);
-        assert!(budget.credit_negative);
         assert_eq!(budget.cache_read_discount, DEFAULT_CACHE_READ_DISCOUNT);
         // Counterfactual recording is opt-in; off unless requested.
         assert!(!budget.record_counterfactual);
@@ -1179,14 +1172,12 @@ record_counterfactual: true
         let yaml = r#"
 seed_usd: 1.0
 replenish_on_rebind: false
-credit_negative: false
 cache_read_discount: 0.25
 "#;
         let cfg: RoutingBudget = serde_yaml::from_str(yaml).unwrap();
         let budget = cfg.resolve().unwrap();
         assert_eq!(budget.seed_usd, 1.0);
         assert!(!budget.replenish_on_rebind);
-        assert!(!budget.credit_negative);
         assert_eq!(budget.cache_read_discount, 0.25);
     }
 

@@ -46,7 +46,6 @@ routing:
   routing_budget:                 # no default — presence turns it on
     seed_usd: 0.50                # cumulative budget for quality-driven switches
     # replenish_on_rebind: true   # re-seed when a cold session re-binds
-    # credit_negative: true       # cheaper switches credit the budget back
     # cache_read_discount: 0.1    # fallback when a feed omits cache_read
 ```
 
@@ -142,7 +141,7 @@ remaining budget → Plano **retains** the anchor.
 **switches** and debits `switch_cost` from the session budget.
 - **Free switch (cheaper candidate):** a candidate whose *uncached* input rate
 undercuts the anchor's *cached* rate → switch cost ≤ 0 → Plano **switches** for free
-(and, with `credit_negative`, credits the budget back).
+(the budget is not credited back).
 - **Cold session:** the session went idle past the provider cache window → treated
 as cold → the router's pick is dispatched with no budget penalty (and the budget
 re-seeds on `replenish_on_rebind`).
@@ -229,7 +228,6 @@ curl -s localhost:12000/v1/chat/completions \
 | ------------------------------------------------ | ------------------------------------------------------------------------------- |
 | `routing.routing_budget.seed_usd`                | Cumulative budget per session (higher = quality-first, more switching)          |
 | `routing.routing_budget.replenish_on_rebind`     | Re-seed the budget when a cold session re-binds                                 |
-| `routing.routing_budget.credit_negative`         | Credit the budget back on outright-cheaper switches                             |
 | `routing.routing_budget.cache_read_discount`     | Assumed cached rate when a feed omits `cache_read` (DO fallback)                |
 | `routing.routing_budget.record_counterfactual`   | Emit `plano.switch.counterfactual_route` on vetoed switches (the road not taken)|
 | `prompt_caching.session_ttl_seconds`             | Session binding GC lifetime                                                     |

@@ -49,7 +49,7 @@ routing:
   #
   # (output cost deliberately excluded) is drawn from the session's budget. A paid
   # switch is allowed only while budget remains; an outright-cheaper switch is free
-  # and credits the budget back. The budget is yours to define -- Plano never
+  # but never credits the pool. The budget is yours to define -- Plano never
   # invents one, and startup fails without it (or without a cost source).
   routing_budget:
     # Cumulative budget (USD) for quality-driven switches over a session. 0 means
@@ -58,9 +58,6 @@ routing:
 
     # Re-seed the budget when a cold session re-binds (new warm episode). Default true.
     # replenish_on_rebind: true
-
-    # Credit the budget back on outright-cheaper (negative-cost) switches. Default true.
-    # credit_negative: true
 
     # Fallback used only when the pricing feed doesn't publish a cached-read rate for
     # a model: cached_rate = input_rate x cache_read_discount. Default 0.1.

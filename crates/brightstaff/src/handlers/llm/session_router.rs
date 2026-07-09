@@ -9,7 +9,7 @@
 //!   so it works on the decision path with no provider response in hand.
 //! * **A cumulative per-session switch budget** — a paid switch (the candidate must
 //!   re-ingest the context at its uncached rate) is allowed only while budget remains;
-//!   an outright-cheaper switch is free and can credit the budget back.
+//!   an outright-cheaper switch is free but never credits the budget back.
 //!
 //! The default posture is to stick. Quality and cost stay separate: the router decides
 //! whether a switch *improves quality*; the budget decides whether it is *affordable*.
@@ -263,10 +263,9 @@ pub async fn route(
                     Some(cost) => {
                         cost_opt = Some(cost);
                         if cost <= 0.0 {
-                            // Outright cheaper: free switch, credit the budget back.
-                            if cfg.credit_negative {
-                                budget -= cost; // cost is negative → budget grows
-                            }
+                            // Outright cheaper: allowed for free. Does NOT credit the
+                            // budget back — the "saving" is vs a path we didn't take,
+                            // not real spendable money.
                             switches += 1;
                             decision_label = metric_labels::SWITCH_DECISION_ALLOWED;
                             reason = metric_labels::SWITCH_REASON_FREE;
@@ -520,7 +519,6 @@ mod tests {
         EffectiveRoutingBudget {
             seed_usd: seed,
             replenish_on_rebind: true,
-            credit_negative: true,
             cache_read_discount: 0.1,
             record_counterfactual: false,
         }
@@ -586,7 +584,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cheaper_switch_is_free_and_credits_budget() {
+    async fn cheaper_switch_is_free_and_does_not_change_budget() {
         let orch = orch_with_rates();
         seed_warm_binding(&orch, 0.10, 30).await;
         let st = routing_budget(0.10);
@@ -595,10 +593,10 @@ mod tests {
         assert_eq!(d.model, "google/cheap");
         assert!(d.warm);
         assert_eq!(d.switches, 1);
-        // -(-0.02) credited back: 0.10 + 0.02 = 0.12.
+        // Free switches do not credit the budget — it stays at 0.10.
         assert!(
-            (d.switch_budget_usd - 0.12).abs() < 1e-6,
-            "budget {} != 0.12",
+            (d.switch_budget_usd - 0.10).abs() < 1e-6,
+            "budget {} != 0.10",
             d.switch_budget_usd
         );
     }

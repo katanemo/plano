@@ -555,8 +555,8 @@ properties:
           input-token cost of abandoning the cache —
           context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate),
           output cost deliberately excluded — is drawn from the session's budget: a paid
-          switch is allowed only while budget remains, and an outright-cheaper switch is
-          free and can credit the budget back. Requires a cost source in
+          switch is allowed only while budget remains. An outright-cheaper switch is
+          free but never credits the pool. Requires a cost source in
           model_metrics_sources.
         properties:
           seed_usd:
@@ -569,9 +569,6 @@ properties:
           replenish_on_rebind:
             type: boolean
             description: "Re-seed the budget to seed_usd when a cold session re-binds. Default true."
-          credit_negative:
-            type: boolean
-            description: "Credit the budget back when a switch is outright cheaper (negative cost). Default true."
           cache_read_discount:
             type: number
             minimum: 0

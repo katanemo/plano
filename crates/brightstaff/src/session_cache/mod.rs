@@ -37,7 +37,7 @@ pub struct SessionBinding {
     #[serde(default)]
     pub cached_tokens: u64,
     /// Remaining cumulative switch budget (USD) for this session. Seeded on the first
-    /// warm binding and depleted by paid switches; free switches can credit it back.
+    /// warm binding and depleted by paid switches; free switches never credit it back.
     #[serde(default)]
     pub switch_budget_usd: f64,
     /// Number of model switches taken during this warm session (observability).
