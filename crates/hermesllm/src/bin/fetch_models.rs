@@ -10,7 +10,8 @@
 // Usage:
 //   Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, MISTRAL_API_KEY,
 //             DEEPSEEK_API_KEY, GROK_API_KEY, DASHSCOPE_API_KEY,
-//             MOONSHOT_API_KEY, ZHIPU_API_KEY, MIMO_API_KEY, GOOGLE_API_KEY
+//             MOONSHOT_API_KEY, ZHIPU_API_KEY, MIMO_API_KEY, GOOGLE_API_KEY,
+//             META_MODELS_API_KEY
 //   Optional: AWS CLI configured for Amazon Bedrock models
 //   cargo run --bin fetch_models --features model-fetch
 
@@ -379,6 +380,12 @@ fn fetch_all_models(
             "MIMO_API_KEY",
             "https://api.xiaomimimo.com/v1/models",
             "xiaomi",
+        ),
+        (
+            "meta",
+            "META_MODELS_API_KEY",
+            "https://api.meta.ai/v1/models",
+            "meta",
         ),
     ];
 

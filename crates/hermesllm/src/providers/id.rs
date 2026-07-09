@@ -51,6 +51,7 @@ pub enum ProviderId {
     OpenRouter,
     Astraflow,
     AstraflowCN,
+    Meta,
     Minimax,
 }
 
@@ -87,6 +88,7 @@ impl TryFrom<&str> for ProviderId {
             "openrouter" => Ok(ProviderId::OpenRouter),
             "astraflow" => Ok(ProviderId::Astraflow),
             "astraflow_cn" => Ok(ProviderId::AstraflowCN),
+            "meta" => Ok(ProviderId::Meta),
             "minimax" => Ok(ProviderId::Minimax),
             _ => Err(format!("Unknown provider: {}", value)),
         }
@@ -300,6 +302,7 @@ impl ProviderId {
             ProviderId::Qwen => "qwen",
             ProviderId::ChatGPT => "chatgpt",
             ProviderId::DigitalOcean => "digitalocean",
+            ProviderId::Meta => "meta",
             ProviderId::Minimax => "minimax",
             ProviderId::Astraflow | ProviderId::AstraflowCN => return Vec::new(),
             _ => return Vec::new(),
@@ -372,6 +375,7 @@ impl ProviderId {
                 | ProviderId::ChatGPT
                 | ProviderId::Astraflow
                 | ProviderId::AstraflowCN
+                | ProviderId::Meta
                 | ProviderId::Minimax,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
@@ -397,6 +401,7 @@ impl ProviderId {
                 | ProviderId::ChatGPT
                 | ProviderId::Astraflow
                 | ProviderId::AstraflowCN
+                | ProviderId::Meta
                 | ProviderId::Minimax,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
@@ -470,6 +475,7 @@ impl Display for ProviderId {
             ProviderId::OpenRouter => write!(f, "openrouter"),
             ProviderId::Astraflow => write!(f, "astraflow"),
             ProviderId::AstraflowCN => write!(f, "astraflow_cn"),
+            ProviderId::Meta => write!(f, "meta"),
             ProviderId::Minimax => write!(f, "minimax"),
         }
     }
