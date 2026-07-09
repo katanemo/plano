@@ -124,6 +124,8 @@ providers:
   - google/deep-research-pro-preview-12-2025
   meta:
   - meta/muse-spark-1.1
+  minimax:
+  - minimax/MiniMax-M3
   mistralai:
   - mistralai/mistral-medium-2505
   - mistralai/mistral-medium-2508
@@ -392,6 +394,6 @@ providers:
   - z-ai/glm-5-turbo
   - z-ai/glm-5.1
 metadata:
-  total_providers: 14
-  total_models: 376
+  total_providers: 15
+  total_models: 377
   last_updated: 2026-07-09T19:48:06.553850+00:00

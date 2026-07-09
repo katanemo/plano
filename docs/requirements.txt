@@ -1,5 +1,4 @@
 sphinx_copybutton==0.5.2
-sphinxawesome-theme
+sphinxawesome-theme<6.0.0
 sphinx_sitemap
 sphinx_design
-sphinxawesome_theme

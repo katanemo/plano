@@ -93,19 +93,19 @@ echo ""
 echo "=== /v1/messages ==="
 
 run_test "Non-streaming with PII (phone)" /v1/messages 200 '{
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-6",
   "max_tokens": 256,
   "messages": [{"role": "user", "content": "Call me at 555-867-5309 to discuss my account"}]
 }'
 
 run_test "Non-streaming with PII (SSN)" /v1/messages 200 '{
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-6",
   "max_tokens": 256,
   "messages": [{"role": "user", "content": "My SSN is 123-45-6789"}]
 }'
 
 run_test "No PII" /v1/messages 200 '{
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-sonnet-4-6",
   "max_tokens": 256,
   "messages": [{"role": "user", "content": "Hello, how are you?"}]
 }'

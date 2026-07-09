@@ -209,6 +209,178 @@ Clients can let the router decide or still specify aliases:
     )
 
 
+.. _cost_latency_aware_selection:
+
+Cost- and latency-aware selection
+---------------------------------
+
+When a route lists more than one candidate model, you can let Plano reorder that
+candidate pool using **live cost or latency data** instead of relying solely on the
+order you wrote them in. This is controlled per route with ``selection_policy`` and
+backed by one or more ``model_metrics_sources``.
+
+This is useful when several models are equally capable for a route and you want Plano
+to always reach for the cheapest (or fastest) option first, with the others kept as
+fallbacks.
+
+Selection policy
+~~~~~~~~~~~~~~~~~
+
+Attach an optional ``selection_policy`` to any entry in ``routing_preferences``:
+
+.. code-block:: yaml
+    :caption: Per-route selection policy
+
+    routing_preferences:
+      - name: code review
+        description: reviewing, analyzing, and suggesting improvements to existing code
+        models:
+          - anthropic/claude-sonnet-4-5
+          - groq/llama-3.3-70b-versatile
+        selection_policy:
+          prefer: cheapest   # cheapest | fastest | none
+
+``prefer`` accepts:
+
+- ``cheapest`` — order candidates by total price (input + output rate) ascending, using a ``cost`` metrics source.
+- ``fastest`` — order candidates by observed latency ascending, using a ``latency`` metrics source.
+- ``none`` (default) — keep the order you declared; no reordering.
+
+Models that have no data in the selected source are ranked **last**, in their original
+order, so routing always degrades gracefully rather than dropping a candidate.
+
+Configuring the pricing source
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``cheapest`` routing needs a price catalog. Plano's **default pricing provider is
+DigitalOcean** — its GenAI model catalog is public (no API key, no signup), so cost data
+is available out of the box and is what ``planoai obs`` uses if you don't configure
+anything. The pricing source is fully swappable: point Plano at `models.dev <https://models.dev/>`_,
+or at **any endpoint that exposes a supported pricing structure**.
+
+The ``provider`` field selects which response schema Plano expects (and therefore how it
+parses the catalog); the optional ``url`` lets you override the endpoint — for example to
+use a mirror, a cached copy, or an internal catalog service that returns the same shape.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 34 28 20
+
+   * - ``provider``
+     - Default catalog URL
+     - Key format
+     - Expected structure
+   * - ``digitalocean`` *(default)*
+     - DigitalOcean GenAI model catalog
+     - ``lowercase(creator)/model_id``
+     - ``{ data: [ { model_id, pricing: { input_price_per_million, output_price_per_million } } ] }``
+   * - ``models.dev``
+     - ``https://models.dev/api.json``
+     - ``creator/model`` (e.g. ``anthropic/claude-sonnet-4-5``)
+     - ``{ <provider>: { models: { <model>: { cost: { input, output } } } } }``
+
+Because the source is selected per ``provider``, switching is a one-line change. To stay
+on the default DigitalOcean catalog you can omit ``model_metrics_sources`` entirely for
+``planoai obs``, or declare it explicitly for routing:
+
+.. code-block:: yaml
+    :caption: Default cost source (DigitalOcean)
+
+    model_metrics_sources:
+      - type: cost
+        provider: digitalocean   # default; uses the public DO GenAI catalog
+
+To switch to models.dev — an open, community-maintained catalog covering a broad range of
+providers and models — change the ``provider`` (and optionally ``url``):
+
+.. code-block:: yaml
+    :caption: Cost source backed by models.dev
+
+    model_metrics_sources:
+      - type: cost
+        provider: models.dev               # models.dev | digitalocean
+        url: https://models.dev/api.json    # optional; defaults per provider
+        refresh_interval: 3600              # optional, seconds; refetch on this interval
+        model_aliases:                      # optional; see below
+          openai/gpt-oss-120b: openai/gpt-4o
+
+To use your own endpoint, pick the ``provider`` whose structure your endpoint matches and
+override ``url`` — Plano parses the response with that provider's schema:
+
+.. code-block:: yaml
+    :caption: Custom endpoint exposing the DigitalOcean catalog structure
+
+    model_metrics_sources:
+      - type: cost
+        provider: digitalocean                       # selects the DO response schema
+        url: https://catalog.internal.example.com/pricing
+
+.. note::
+   The cost metric used for ranking is the sum of the input and output per-million-token
+   rates — a relative signal for ordering candidates, not a per-request bill. For actual
+   per-request cost, see the observability console below.
+
+Matching catalog keys to your models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The router looks up each candidate model by the exact name you use in
+``routing_preferences`` (e.g. ``anthropic/claude-sonnet-4-5``). models.dev keys models as
+``creator/model``, which lines up with Plano's ``provider/model`` naming, so most models
+match automatically.
+
+When a catalog key does not match your model name — for example a version skew, or an
+open-weight model you serve under a different provider — use ``model_aliases`` to map the
+**catalog key** to the **Plano model name** used in your routing preferences:
+
+.. code-block:: yaml
+
+    model_metrics_sources:
+      - type: cost
+        provider: models.dev
+        model_aliases:
+          # catalog key            : plano model name
+          openai/gpt-oss-120b: openai/gpt-4o
+
+Latency source
+~~~~~~~~~~~~~~~
+
+``fastest`` routing reads observed latency from a Prometheus instance. Provide the query
+that returns a per-model latency value (lower is faster), labelled by ``model_name``:
+
+.. code-block:: yaml
+    :caption: Latency source backed by Prometheus
+
+    model_metrics_sources:
+      - type: latency
+        provider: prometheus
+        url: http://prometheus:9090
+        query: avg by (model_name) (rate(plano_llm_latency_seconds_sum[5m]))
+        refresh_interval: 60
+
+You can declare both a ``cost`` and a ``latency`` source at the same time; each route
+picks whichever it needs based on its ``selection_policy``.
+
+Cost in the observability console
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``planoai obs`` displays a per-request USD cost column derived from the same pricing
+catalog. By default it reads the ``cost`` source from your config (the first
+``type: cost`` entry under ``model_metrics_sources``); you can also override it on the
+command line:
+
+.. code-block:: bash
+
+    # Use the cost source from ./config.yaml (default)
+    planoai obs
+
+    # Or override the provider / endpoint explicitly
+    planoai obs --pricing-provider models.dev
+    planoai obs --pricing-url https://models.dev/api.json
+
+If no source is configured and no override is given, ``planoai obs`` falls back to the
+DigitalOcean catalog so the cost column still populates out of the box.
+
+
 Plano-Orchestrator
 -------------------
 Plano-Orchestrator is a **preference-based routing model** specifically designed to address the limitations of traditional LLM routing. It delivers production-ready performance with low latency and high accuracy while solving key routing challenges.

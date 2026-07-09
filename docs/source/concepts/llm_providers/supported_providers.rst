@@ -179,14 +179,14 @@ Anthropic
       - model: anthropic/*
         access_key: $ANTHROPIC_API_KEY
 
-      - model: anthropic/claude-sonnet-4-20250514
+      - model: anthropic/claude-sonnet-4-6
         access_key: $ANTHROPIC_PROD_API_KEY
 
     routing_preferences:
       - name: code_generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
         models:
-          - anthropic/claude-sonnet-4-20250514
+          - anthropic/claude-sonnet-4-6
 
 DeepSeek
 ~~~~~~~~
@@ -823,7 +823,7 @@ You can configure specific models with custom settings even when using wildcards
 
       # Override specific model with custom settings
       # This model will NOT be included in the wildcard expansion above
-      - model: anthropic/claude-sonnet-4-20250514
+      - model: anthropic/claude-sonnet-4-6
         access_key: $ANTHROPIC_PROD_API_KEY
 
       # Another specific override
@@ -834,7 +834,7 @@ You can configure specific models with custom settings even when using wildcards
       - name: code_generation
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
         models:
-          - anthropic/claude-sonnet-4-20250514
+          - anthropic/claude-sonnet-4-6
 
 **Custom Provider Wildcards:**
 

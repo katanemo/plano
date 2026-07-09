@@ -171,7 +171,7 @@ Plano translates requests between its internal format and each provider's API. T
 | Model prefix | Wire format | Example |
 |---|---|---|
 | `openai/*` | OpenAI | `openai/gpt-4o` |
-| `anthropic/*` | Anthropic | `anthropic/claude-sonnet-4-20250514` |
+| `anthropic/*` | Anthropic | `anthropic/claude-sonnet-4-6` |
 | `gemini/*` | Google Gemini | `gemini/gemini-2.0-flash` |
 | `mistral/*` | Mistral | `mistral/mistral-large-latest` |
 | `groq/*` | Groq | `groq/llama-3.3-70b-versatile` |
@@ -199,7 +199,7 @@ model_providers:
     access_key: $OPENAI_API_KEY
     default: true
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
   - model: gemini/gemini-2.0-flash
@@ -262,7 +262,7 @@ model_providers:
     access_key: $OPENAI_API_KEY
     default: true
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
 state_storage:
@@ -431,7 +431,7 @@ model_providers:
     default: true
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
 model_aliases:
@@ -442,7 +442,7 @@ model_aliases:
     target: gpt-4o               # High capability — for complex reasoning
 
   plano.creative.v1:
-    target: claude-sonnet-4-20250514  # Strong creative writing and analysis
+    target: claude-sonnet-4-6  # Strong creative writing and analysis
 
   plano.v1:
     target: gpt-4o               # Default production alias
@@ -1419,7 +1419,7 @@ listeners:
     port: 12000
 
 model_providers:
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
     default: true
 
@@ -1432,7 +1432,7 @@ routing_preferences:
       Writing code, debugging, code review, explaining concepts,
       answering programming questions, general development tasks.
     models:
-      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-sonnet-4-6
       - anthropic/claude-opus-4-6
   - name: complex architecture
     description: >
@@ -1440,11 +1440,11 @@ routing_preferences:
       architectural decisions, performance optimization, security audits.
     models:
       - anthropic/claude-opus-4-6
-      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-sonnet-4-6
 
 model_aliases:
   claude.fast.v1:
-    target: claude-sonnet-4-20250514
+    target: claude-sonnet-4-6
   claude.smart.v1:
     target: claude-opus-4-6
 
@@ -1838,7 +1838,7 @@ model_providers:
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
 
-  - model: anthropic/claude-sonnet-4-20250514
+  - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
 
 # --- Shared routing_preferences (top-level, v0.4.0+) ---
@@ -1851,11 +1851,11 @@ routing_preferences:
     description: Multi-step analysis, code generation, research synthesis
     models:
       - openai/gpt-4o
-      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-sonnet-4-6
   - name: long documents
     description: Summarizing or analyzing very long documents, PDFs, transcripts
     models:
-      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-sonnet-4-6
       - openai/gpt-4o
 
 # --- Listener 1: OpenAI-compatible API gateway ---

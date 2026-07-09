@@ -33,7 +33,7 @@ routing_preferences:
   - name: code_generation
     description: generating new code, writing functions, or creating boilerplate
     models:
-      - anthropic/claude-sonnet-4-20250514
+      - anthropic/claude-sonnet-4-6
       - openai/gpt-4o
 ```
 
@@ -46,7 +46,7 @@ When a request arrives, Plano:
 ```
 1. Request arrives          → "Write binary search in Python"
 2. Plano-Orchestrator classifies → route: "code_generation"
-3. Response                 → models: ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"]
+3. Response                 → models: ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"]
 ```
 
 No match? Plano-Orchestrator returns an empty route → client falls back to the model in the original request.
@@ -98,7 +98,7 @@ curl http://localhost:12000/routing/v1/chat/completions \
 Response:
 ```json
 {
-    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
+    "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "c16d1096c1af4a17abb48fb182918a88"
 }
@@ -124,7 +124,7 @@ curl http://localhost:12000/routing/v1/chat/completions \
 Response (first call):
 ```json
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "model": "anthropic/claude-sonnet-4-6",
     "route": "code_generation",
     "trace_id": "c16d1096c1af4a17abb48fb182918a88",
     "session_id": "my-session-123",
@@ -146,7 +146,7 @@ curl http://localhost:12000/routing/v1/chat/completions \
 Response (pinned):
 ```json
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "model": "anthropic/claude-sonnet-4-6",
     "route": "code_generation",
     "trace_id": "a1b2c3d4e5f6...",
     "session_id": "my-session-123",
@@ -233,7 +233,7 @@ kubectl rollout restart deployment/plano
 
 --- 1. Code generation query (OpenAI format) ---
 {
-    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
+    "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "c16d1096c1af4a17abb48fb182918a88"
 }
@@ -254,14 +254,14 @@ kubectl rollout restart deployment/plano
 
 --- 4. Code generation query (Anthropic format) ---
 {
-    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
+    "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "26be822bbdf14a3ba19fe198e55ea4a9"
 }
 
 --- 7. Session pinning - first call (fresh routing decision) ---
 {
-    "models": ["anthropic/claude-sonnet-4-20250514", "openai/gpt-4o"],
+    "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6",
     "session_id": "demo-session-001",
@@ -271,7 +271,7 @@ kubectl rollout restart deployment/plano
 --- 8. Session pinning - second call (same session, pinned) ---
     Notice: same model returned with "pinned": true, routing was skipped
 {
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "model": "anthropic/claude-sonnet-4-6",
     "route": "code_generation",
     "trace_id": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4",
     "session_id": "demo-session-001",

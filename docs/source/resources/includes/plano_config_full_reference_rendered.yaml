@@ -115,6 +115,18 @@ model_aliases:
     target: gpt-4o-mini
   smart-llm:
     target: gpt-4o
+model_metrics_sources:
+- model_aliases:
+    openai/gpt-oss-120b: openai/gpt-4o
+  provider: models.dev
+  refresh_interval: 3600
+  type: cost
+  url: https://models.dev/api.json
+- provider: prometheus
+  query: avg by (model_name) (rate(plano_llm_latency_seconds_sum[5m]))
+  refresh_interval: 60
+  type: latency
+  url: http://prometheus:9090
 model_providers:
 - access_key: $OPENAI_API_KEY
   default: true
@@ -254,6 +266,12 @@ system_prompt: 'You are a helpful assistant. Always respond concisely and accura
 
   '
 tracing:
+  exporters:
+  - api_key: $POSTHOG_API_KEY
+    capture_messages: false
+    distinct_id_header: x-user-id
+    type: posthog
+    url: https://us.i.posthog.com
   opentracing_grpc_endpoint: http://localhost:4317
   random_sampling: 100
   span_attributes:

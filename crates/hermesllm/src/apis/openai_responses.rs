@@ -183,9 +183,13 @@ pub enum MessageRole {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InputContent {
-    /// Text input
-    #[serde(rename = "input_text", alias = "text", alias = "output_text")]
+    /// Text input (input-role message content)
+    #[serde(rename = "input_text", alias = "text")]
     InputText { text: String },
+    /// Text produced by the model in a prior turn. This must round-trip as
+    /// `output_text` because the Responses API rejects `input_text` for
+    /// output-role (assistant) message content.
+    OutputText { text: String },
     /// Image input via URL
     InputImage {
         image_url: String,
@@ -1051,6 +1055,7 @@ pub struct ListInputItemsResponse {
 fn append_input_content_text(buffer: &mut String, content: &InputContent) {
     match content {
         InputContent::InputText { text } => buffer.push_str(text),
+        InputContent::OutputText { text } => buffer.push_str(text),
         InputContent::InputImage { .. } => buffer.push_str("[Image]"),
         InputContent::InputFile { .. } => buffer.push_str("[File]"),
         InputContent::InputAudio { .. } => buffer.push_str("[Audio]"),
@@ -1640,6 +1645,62 @@ mod tests {
             }
             _ => panic!("expected web search preview tool"),
         }
+    }
+
+    #[test]
+    fn test_input_content_preserves_output_text_round_trip() {
+        // Multi-turn request: a user turn carrying input_text and a prior
+        // assistant turn carrying output_text. The Responses API rejects
+        // input_text for output-role content, so the assistant turn must
+        // survive a serialize round-trip as output_text (not be rewritten).
+        let request = json!({
+            "model": "gpt-5.3-codex",
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        { "type": "input_text", "text": "hello" }
+                    ]
+                },
+                {
+                    "role": "assistant",
+                    "content": [
+                        { "type": "output_text", "text": "hi there" }
+                    ]
+                }
+            ]
+        });
+
+        let bytes = serde_json::to_vec(&request).unwrap();
+        let parsed = ResponsesAPIRequest::try_from(bytes.as_slice()).unwrap();
+
+        let items = match &parsed.input {
+            InputParam::Items(items) => items,
+            _ => panic!("expected array input"),
+        };
+        assert_eq!(items.len(), 2);
+
+        // Assistant output_text must deserialize into the OutputText variant.
+        let assistant = items
+            .iter()
+            .find_map(|item| match item {
+                InputItem::Message(msg) if matches!(msg.role, MessageRole::Assistant) => Some(msg),
+                _ => None,
+            })
+            .expect("assistant message present");
+        match &assistant.content {
+            MessageContent::Items(contents) => {
+                assert!(matches!(contents[0], InputContent::OutputText { .. }));
+            }
+            _ => panic!("expected array content"),
+        }
+
+        // Round-trip serialize and assert the type tags are preserved:
+        // user content stays input_text, assistant content stays output_text.
+        let serialized = serde_json::to_value(&parsed).unwrap();
+        let input = &serialized["input"];
+        assert_eq!(input[0]["content"][0]["type"], "input_text");
+        assert_eq!(input[1]["content"][0]["type"], "output_text");
     }
 
     #[test]
