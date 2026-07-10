@@ -29,6 +29,7 @@ fn load_provider_models() -> &'static HashMap<String, Vec<String>> {
 pub enum ProviderId {
     OpenAI,
     Xiaomi,
+    Qianfan,
     Mistral,
     Deepseek,
     Groq,
@@ -61,6 +62,8 @@ impl TryFrom<&str> for ProviderId {
         match value.to_lowercase().as_str() {
             "openai" => Ok(ProviderId::OpenAI),
             "xiaomi" => Ok(ProviderId::Xiaomi),
+            "qianfan" => Ok(ProviderId::Qianfan),
+            "baidu" => Ok(ProviderId::Qianfan), // alias
             "mistral" => Ok(ProviderId::Mistral),
             "deepseek" => Ok(ProviderId::Deepseek),
             "groq" => Ok(ProviderId::Groq),
@@ -105,6 +108,7 @@ impl ProviderId {
             ProviderId::Gemini => "google",
             ProviderId::OpenAI => "openai",
             ProviderId::Xiaomi => "xiaomi",
+            ProviderId::Qianfan => "qianfan",
             ProviderId::Anthropic => "anthropic",
             ProviderId::Mistral => "mistralai",
             ProviderId::Deepseek => "deepseek",
@@ -170,6 +174,7 @@ impl ProviderId {
             (
                 ProviderId::OpenAI
                 | ProviderId::Xiaomi
+                | ProviderId::Qianfan
                 | ProviderId::Groq
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
@@ -196,6 +201,7 @@ impl ProviderId {
             (
                 ProviderId::OpenAI
                 | ProviderId::Xiaomi
+                | ProviderId::Qianfan
                 | ProviderId::Groq
                 | ProviderId::Mistral
                 | ProviderId::Deepseek
@@ -267,6 +273,7 @@ impl Display for ProviderId {
         match self {
             ProviderId::OpenAI => write!(f, "OpenAI"),
             ProviderId::Xiaomi => write!(f, "xiaomi"),
+            ProviderId::Qianfan => write!(f, "qianfan"),
             ProviderId::Mistral => write!(f, "Mistral"),
             ProviderId::Deepseek => write!(f, "Deepseek"),
             ProviderId::Groq => write!(f, "Groq"),
@@ -404,6 +411,13 @@ mod tests {
     }
 
     #[test]
+    fn test_qianfan_parsing_and_display() {
+        assert_eq!(ProviderId::try_from("qianfan"), Ok(ProviderId::Qianfan));
+        assert_eq!(ProviderId::try_from("baidu"), Ok(ProviderId::Qianfan));
+        assert_eq!(ProviderId::Qianfan.to_string(), "qianfan");
+    }
+
+    #[test]
     fn test_vercel_compatible_api() {
         use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
@@ -456,6 +470,34 @@ mod tests {
         assert!(
             matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
             "OpenRouter should translate Responses API client to OpenAIChatCompletions upstream"
+        );
+    }
+
+    #[test]
+    fn test_qianfan_compatible_api() {
+        use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
+
+        let openai_client =
+            SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let upstream = ProviderId::Qianfan.compatible_api_for_client(&openai_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "Qianfan should map OpenAI client to OpenAIChatCompletions upstream"
+        );
+
+        let anthropic_client =
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
+        let upstream = ProviderId::Qianfan.compatible_api_for_client(&anthropic_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "Qianfan should translate Anthropic client to OpenAIChatCompletions upstream"
+        );
+
+        let responses_client = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let upstream = ProviderId::Qianfan.compatible_api_for_client(&responses_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "Qianfan should translate Responses API client to OpenAIChatCompletions upstream"
         );
     }
 

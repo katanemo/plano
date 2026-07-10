@@ -27,6 +27,7 @@ def test_zero_env_vars_produces_pure_passthrough():
         assert provider.get("default") is not True
     # All known providers should be listed.
     names = {p["name"] for p in cfg["model_providers"]}
+    assert "qianfan" in names
     assert "digitalocean" in names
     assert "vercel" in names
     assert "openrouter" in names
@@ -80,6 +81,11 @@ def test_synthesized_config_validates_against_schema():
     jsonschema.validate(cfg, _schema())
 
 
+def test_synthesized_config_with_qianfan_validates_against_schema():
+    cfg = synthesize_default_config(env={"QIANFAN_API_KEY": "qf-1"})
+    jsonschema.validate(cfg, _schema())
+
+
 def test_provider_defaults_digitalocean_is_configured():
     by_name = {p.name: p for p in PROVIDER_DEFAULTS}
     assert "digitalocean" in by_name
@@ -102,6 +108,21 @@ def test_provider_defaults_openrouter_is_configured():
     assert by_name["openrouter"].env_var == "OPENROUTER_API_KEY"
     assert by_name["openrouter"].base_url == "https://openrouter.ai/api/v1"
     assert by_name["openrouter"].model_pattern == "openrouter/*"
+
+
+def test_provider_defaults_qianfan_is_configured():
+    by_name = {p.name: p for p in PROVIDER_DEFAULTS}
+    assert "qianfan" in by_name
+    assert by_name["qianfan"].env_var == "QIANFAN_API_KEY"
+    assert by_name["qianfan"].base_url == "https://qianfan.baidubce.com/v2"
+    assert by_name["qianfan"].model_pattern == "qianfan/*"
+
+
+def test_qianfan_env_key_promotes_to_env_keyed():
+    cfg = synthesize_default_config(env={"QIANFAN_API_KEY": "qf-1"})
+    by_name = {p["name"]: p for p in cfg["model_providers"]}
+    assert by_name["qianfan"].get("access_key") == "$QIANFAN_API_KEY"
+    assert by_name["qianfan"].get("passthrough_auth") is None
 
 
 def test_openrouter_env_key_promotes_to_env_keyed():
