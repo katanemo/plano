@@ -22,6 +22,7 @@ const STREAM_BUFFER_SIZE: usize = 16;
 const USAGE_BUFFER_MAX: usize = 2 * 1024 * 1024;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
+use crate::router::model_metrics::ModelRates;
 use crate::router::orchestrator::OrchestratorService;
 use crate::session_cache::SessionBinding;
 use crate::signals::otel::emit_signals_to_span;
@@ -43,6 +44,11 @@ struct ExtractedUsage {
     /// The model the upstream actually used. For router aliases (e.g.
     /// `router:software-engineering`), this differs from the request model.
     resolved_model: Option<String>,
+    /// Provider convention for `prompt_tokens`: OpenAI-shape usage folds cached tokens
+    /// *into* `prompt_tokens` (so uncached = prompt - cached), while Anthropic-shape
+    /// reports uncached `input_tokens` separately from `cache_read`/`cache_creation`.
+    /// Set at parse time from which field `prompt_tokens` was sourced. Drives cost math.
+    prompt_includes_cached: bool,
 }
 
 impl ExtractedUsage {
@@ -61,8 +67,9 @@ impl ExtractedUsage {
             }
         }
         if let Some(u) = value.get("usage") {
-            // OpenAI-shape usage
+            // OpenAI-shape usage: `prompt_tokens` includes the cached subset.
             out.prompt_tokens = u.get("prompt_tokens").and_then(|v| v.as_i64());
+            out.prompt_includes_cached = out.prompt_tokens.is_some();
             out.completion_tokens = u.get("completion_tokens").and_then(|v| v.as_i64());
             out.total_tokens = u.get("total_tokens").and_then(|v| v.as_i64());
             out.cached_input_tokens = u
@@ -210,6 +217,14 @@ pub struct SessionUpdateCtx {
     pub switch_spend_usd: f64,
     /// Cumulative switch count from the routing decision — preserved across the refresh.
     pub switches: u32,
+    /// Cumulative actual conversation cost (USD) through prior turns. This turn's real
+    /// cost is added on top once usage is known.
+    pub session_cost_usd: f64,
+    /// Catalog rates for the dispatched model, resolved request-side (the response path
+    /// is synchronous). `None` when no cost source is configured → no cost is computed.
+    pub cost_rates: Option<ModelRates>,
+    /// Cached-read discount used to price cached input when the feed omits a cached rate.
+    pub cache_read_discount: f64,
     /// Context-size estimate to fall back to when the response carries no usage block.
     pub est_context_tokens: u64,
     /// GC bound to store the refreshed binding with.
@@ -302,6 +317,9 @@ impl ObservableStreamProcessor {
             baseline_usd,
             switch_spend_usd,
             switches,
+            session_cost_usd,
+            cost_rates,
+            cache_read_discount,
             est_context_tokens,
             gc_ttl,
         } = update;
@@ -314,6 +332,32 @@ impl ObservableStreamProcessor {
             .map(|p| p as u64)
             .unwrap_or(est_context_tokens);
 
+        // Price this turn from the catalog rates and roll it into the conversation
+        // total. Emit per-request cost on the (llm) span and carry the running total
+        // into the binding so the next turn's routing span can surface it.
+        let session_cost_usd = if let Some(rates) = cost_rates {
+            let (input_cost, output_cost) = rates.request_cost_usd(
+                usage.prompt_tokens.unwrap_or(0).max(0) as u64,
+                usage.cached_input_tokens.unwrap_or(0).max(0) as u64,
+                usage.cache_creation_tokens.unwrap_or(0).max(0) as u64,
+                usage.completion_tokens.unwrap_or(0).max(0) as u64,
+                usage.prompt_includes_cached,
+                cache_read_discount,
+            );
+            let span = tracing::Span::current();
+            let otel_span = span.context();
+            let otel_span = otel_span.span();
+            otel_span.set_attribute(KeyValue::new(llm::INPUT_COST_IN_USD, input_cost));
+            otel_span.set_attribute(KeyValue::new(llm::OUTPUT_COST_IN_USD, output_cost));
+            otel_span.set_attribute(KeyValue::new(
+                llm::TOTAL_COST_IN_USD,
+                input_cost + output_cost,
+            ));
+            session_cost_usd + input_cost + output_cost
+        } else {
+            session_cost_usd
+        };
+
         bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_REFRESH);
         let binding = SessionBinding {
             anchor_model,
@@ -324,6 +368,7 @@ impl ObservableStreamProcessor {
             baseline_usd,
             switch_spend_usd,
             switches,
+            session_cost_usd,
         };
         // Fire-and-forget: binding bookkeeping must not delay stream completion.
         tokio::spawn(async move {
@@ -733,6 +778,8 @@ mod usage_extraction_tests {
         assert_eq!(u.total_tokens, Some(46));
         assert_eq!(u.cached_input_tokens, Some(5));
         assert_eq!(u.reasoning_tokens, None);
+        // OpenAI folds cached tokens into `prompt_tokens`.
+        assert!(u.prompt_includes_cached);
     }
 
     #[test]
@@ -744,6 +791,8 @@ mod usage_extraction_tests {
         assert_eq!(u.total_tokens, Some(150));
         assert_eq!(u.cached_input_tokens, Some(30));
         assert_eq!(u.cache_creation_tokens, Some(20));
+        // Anthropic reports uncached `input_tokens` separately from cached reads.
+        assert!(!u.prompt_includes_cached);
     }
 
     #[test]

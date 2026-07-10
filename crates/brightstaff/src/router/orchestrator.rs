@@ -428,6 +428,7 @@ mod tests {
             baseline_usd: 0.0,
             switch_spend_usd: 0.0,
             switches: 0,
+            session_cost_usd: 0.0,
         }
     }
 
@@ -525,6 +526,7 @@ mod tests {
         b.baseline_usd = 1.5;
         b.switch_spend_usd = 0.42;
         b.switches = 3;
+        b.session_cost_usd = 2.75;
         svc.store_binding("s1", None, b, None).await;
 
         let cached = svc.get_binding("s1", None).await.unwrap();
@@ -533,6 +535,7 @@ mod tests {
         assert!((cached.baseline_usd - 1.5).abs() < 1e-9);
         assert!((cached.switch_spend_usd - 0.42).abs() < 1e-9);
         assert_eq!(cached.switches, 3);
+        assert!((cached.session_cost_usd - 2.75).abs() < 1e-9);
     }
 
     // ---- switch-cost math ----

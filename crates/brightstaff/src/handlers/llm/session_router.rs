@@ -115,6 +115,9 @@ pub struct RouteDecision {
     pub baseline_usd: f64,
     /// Cumulative switch spend (USD) after this decision.
     pub switch_spend_usd: f64,
+    /// Cumulative actual conversation cost (USD) so far — carried to the response side,
+    /// which adds this turn's real cost and re-persists it.
+    pub session_cost_usd: f64,
     /// Cumulative switches taken this session (after this decision).
     pub switches: u32,
     /// Context-token estimate persisted with the binding (refined later from usage).
@@ -195,6 +198,7 @@ pub async fn route(
             warm: false,
             baseline_usd: 0.0,
             switch_spend_usd: 0.0,
+            session_cost_usd: 0.0,
             switches: 0,
             cached_tokens: facts.est_context_tokens,
             gc_ttl: candidate_gc_ttl,
@@ -216,6 +220,10 @@ pub async fn route(
         _ => false,
     };
     let effective_warm = warm && !drifted;
+
+    // Cumulative actual conversation cost so far (through prior turns). Conversation-
+    // level: preserved across warm/cold re-binds; the response side adds this turn.
+    let session_cost_usd = existing.as_ref().map(|b| b.session_cost_usd).unwrap_or(0.0);
 
     // Resolve the final model, cumulative baseline/spend, switch count, and telemetry.
     let mut model = facts.candidate_model.to_string();
@@ -401,6 +409,12 @@ pub async fn route(
                 switches as i64,
             ));
         }
+        // Cumulative actual conversation cost (through prior turns) — emitted for every
+        // session, independent of the routing budget.
+        span.set_attribute(KeyValue::new(
+            tracing_plano::SESSION_TOTAL_COST_IN_USD,
+            session_cost_usd,
+        ));
         if let Some(cost) = cost_opt {
             span.set_attribute(KeyValue::new(tracing_plano::SWITCH_COST_IN_USD, cost));
             if let Some(ceiling) = ceiling_opt {
@@ -439,6 +453,7 @@ pub async fn route(
                 baseline_usd,
                 switch_spend_usd,
                 switches,
+                session_cost_usd,
             },
             Some(gc_ttl),
         )
@@ -450,6 +465,7 @@ pub async fn route(
         warm: effective_warm,
         baseline_usd,
         switch_spend_usd,
+        session_cost_usd,
         switches,
         cached_tokens,
         gc_ttl,
@@ -479,6 +495,7 @@ mod tests {
             baseline_usd: 1.0,
             switch_spend_usd: 0.0,
             switches: 0,
+            session_cost_usd: 0.0,
         }
     }
 
@@ -596,6 +613,7 @@ mod tests {
                 baseline_usd,
                 switch_spend_usd,
                 switches: 0,
+                session_cost_usd: 0.0,
             },
             Some(Duration::from_secs(3600)),
         )

@@ -183,9 +183,20 @@ curl -s localhost:9092/metrics | grep -E 'session_switch_decisions|prompt_cache_
 - `plano.session.switch_spend_in_usd` — cumulative $ actually spent on switches this session
 - `plano.session.baseline_in_usd` — cumulative $ staying on the anchor would have cost (the denominator)
 - `plano.session.switches` — switches taken so far this session
+- `plano.session.total_cost_in_usd` — cumulative *actual* conversation cost (input +
+  output), priced from the catalog and refined from real usage each turn (reflects cost
+  through the previous turn, since this turn isn't billed yet at decision time)
 - `plano.switch.counterfactual_route` — on a `retained` decision, the route the gate
   *would* have taken had the switch been allowed (only when `record_counterfactual: true`)
 - `plano.session_id`, `plano.route.name`
+
+Per-request cost also lands on each `plano(llm)` span (sum by `plano.session_id` for the
+conversation total, or read `plano.session.total_cost_in_usd` off the routing span):
+
+- `llm.usage.input_cost_usd` — uncached input at the input rate, cached reads at the
+  cached rate, cache creation at the plain input rate
+- `llm.usage.output_cost_usd` — completion tokens x output rate
+- `llm.usage.total_cost_usd` — input + output
 
 **Grafana** — a ready dashboard + compose live in `config/grafana/`
 (`docker compose up` there, using `prometheus_scrape.yaml`).

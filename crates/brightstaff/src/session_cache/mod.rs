@@ -49,6 +49,12 @@ pub struct SessionBinding {
     /// Number of model switches taken during this warm session (observability).
     #[serde(default)]
     pub switches: u32,
+    /// Cumulative *actual* cost (USD, input + output) of the whole conversation, priced
+    /// from the configured catalog rates and refined from real usage each turn on the
+    /// full-proxy path. Conversation-level (not per warm episode): it persists across
+    /// cold re-binds and is best-effort (resets only if the binding is evicted).
+    #[serde(default)]
+    pub session_cost_usd: f64,
 }
 
 /// Serde helper: persist `SystemTime` as whole epoch seconds so the Redis wire format

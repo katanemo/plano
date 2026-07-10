@@ -442,6 +442,23 @@ async fn llm_chat_inner(
         });
     }
 
+    // Resolve the dispatched model's catalog rates now (this side is async; the
+    // response path that prices the turn is synchronous). `None` when no cost feed is
+    // configured → no per-request/session cost is computed.
+    let cost_rates = if session_id.is_some() {
+        state
+            .orchestrator_service
+            .model_rates(&resolved_model)
+            .await
+    } else {
+        None
+    };
+    let cache_read_discount = state
+        .routing_budget
+        .as_ref()
+        .map(|b| b.cache_read_discount)
+        .unwrap_or(common::configuration::DEFAULT_CACHE_READ_DISCOUNT);
+
     // Response-side refresh: update `last_used` + the context-size estimate from the
     // real response. The routing decision itself was already persisted by `route()`.
     let session_update_ctx: Option<SessionUpdateCtx> =
@@ -455,6 +472,9 @@ async fn llm_chat_inner(
             baseline_usd: decision.baseline_usd,
             switch_spend_usd: decision.switch_spend_usd,
             switches: decision.switches,
+            session_cost_usd: decision.session_cost_usd,
+            cost_rates,
+            cache_read_discount,
             est_context_tokens: decision.cached_tokens,
             gc_ttl: decision.gc_ttl,
         });

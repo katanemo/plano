@@ -92,6 +92,18 @@ pub mod llm {
     /// (OpenAI `completion_tokens_details.reasoning_tokens`, Google `thoughts_token_count`)
     pub const REASONING_TOKENS: &str = "llm.usage.reasoning_tokens";
 
+    /// This request's input-token cost (USD), priced from the catalog rates: uncached
+    /// input at the input rate, cached reads at the cached rate, cache creation at the
+    /// plain input rate. Present only when a cost source is configured.
+    pub const INPUT_COST_IN_USD: &str = "llm.usage.input_cost_usd";
+
+    /// This request's output-token cost (USD) = completion tokens x output rate.
+    pub const OUTPUT_COST_IN_USD: &str = "llm.usage.output_cost_usd";
+
+    /// This request's total cost (USD) = input + output. Sum across a session's turns
+    /// (group by `plano.session_id`) for the conversation total.
+    pub const TOTAL_COST_IN_USD: &str = "llm.usage.total_cost_usd";
+
     /// Temperature parameter used
     pub const TEMPERATURE: &str = "llm.temperature";
 
@@ -174,6 +186,12 @@ pub mod plano {
 
     /// Cumulative number of model switches taken during this warm session.
     pub const SESSION_SWITCHES: &str = "plano.session.switches";
+
+    /// Cumulative *actual* cost (USD, input + output) of the whole conversation, priced
+    /// from the configured catalog rates and refined from real usage each turn. Emitted
+    /// on the routing span; reflects cost through the previous turn (this turn isn't
+    /// billed yet at decision time). Full-proxy path only.
+    pub const SESSION_TOTAL_COST_IN_USD: &str = "plano.session.total_cost_in_usd";
 
     /// Actual input-cost (USD) of the proposed model switch — computed from input-token
     /// pricing only, output-token cost deliberately excluded. Negative when the candidate

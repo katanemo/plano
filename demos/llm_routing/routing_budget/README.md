@@ -69,7 +69,11 @@ Every decision is visible:
 - Span attributes: `plano.cache.warm`, `plano.cache.idle_ms`,
   `plano.switch.cost_in_usd`, `plano.switch.overhead_ceiling_in_usd`, `plano.switch.decision`,
   `plano.session.overhead_pct`, `plano.session.switch_spend_in_usd`,
-  `plano.session.baseline_in_usd`, `plano.session.switches`
+  `plano.session.baseline_in_usd`, `plano.session.switches`,
+  `plano.session.total_cost_in_usd`
+- Per-request cost on each `plano(llm)` span: `llm.usage.input_cost_usd`,
+  `llm.usage.output_cost_usd`, `llm.usage.total_cost_usd` (cache creation priced at the
+  plain input rate)
 
 ## Run
 

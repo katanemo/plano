@@ -40,6 +40,36 @@ impl ModelRates {
         self.cache_read_per_million
             .unwrap_or(self.input_per_million * cache_read_discount)
     }
+
+    /// Actual USD cost of one request from observed token usage, split into
+    /// `(input_cost, output_cost)`. Cache *creation* tokens are priced at the plain
+    /// input rate (no write premium). Cache *read* tokens use the cached rate.
+    ///
+    /// `prompt_includes_cached` reflects the provider convention: OpenAI-shape usage
+    /// folds cached tokens into `prompt_tokens` (uncached = prompt - cached), while
+    /// Anthropic-shape reports uncached input separately (uncached = prompt_tokens).
+    pub fn request_cost_usd(
+        &self,
+        prompt_tokens: u64,
+        cached_input_tokens: u64,
+        cache_creation_tokens: u64,
+        completion_tokens: u64,
+        prompt_includes_cached: bool,
+        cache_read_discount: f64,
+    ) -> (f64, f64) {
+        let read_rate = self.cached_input_rate(cache_read_discount);
+        let uncached = if prompt_includes_cached {
+            prompt_tokens.saturating_sub(cached_input_tokens)
+        } else {
+            prompt_tokens
+        };
+        let input = (uncached as f64 * self.input_per_million
+            + cached_input_tokens as f64 * read_rate
+            + cache_creation_tokens as f64 * self.input_per_million)
+            / TOKENS_PER_MILLION;
+        let output = completion_tokens as f64 * self.output_per_million / TOKENS_PER_MILLION;
+        (input, output)
+    }
 }
 
 /// Derive the blended ranking map from the structured rates map.
@@ -460,6 +490,35 @@ mod tests {
             rates: Arc::new(RwLock::new(HashMap::new())),
             latency: Arc::new(RwLock::new(latency)),
         }
+    }
+
+    #[test]
+    fn request_cost_openai_convention_subtracts_cached_from_prompt() {
+        // input $3/M, output $15/M, cached read $0.30/M. prompt_tokens (=1000) INCLUDES
+        // the 400 cached tokens → uncached = 600.
+        let rates = ModelRates {
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: Some(0.30),
+        };
+        let (input, output) = rates.request_cost_usd(1000, 400, 0, 200, true, 0.1);
+        // 600*3 + 400*0.30 = 1800 + 120 = 1920 micro-$/M → /1e6
+        assert!((input - (1920.0 / 1_000_000.0)).abs() < 1e-12);
+        assert!((output - (200.0 * 15.0 / 1_000_000.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn request_cost_anthropic_convention_prices_uncached_and_creation() {
+        // Anthropic: prompt_tokens (=input_tokens=100) EXCLUDES cached read (30) and
+        // creation (20). No published cached rate → falls back to input*discount.
+        let rates = ModelRates {
+            input_per_million: 3.0,
+            output_per_million: 15.0,
+            cache_read_per_million: None,
+        };
+        let (input, _output) = rates.request_cost_usd(100, 30, 20, 50, false, 0.1);
+        // uncached 100*3 + cached 30*(3*0.1=0.3) + creation 20*3 = 300 + 9 + 60 = 369
+        assert!((input - (369.0 / 1_000_000.0)).abs() < 1e-12);
     }
 
     #[test]
