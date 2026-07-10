@@ -159,8 +159,18 @@ pub mod plano {
     /// against.
     pub const CACHE_IDLE_MS: &str = "plano.cache.idle_ms";
 
-    /// Remaining cumulative switch budget (USD) for the session after this decision.
-    pub const SESSION_BUDGET_REMAINING_IN_USD: &str = "plano.session.budget_remaining_in_usd";
+    /// Cumulative switching overhead consumed this session, as a percentage of the
+    /// never-switch baseline (`100 * switch_spend / baseline`). Directly comparable to
+    /// the configured `routing.routing_budget.max_overhead_pct`.
+    pub const SESSION_OVERHEAD_PCT: &str = "plano.session.overhead_pct";
+
+    /// Cumulative overhead (USD) actually spent on paid switches this session — the
+    /// numerator behind `plano.session.overhead_pct`.
+    pub const SESSION_SWITCH_SPEND_IN_USD: &str = "plano.session.switch_spend_in_usd";
+
+    /// Cumulative never-switch baseline (USD) — what staying on the anchor would have
+    /// cost so far. The denominator behind `plano.session.overhead_pct`.
+    pub const SESSION_BASELINE_IN_USD: &str = "plano.session.baseline_in_usd";
 
     /// Cumulative number of model switches taken during this warm session.
     pub const SESSION_SWITCHES: &str = "plano.session.switches";
@@ -170,8 +180,10 @@ pub mod plano {
     /// is outright cheaper than staying on the warm anchor.
     pub const SWITCH_COST_IN_USD: &str = "plano.switch.cost_in_usd";
 
-    /// The switch budget (USD) available when the switch cost was evaluated.
-    pub const SWITCH_THRESHOLD_IN_USD: &str = "plano.switch.threshold_in_usd";
+    /// The overhead ceiling (USD) available when the switch was evaluated —
+    /// `max_overhead_pct% * baseline`. A paid switch is allowed while cumulative spend
+    /// plus this switch's cost stays under it. Directly comparable to `cost_in_usd`.
+    pub const SWITCH_OVERHEAD_CEILING_IN_USD: &str = "plano.switch.overhead_ceiling_in_usd";
 
     /// Switch outcome: "allowed" or "retained".
     pub const SWITCH_DECISION: &str = "plano.switch.decision";

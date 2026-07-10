@@ -302,7 +302,7 @@ pub async fn route(
                             switch_spend_usd += cost;
                             switches += 1;
                             decision_label = metric_labels::SWITCH_DECISION_ALLOWED;
-                            reason = metric_labels::SWITCH_REASON_WITHIN_BUDGET;
+                            reason = metric_labels::SWITCH_REASON_WITHIN_CAP;
                             info!(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
@@ -324,7 +324,7 @@ pub async fn route(
                             model = b.anchor_model.clone();
                             route_name = b.route_name.clone();
                             decision_label = metric_labels::SWITCH_DECISION_RETAINED;
-                            reason = metric_labels::SWITCH_REASON_OVER_BUDGET;
+                            reason = metric_labels::SWITCH_REASON_OVER_CAP;
                             info!(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
@@ -376,13 +376,25 @@ pub async fn route(
             tracing_plano::CACHE_IDLE_MS,
             idle.as_millis() as i64,
         ));
-        if let Some(cfg) = routing_budget {
-            // Remaining headroom under the cap: pct * baseline - spend (never negative).
-            let remaining =
-                ((cfg.max_overhead_pct / 100.0) * baseline_usd - switch_spend_usd).max(0.0);
+        if routing_budget.is_some() {
+            // Consumed overhead as a percentage of the never-switch baseline — directly
+            // comparable to the configured max_overhead_pct. Zero before any baseline.
+            let overhead_pct = if baseline_usd > 0.0 {
+                100.0 * switch_spend_usd / baseline_usd
+            } else {
+                0.0
+            };
             span.set_attribute(KeyValue::new(
-                tracing_plano::SESSION_BUDGET_REMAINING_IN_USD,
-                remaining,
+                tracing_plano::SESSION_OVERHEAD_PCT,
+                overhead_pct,
+            ));
+            span.set_attribute(KeyValue::new(
+                tracing_plano::SESSION_SWITCH_SPEND_IN_USD,
+                switch_spend_usd,
+            ));
+            span.set_attribute(KeyValue::new(
+                tracing_plano::SESSION_BASELINE_IN_USD,
+                baseline_usd,
             ));
             span.set_attribute(KeyValue::new(
                 tracing_plano::SESSION_SWITCHES,
@@ -393,7 +405,7 @@ pub async fn route(
             span.set_attribute(KeyValue::new(tracing_plano::SWITCH_COST_IN_USD, cost));
             if let Some(ceiling) = ceiling_opt {
                 span.set_attribute(KeyValue::new(
-                    tracing_plano::SWITCH_THRESHOLD_IN_USD,
+                    tracing_plano::SWITCH_OVERHEAD_CEILING_IN_USD,
                     ceiling,
                 ));
             }

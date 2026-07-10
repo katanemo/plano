@@ -59,9 +59,9 @@ pub const PIN_EVENT_VALIDATION_FAILED: &str = "validation_failed";
 
 // Session-stickiness decisions (brightstaff_session_switch_decisions_total).
 // `decision` label — the coarse outcome:
-/// The proposed switch was honored (free, within budget, or unpriced fail-open).
+/// The proposed switch was honored (free, within the overhead cap, or unpriced fail-open).
 pub const SWITCH_DECISION_ALLOWED: &str = "allowed";
-/// The switch cost exceeded the remaining budget — the warm anchor was retained.
+/// The switch would have exceeded the session's overhead cap — the warm anchor was retained.
 pub const SWITCH_DECISION_RETAINED: &str = "retained";
 
 // `reason` label — why the decision was made:
@@ -69,9 +69,9 @@ pub const SWITCH_DECISION_RETAINED: &str = "retained";
 pub const SWITCH_REASON_SAME_ANCHOR: &str = "same_anchor";
 /// The candidate was outright cheaper (negative cost) — a free switch.
 pub const SWITCH_REASON_FREE: &str = "free";
-/// A paid switch that fit within the session's remaining switch budget.
-pub const SWITCH_REASON_WITHIN_BUDGET: &str = "within_budget";
-/// A paid switch that exceeded the remaining budget — retained the anchor.
-pub const SWITCH_REASON_OVER_BUDGET: &str = "over_budget";
+/// A paid switch that kept cumulative spend within the session's overhead cap.
+pub const SWITCH_REASON_WITHIN_CAP: &str = "within_cap";
+/// A paid switch that would have pushed cumulative spend over the overhead cap — retained.
+pub const SWITCH_REASON_OVER_CAP: &str = "over_cap";
 /// Pricing was missing for one side, so the switch was allowed without a cost gate.
 pub const SWITCH_REASON_NO_PRICING: &str = "no_pricing";

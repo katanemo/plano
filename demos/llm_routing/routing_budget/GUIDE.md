@@ -149,7 +149,7 @@ as cold → the router's pick is dispatched with no penalty (and the running tot
 reset on `replenish_on_rebind`).
 
 Each decision is emitted to metrics and traces (below) with a `reason` label
-(`same_anchor | free | within_budget | over_budget | no_pricing`).
+(`same_anchor | free | within_cap | over_cap | no_pricing`).
 
 ---
 
@@ -177,9 +177,11 @@ curl -s localhost:9092/metrics | grep -E 'session_switch_decisions|prompt_cache_
 - `plano.cache.warm` — whether the session's cache was considered warm this turn
 - `plano.cache.idle_ms` — how long since the session was last used
 - `plano.switch.cost_in_usd` — actual input-token cost of the proposed switch (output excluded)
-- `plano.switch.threshold_in_usd` — overhead ceiling (`max_overhead_pct`% x baseline) when the switch was evaluated
+- `plano.switch.overhead_ceiling_in_usd` — overhead ceiling (`max_overhead_pct`% x baseline) when the switch was evaluated
 - `plano.switch.decision` — `allowed` or `retained`
-- `plano.session.budget_remaining_in_usd` — remaining overhead headroom (ceiling − spend) after this turn
+- `plano.session.overhead_pct` — cumulative switching overhead consumed, as a % of the never-switch baseline (compare directly to `max_overhead_pct`)
+- `plano.session.switch_spend_in_usd` — cumulative $ actually spent on switches this session
+- `plano.session.baseline_in_usd` — cumulative $ staying on the anchor would have cost (the denominator)
 - `plano.session.switches` — switches taken so far this session
 - `plano.switch.counterfactual_route` — on a `retained` decision, the route the gate
   *would* have taken had the switch been allowed (only when `record_counterfactual: true`)

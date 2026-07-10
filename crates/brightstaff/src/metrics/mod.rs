@@ -413,7 +413,7 @@ pub fn record_session_pin_event(event: &'static str) {
 
 /// Record a session-stickiness decision on a proposed model switch. `decision` is the
 /// coarse outcome (`allowed`/`retained`, see `metrics::labels::SWITCH_DECISION_*`) and
-/// `reason` explains why (`same_anchor`/`free`/`within_budget`/`over_budget`/`no_pricing`,
+/// `reason` explains why (`same_anchor`/`free`/`within_cap`/`over_cap`/`no_pricing`,
 /// see `metrics::labels::SWITCH_REASON_*`).
 pub fn record_session_switch_decision(decision: &'static str, reason: &'static str) {
     counter!(
