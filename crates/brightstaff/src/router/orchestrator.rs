@@ -217,6 +217,22 @@ impl OrchestratorService {
         ))
     }
 
+    /// This turn's contribution to the session's *never-switch* baseline: the USD cost
+    /// of reading `est_context_tokens` at the anchor's cached input rate — i.e. what the
+    /// session pays to keep going on its warm anchor. Summed across turns, this is the
+    /// denominator the percentage overhead cap is measured against. `None` when the
+    /// anchor has no pricing (the caller then can't grow the baseline this turn).
+    pub async fn anchor_read_cost_in_usd(
+        &self,
+        est_context_tokens: u64,
+        anchor_model: &str,
+        cache_read_discount: f64,
+    ) -> Option<f64> {
+        let anchor = self.model_rates(anchor_model).await?;
+        let context_millions = est_context_tokens as f64 / TOKENS_PER_MILLION;
+        Some(context_millions * anchor.cached_input_rate(cache_read_discount))
+    }
+
     // ---- LLM routing ----
 
     pub async fn determine_route(
@@ -409,7 +425,8 @@ mod tests {
             prefix_hash: None,
             last_used: std::time::SystemTime::now(),
             cached_tokens: 0,
-            switch_budget_usd: 0.0,
+            baseline_usd: 0.0,
+            switch_spend_usd: 0.0,
             switches: 0,
         }
     }
@@ -505,14 +522,16 @@ mod tests {
         let mut b = binding("gpt-4o", None);
         b.prefix_hash = Some(0xdead_beef);
         b.cached_tokens = 12_345;
-        b.switch_budget_usd = 0.42;
+        b.baseline_usd = 1.5;
+        b.switch_spend_usd = 0.42;
         b.switches = 3;
         svc.store_binding("s1", None, b, None).await;
 
         let cached = svc.get_binding("s1", None).await.unwrap();
         assert_eq!(cached.prefix_hash, Some(0xdead_beef));
         assert_eq!(cached.cached_tokens, 12_345);
-        assert!((cached.switch_budget_usd - 0.42).abs() < 1e-9);
+        assert!((cached.baseline_usd - 1.5).abs() < 1e-9);
+        assert!((cached.switch_spend_usd - 0.42).abs() < 1e-9);
         assert_eq!(cached.switches, 3);
     }
 

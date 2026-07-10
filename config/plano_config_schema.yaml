@@ -554,21 +554,24 @@ properties:
           (inferred from the idle gap vs. the provider's cache window), the actual
           input-token cost of abandoning the cache —
           context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate),
-          output cost deliberately excluded — is drawn from the session's budget: a paid
-          switch is allowed only while budget remains. An outright-cheaper switch is
-          free but never credits the pool. Requires a cost source in
-          model_metrics_sources.
+          output cost deliberately excluded — accrues into the session's cumulative
+          switch spend. A paid switch is allowed only while that spend stays within
+          max_overhead_pct percent of the session's running never-switch baseline (what
+          staying on the anchor would have cost). An outright-cheaper switch is free but
+          never reduces the spend. Requires a cost source in model_metrics_sources.
         properties:
-          seed_usd:
+          max_overhead_pct:
             type: number
             minimum: 0
             description: >
-              Initial cumulative budget (USD) granted to a session. 0 means never pay to
-              switch (only outright-cheaper switches are allowed); larger values buy more
-              quality-driven switches over the session.
+              Cap on cumulative switching overhead, as a percentage of what the session
+              would have cost by never switching (a whole number: 20 = 20%). The promise
+              is "this conversation bills at most max_overhead_pct% above never-switching."
+              0 means never pay to switch (only outright-cheaper switches are allowed);
+              larger values buy more quality-driven switches. Typical range 10-30.
           replenish_on_rebind:
             type: boolean
-            description: "Re-seed the budget to seed_usd when a cold session re-binds. Default true."
+            description: "Reset the running baseline/spend totals when a cold session re-binds. Default true."
           cache_read_discount:
             type: number
             minimum: 0
@@ -584,7 +587,7 @@ properties:
               the switch been allowed, as the plano.switch.counterfactual_route span
               attribute. Telemetry only — the counterfactual model is never dispatched.
               Useful for evals/benchmarks. Default false.
-        required: ["seed_usd"]
+        required: ["max_overhead_pct"]
         additionalProperties: false
     additionalProperties: false
   state_storage:

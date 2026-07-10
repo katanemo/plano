@@ -47,16 +47,20 @@ routing:
   #
   #   switch_cost = context_tokens x (candidate_uncached_input - anchor_cached_input)
   #
-  # (output cost deliberately excluded) is drawn from the session's budget. A paid
-  # switch is allowed only while budget remains; an outright-cheaper switch is free
-  # but never credits the pool. The budget is yours to define -- Plano never
-  # invents one, and startup fails without it (or without a cost source).
+  # (output cost deliberately excluded) accrues into the session's cumulative switch
+  # spend. A paid switch is allowed only while that spend stays within max_overhead_pct
+  # percent of the session's running never-switch baseline (what staying on the anchor
+  # would have cost); an outright-cheaper switch is free but never reduces the spend.
+  # The cap is yours to define -- Plano never invents one, and startup fails without it
+  # (or without a cost source).
   routing_budget:
-    # Cumulative budget (USD) for quality-driven switches over a session. 0 means
-    # "never pay to switch"; larger values buy more switches before sticking.
-    seed_usd: 0.50
+    # Cap on cumulative switching overhead, as a percentage of what the session would
+    # have cost by never switching (a whole number: 20 = 20%). The promise is "this
+    # conversation bills at most 20% above never-switching." 0 means "never pay to
+    # switch"; larger values buy more switches before sticking. Typical range 10-30.
+    max_overhead_pct: 20
 
-    # Re-seed the budget when a cold session re-binds (new warm episode). Default true.
+    # Reset the running baseline/spend totals when a cold session re-binds. Default true.
     # replenish_on_rebind: true
 
     # Fallback used only when the pricing feed doesn't publish a cached-read rate for

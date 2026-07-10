@@ -23,11 +23,13 @@ switch_cost_in_usd = context_tokens x (candidate_uncached_input - anchor_cached_
 ```
 
 - **Switch cost <= 0** — the candidate's uncached rate undercuts the anchor's
-  cached rate. Losing the cache costs nothing; switch freely. The budget is not
-  credited back — the "saving" is vs a path we didn't take, not real spendable money.
-- **Switch cost > 0** — drawn from the session's remaining budget. If the budget
-  covers it, the switch proceeds and the budget is debited; otherwise Plano
-  retains the anchor and its warm cache.
+  cached rate. Losing the cache costs nothing; switch freely. This never reduces the
+  session's switch spend — the "saving" is vs a path we didn't take, not real money.
+- **Switch cost > 0** — accrues into the session's cumulative switch spend. The
+  switch proceeds only while total spend stays within `max_overhead_pct`% of the
+  session's running never-switch baseline (what staying on the anchor would have
+  cost); otherwise Plano retains the anchor and its warm cache. The promise: the
+  conversation bills at most `max_overhead_pct`% above never-switching.
 
 Warmth is inferred from how long ago the session was last used vs. the
 provider's cache window — no per-call cache-hit signal is required, so the same
@@ -44,14 +46,14 @@ See [config.yaml](config.yaml). Requirements:
 
 - a cost source in `model_metrics_sources` (per-model rates feed the switch cost math)
 - a `routing.routing_budget` block — there is no default; presence turns it on and
-  startup fails without a `seed_usd` (or without a cost source)
+  startup fails without a `max_overhead_pct` (or without a cost source)
 
 `routing.routing_budget` fields:
 
 | Field | Meaning |
 |---|---|
-| `seed_usd` | Cumulative budget (USD) per session. `0` = never pay to switch |
-| `replenish_on_rebind` | Re-seed the budget when a cold session re-binds (default true) |
+| `max_overhead_pct` | Switching overhead cap, as a percent of the never-switch baseline (`20` = 20%). `0` = never pay to switch |
+| `replenish_on_rebind` | Reset the running baseline/spend totals when a cold session re-binds (default true) |
 | `cache_read_discount` | Assumed cached rate when a feed omits `cache_read` (default 0.1) |
 | `record_counterfactual` | Record the switch that was vetoed, as a trace attribute (default false) |
 

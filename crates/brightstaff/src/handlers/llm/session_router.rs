@@ -7,12 +7,15 @@
 //! * **Cache warmth** — inferred structurally from how long ago the session was last
 //!   used vs. the provider's cache window ([`hermesllm::provider_cache_capability`]),
 //!   so it works on the decision path with no provider response in hand.
-//! * **A cumulative per-session switch budget** — a paid switch (the candidate must
-//!   re-ingest the context at its uncached rate) is allowed only while budget remains;
-//!   an outright-cheaper switch is free but never credits the budget back.
+//! * **A cumulative per-session overhead cap** — a paid switch (the candidate must
+//!   re-ingest the context at its uncached rate) is allowed only while total switch
+//!   spend stays within `max_overhead_pct`% of the session's running *never-switch*
+//!   baseline (what staying on the anchor would have cost). An outright-cheaper switch
+//!   is free but never reduces that spend. The promise: this conversation bills at most
+//!   `max_overhead_pct`% above never-switching.
 //!
 //! The default posture is to stick. Quality and cost stay separate: the router decides
-//! whether a switch *improves quality*; the budget decides whether it is *affordable*.
+//! whether a switch *improves quality*; the overhead cap decides whether it is *affordable*.
 //!
 //! Prompt-cache *marker injection* is a separate concern — see [`super::prompt_caching`].
 
@@ -108,8 +111,10 @@ pub struct RouteDecision {
     pub route_name: Option<String>,
     /// Whether the session's cache was inferred warm at decision time.
     pub warm: bool,
-    /// Remaining switch budget after this decision.
-    pub switch_budget_usd: f64,
+    /// Cumulative never-switch baseline (USD) after this decision.
+    pub baseline_usd: f64,
+    /// Cumulative switch spend (USD) after this decision.
+    pub switch_spend_usd: f64,
     /// Cumulative switches taken this session (after this decision).
     pub switches: u32,
     /// Context-token estimate persisted with the binding (refined later from usage).
@@ -188,7 +193,8 @@ pub async fn route(
             model: facts.candidate_model.to_string(),
             route_name: facts.candidate_route.map(str::to_string),
             warm: false,
-            switch_budget_usd: 0.0,
+            baseline_usd: 0.0,
+            switch_spend_usd: 0.0,
             switches: 0,
             cached_tokens: facts.est_context_tokens,
             gc_ttl: candidate_gc_ttl,
@@ -211,34 +217,52 @@ pub async fn route(
     };
     let effective_warm = warm && !drifted;
 
-    let seed = routing_budget.map(|s| s.seed_usd).unwrap_or(0.0);
-
-    // Resolve the final model, budget, switch count, and decision telemetry.
+    // Resolve the final model, cumulative baseline/spend, switch count, and telemetry.
     let mut model = facts.candidate_model.to_string();
     let mut route_name = facts.candidate_route.map(str::to_string);
-    let budget_before;
-    let mut budget;
+    let baseline_usd;
+    let mut switch_spend_usd;
     let mut switches;
     let mut cost_opt: Option<f64> = None;
+    let mut ceiling_opt: Option<f64> = None;
     let mut counterfactual: Option<String> = None;
     let decision_label: &'static str;
     let reason: &'static str;
 
     match existing.as_ref() {
         Some(b) if effective_warm => {
-            budget_before = b.switch_budget_usd;
-            budget = b.switch_budget_usd;
             switches = b.switches;
+            let context_tokens = if b.cached_tokens > 0 {
+                b.cached_tokens
+            } else {
+                facts.est_context_tokens
+            };
+            // Grow the never-switch baseline by this turn's anchor read cost — the money
+            // the session would spend staying put. This is the denominator the overhead
+            // cap is measured against. Missing anchor pricing → no growth this turn.
+            let turn_baseline = match routing_budget {
+                Some(cfg) => orchestrator
+                    .anchor_read_cost_in_usd(
+                        context_tokens,
+                        &b.anchor_model,
+                        cfg.cache_read_discount,
+                    )
+                    .await
+                    .unwrap_or(0.0),
+                None => 0.0,
+            };
+            baseline_usd = b.baseline_usd + turn_baseline;
+            switch_spend_usd = b.switch_spend_usd;
+
             if facts.candidate_model == b.anchor_model {
                 // Router agrees with the anchor — stick, no cost.
                 decision_label = metric_labels::SWITCH_DECISION_ALLOWED;
                 reason = metric_labels::SWITCH_REASON_SAME_ANCHOR;
             } else if let Some(cfg) = routing_budget {
-                let context_tokens = if b.cached_tokens > 0 {
-                    b.cached_tokens
-                } else {
-                    facts.est_context_tokens
-                };
+                // Ceiling: at most `max_overhead_pct`% of the cumulative baseline may be
+                // spent on switching over this warm episode.
+                let ceiling = (cfg.max_overhead_pct / 100.0) * baseline_usd;
+                ceiling_opt = Some(ceiling);
                 match orchestrator
                     .estimate_switch_cost_in_usd(
                         context_tokens,
@@ -263,9 +287,8 @@ pub async fn route(
                     Some(cost) => {
                         cost_opt = Some(cost);
                         if cost <= 0.0 {
-                            // Outright cheaper: allowed for free. Does NOT credit the
-                            // budget back — the "saving" is vs a path we didn't take,
-                            // not real spendable money.
+                            // Outright cheaper: allowed for free. Does NOT reduce spend —
+                            // the "saving" is vs a path we didn't take, not real money.
                             switches += 1;
                             decision_label = metric_labels::SWITCH_DECISION_ALLOWED;
                             reason = metric_labels::SWITCH_REASON_FREE;
@@ -275,8 +298,8 @@ pub async fn route(
                                 switch_cost_in_usd = cost,
                                 "switch allowed — candidate undercuts the cached rate"
                             );
-                        } else if cost <= budget {
-                            budget -= cost;
+                        } else if switch_spend_usd + cost <= ceiling {
+                            switch_spend_usd += cost;
                             switches += 1;
                             decision_label = metric_labels::SWITCH_DECISION_ALLOWED;
                             reason = metric_labels::SWITCH_REASON_WITHIN_BUDGET;
@@ -284,8 +307,9 @@ pub async fn route(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
                                 switch_cost_in_usd = cost,
-                                budget_remaining_in_usd = budget,
-                                "switch allowed — within session switch budget"
+                                switch_spend_in_usd = switch_spend_usd,
+                                overhead_ceiling_in_usd = ceiling,
+                                "switch allowed — within session overhead cap"
                             );
                         } else {
                             // Unaffordable: retain the warm anchor.
@@ -305,8 +329,9 @@ pub async fn route(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
                                 switch_cost_in_usd = cost,
-                                budget_remaining_in_usd = budget,
-                                "switch vetoed — cost exceeds remaining budget, retaining anchor"
+                                switch_spend_in_usd = switch_spend_usd,
+                                overhead_ceiling_in_usd = ceiling,
+                                "switch vetoed — would exceed session overhead cap, retaining anchor"
                             );
                         }
                     }
@@ -320,13 +345,18 @@ pub async fn route(
             bs_metrics::record_session_switch_decision(decision_label, reason);
         }
         _ => {
-            // Cold (or no binding, or drifted): honor the candidate and (re)seed a
-            // fresh warm episode. Switches reset — this is a new cache lifetime.
-            budget_before = seed;
-            budget = match (routing_budget, existing.as_ref()) {
-                (Some(cfg), Some(b)) if !cfg.replenish_on_rebind => b.switch_budget_usd,
-                _ => seed,
+            // Cold (or no binding, or drifted): honor the candidate and (re)start a
+            // fresh warm episode. Switches reset — this is a new cache lifetime. On
+            // rebind we reset the running totals unless replenish_on_rebind is off, in
+            // which case the prior episode's baseline/spend carry over.
+            let (base, spend) = match (routing_budget, existing.as_ref()) {
+                (Some(cfg), Some(b)) if !cfg.replenish_on_rebind => {
+                    (b.baseline_usd, b.switch_spend_usd)
+                }
+                _ => (0.0, 0.0),
             };
+            baseline_usd = base;
+            switch_spend_usd = spend;
             switches = 0;
         }
     }
@@ -346,10 +376,13 @@ pub async fn route(
             tracing_plano::CACHE_IDLE_MS,
             idle.as_millis() as i64,
         ));
-        if routing_budget.is_some() {
+        if let Some(cfg) = routing_budget {
+            // Remaining headroom under the cap: pct * baseline - spend (never negative).
+            let remaining =
+                ((cfg.max_overhead_pct / 100.0) * baseline_usd - switch_spend_usd).max(0.0);
             span.set_attribute(KeyValue::new(
                 tracing_plano::SESSION_BUDGET_REMAINING_IN_USD,
-                budget,
+                remaining,
             ));
             span.set_attribute(KeyValue::new(
                 tracing_plano::SESSION_SWITCHES,
@@ -358,10 +391,12 @@ pub async fn route(
         }
         if let Some(cost) = cost_opt {
             span.set_attribute(KeyValue::new(tracing_plano::SWITCH_COST_IN_USD, cost));
-            span.set_attribute(KeyValue::new(
-                tracing_plano::SWITCH_THRESHOLD_IN_USD,
-                budget_before,
-            ));
+            if let Some(ceiling) = ceiling_opt {
+                span.set_attribute(KeyValue::new(
+                    tracing_plano::SWITCH_THRESHOLD_IN_USD,
+                    ceiling,
+                ));
+            }
             span.set_attribute(KeyValue::new(
                 tracing_plano::SWITCH_DECISION,
                 if model == facts.candidate_model {
@@ -389,7 +424,8 @@ pub async fn route(
                 prefix_hash: facts.prefix_hash,
                 last_used: now,
                 cached_tokens,
-                switch_budget_usd: budget,
+                baseline_usd,
+                switch_spend_usd,
                 switches,
             },
             Some(gc_ttl),
@@ -400,7 +436,8 @@ pub async fn route(
         model,
         route_name,
         warm: effective_warm,
-        switch_budget_usd: budget,
+        baseline_usd,
+        switch_spend_usd,
         switches,
         cached_tokens,
         gc_ttl,
@@ -427,7 +464,8 @@ mod tests {
             prefix_hash: Some(1),
             last_used: SystemTime::now() - Duration::from_secs(secs),
             cached_tokens: 100_000,
-            switch_budget_usd: 0.10,
+            baseline_usd: 1.0,
+            switch_spend_usd: 0.0,
             switches: 0,
         }
     }
@@ -471,9 +509,10 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    // Anchor cached rate 0.3, candidate `pricey` input 5.0, candidate `cheap` input 0.1.
-    // With a 100k-token context the paid switch costs 0.1 * (5.0 - 0.3) = $0.47 and the
-    // cheap switch is 0.1 * (0.1 - 0.3) = -$0.02 (a credit).
+    // Anchor `expensive` cached rate 0.3, candidate `pricey` input 5.0, candidate `cheap`
+    // input 0.1. With a 100k-token context the paid switch to `pricey` costs
+    // 0.1M * (5.0 - 0.3) = $0.47; the `cheap` switch is 0.1M * (0.1 - 0.3) = -$0.02 (free).
+    // Each warm turn grows the never-switch baseline by 0.1M * 0.3 = $0.03.
     fn orch_with_rates() -> OrchestratorService {
         let mut rates = HashMap::new();
         rates.insert(
@@ -515,16 +554,24 @@ mod tests {
         )
     }
 
-    fn routing_budget(seed: f64) -> EffectiveRoutingBudget {
+    fn routing_budget(pct: f64) -> EffectiveRoutingBudget {
         EffectiveRoutingBudget {
-            seed_usd: seed,
+            max_overhead_pct: pct,
             replenish_on_rebind: true,
             cache_read_discount: 0.1,
             record_counterfactual: false,
         }
     }
 
-    async fn seed_warm_binding(orch: &OrchestratorService, budget: f64, idle_secs: u64) {
+    /// Seed a warm binding on the `expensive` anchor with a pre-accumulated never-switch
+    /// baseline (`baseline_usd`) and switch spend (`switch_spend_usd`), simulating a
+    /// session that has already run for some turns.
+    async fn seed_warm_binding(
+        orch: &OrchestratorService,
+        baseline_usd: f64,
+        switch_spend_usd: f64,
+        idle_secs: u64,
+    ) {
         orch.store_binding(
             "s1",
             None,
@@ -534,7 +581,8 @@ mod tests {
                 prefix_hash: Some(1),
                 last_used: SystemTime::now() - Duration::from_secs(idle_secs),
                 cached_tokens: 100_000,
-                switch_budget_usd: budget,
+                baseline_usd,
+                switch_spend_usd,
                 switches: 0,
             },
             Some(Duration::from_secs(3600)),
@@ -554,69 +602,76 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paid_switch_within_budget_is_allowed_and_debits() {
+    async fn paid_switch_within_cap_is_allowed_and_accrues_spend() {
         let orch = orch_with_rates();
-        seed_warm_binding(&orch, 1.0, 30).await;
-        let st = routing_budget(1.0);
+        // Baseline $2.00 already accrued; this turn adds $0.03 -> $2.03. At 25% the
+        // ceiling is $0.5075, which covers the $0.47 switch to `pricey`.
+        seed_warm_binding(&orch, 2.0, 0.0, 30).await;
+        let st = routing_budget(25.0);
         let d = route(&orch, Some(&st), facts_for("openai/pricey")).await;
 
         assert_eq!(d.model, "openai/pricey");
         assert!(d.warm);
         assert_eq!(d.switches, 1);
         assert!(
-            (d.switch_budget_usd - 0.53).abs() < 1e-6,
-            "budget {} != 0.53",
-            d.switch_budget_usd
+            (d.switch_spend_usd - 0.47).abs() < 1e-6,
+            "spend {} != 0.47",
+            d.switch_spend_usd
+        );
+        assert!(
+            (d.baseline_usd - 2.03).abs() < 1e-6,
+            "baseline {} != 2.03",
+            d.baseline_usd
         );
     }
 
     #[tokio::test]
-    async fn paid_switch_over_budget_retains_anchor() {
+    async fn paid_switch_over_cap_retains_anchor() {
         let orch = orch_with_rates();
-        seed_warm_binding(&orch, 0.10, 30).await;
-        let st = routing_budget(0.10);
+        // Baseline $1.00 (+$0.03 this turn). At 25% the ceiling is ~$0.2575 < $0.47.
+        seed_warm_binding(&orch, 1.0, 0.0, 30).await;
+        let st = routing_budget(25.0);
         let d = route(&orch, Some(&st), facts_for("openai/pricey")).await;
 
         assert_eq!(d.model, "anthropic/expensive");
         assert!(d.warm);
         assert_eq!(d.switches, 0);
-        assert!((d.switch_budget_usd - 0.10).abs() < 1e-6);
+        // Vetoed switch spends nothing.
+        assert!((d.switch_spend_usd - 0.0).abs() < 1e-6);
     }
 
     #[tokio::test]
-    async fn cheaper_switch_is_free_and_does_not_change_budget() {
+    async fn cheaper_switch_is_free_and_does_not_change_spend() {
         let orch = orch_with_rates();
-        seed_warm_binding(&orch, 0.10, 30).await;
-        let st = routing_budget(0.10);
+        seed_warm_binding(&orch, 1.0, 0.10, 30).await;
+        let st = routing_budget(25.0);
         let d = route(&orch, Some(&st), facts_for("google/cheap")).await;
 
         assert_eq!(d.model, "google/cheap");
         assert!(d.warm);
         assert_eq!(d.switches, 1);
-        // Free switches do not credit the budget — it stays at 0.10.
+        // Free switches never touch the running spend — it stays at 0.10.
         assert!(
-            (d.switch_budget_usd - 0.10).abs() < 1e-6,
-            "budget {} != 0.10",
-            d.switch_budget_usd
+            (d.switch_spend_usd - 0.10).abs() < 1e-6,
+            "spend {} != 0.10",
+            d.switch_spend_usd
         );
     }
 
     #[tokio::test]
-    async fn cold_session_reseeds_budget_and_follows_router() {
+    async fn cold_session_resets_totals_and_follows_router() {
         let orch = orch_with_rates();
-        // 10 minutes idle: past Anthropic's 5m idle window -> cold. Budget was drained.
-        seed_warm_binding(&orch, 0.0, 600).await;
-        let st = routing_budget(1.0);
+        // 10 minutes idle: past Anthropic's 5m idle window -> cold. Prior episode spent
+        // its overhead; the fresh episode resets baseline and spend to zero.
+        seed_warm_binding(&orch, 5.0, 3.0, 600).await;
+        let st = routing_budget(25.0);
         let d = route(&orch, Some(&st), facts_for("openai/pricey")).await;
 
         assert_eq!(d.model, "openai/pricey");
         assert!(!d.warm);
         assert_eq!(d.switches, 0);
-        assert!(
-            (d.switch_budget_usd - 1.0).abs() < 1e-6,
-            "budget {} != seed",
-            d.switch_budget_usd
-        );
+        assert!((d.baseline_usd - 0.0).abs() < 1e-6, "baseline reset");
+        assert!((d.switch_spend_usd - 0.0).abs() < 1e-6, "spend reset");
     }
 
     #[tokio::test]

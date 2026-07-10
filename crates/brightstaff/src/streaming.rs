@@ -204,8 +204,10 @@ pub struct SessionUpdateCtx {
     pub anchor_model: String,
     pub route_name: Option<String>,
     pub prefix_hash: Option<u64>,
-    /// Remaining switch budget from the routing decision — preserved across the refresh.
-    pub switch_budget_usd: f64,
+    /// Cumulative never-switch baseline from the decision — preserved across the refresh.
+    pub baseline_usd: f64,
+    /// Cumulative switch spend from the decision — preserved across the refresh.
+    pub switch_spend_usd: f64,
     /// Cumulative switch count from the routing decision — preserved across the refresh.
     pub switches: u32,
     /// Context-size estimate to fall back to when the response carries no usage block.
@@ -297,7 +299,8 @@ impl ObservableStreamProcessor {
             anchor_model,
             route_name,
             prefix_hash,
-            switch_budget_usd,
+            baseline_usd,
+            switch_spend_usd,
             switches,
             est_context_tokens,
             gc_ttl,
@@ -318,7 +321,8 @@ impl ObservableStreamProcessor {
             prefix_hash,
             last_used: SystemTime::now(),
             cached_tokens,
-            switch_budget_usd,
+            baseline_usd,
+            switch_spend_usd,
             switches,
         };
         // Fire-and-forget: binding bookkeeping must not delay stream completion.

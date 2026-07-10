@@ -8,8 +8,9 @@ There are two independent behaviors to observe:
   warm, so per-turn input cost drops sharply across a multi-turn conversation.
 2. **Routing budget** — the router still runs every turn, but when it proposes a
   *different* model while the session's cache is plausibly warm, Plano only switches
-  while the session's cumulative budget covers the input-cost of abandoning that
-  cache. This is a routing concern and works whether or not prompt caching is on.
+  while the session's cumulative switch spend stays within `max_overhead_pct`% of what
+  staying put would have cost. This is a routing concern and works whether or not
+  prompt caching is on.
 
 ---
 
@@ -44,8 +45,8 @@ prompt_caching:
 
 routing:
   routing_budget:                 # no default — presence turns it on
-    seed_usd: 0.50                # cumulative budget for quality-driven switches
-    # replenish_on_rebind: true   # re-seed when a cold session re-binds
+    max_overhead_pct: 20          # bill at most 20% above never-switching
+    # replenish_on_rebind: true   # reset running totals when a cold session re-binds
     # cache_read_discount: 0.1    # fallback when a feed omits cache_read
 ```
 
@@ -134,17 +135,18 @@ the session's warm anchor. Warmth is inferred from how long ago the session was
 last used vs. the provider's cache window (no per-call cache-hit signal needed).
 To observe it:
 
-- **Vetoed switch (paid, over budget):** with a warm session on an expensive model
-and a large context, a switch to a pricier candidate costs more than the session's
-remaining budget → Plano **retains** the anchor.
-- **Paid switch (within budget):** the same switch while budget remains → Plano
-**switches** and debits `switch_cost` from the session budget.
+- **Vetoed switch (paid, over cap):** with a warm session on an expensive model
+and a large context, a switch to a pricier candidate would push the session's total
+switch spend past `max_overhead_pct`% of its never-switch baseline → Plano **retains**
+the anchor.
+- **Paid switch (within cap):** the same switch while the spend still fits under the
+cap → Plano **switches** and adds `switch_cost` to the session's cumulative spend.
 - **Free switch (cheaper candidate):** a candidate whose *uncached* input rate
 undercuts the anchor's *cached* rate → switch cost ≤ 0 → Plano **switches** for free
-(the budget is not credited back).
+(the spend is not reduced).
 - **Cold session:** the session went idle past the provider cache window → treated
-as cold → the router's pick is dispatched with no budget penalty (and the budget
-re-seeds on `replenish_on_rebind`).
+as cold → the router's pick is dispatched with no penalty (and the running totals
+reset on `replenish_on_rebind`).
 
 Each decision is emitted to metrics and traces (below) with a `reason` label
 (`same_anchor | free | within_budget | over_budget | no_pricing`).
@@ -175,9 +177,9 @@ curl -s localhost:9092/metrics | grep -E 'session_switch_decisions|prompt_cache_
 - `plano.cache.warm` — whether the session's cache was considered warm this turn
 - `plano.cache.idle_ms` — how long since the session was last used
 - `plano.switch.cost_in_usd` — actual input-token cost of the proposed switch (output excluded)
-- `plano.switch.threshold_in_usd` — budget remaining when the switch was evaluated
+- `plano.switch.threshold_in_usd` — overhead ceiling (`max_overhead_pct`% x baseline) when the switch was evaluated
 - `plano.switch.decision` — `allowed` or `retained`
-- `plano.session.budget_remaining_in_usd` — switch budget left after this turn
+- `plano.session.budget_remaining_in_usd` — remaining overhead headroom (ceiling − spend) after this turn
 - `plano.session.switches` — switches taken so far this session
 - `plano.switch.counterfactual_route` — on a `retained` decision, the route the gate
   *would* have taken had the switch been allowed (only when `record_counterfactual: true`)
@@ -226,8 +228,8 @@ curl -s localhost:12000/v1/chat/completions \
 
 | Setting                                          | Effect                                                                          |
 | ------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `routing.routing_budget.seed_usd`                | Cumulative budget per session (higher = quality-first, more switching)          |
-| `routing.routing_budget.replenish_on_rebind`     | Re-seed the budget when a cold session re-binds                                 |
+| `routing.routing_budget.max_overhead_pct`        | Switching overhead cap as a % of never-switching (higher = quality-first, more switching) |
+| `routing.routing_budget.replenish_on_rebind`     | Reset the running baseline/spend totals when a cold session re-binds            |
 | `routing.routing_budget.cache_read_discount`     | Assumed cached rate when a feed omits `cache_read` (DO fallback)                |
 | `routing.routing_budget.record_counterfactual`   | Emit `plano.switch.counterfactual_route` on vetoed switches (the road not taken)|
 | `prompt_caching.session_ttl_seconds`             | Session binding GC lifetime                                                     |
@@ -243,7 +245,7 @@ curl -s localhost:12000/v1/chat/completions \
 ## Notes
 
 - Caching **never** changes which model routing selects — the router still makes
-the quality call; the budget only vetoes a switch that the session can't afford.
+the quality call; the overhead cap only vetoes a switch that the session can't afford.
 - The routing budget is independent of prompt caching (it lives under `routing`) and
-is fully opt-in with **no baked-in budget**: configuring it without a `seed_usd`
+is fully opt-in with **no baked-in cap**: configuring it without a `max_overhead_pct`
 (or without a cost source) fails startup with a clear message.

@@ -36,10 +36,16 @@ pub struct SessionBinding {
     /// full-proxy path; the tokenizer estimate on the decision path.
     #[serde(default)]
     pub cached_tokens: u64,
-    /// Remaining cumulative switch budget (USD) for this session. Seeded on the first
-    /// warm binding and depleted by paid switches; free switches never credit it back.
+    /// Cumulative *never-switch* baseline (USD) for this warm episode: the running cost
+    /// the session would have paid by staying on its anchor. Grows each warm turn. This
+    /// is the denominator the percentage overhead cap is measured against.
     #[serde(default)]
-    pub switch_budget_usd: f64,
+    pub baseline_usd: f64,
+    /// Cumulative overhead (USD) actually spent on paid switches this warm episode.
+    /// Monotonic: paid switches add to it, free/cheaper switches never subtract. A paid
+    /// switch is allowed only while `switch_spend_usd + cost <= pct * baseline_usd`.
+    #[serde(default)]
+    pub switch_spend_usd: f64,
     /// Number of model switches taken during this warm session (observability).
     #[serde(default)]
     pub switches: u32,
