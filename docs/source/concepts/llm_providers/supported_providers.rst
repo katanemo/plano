@@ -8,7 +8,7 @@ Plano provides first-class support for multiple LLM providers through native int
 .. note::
    **Model Support:** Plano supports all chat models from each provider, not just the examples shown in this guide. The configurations below demonstrate common models for reference, but you can use any chat model available from your chosen provider.
 
-   Please refer to the quuickstart guide :ref:`here <llm_routing_quickstart>` to configure and use LLM providers via common client libraries like OpenAI and Anthropic Python SDKs, or via direct HTTP/cURL requests.
+   Please refer to the quickstart guide :ref:`here <llm_routing_quickstart>` to configure and use LLM providers via common client libraries like OpenAI and Anthropic Python SDKs, or via direct HTTP/cURL requests.
 
 
 Configuration Structure
@@ -255,7 +255,6 @@ Mistral AI
      - ``mistral/ministral-3b-latest``
      - Compact model
 
-**Configuration Examples:**
 **Configuration Examples:**
 
 .. code-block:: yaml
