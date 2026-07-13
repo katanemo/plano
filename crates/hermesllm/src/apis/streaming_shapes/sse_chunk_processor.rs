@@ -42,6 +42,10 @@ fn trailing_line_is_complete(bytes: &[u8]) -> bool {
 /// a partial SSE line. A compliant upstream terminates every event with `\n\n`
 /// well before this size; the cap only exists so a broken or hostile upstream
 /// streaming a newline-less blob cannot grow the buffer without bound.
+///
+/// Note: a single legitimate `data:` line larger than this (e.g. an inline
+/// base64 image payload) would be dropped. Text/reasoning deltas are orders of
+/// magnitude smaller; raise the cap if such payloads ever become a norm.
 const MAX_INCOMPLETE_EVENT_BUFFER_BYTES: usize = 1024 * 1024;
 
 /// Stateful processor for handling SSE chunks that may contain incomplete events.
