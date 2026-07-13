@@ -599,7 +599,18 @@ pub enum OutputItem {
     /// Reasoning item
     Reasoning {
         id: String,
+        #[serde(default)]
         summary: Vec<serde_json::Value>,
+        /// Reasoning content parts (present on some providers/models).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        content: Vec<serde_json::Value>,
+        /// Opaque encrypted reasoning payload (present when reasoning is stored
+        /// server-side and returned encrypted).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        encrypted_content: Option<String>,
+        /// Reasoning item status.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<OutputItemStatus>,
     },
 }
 
@@ -834,6 +845,9 @@ pub enum ResponsesAPIStreamEvent {
         output_index: i32,
         content_index: i32,
         delta: String,
+        // Tolerate an omitted `logprobs` (defaults to empty). Note: an explicit
+        // `null` still fails, since serde cannot deserialize null into a Vec.
+        #[serde(default)]
         logprobs: Vec<serde_json::Value>,
         obfuscation: Option<String>,
         sequence_number: i32,
@@ -846,6 +860,9 @@ pub enum ResponsesAPIStreamEvent {
         output_index: i32,
         content_index: i32,
         text: String,
+        // Tolerate an omitted `logprobs` (defaults to empty). Note: an explicit
+        // `null` still fails, since serde cannot deserialize null into a Vec.
+        #[serde(default)]
         logprobs: Vec<serde_json::Value>,
         sequence_number: i32,
     },
@@ -1437,6 +1454,97 @@ impl crate::providers::streaming_response::ProviderStreamResponse for ResponsesA
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Task C guard: a reasoning output item deserializes WITHOUT a `summary`
+    /// field (now `#[serde(default)]`) and WITH optional `content`,
+    /// `encrypted_content`, and `status` fields.
+    #[test]
+    fn test_reasoning_item_optional_fields_deserialize() {
+        // No `summary`; carries `content`, `encrypted_content`, `status`.
+        let json = r#"{
+            "type":"reasoning",
+            "id":"rs_abc123",
+            "content":[{"type":"reasoning_text","text":"thinking"}],
+            "encrypted_content":"ZW5jcnlwdGVk",
+            "status":"completed"
+        }"#;
+
+        let item: OutputItem = serde_json::from_str(json).expect("Failed to deserialize");
+        match item {
+            OutputItem::Reasoning {
+                id,
+                summary,
+                content,
+                encrypted_content,
+                status,
+            } => {
+                assert_eq!(id, "rs_abc123");
+                assert!(summary.is_empty(), "omitted summary should default empty");
+                assert_eq!(content.len(), 1);
+                assert_eq!(encrypted_content, Some("ZW5jcnlwdGVk".to_string()));
+                assert!(matches!(status, Some(OutputItemStatus::Completed)));
+            }
+            _ => panic!("Expected OutputItem::Reasoning"),
+        }
+
+        // Minimal reasoning item (only id + type): everything else defaults.
+        let minimal = r#"{"type":"reasoning","id":"rs_min"}"#;
+        let item: OutputItem = serde_json::from_str(minimal).expect("Failed to deserialize");
+        match item {
+            OutputItem::Reasoning {
+                summary,
+                content,
+                encrypted_content,
+                status,
+                ..
+            } => {
+                assert!(summary.is_empty());
+                assert!(content.is_empty());
+                assert!(encrypted_content.is_none());
+                assert!(status.is_none());
+            }
+            _ => panic!("Expected OutputItem::Reasoning"),
+        }
+    }
+
+    /// Task C guard: output text delta/done deserialize with `logprobs` omitted
+    /// (defaults to empty via `#[serde(default)]`).
+    #[test]
+    fn test_output_text_events_deserialize_without_logprobs() {
+        let delta = r#"{
+            "type":"response.output_text.delta",
+            "sequence_number":6,
+            "item_id":"msg_abc",
+            "output_index":1,
+            "content_index":0,
+            "delta":"Hi"
+        }"#;
+        let event: ResponsesAPIStreamEvent =
+            serde_json::from_str(delta).expect("delta without logprobs should deserialize");
+        match event {
+            ResponsesAPIStreamEvent::ResponseOutputTextDelta { logprobs, .. } => {
+                assert!(logprobs.is_empty());
+            }
+            _ => panic!("Expected ResponseOutputTextDelta"),
+        }
+
+        let done = r#"{
+            "type":"response.output_text.done",
+            "sequence_number":7,
+            "item_id":"msg_abc",
+            "output_index":1,
+            "content_index":0,
+            "text":"Hi"
+        }"#;
+        let event: ResponsesAPIStreamEvent =
+            serde_json::from_str(done).expect("done without logprobs should deserialize");
+        match event {
+            ResponsesAPIStreamEvent::ResponseOutputTextDone { logprobs, .. } => {
+                assert!(logprobs.is_empty());
+            }
+            _ => panic!("Expected ResponseOutputTextDone"),
+        }
+    }
 
     #[test]
     fn test_response_output_text_delta_deserialization() {

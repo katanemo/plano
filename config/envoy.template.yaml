@@ -196,7 +196,11 @@ static_resources:
                         name: decompress
                         typed_config:
                           "@type": "type.googleapis.com/envoy.extensions.compression.gzip.decompressor.v3.Gzip"
-                          window_bits: 9
+                          # Must be >= the window_bits of whatever compressed the response
+                          # (upstreams use 15; our compressor uses 10). A smaller inflate window
+                          # makes zlib silently stop emitting data mid-stream, truncating SSE
+                          # responses after the first few KB. 15 handles any compliant gzip.
+                          window_bits: 15
                           chunk_size: 8192
                           # If this ratio is set too low, then body data will not be decompressed completely.
                           max_inflate_ratio: 1000
@@ -361,7 +365,11 @@ static_resources:
                         name: decompress
                         typed_config:
                           "@type": "type.googleapis.com/envoy.extensions.compression.gzip.decompressor.v3.Gzip"
-                          window_bits: 9
+                          # Must be >= the window_bits of whatever compressed the response
+                          # (upstreams use 15; our compressor uses 10). A smaller inflate window
+                          # makes zlib silently stop emitting data mid-stream, truncating SSE
+                          # responses after the first few KB. 15 handles any compliant gzip.
+                          window_bits: 15
                           chunk_size: 8192
                           # If this ratio is set too low, then body data will not be decompressed completely.
                           max_inflate_ratio: 1000
@@ -442,7 +450,11 @@ static_resources:
                         name: decompress
                         typed_config:
                           "@type": "type.googleapis.com/envoy.extensions.compression.gzip.decompressor.v3.Gzip"
-                          window_bits: 9
+                          # Must be >= the window_bits of whatever compressed the response
+                          # (upstreams use 15; our compressor uses 10). A smaller inflate window
+                          # makes zlib silently stop emitting data mid-stream, truncating SSE
+                          # responses after the first few KB. 15 handles any compliant gzip.
+                          window_bits: 15
                           chunk_size: 8192
                           # If this ratio is set too low, then body data will not be decompressed completely.
                           max_inflate_ratio: 1000

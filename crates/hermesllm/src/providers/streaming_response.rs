@@ -5,6 +5,7 @@ use crate::apis::amazon_bedrock::ConverseStreamEvent;
 use crate::apis::anthropic::MessagesStreamEvent;
 use crate::apis::openai::ChatCompletionsStreamResponse;
 use crate::apis::openai_responses::ResponsesAPIStreamEvent;
+use crate::apis::streaming_shapes::sse::is_incomplete_json_error;
 use crate::apis::streaming_shapes::sse::SseEvent;
 use crate::apis::streaming_shapes::sse::SseStreamBuffer;
 use crate::apis::streaming_shapes::{
@@ -297,6 +298,22 @@ impl TryFrom<(&[u8], &SupportedAPIsFromClient, &SupportedUpstreamAPIs)>
     }
 }
 
+/// Extract the SSE event name from an OpenAI Responses data payload by reading
+/// only its top-level `type` field. Every Responses stream event carries a
+/// `"type"` that equals its `event:` line, so this recovers the correct event
+/// name for both modeled and unmodeled events without deserializing the whole
+/// (possibly unknown-shaped) payload.
+fn responses_event_type_from_json(data: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct TypeOnly {
+        #[serde(rename = "type")]
+        event_type: String,
+    }
+    serde_json::from_str::<TypeOnly>(data)
+        .ok()
+        .map(|t| t.event_type)
+}
+
 // TryFrom implementation to convert raw bytes to SseEvent with parsed provider response
 impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for SseEvent {
     type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -326,16 +343,53 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
             }
         }
 
+        // Identity passthrough for the OpenAI Responses API (client and upstream
+        // both Responses). We must forward the ORIGINAL wire bytes verbatim so
+        // unknown/unmodeled events and fields survive unchanged; re-serializing
+        // from the parsed struct would silently drop anything we don't model.
+        let is_responses_identity =
+            matches!(client_api, SupportedAPIsFromClient::OpenAIResponsesAPI(_))
+                && matches!(upstream_api, SupportedUpstreamAPIs::OpenAIResponsesAPI(_));
+
         // If has data, parse the data as a provider stream response (business logic layer)
         if let Some(data_str) = &transformed_event.data {
             let data_bytes = data_str.as_bytes();
-            let transformed_response: ProviderStreamResponseType =
-                ProviderStreamResponseType::try_from((data_bytes, client_api, upstream_api))?;
 
-            // Convert to SSE string explicitly to avoid type ambiguity
-            let sse_string: String = transformed_response.clone().into();
-            transformed_event.sse_transformed_lines = sse_string;
-            transformed_event.provider_stream_response = Some(transformed_response);
+            if is_responses_identity {
+                // Attempt to parse for token counting / tracing, but never let a
+                // parse failure drop the event:
+                //   - Ok           -> attach the parsed response.
+                //   - incomplete   -> propagate Err so the chunk processor can
+                //     JSON            recombine this line with the next chunk.
+                //   - other Err    -> unknown/unmodeled event; forward raw with
+                //                     no parsed response attached.
+                match ProviderStreamResponseType::try_from((data_bytes, client_api, upstream_api)) {
+                    Ok(resp) => transformed_event.provider_stream_response = Some(resp),
+                    Err(e) if is_incomplete_json_error(&e) => return Err(e),
+                    Err(_) => {}
+                }
+
+                // Reconstruct the coupled `event: <type>\ndata: <json>\n\n` wire
+                // block from the ORIGINAL bytes. The event name is read from the
+                // wire `type` field (not from our enum), so unknown event types
+                // pass through verbatim. The standalone upstream `event:` line is
+                // suppressed below to avoid a duplicate event line.
+                transformed_event.sse_transformed_lines =
+                    match responses_event_type_from_json(data_str) {
+                        Some(event_name) => {
+                            format!("event: {}\ndata: {}\n\n", event_name, data_str)
+                        }
+                        None => format!("data: {}\n\n", data_str),
+                    };
+            } else {
+                let transformed_response: ProviderStreamResponseType =
+                    ProviderStreamResponseType::try_from((data_bytes, client_api, upstream_api))?;
+
+                // Convert to SSE string explicitly to avoid type ambiguity
+                let sse_string: String = transformed_response.clone().into();
+                transformed_event.sse_transformed_lines = sse_string;
+                transformed_event.provider_stream_response = Some(transformed_response);
+            }
         }
 
         // Apply wire format adjustments for cross-API transformations

@@ -172,7 +172,7 @@ impl SpanExporter for ServiceNameOverrideExporter {
     }
 
     fn shutdown_with_timeout(&mut self, timeout: Duration) -> OTelSdkResult {
-        for (_, exporter_mutex) in self.exporters.iter() {
+        for exporter_mutex in self.exporters.values() {
             if let Ok(mut exporter) = exporter_mutex.try_lock() {
                 let _ = exporter.shutdown_with_timeout(timeout);
             }

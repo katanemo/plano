@@ -211,6 +211,20 @@ impl From<SseEvent> for Vec<u8> {
     }
 }
 
+/// Classify a transformation error as an "incomplete JSON" (EOF-while-parsing)
+/// error versus any other error (unknown event type, validation failure, etc.).
+///
+/// This is the single source of truth for that classification, shared by the
+/// SSE chunk processor (to decide whether to buffer a line for cross-chunk
+/// recombination) and the identity passthrough transform (to decide whether to
+/// propagate the error so the processor can retry with the next chunk).
+pub fn is_incomplete_json_error<E: std::fmt::Display + ?Sized>(err: &E) -> bool {
+    let msg = err.to_string().to_lowercase();
+    msg.contains("eof while parsing")
+        || msg.contains("unexpected end of json")
+        || msg.contains("unexpected eof")
+}
+
 #[derive(Debug)]
 pub struct SseParseError {
     pub message: String,

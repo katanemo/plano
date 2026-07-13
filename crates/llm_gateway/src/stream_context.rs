@@ -568,12 +568,16 @@ impl StreamContext {
                                 }
                             }
                             Err(e) => {
-                                warn!(
-                                    "request_id={}: streaming chunk error: {}",
+                                // Provider response could not be parsed (e.g. an
+                                // unmodeled upstream SSE event). Don't abort the
+                                // whole chunk: skip token-counting/TTFT for this
+                                // event and fall through so it still reaches the
+                                // client via buffer.add_transformed_event() below.
+                                debug!(
+                                    "request_id={}: streaming chunk unparsed, forwarding raw event: {}",
                                     self.request_identifier(),
                                     e
                                 );
-                                return Err(Action::Continue);
                             }
                         }
                     }
