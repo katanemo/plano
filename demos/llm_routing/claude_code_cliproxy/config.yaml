@@ -1,0 +1,47 @@
+version: v0.4.0
+
+listeners:
+  - type: model
+    name: claude_code_clipproxy
+    address: 127.0.0.1
+    port: 12000
+
+model_providers:
+  - model: anthropic/gpt-5.6-sol
+    base_url: http://127.0.0.1:8317
+    access_key: $CLIPROXY_LOCAL_API_KEY
+
+  - model: anthropic/gpt-5.6-terra
+    base_url: http://127.0.0.1:8317
+    access_key: $CLIPROXY_LOCAL_API_KEY
+    default: true
+
+  - model: anthropic/gpt-5.6-luna
+    base_url: http://127.0.0.1:8317
+    access_key: $CLIPROXY_LOCAL_API_KEY
+
+routing_preferences:
+  - name: deep-technical-reasoning
+    description: Diagnosis-only reasoning with no code or file writing, modification, refactoring, review, or testing; includes root-cause, deadlocks and concurrency, architecture, security, and incident analysis; excludes trivial formatting, renaming, factual lookup, and simple summary.
+    models:
+      - anthropic/gpt-5.6-sol
+
+  - name: software-implementation
+    description: The requested deliverable includes nontrivial writing, modifying, refactoring, reviewing, or testing of code or files; excludes diagnosis-only reasoning and trivial formatting or renaming.
+    models:
+      - anthropic/gpt-5.6-terra
+
+  - name: quick-developer-utility
+    description: Only trivial formatting or renaming, short factual lookup, or simple summary; excludes debugging, root-cause or incident analysis, architecture, security, code review, testing, and code implementation.
+    models:
+      - anthropic/gpt-5.6-luna
+
+model_aliases:
+  claude-fable-5:
+    target: anthropic/gpt-5.6-sol
+  claude-opus-4-8:
+    target: anthropic/gpt-5.6-terra
+  claude-sonnet-5:
+    target: anthropic/gpt-5.6-luna
+  claude-haiku-4-5:
+    target: anthropic/gpt-5.6-luna

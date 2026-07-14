@@ -1,0 +1,25 @@
+# CLIProxyAPI local-only example. Copy this file to the active config path,
+# replace the placeholder with a random local key, and keep permissions at 0600.
+host: 127.0.0.1
+port: 8317
+
+tls:
+  enable: false
+  cert: ""
+  key: ""
+
+remote-management:
+  allow-remote: false
+  # An empty secret key disables all /v0/management routes.
+  secret-key: ""
+  disable-control-panel: true
+
+auth-dir: "~/.cli-proxy-api"
+
+api-keys:
+  - "replace-with-a-random-local-key"
+
+debug: false
+logging-to-file: false
+usage-statistics-enabled: false
+ws-auth: true

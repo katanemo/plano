@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLIPROXY_URL="${CLIPROXY_URL:-http://127.0.0.1:8317}"
+PLANO_URL="${PLANO_URL:-http://127.0.0.1:12000}"
+CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+RUBY_BIN="${RUBY_BIN:-ruby}"
+CURL_BIN="${CURL_BIN:-curl}"
+LSOF_BIN="${LSOF_BIN:-lsof}"
+cliproxy_key="${CLIPROXY_LOCAL_API_KEY:-}"
+export -n cliproxy_key
+set +a
+unset CLIPROXY_LOCAL_API_KEY
+
+fail() {
+  printf 'claude-plano: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+url_endpoint() {
+  "$RUBY_BIN" -ruri -e '
+    uri = URI(ARGV.fetch(0))
+    abort unless uri.is_a?(URI::HTTP) && uri.host && uri.userinfo.nil?
+    abort unless ["", "/"].include?(uri.path) && uri.query.nil? && uri.fragment.nil?
+    print "#{uri.host}\t#{uri.port}"
+  ' "$1" 2>/dev/null
+}
+
+read_cliproxy_key() {
+  if [[ -n $cliproxy_key ]]; then
+    return 0
+  fi
+
+  if [[ -z ${CLIPROXY_CONFIG:-} ]]; then
+    command -v brew >/dev/null 2>&1 ||
+      fail 'CLIPROXY_CONFIG is required outside a Homebrew installation'
+    CLIPROXY_CONFIG="$(brew --prefix)/etc/cliproxyapi.conf"
+  fi
+  [[ -f $CLIPROXY_CONFIG ]] || fail "CLIProxyAPI config not found: $CLIPROXY_CONFIG"
+
+  if ! cliproxy_key=$(
+    "$RUBY_BIN" -rpsych -e '
+      config = Psych.safe_load_file(ARGV.fetch(0), permitted_classes: [], permitted_symbols: [], aliases: false)
+      keys = config.is_a?(Hash) ? config["api-keys"] : nil
+      key = keys.is_a?(Array) ? keys.first.to_s.strip : ""
+      abort if key.empty?
+      print key
+    ' "$CLIPROXY_CONFIG" 2>/dev/null
+  ); then
+    fail 'Unable to read CLIProxyAPI api-keys[0]; set CLIPROXY_LOCAL_API_KEY instead'
+  fi
+}
+
+verify_loopback_listener() {
+  local output=$1
+  local port=$2
+  local line
+  local found=false
+
+  while IFS= read -r line; do
+    case $line in
+      n127.0.0.1:"$port" | 'n[::1]':"$port") found=true ;;
+      n*) fail "CLIProxyAPI listener must be loopback-only, found ${line#n}" ;;
+    esac
+  done <<<"$output"
+  [[ $found == true ]] || fail "CLIProxyAPI is not listening on loopback port $port"
+}
+
+verify_required_models() {
+  local models_json=$1
+  local missing
+
+  if ! missing=$(
+    "$RUBY_BIN" -rjson -e '
+      payload = JSON.parse(STDIN.read)
+      data = payload.is_a?(Hash) ? payload["data"] : nil
+      abort unless data.is_a?(Array)
+      ids = data.each_with_object([]) { |entry, found| found << entry["id"] if entry.is_a?(Hash) }
+      required = %w[gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna]
+      print((required - ids).join("\n"))
+    ' <<<"$models_json" 2>/dev/null
+  ); then
+    fail 'CLIProxyAPI returned an invalid /v1/models response'
+  fi
+  [[ -z $missing ]] || fail "CLIProxyAPI missing required model: ${missing%%$'\n'*}"
+}
+
+for command_name in "$CLAUDE_BIN" "$RUBY_BIN" "$CURL_BIN" "$LSOF_BIN"; do
+  require_command "$command_name"
+done
+
+cliproxy_endpoint=$(url_endpoint "$CLIPROXY_URL") || fail "Invalid CLIProxyAPI URL: $CLIPROXY_URL"
+IFS=$'\t' read -r cliproxy_host cliproxy_port <<<"$cliproxy_endpoint"
+case $cliproxy_host in
+  127.0.0.1 | ::1 | '[::1]' | localhost) ;;
+  *) fail "CLIProxyAPI URL must use a loopback host: $CLIPROXY_URL" ;;
+esac
+plano_endpoint=$(url_endpoint "$PLANO_URL") || fail "Invalid Plano URL: $PLANO_URL"
+IFS=$'\t' read -r plano_host _ <<<"$plano_endpoint"
+case $plano_host in 127.0.0.1 | ::1 | '[::1]' | localhost) ;; *) fail "Plano URL must use a loopback host: $PLANO_URL" ;; esac
+
+read_cliproxy_key
+listener_output=$(
+  "$LSOF_BIN" -nP -iTCP:"$cliproxy_port" -sTCP:LISTEN -Fn 2>/dev/null
+) || fail "CLIProxyAPI is not listening on loopback port $cliproxy_port"
+verify_loopback_listener "$listener_output" "$cliproxy_port"
+
+if ! models_json=$(
+  printf 'Authorization: Bearer %s\n' "$cliproxy_key" |
+    "$CURL_BIN" -q --noproxy '*' --fail --silent --show-error --max-time 5 \
+      --header @- "${CLIPROXY_URL%/}/v1/models"
+); then
+  fail 'CLIProxyAPI authentication or model discovery failed'
+fi
+verify_required_models "$models_json"
+
+plano_status=$("$CURL_BIN" -q --noproxy '*' --silent --show-error --max-time 5 \
+  --output /dev/null --write-out '%{http_code}' "${PLANO_URL%/}/healthz") ||
+  fail 'Plano health check failed'
+[[ $plano_status == 200 ]] || fail "Plano health check failed with HTTP $plano_status"
+
+unset ANTHROPIC_API_KEY
+export ANTHROPIC_BASE_URL="${PLANO_URL%/}"
+export ANTHROPIC_AUTH_TOKEN="${PLANO_CLIENT_AUTH_TOKEN:-local-plano-proxy}"
+export ANTHROPIC_MODEL="${CLAUDE_PLANO_MODEL:-opus}"
+export ANTHROPIC_DEFAULT_FABLE_MODEL="${CLAUDE_PLANO_FABLE_MODEL:-claude-fable-5}"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="${CLAUDE_PLANO_OPUS_MODEL:-claude-opus-4-8}"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="${CLAUDE_PLANO_SONNET_MODEL:-claude-sonnet-5}"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="${CLAUDE_PLANO_HAIKU_MODEL:-claude-haiku-4-5}"
+
+unset cliproxy_key CLIPROXY_LOCAL_API_KEY
+exec "$CLAUDE_BIN" "$@"
