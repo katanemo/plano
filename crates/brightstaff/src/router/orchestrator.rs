@@ -33,11 +33,11 @@ const TOKENS_PER_MILLION: f64 = 1_000_000.0;
 /// anchor's cached rate — those switches are outright cheaper. Rates are USD per million
 /// tokens; the caller draws a positive cost down from the session's switch budget.
 pub fn switch_cost_in_usd(
-    est_context_tokens: u64,
+    context_tokens: u64,
     anchor_cached_rate: f64,
     candidate_uncached_rate: f64,
 ) -> f64 {
-    let context_millions = est_context_tokens as f64 / TOKENS_PER_MILLION;
+    let context_millions = context_tokens as f64 / TOKENS_PER_MILLION;
     context_millions * (candidate_uncached_rate - anchor_cached_rate)
 }
 
@@ -196,14 +196,15 @@ impl OrchestratorService {
     }
 
     /// Estimate the input-cost (USD) of switching a warm session from `anchor_model`
-    /// to `candidate_model`. Fetches per-model rates from the configured cost feed;
-    /// returns `None` when pricing is missing for either side so the caller can fail
-    /// open (switch freely) rather than veto the router on guesswork.
+    /// (the model that handled the latest request, i.e. the one the session is currently
+    /// warm on) to `candidate_model`. Fetches per-model rates from the configured cost
+    /// feed; returns `None` when pricing is missing for either side so the caller can
+    /// fail open (switch freely) rather than veto the router on guesswork.
     /// `cache_read_discount` estimates the anchor's cached-read rate when the feed
     /// doesn't publish one. Negative when the switch is outright cheaper.
     pub async fn estimate_switch_cost_in_usd(
         &self,
-        est_context_tokens: u64,
+        context_tokens: u64,
         anchor_model: &str,
         candidate_model: &str,
         cache_read_discount: f64,
@@ -211,26 +212,27 @@ impl OrchestratorService {
         let anchor = self.model_rates(anchor_model).await?;
         let candidate = self.model_rates(candidate_model).await?;
         Some(switch_cost_in_usd(
-            est_context_tokens,
+            context_tokens,
             anchor.cached_input_rate(cache_read_discount),
             candidate.input_per_million,
         ))
     }
 
-    /// This turn's contribution to the session's *never-switch* baseline: the USD cost
-    /// of reading `est_context_tokens` at the anchor's cached input rate — i.e. what the
-    /// session pays to keep going on its warm anchor. Summed across turns, this is the
-    /// denominator the percentage overhead cap is measured against. `None` when the
-    /// anchor has no pricing (the caller then can't grow the baseline this turn).
-    pub async fn anchor_read_cost_in_usd(
+    /// This turn's contribution to the session's *never-switch* baseline: the USD cost of
+    /// reading `context_tokens` at `model`'s cached input rate. `model` is the session's
+    /// `default_model` — what it would have paid by never switching — not the (possibly
+    /// drifted) current anchor. Summed across turns, this is the denominator the
+    /// percentage overhead cap is measured against. `None` when the model has no pricing
+    /// (the caller then can't grow the baseline this turn).
+    pub async fn cached_read_cost_in_usd(
         &self,
-        est_context_tokens: u64,
-        anchor_model: &str,
+        context_tokens: u64,
+        model: &str,
         cache_read_discount: f64,
     ) -> Option<f64> {
-        let anchor = self.model_rates(anchor_model).await?;
-        let context_millions = est_context_tokens as f64 / TOKENS_PER_MILLION;
-        Some(context_millions * anchor.cached_input_rate(cache_read_discount))
+        let rates = self.model_rates(model).await?;
+        let context_millions = context_tokens as f64 / TOKENS_PER_MILLION;
+        Some(context_millions * rates.cached_input_rate(cache_read_discount))
     }
 
     // ---- LLM routing ----
@@ -421,6 +423,7 @@ mod tests {
     fn binding(model: &str, route_name: Option<&str>) -> SessionBinding {
         SessionBinding {
             anchor_model: model.to_string(),
+            default_model: model.to_string(),
             route_name: route_name.map(|r| r.to_string()),
             prefix_hash: None,
             last_used: std::time::SystemTime::now(),

@@ -209,6 +209,8 @@ pub struct SessionUpdateCtx {
     pub tenant_id: Option<String>,
     /// Provider-qualified model this request actually ran on (the router's final pick).
     pub anchor_model: String,
+    /// The session's never-switch model for this episode — preserved across the refresh.
+    pub default_model: String,
     pub route_name: Option<String>,
     pub prefix_hash: Option<u64>,
     /// Cumulative never-switch baseline from the decision — preserved across the refresh.
@@ -225,8 +227,8 @@ pub struct SessionUpdateCtx {
     pub cost_rates: Option<ModelRates>,
     /// Cached-read discount used to price cached input when the feed omits a cached rate.
     pub cache_read_discount: f64,
-    /// Context-size estimate to fall back to when the response carries no usage block.
-    pub est_context_tokens: u64,
+    /// Context-size count to fall back to when the response carries no usage block.
+    pub context_tokens: u64,
     /// GC bound to store the refreshed binding with.
     pub gc_ttl: Duration,
 }
@@ -312,6 +314,7 @@ impl ObservableStreamProcessor {
             session_id,
             tenant_id,
             anchor_model,
+            default_model,
             route_name,
             prefix_hash,
             baseline_usd,
@@ -320,7 +323,7 @@ impl ObservableStreamProcessor {
             session_cost_usd,
             cost_rates,
             cache_read_discount,
-            est_context_tokens,
+            context_tokens,
             gc_ttl,
         } = update;
 
@@ -330,7 +333,7 @@ impl ObservableStreamProcessor {
             .prompt_tokens
             .filter(|&p| p > 0)
             .map(|p| p as u64)
-            .unwrap_or(est_context_tokens);
+            .unwrap_or(context_tokens);
 
         // Price this turn from the catalog rates and roll it into the conversation
         // total. Emit per-request cost on the (llm) span and carry the running total
@@ -361,6 +364,7 @@ impl ObservableStreamProcessor {
         bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_REFRESH);
         let binding = SessionBinding {
             anchor_model,
+            default_model,
             route_name,
             prefix_hash,
             last_used: SystemTime::now(),

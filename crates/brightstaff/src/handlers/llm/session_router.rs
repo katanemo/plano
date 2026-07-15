@@ -10,9 +10,10 @@
 //! * **A cumulative per-session overhead cap** — a paid switch (the candidate must
 //!   re-ingest the context at its uncached rate) is allowed only while total switch
 //!   spend stays within `max_overhead_pct`% of the session's running *never-switch*
-//!   baseline (what staying on the anchor would have cost). An outright-cheaper switch
-//!   is free but never reduces that spend. The promise: this conversation bills at most
-//!   `max_overhead_pct`% above never-switching.
+//!   baseline (what staying on the session's `default_model` would have cost — priced
+//!   independently of the current anchor, which drifts as switches happen). An
+//!   outright-cheaper switch is free but never reduces that spend. The promise: this
+//!   conversation bills at most `max_overhead_pct`% above never-switching.
 //!
 //! The default posture is to stick. Quality and cost stay separate: the router decides
 //! whether a switch *improves quality*; the overhead cap decides whether it is *affordable*.
@@ -97,8 +98,10 @@ pub struct RouteFacts<'a> {
     /// Stable prompt-prefix hash; a mismatch vs. the stored binding means the provider
     /// cache is already lost, so a switch is free.
     pub prefix_hash: Option<u64>,
-    /// Estimated context size in tokens (the tokens a switch would re-ingest).
-    pub est_context_tokens: u64,
+    /// Context size in tokens (the tokens a switch would re-ingest). The request-side
+    /// count of the real messages; the binding's usage-refined count is preferred when
+    /// warm (see [`actual_context_tokens`]).
+    pub context_tokens: u64,
     /// The model the quality router picked for this request.
     pub candidate_model: &'a str,
     pub candidate_route: Option<&'a str>,
@@ -109,6 +112,9 @@ pub struct RouteDecision {
     /// The model to actually dispatch to (the anchor when a switch was vetoed).
     pub model: String,
     pub route_name: Option<String>,
+    /// The session's never-switch model for this episode — carried to the response side
+    /// so the usage-refresh preserves it on the binding.
+    pub default_model: String,
     /// Whether the session's cache was inferred warm at decision time.
     pub warm: bool,
     /// Cumulative never-switch baseline (USD) after this decision.
@@ -126,10 +132,12 @@ pub struct RouteDecision {
     pub gc_ttl: Duration,
 }
 
-/// Estimate the request's context size in tokens. Uses the tiktoken-based counter when
-/// available, falling back to the chars/4 heuristic. Precision is not critical — it only
-/// scales the switch-cost estimate, and both sides of the comparison scale with it.
-pub fn estimate_context_tokens(messages: &[Message], model: &str) -> u64 {
+/// Count the request's context size in tokens from the real message content, using the
+/// tiktoken-based counter when available and falling back to the chars/4 heuristic. This
+/// is the request-side figure; on the full-proxy path the binding is later refined with
+/// the provider's own reported prompt-token count (see [`SessionBinding::cached_tokens`]),
+/// which the router prefers when present.
+pub fn actual_context_tokens(messages: &[Message], model: &str) -> u64 {
     let text: String = messages
         .iter()
         .filter_map(|m| m.content.as_ref().map(|c| c.to_string()))
@@ -195,12 +203,13 @@ pub async fn route(
         return RouteDecision {
             model: facts.candidate_model.to_string(),
             route_name: facts.candidate_route.map(str::to_string),
+            default_model: facts.candidate_model.to_string(),
             warm: false,
             baseline_usd: 0.0,
             switch_spend_usd: 0.0,
             session_cost_usd: 0.0,
             switches: 0,
-            cached_tokens: facts.est_context_tokens,
+            cached_tokens: facts.context_tokens,
             gc_ttl: candidate_gc_ttl,
         };
     };
@@ -228,6 +237,8 @@ pub async fn route(
     // Resolve the final model, cumulative baseline/spend, switch count, and telemetry.
     let mut model = facts.candidate_model.to_string();
     let mut route_name = facts.candidate_route.map(str::to_string);
+    // The session's never-switch model for this episode — priced into the baseline.
+    let default_model;
     let baseline_usd;
     let mut switch_spend_usd;
     let mut switches;
@@ -240,19 +251,29 @@ pub async fn route(
     match existing.as_ref() {
         Some(b) if effective_warm => {
             switches = b.switches;
+            // The model the session would have stayed on had it never switched. Older
+            // bindings (persisted before this field existed) fall back to the anchor.
+            let session_default = if b.default_model.is_empty() {
+                b.anchor_model.clone()
+            } else {
+                b.default_model.clone()
+            };
+            // Prefer the provider's real prompt-token count from the prior turn over the
+            // request-side estimate — it's the actual context the session carries.
             let context_tokens = if b.cached_tokens > 0 {
                 b.cached_tokens
             } else {
-                facts.est_context_tokens
+                facts.context_tokens
             };
-            // Grow the never-switch baseline by this turn's anchor read cost — the money
-            // the session would spend staying put. This is the denominator the overhead
-            // cap is measured against. Missing anchor pricing → no growth this turn.
+            // Grow the never-switch baseline by this turn's read cost on the *default*
+            // model — the money the session would spend by never switching. This is the
+            // denominator the overhead cap is measured against. Missing pricing → no
+            // growth this turn.
             let turn_baseline = match routing_budget {
                 Some(cfg) => orchestrator
-                    .anchor_read_cost_in_usd(
+                    .cached_read_cost_in_usd(
                         context_tokens,
-                        &b.anchor_model,
+                        &session_default,
                         cfg.cache_read_discount,
                     )
                     .await
@@ -261,6 +282,7 @@ pub async fn route(
             };
             baseline_usd = b.baseline_usd + turn_baseline;
             switch_spend_usd = b.switch_spend_usd;
+            default_model = session_default;
 
             if facts.candidate_model == b.anchor_model {
                 // Router agrees with the anchor — stick, no cost.
@@ -366,12 +388,21 @@ pub async fn route(
             baseline_usd = base;
             switch_spend_usd = spend;
             switches = 0;
+            // Fresh episode anchors on the model we're about to dispatch. When totals are
+            // carried across a rebind (replenish off), keep the prior default so the
+            // baseline lineage stays consistent.
+            default_model = match (routing_budget, existing.as_ref()) {
+                (Some(cfg), Some(b)) if !cfg.replenish_on_rebind && !b.default_model.is_empty() => {
+                    b.default_model.clone()
+                }
+                _ => model.clone(),
+            };
         }
     }
 
-    // Context estimate persisted with the binding (refined later from real usage).
-    let cached_tokens = if facts.est_context_tokens > 0 {
-        facts.est_context_tokens
+    // Context count persisted with the binding (refined later from real usage).
+    let cached_tokens = if facts.context_tokens > 0 {
+        facts.context_tokens
     } else {
         existing.as_ref().map(|b| b.cached_tokens).unwrap_or(0)
     };
@@ -446,6 +477,7 @@ pub async fn route(
             facts.tenant_id,
             SessionBinding {
                 anchor_model: model.clone(),
+                default_model: default_model.clone(),
                 route_name: route_name.clone(),
                 prefix_hash: facts.prefix_hash,
                 last_used: now,
@@ -462,6 +494,7 @@ pub async fn route(
     RouteDecision {
         model,
         route_name,
+        default_model,
         warm: effective_warm,
         baseline_usd,
         switch_spend_usd,
@@ -488,6 +521,7 @@ mod tests {
     fn binding_used_ago(secs: u64) -> SessionBinding {
         SessionBinding {
             anchor_model: "anthropic/claude-sonnet-4-5".to_string(),
+            default_model: "anthropic/claude-sonnet-4-5".to_string(),
             route_name: None,
             prefix_hash: Some(1),
             last_used: SystemTime::now() - Duration::from_secs(secs),
@@ -606,6 +640,7 @@ mod tests {
             None,
             SessionBinding {
                 anchor_model: "anthropic/expensive".to_string(),
+                default_model: "anthropic/expensive".to_string(),
                 route_name: None,
                 prefix_hash: Some(1),
                 last_used: SystemTime::now() - Duration::from_secs(idle_secs),
@@ -625,7 +660,7 @@ mod tests {
             session_id: Some("s1"),
             tenant_id: None,
             prefix_hash: Some(1),
-            est_context_tokens: 0,
+            context_tokens: 0,
             candidate_model: candidate,
             candidate_route: None,
         }
@@ -712,12 +747,52 @@ mod tests {
             session_id: None,
             tenant_id: None,
             prefix_hash: Some(1),
-            est_context_tokens: 0,
+            context_tokens: 0,
             candidate_model: "openai/pricey",
             candidate_route: None,
         };
         let d = route(&orch, Some(&st), facts).await;
         assert_eq!(d.model, "openai/pricey");
         assert!(!d.warm);
+    }
+
+    #[tokio::test]
+    async fn baseline_grows_on_default_model_not_current_anchor() {
+        // A session that started on `expensive` (default) but has since switched to
+        // `cheap` (current anchor). The never-switch baseline must keep growing at the
+        // *default* model's cached rate (0.3/M), not the cheap anchor's (0.01/M).
+        let orch = orch_with_rates();
+        orch.store_binding(
+            "s1",
+            None,
+            SessionBinding {
+                anchor_model: "google/cheap".to_string(),
+                default_model: "anthropic/expensive".to_string(),
+                route_name: None,
+                prefix_hash: Some(1),
+                last_used: SystemTime::now(),
+                cached_tokens: 100_000,
+                baseline_usd: 0.0,
+                switch_spend_usd: 0.0,
+                switches: 1,
+                session_cost_usd: 0.0,
+            },
+            Some(Duration::from_secs(3600)),
+        )
+        .await;
+        let st = routing_budget(25.0);
+        // Router agrees with the current anchor -> same-anchor, no switch.
+        let d = route(&orch, Some(&st), facts_for("google/cheap")).await;
+
+        assert_eq!(d.model, "google/cheap");
+        assert!(d.warm);
+        assert_eq!(d.switches, 1);
+        // 100_000 tokens x $0.30/M (default `expensive`) = $0.03 — not $0.001 (cheap).
+        assert!(
+            (d.baseline_usd - 0.03).abs() < 1e-6,
+            "baseline {} != 0.03 (should price the default model, not the anchor)",
+            d.baseline_usd
+        );
+        assert_eq!(d.default_model, "anthropic/expensive");
     }
 }

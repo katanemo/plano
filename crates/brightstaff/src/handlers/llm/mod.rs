@@ -350,8 +350,8 @@ async fn llm_chat_inner(
 
     // Context size for the switch-cost estimate, computed before the router consumes
     // the request. Only needed when stickiness could act on a session.
-    let est_context_tokens: u64 = if session_id.is_some() && routing_budget.is_some() {
-        session_router::estimate_context_tokens(&request_messages, &model_name_only)
+    let context_tokens: u64 = if session_id.is_some() && routing_budget.is_some() {
+        session_router::actual_context_tokens(&request_messages, &model_name_only)
     } else {
         0
     };
@@ -405,7 +405,7 @@ async fn llm_chat_inner(
             session_id: session_id.as_deref(),
             tenant_id: tenant_id.as_deref(),
             prefix_hash: request_prefix_hash,
-            est_context_tokens,
+            context_tokens,
             candidate_model: &candidate_model,
             candidate_route: candidate_route.as_deref(),
         },
@@ -467,6 +467,7 @@ async fn llm_chat_inner(
             session_id: sid.clone(),
             tenant_id: tenant_id.clone(),
             anchor_model: resolved_model.clone(),
+            default_model: decision.default_model.clone(),
             route_name: resolved_route_name.clone(),
             prefix_hash: request_prefix_hash,
             baseline_usd: decision.baseline_usd,
@@ -475,7 +476,7 @@ async fn llm_chat_inner(
             session_cost_usd: decision.session_cost_usd,
             cost_rates,
             cache_read_discount,
-            est_context_tokens: decision.cached_tokens,
+            context_tokens: decision.cached_tokens,
             gc_ttl: decision.gc_ttl,
         });
 

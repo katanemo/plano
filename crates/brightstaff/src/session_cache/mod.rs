@@ -18,8 +18,17 @@ pub mod redis;
 /// the decision path reason about warmth without ever seeing a provider response.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SessionBinding {
-    /// Provider-qualified model this session is anchored to (e.g. `openai/gpt-4o`).
+    /// Provider-qualified model that handled the latest request (e.g. `openai/gpt-4o`).
+    /// This is what the session is currently *warm on*; a proposed switch's cost is
+    /// measured against reading the context at this model's cached rate. It tracks the
+    /// last dispatched model and changes whenever a switch is honored.
     pub anchor_model: String,
+    /// Provider-qualified model the session started on this warm episode — the model it
+    /// would have stayed on had it *never switched*. The never-switch baseline is priced
+    /// against this (not `anchor_model`, which drifts as switches happen). Set when a warm
+    /// episode begins and preserved across its turns.
+    #[serde(default)]
+    pub default_model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_name: Option<String>,
     /// Hash of the stable prompt prefix (system + tools) observed when the binding was
@@ -37,8 +46,8 @@ pub struct SessionBinding {
     #[serde(default)]
     pub cached_tokens: u64,
     /// Cumulative *never-switch* baseline (USD) for this warm episode: the running cost
-    /// the session would have paid by staying on its anchor. Grows each warm turn. This
-    /// is the denominator the percentage overhead cap is measured against.
+    /// the session would have paid by staying on its `default_model`. Grows each warm
+    /// turn. This is the denominator the percentage overhead cap is measured against.
     #[serde(default)]
     pub baseline_usd: f64,
     /// Cumulative overhead (USD) actually spent on paid switches this warm episode.

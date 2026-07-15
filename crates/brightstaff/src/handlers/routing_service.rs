@@ -211,8 +211,8 @@ async fn routing_decision_inner(
         cache_off_for_request,
     );
 
-    let est_context_tokens: u64 = if session_id.is_some() && routing_budget.is_some() {
-        session_router::estimate_context_tokens(&request_messages, client_request.model())
+    let context_tokens: u64 = if session_id.is_some() && routing_budget.is_some() {
+        session_router::actual_context_tokens(&request_messages, client_request.model())
     } else {
         0
     };
@@ -236,7 +236,7 @@ async fn routing_decision_inner(
                     session_id: session_id.as_deref(),
                     tenant_id: tenant_id.as_deref(),
                     prefix_hash: request_prefix_hash,
-                    est_context_tokens,
+                    context_tokens,
                     candidate_model: &candidate_model,
                     candidate_route: result.route_name.as_deref(),
                 },
