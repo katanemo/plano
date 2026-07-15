@@ -58,12 +58,72 @@ pub struct SessionBinding {
     /// Number of model switches taken during this warm session (observability).
     #[serde(default)]
     pub switches: u32,
+    /// Bounded most-recent-first-ish record of the models this session has been
+    /// dispatched to, each with when it was last used and how large the context was
+    /// then. Lets the switch-cost estimate credit a *return* to a still-warm model (it
+    /// re-reads only the tokens appended since, not the whole context) and gives future
+    /// routing policies per-model recency to reason about. Capped at
+    /// [`MAX_ROUTE_HISTORY`] distinct models (LRU-evicted).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<RouteVisit>,
     /// Cumulative *actual* cost (USD, input + output) of the whole conversation, priced
     /// from the configured catalog rates and refined from real usage each turn on the
     /// full-proxy path. Conversation-level (not per warm episode): it persists across
     /// cold re-binds and is best-effort (resets only if the binding is evicted).
     #[serde(default)]
     pub session_cost_usd: f64,
+}
+
+/// One model this session has been dispatched to, with the recency and context size
+/// needed to estimate whether its provider cache is still warm on a later return.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct RouteVisit {
+    /// Provider-qualified model id (e.g. `openai/gpt-4o`).
+    pub model: String,
+    /// When this model last handled a turn in this session.
+    #[serde(with = "epoch_secs")]
+    pub last_used: SystemTime,
+    /// Context size (input tokens) that model saw on its last turn — the prefix it may
+    /// still have cached if it's revisited before its cache window elapses.
+    #[serde(default)]
+    pub cached_tokens: u64,
+}
+
+/// Max distinct models retained in [`SessionBinding::history`]. Small: real sessions
+/// touch a handful of models, and the entry has to stay compact on the Redis wire.
+pub const MAX_ROUTE_HISTORY: usize = 8;
+
+/// Record (or refresh) a model visit in `history`, then LRU-evict down to
+/// [`MAX_ROUTE_HISTORY`]. Refreshing an existing model updates its recency and context
+/// size in place rather than appending a duplicate.
+pub fn record_route_visit(
+    history: &mut Vec<RouteVisit>,
+    model: &str,
+    last_used: SystemTime,
+    cached_tokens: u64,
+) {
+    if let Some(entry) = history.iter_mut().find(|e| e.model == model) {
+        entry.last_used = last_used;
+        entry.cached_tokens = cached_tokens;
+    } else {
+        history.push(RouteVisit {
+            model: model.to_string(),
+            last_used,
+            cached_tokens,
+        });
+    }
+    while history.len() > MAX_ROUTE_HISTORY {
+        if let Some(idx) = history
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, e)| e.last_used)
+            .map(|(i, _)| i)
+        {
+            history.remove(idx);
+        } else {
+            break;
+        }
+    }
 }
 
 /// Serde helper: persist `SystemTime` as whole epoch seconds so the Redis wire format

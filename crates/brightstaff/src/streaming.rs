@@ -24,7 +24,7 @@ use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
 use crate::router::model_metrics::ModelRates;
 use crate::router::orchestrator::OrchestratorService;
-use crate::session_cache::SessionBinding;
+use crate::session_cache::{record_route_visit, RouteVisit, SessionBinding};
 use crate::signals::otel::emit_signals_to_span;
 use crate::signals::{SignalAnalyzer, FLAG_MARKER};
 use crate::tracing::{llm, set_service_name};
@@ -219,6 +219,9 @@ pub struct SessionUpdateCtx {
     pub switch_spend_usd: f64,
     /// Cumulative switch count from the routing decision — preserved across the refresh.
     pub switches: u32,
+    /// Per-model route history from the decision — preserved across the refresh, with
+    /// the anchor's entry refined to the real prompt-token count.
+    pub history: Vec<RouteVisit>,
     /// Cumulative actual conversation cost (USD) through prior turns. This turn's real
     /// cost is added on top once usage is known.
     pub session_cost_usd: f64,
@@ -320,6 +323,7 @@ impl ObservableStreamProcessor {
             baseline_usd,
             switch_spend_usd,
             switches,
+            mut history,
             session_cost_usd,
             cost_rates,
             cache_read_discount,
@@ -334,6 +338,15 @@ impl ObservableStreamProcessor {
             .filter(|&p| p > 0)
             .map(|p| p as u64)
             .unwrap_or(context_tokens);
+
+        // Refine the anchor's route-history entry with the real context size, so a later
+        // return to this model prices its warm portion off actual usage.
+        record_route_visit(
+            &mut history,
+            &anchor_model,
+            SystemTime::now(),
+            cached_tokens,
+        );
 
         // Price this turn from the catalog rates and roll it into the conversation
         // total. Emit per-request cost on the (llm) span and carry the running total
@@ -373,6 +386,7 @@ impl ObservableStreamProcessor {
             switch_spend_usd,
             switches,
             session_cost_usd,
+            history,
         };
         // Fire-and-forget: binding bookkeeping must not delay stream completion.
         tokio::spawn(async move {

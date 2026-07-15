@@ -473,6 +473,7 @@ async fn llm_chat_inner(
             baseline_usd: decision.baseline_usd,
             switch_spend_usd: decision.switch_spend_usd,
             switches: decision.switches,
+            history: decision.history.clone(),
             session_cost_usd: decision.session_cost_usd,
             cost_rates,
             cache_read_discount,

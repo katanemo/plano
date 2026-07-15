@@ -25,20 +25,34 @@ pub use crate::session_cache::SessionBinding;
 const DEFAULT_SESSION_TTL_SECONDS: u64 = 600;
 const TOKENS_PER_MILLION: f64 = 1_000_000.0;
 
-/// Input-cost of abandoning a plausibly-warm cache to switch to `candidate`.
+/// Input-cost of moving a plausibly-warm session off its anchor onto `candidate`.
 ///
-/// Deliberately input-only: output-token savings are unknowable before the response
-/// is generated (reasoning models can emit 5-10x the tokens for the same task), so they
-/// are never credited. Negative when the candidate's uncached input rate undercuts the
-/// anchor's cached rate — those switches are outright cheaper. Rates are USD per million
-/// tokens; the caller draws a positive cost down from the session's switch budget.
+/// The anchor is warm, so staying re-reads the whole context at its cached rate. The
+/// candidate re-reads `candidate_warm_tokens` (whatever it still has cached from an
+/// earlier visit this session) at *its* cached rate, and the remaining, freshly-appended
+/// tokens at its uncached rate. When the candidate is cold (`candidate_warm_tokens == 0`)
+/// this reduces to the whole context at the uncached rate — i.e. a first-time switch.
+/// This is what makes an A→B→A return cheap: on the way back, B… er, A still holds most
+/// of the context, so only the delta is re-ingested.
+///
+/// Deliberately input-only: output-token savings are unknowable before the response is
+/// generated (reasoning models can emit 5-10x the tokens for the same task), so they are
+/// never credited. Rates are USD per million tokens. Negative when the switch is outright
+/// cheaper than staying; the caller draws a positive cost down from the overhead cap.
 pub fn switch_cost_in_usd(
     context_tokens: u64,
+    candidate_warm_tokens: u64,
     anchor_cached_rate: f64,
     candidate_uncached_rate: f64,
+    candidate_cached_rate: f64,
 ) -> f64 {
-    let context_millions = context_tokens as f64 / TOKENS_PER_MILLION;
-    context_millions * (candidate_uncached_rate - anchor_cached_rate)
+    let warm = candidate_warm_tokens.min(context_tokens);
+    let fresh = context_tokens - warm;
+    let candidate_cost = (fresh as f64 * candidate_uncached_rate
+        + warm as f64 * candidate_cached_rate)
+        / TOKENS_PER_MILLION;
+    let anchor_cost = context_tokens as f64 * anchor_cached_rate / TOKENS_PER_MILLION;
+    candidate_cost - anchor_cost
 }
 
 pub struct OrchestratorService {
@@ -197,24 +211,30 @@ impl OrchestratorService {
 
     /// Estimate the input-cost (USD) of switching a warm session from `anchor_model`
     /// (the model that handled the latest request, i.e. the one the session is currently
-    /// warm on) to `candidate_model`. Fetches per-model rates from the configured cost
+    /// warm on) to `candidate_model`. `candidate_warm_tokens` is how much of the context
+    /// the candidate still has cached from an earlier visit this session (0 when it's a
+    /// cold, first-time switch) — those tokens re-read at the candidate's cached rate
+    /// instead of its uncached rate. Fetches per-model rates from the configured cost
     /// feed; returns `None` when pricing is missing for either side so the caller can
     /// fail open (switch freely) rather than veto the router on guesswork.
-    /// `cache_read_discount` estimates the anchor's cached-read rate when the feed
-    /// doesn't publish one. Negative when the switch is outright cheaper.
+    /// `cache_read_discount` estimates a model's cached-read rate when the feed doesn't
+    /// publish one. Negative when the switch is outright cheaper.
     pub async fn estimate_switch_cost_in_usd(
         &self,
         context_tokens: u64,
         anchor_model: &str,
         candidate_model: &str,
+        candidate_warm_tokens: u64,
         cache_read_discount: f64,
     ) -> Option<f64> {
         let anchor = self.model_rates(anchor_model).await?;
         let candidate = self.model_rates(candidate_model).await?;
         Some(switch_cost_in_usd(
             context_tokens,
+            candidate_warm_tokens,
             anchor.cached_input_rate(cache_read_discount),
             candidate.input_per_million,
+            candidate.cached_input_rate(cache_read_discount),
         ))
     }
 
@@ -432,6 +452,7 @@ mod tests {
             switch_spend_usd: 0.0,
             switches: 0,
             session_cost_usd: 0.0,
+            history: Vec::new(),
         }
     }
 
@@ -551,39 +572,58 @@ mod tests {
 
     #[test]
     fn negative_cost_when_candidate_undercuts_cached_rate() {
-        // Anchor opus (cached 1.5) -> haiku (uncached 1.0) over 100k context:
-        // cost = 0.1M x (1.0 - 1.5) = -$0.05 — cheaper even after re-reading.
-        let cost = switch_cost_in_usd(100_000, 1.5, 1.0);
+        // Anchor opus (cached 1.5) -> haiku (uncached 1.0) over 100k context, cold
+        // candidate: cost = 0.1M x (1.0 - 1.5) = -$0.05 — cheaper even after re-reading.
+        let cost = switch_cost_in_usd(100_000, 0, 1.5, 1.0, 0.1);
         assert!((cost - (-0.05)).abs() < 1e-9);
     }
 
     #[test]
     fn positive_cost_when_candidate_pricier_than_cached_rate() {
-        // Anchor opus (cached 1.5) -> gpt-4.1 (uncached 2.0) over 100k:
+        // Anchor opus (cached 1.5) -> gpt-4.1 (uncached 2.0) over 100k, cold candidate:
         // cost = 0.1M x (2.0 - 1.5) = +$0.05.
-        let cost = switch_cost_in_usd(100_000, 1.5, 2.0);
+        let cost = switch_cost_in_usd(100_000, 0, 1.5, 2.0, 0.5);
         assert!((cost - 0.05).abs() < 1e-9);
     }
 
     #[test]
     fn large_context_amplifies_cost() {
-        // Anchor sonnet (cached 0.3) -> gpt-5.5-class (uncached 5.0) over 150k:
+        // Anchor sonnet (cached 0.3) -> gpt-5.5-class (uncached 5.0) over 150k, cold:
         // cost = 0.15M x (5.0 - 0.3) = +$0.705.
-        let cost = switch_cost_in_usd(150_000, 0.3, 5.0);
+        let cost = switch_cost_in_usd(150_000, 0, 0.3, 5.0, 0.5);
         assert!((cost - 0.705).abs() < 1e-9);
     }
 
     #[test]
     fn cost_scales_linearly_with_context() {
-        let small = switch_cost_in_usd(10_000, 0.3, 0.8);
-        let large = switch_cost_in_usd(1_000_000, 0.3, 0.8);
+        let small = switch_cost_in_usd(10_000, 0, 0.3, 0.8, 0.1);
+        let large = switch_cost_in_usd(1_000_000, 0, 0.3, 0.8, 0.1);
         assert!((large / small - 100.0).abs() < 1e-6);
     }
 
     #[test]
     fn tiny_context_cost_is_negligible() {
         // 2k-token chat: even an expensive candidate costs ~$0.009.
-        let cost = switch_cost_in_usd(2_000, 0.3, 5.0);
+        let cost = switch_cost_in_usd(2_000, 0, 0.3, 5.0, 0.5);
         assert!(cost < 0.01);
+    }
+
+    #[test]
+    fn returning_to_warm_candidate_only_charges_the_delta() {
+        // Anchor sonnet (cached 0.3). Candidate gpt-4.1 (uncached 2.0, cached 0.5) is
+        // still warm from an earlier visit holding 90k of the 100k context. Only the
+        // 10k fresh tokens re-read at 2.0; the 90k warm tokens re-read at 0.5:
+        //   candidate = (10k x 2.0 + 90k x 0.5)/1M = 0.020 + 0.045 = $0.065
+        //   anchor    = 100k x 0.3 /1M            = $0.030
+        //   switch    = 0.065 - 0.030            = +$0.035
+        let warm = switch_cost_in_usd(100_000, 90_000, 0.3, 2.0, 0.5);
+        assert!(
+            (warm - 0.035).abs() < 1e-9,
+            "warm-return cost {warm} != 0.035"
+        );
+        // Cold, same switch re-reads the whole 100k at 2.0: (100k x 2.0)/1M - 0.03 = $0.17.
+        let cold = switch_cost_in_usd(100_000, 0, 0.3, 2.0, 0.5);
+        assert!((cold - 0.17).abs() < 1e-9, "cold cost {cold} != 0.17");
+        assert!(warm < cold, "returning to a warm model must be cheaper");
     }
 }

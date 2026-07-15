@@ -67,7 +67,8 @@ Every decision is visible:
 - Metric: `brightstaff_session_switch_decisions_total{decision="allowed"|"retained",reason}`
   (`reason` ∈ `same_anchor | free | within_cap | over_cap | no_pricing`)
 - Span attributes: `plano.cache.warm`, `plano.cache.idle_ms`,
-  `plano.switch.cost_in_usd`, `plano.switch.overhead_ceiling_in_usd`, `plano.switch.decision`,
+  `plano.switch.cost_in_usd`, `plano.switch.candidate_warm_tokens`,
+  `plano.switch.overhead_ceiling_in_usd`, `plano.switch.decision`,
   `plano.session.overhead_pct`, `plano.session.switch_spend_in_usd`,
   `plano.session.baseline_in_usd`, `plano.session.switches`,
   `plano.session.total_cost_in_usd`

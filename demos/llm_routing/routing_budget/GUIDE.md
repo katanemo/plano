@@ -177,6 +177,7 @@ curl -s localhost:9092/metrics | grep -E 'session_switch_decisions|prompt_cache_
 - `plano.cache.warm` — whether the session's cache was considered warm this turn
 - `plano.cache.idle_ms` — how long since the session was last used
 - `plano.switch.cost_in_usd` — actual input-token cost of the proposed switch (output excluded)
+- `plano.switch.candidate_warm_tokens` — context the candidate still has cached from an earlier visit this session (a return to a warm model re-reads only the delta, so its `cost_in_usd` is far lower than a full re-ingest)
 - `plano.switch.overhead_ceiling_in_usd` — overhead ceiling (`max_overhead_pct`% x baseline) when the switch was evaluated
 - `plano.switch.decision` — `allowed` or `retained`
 - `plano.session.overhead_pct` — cumulative switching overhead consumed, as a % of the never-switch baseline (compare directly to `max_overhead_pct`)

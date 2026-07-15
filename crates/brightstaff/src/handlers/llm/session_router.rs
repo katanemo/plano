@@ -33,7 +33,7 @@ use crate::affinity::derive_implicit_affinity;
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
 use crate::router::orchestrator::OrchestratorService;
-use crate::session_cache::SessionBinding;
+use crate::session_cache::{record_route_visit, RouteVisit, SessionBinding};
 use crate::tracing::plano as tracing_plano;
 
 /// Resolved session identity for one request.
@@ -126,6 +126,9 @@ pub struct RouteDecision {
     pub session_cost_usd: f64,
     /// Cumulative switches taken this session (after this decision).
     pub switches: u32,
+    /// Bounded per-model route history after this decision — carried to the response
+    /// side so the usage-refresh preserves it (and refines the anchor's token count).
+    pub history: Vec<RouteVisit>,
     /// Context-token estimate persisted with the binding (refined later from usage).
     pub cached_tokens: u64,
     /// GC bound the binding was stored with (reused when the response side refreshes).
@@ -209,6 +212,7 @@ pub async fn route(
             switch_spend_usd: 0.0,
             session_cost_usd: 0.0,
             switches: 0,
+            history: Vec::new(),
             cached_tokens: facts.context_tokens,
             gc_ttl: candidate_gc_ttl,
         };
@@ -244,6 +248,7 @@ pub async fn route(
     let mut switches;
     let mut cost_opt: Option<f64> = None;
     let mut ceiling_opt: Option<f64> = None;
+    let mut candidate_warm_tokens: u64 = 0;
     let mut counterfactual: Option<String> = None;
     let decision_label: &'static str;
     let reason: &'static str;
@@ -293,11 +298,25 @@ pub async fn route(
                 // spent on switching over this warm episode.
                 let ceiling = (cfg.max_overhead_pct / 100.0) * baseline_usd;
                 ceiling_opt = Some(ceiling);
+                // Credit any context the candidate still has cached from an earlier visit
+                // this session: a return to a still-warm model re-reads only the tokens
+                // appended since, not the whole context (the A→B→A case).
+                candidate_warm_tokens = b
+                    .history
+                    .iter()
+                    .find(|v| v.model == facts.candidate_model)
+                    .filter(|v| {
+                        now.duration_since(v.last_used).unwrap_or(Duration::MAX)
+                            <= warmth_window(&capability_for_model(facts.candidate_model))
+                    })
+                    .map(|v| v.cached_tokens.min(context_tokens))
+                    .unwrap_or(0);
                 match orchestrator
                     .estimate_switch_cost_in_usd(
                         context_tokens,
                         &b.anchor_model,
                         facts.candidate_model,
+                        candidate_warm_tokens,
                         cfg.cache_read_discount,
                     )
                     .await
@@ -408,6 +427,19 @@ pub async fn route(
     };
     let gc_ttl = warmth_window(&capability_for_model(&model)) + GC_SLACK;
 
+    // Route history: a drifted prefix invalidates every model's cache, so start fresh;
+    // otherwise carry it forward. Record this turn's dispatched model (refined with the
+    // real token count on the response side). Stale entries decay via the warmth check.
+    let mut history = if drifted {
+        Vec::new()
+    } else {
+        existing
+            .as_ref()
+            .map(|b| b.history.clone())
+            .unwrap_or_default()
+    };
+    record_route_visit(&mut history, &model, now, cached_tokens);
+
     // Observability: cache warmth + budget/switch state on the current span.
     get_active_span(|span| {
         span.set_attribute(KeyValue::new(tracing_plano::CACHE_WARM, effective_warm));
@@ -448,6 +480,10 @@ pub async fn route(
         ));
         if let Some(cost) = cost_opt {
             span.set_attribute(KeyValue::new(tracing_plano::SWITCH_COST_IN_USD, cost));
+            span.set_attribute(KeyValue::new(
+                tracing_plano::SWITCH_CANDIDATE_WARM_TOKENS,
+                candidate_warm_tokens as i64,
+            ));
             if let Some(ceiling) = ceiling_opt {
                 span.set_attribute(KeyValue::new(
                     tracing_plano::SWITCH_OVERHEAD_CEILING_IN_USD,
@@ -486,6 +522,7 @@ pub async fn route(
                 switch_spend_usd,
                 switches,
                 session_cost_usd,
+                history: history.clone(),
             },
             Some(gc_ttl),
         )
@@ -500,6 +537,7 @@ pub async fn route(
         switch_spend_usd,
         session_cost_usd,
         switches,
+        history,
         cached_tokens,
         gc_ttl,
     }
@@ -530,6 +568,7 @@ mod tests {
             switch_spend_usd: 0.0,
             switches: 0,
             session_cost_usd: 0.0,
+            history: Vec::new(),
         }
     }
 
@@ -649,6 +688,7 @@ mod tests {
                 switch_spend_usd,
                 switches: 0,
                 session_cost_usd: 0.0,
+                history: Vec::new(),
             },
             Some(Duration::from_secs(3600)),
         )
@@ -776,6 +816,7 @@ mod tests {
                 switch_spend_usd: 0.0,
                 switches: 1,
                 session_cost_usd: 0.0,
+                history: Vec::new(),
             },
             Some(Duration::from_secs(3600)),
         )
@@ -794,5 +835,50 @@ mod tests {
             d.baseline_usd
         );
         assert_eq!(d.default_model, "anthropic/expensive");
+    }
+
+    #[tokio::test]
+    async fn return_to_warm_model_in_history_is_cheap_enough_to_allow() {
+        // Warm on `expensive`, but `pricey` was used recently and still holds the whole
+        // 100k context. Baseline $0.40 (+$0.03 this turn = $0.43); at 25% the ceiling is
+        // ~$0.1075. Returning to `pricey` re-reads the 100k at its *cached* rate (0.5),
+        // so the switch costs 100k x (0.5 - 0.3)/1M = $0.02 — under the ceiling, allowed.
+        // A cold switch would re-read at 5.0 -> $0.47 and be vetoed.
+        let orch = orch_with_rates();
+        orch.store_binding(
+            "s1",
+            None,
+            SessionBinding {
+                anchor_model: "anthropic/expensive".to_string(),
+                default_model: "anthropic/expensive".to_string(),
+                route_name: None,
+                prefix_hash: Some(1),
+                last_used: SystemTime::now() - Duration::from_secs(30),
+                cached_tokens: 100_000,
+                baseline_usd: 0.40,
+                switch_spend_usd: 0.0,
+                switches: 1,
+                session_cost_usd: 0.0,
+                history: vec![RouteVisit {
+                    model: "openai/pricey".to_string(),
+                    last_used: SystemTime::now() - Duration::from_secs(30),
+                    cached_tokens: 100_000,
+                }],
+            },
+            Some(Duration::from_secs(3600)),
+        )
+        .await;
+        let st = routing_budget(25.0);
+        let d = route(&orch, Some(&st), facts_for("openai/pricey")).await;
+
+        assert_eq!(d.model, "openai/pricey", "warm return should be allowed");
+        assert_eq!(d.switches, 2);
+        assert!(
+            (d.switch_spend_usd - 0.02).abs() < 1e-6,
+            "spend {} != 0.02 (warm return should charge only the cached-rate delta)",
+            d.switch_spend_usd
+        );
+        // The candidate's own history entry is refreshed to the current model.
+        assert!(d.history.iter().any(|v| v.model == "openai/pricey"));
     }
 }

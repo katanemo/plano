@@ -198,6 +198,12 @@ pub mod plano {
     /// is outright cheaper than staying on the warm anchor.
     pub const SWITCH_COST_IN_USD: &str = "plano.switch.cost_in_usd";
 
+    /// Tokens the switch candidate still has cached from an earlier visit this session
+    /// (a return to a still-warm model). These re-read at the candidate's cached rate
+    /// instead of its uncached rate, which is why the switch cost can be far below a
+    /// full re-ingest. Zero for a first-time (cold) switch.
+    pub const SWITCH_CANDIDATE_WARM_TOKENS: &str = "plano.switch.candidate_warm_tokens";
+
     /// The overhead ceiling (USD) available when the switch was evaluated —
     /// `max_overhead_pct% * baseline`. A paid switch is allowed while cumulative spend
     /// plus this switch's cost stays under it. Directly comparable to `cost_in_usd`.
