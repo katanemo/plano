@@ -707,7 +707,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paid_switch_within_cap_is_allowed_and_accrues_spend() {
+    async fn paid_switch_within_cap_accrues_spend() {
         let orch = orch_with_rates();
         // Baseline $2.00 already accrued; this turn adds $0.03 -> $2.03. At 25% the
         // ceiling is $0.5075, which covers the $0.47 switch to `pricey`.
@@ -746,7 +746,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cheaper_switch_is_free_and_does_not_change_spend() {
+    async fn cheaper_switch_is_free() {
         let orch = orch_with_rates();
         seed_warm_binding(&orch, 1.0, 0.10, 30).await;
         let st = routing_budget(25.0);
@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cold_session_resets_totals_and_follows_router() {
+    async fn cold_session_resets_and_follows_router() {
         let orch = orch_with_rates();
         // 10 minutes idle: past Anthropic's 5m idle window -> cold. Prior episode spent
         // its overhead; the fresh episode resets baseline and spend to zero.
@@ -797,7 +797,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn baseline_grows_on_default_model_not_current_anchor() {
+    async fn baseline_priced_on_default_not_anchor() {
         // A session that started on `expensive` (default) but has since switched to
         // `cheap` (current anchor). The never-switch baseline must keep growing at the
         // *default* model's cached rate (0.3/M), not the cheap anchor's (0.01/M).
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn return_to_warm_model_in_history_is_cheap_enough_to_allow() {
+    async fn warm_return_is_affordable() {
         // Warm on `expensive`, but `pricey` was used recently and still holds the whole
         // 100k context. Baseline $0.40 (+$0.03 this turn = $0.43); at 25% the ceiling is
         // ~$0.1075. Returning to `pricey` re-reads the 100k at its *cached* rate (0.5),

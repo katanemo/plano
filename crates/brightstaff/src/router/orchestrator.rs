@@ -609,7 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn returning_to_warm_candidate_only_charges_the_delta() {
+    fn warm_return_charges_only_the_delta() {
         // Anchor sonnet (cached 0.3). Candidate gpt-4.1 (uncached 2.0, cached 0.5) is
         // still warm from an earlier visit holding 90k of the 100k context. Only the
         // 10k fresh tokens re-read at 2.0; the 90k warm tokens re-read at 0.5:

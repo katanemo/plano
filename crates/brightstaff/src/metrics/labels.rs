@@ -45,17 +45,10 @@ pub const SESSION_CACHE_STORE: &str = "store";
 pub const PROMPT_CACHE_HIT: &str = "hit";
 pub const PROMPT_CACHE_MISS: &str = "miss";
 
-// Session pin lifecycle events (brightstaff_session_pin_events_total).
-/// Implicit session committed its pin after the first observed cache activity.
-pub const PIN_EVENT_IMPLICIT_COMMIT: &str = "implicit_commit";
-/// An existing pin was refreshed (TTL extended, observed-hit state updated).
-pub const PIN_EVENT_REFRESH: &str = "refresh";
-/// A pinned request's prefix hash no longer matched — cache already lost, re-routed.
-pub const PIN_EVENT_PREFIX_DRIFT: &str = "prefix_drift";
-/// A logically-expired pin was used as a soft switch-penalty hint for routing.
-pub const PIN_EVENT_STALE_HINT: &str = "stale_hint";
-/// A pinned session that previously produced cache hits stopped producing them.
-pub const PIN_EVENT_VALIDATION_FAILED: &str = "validation_failed";
+// Session binding lifecycle events (brightstaff_session_binding_events_total).
+/// An existing binding was refreshed from observed usage (TTL extended, token counts
+/// and running cost updated) after a turn completed.
+pub const BINDING_EVENT_REFRESH: &str = "refresh";
 
 // Session-stickiness decisions (brightstaff_session_switch_decisions_total).
 // `decision` label — the coarse outcome:

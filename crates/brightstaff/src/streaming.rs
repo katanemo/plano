@@ -374,7 +374,7 @@ impl ObservableStreamProcessor {
             session_cost_usd
         };
 
-        bs_metrics::record_session_pin_event(metric_labels::PIN_EVENT_REFRESH);
+        bs_metrics::record_session_binding_event(metric_labels::BINDING_EVENT_REFRESH);
         let binding = SessionBinding {
             anchor_model,
             default_model,

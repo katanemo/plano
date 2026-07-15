@@ -19,7 +19,7 @@
 //!   `brightstaff_routing_service_requests_total`,
 //!   `brightstaff_session_cache_events_total`.
 //! - Prompt caching: `brightstaff_prompt_cache_requests_total`,
-//!   `brightstaff_session_pin_events_total` (cache read/write tokens are emitted as
+//!   `brightstaff_session_binding_events_total` (cache read/write tokens are emitted as
 //!   `kind=cache_read|cache_write` on `brightstaff_llm_tokens_total`).
 //! - Process: via `metrics-process`.
 //! - Build: `brightstaff_build_info`.
@@ -182,9 +182,8 @@ fn describe_all() {
          the silent cache-miss baseline."
     );
     describe_counter!(
-        "brightstaff_session_pin_events_total",
-        "Session pin lifecycle events: implicit_commit, refresh, prefix_drift, \
-         stale_hint, validation_failed."
+        "brightstaff_session_binding_events_total",
+        "Session binding lifecycle events, by event (currently: refresh)."
     );
 
     describe_gauge!(
@@ -402,10 +401,10 @@ pub fn record_prompt_cache_outcome(provider: &str, model: &str, outcome: &'stati
     .increment(1);
 }
 
-/// Record a session pin lifecycle event (see `metrics::labels::PIN_EVENT_*`).
-pub fn record_session_pin_event(event: &'static str) {
+/// Record a session binding lifecycle event (see `metrics::labels::BINDING_EVENT_*`).
+pub fn record_session_binding_event(event: &'static str) {
     counter!(
-        "brightstaff_session_pin_events_total",
+        "brightstaff_session_binding_events_total",
         "event" => event,
     )
     .increment(1);
