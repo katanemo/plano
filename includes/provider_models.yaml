@@ -35,6 +35,9 @@ providers:
   - chatgpt/gpt-5.4
   - chatgpt/gpt-5.3-codex
   - chatgpt/gpt-5.2
+  - chatgpt/gpt-5.6-sol
+  - chatgpt/gpt-5.6-terra
+  - chatgpt/gpt-5.6-luna
   deepseek:
   - deepseek/deepseek-v4-flash
   - deepseek/deepseek-v4-pro
@@ -395,5 +398,5 @@ providers:
   - z-ai/glm-5.1
 metadata:
   total_providers: 15
-  total_models: 377
+  total_models: 380
   last_updated: 2026-07-09T19:48:06.553850+00:00
