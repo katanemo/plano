@@ -1,4 +1,6 @@
-use crate::apis::streaming_shapes::sse::{is_incomplete_json_error, SseEvent, SseStreamIter};
+use crate::apis::streaming_shapes::sse::{
+    is_incomplete_json_error_from_error, SseEvent, SseStreamIter,
+};
 use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 
 /// Determine whether a trailing partial line (the bytes after the final `\n` in
@@ -11,10 +13,11 @@ use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
 /// processor at end-of-stream, so such a line must be parsed now rather than
 /// buffered forever.
 ///
-/// A line is "complete" when it parses as an SSE event and, for `data:` lines,
-/// its JSON payload is itself fully parseable (or is the `[DONE]` sentinel). A
-/// mid-prefix split (`da`), a mid-JSON split (`data: {"a":`), or a split inside
-/// a multi-byte UTF-8 character all fail this check and are held back.
+/// A trailing line is "complete" only when it is a `data:` line whose JSON
+/// payload is fully parseable (or is the `[DONE]` sentinel). Event-only lines
+/// are held back because a chunk can end midway through an `event:` name.
+/// A mid-prefix split (`da`), a mid-JSON split (`data: {"a":`), or a split
+/// inside a multi-byte UTF-8 character all fail this check and are held back.
 ///
 /// Soundness note: this relies on SSE data payloads being JSON *objects* (or
 /// `[DONE]`), where no strict prefix of a longer payload can itself fully
@@ -31,8 +34,9 @@ fn trailing_line_is_complete(bytes: &[u8]) -> bool {
             Some(data) => {
                 data.trim() == "[DONE]" || serde_json::from_str::<serde_json::Value>(data).is_ok()
             }
-            // event-only line (e.g. `event: foo`) with no data payload
-            None => true,
+            // Without a terminating newline, an event-only line may be a
+            // prefix of a longer event name, so retain it for the next chunk.
+            None => false,
         },
         Err(_) => false,
     }
@@ -155,7 +159,7 @@ impl SseChunkProcessor {
                     transformed_events.push(transformed);
                 }
                 Err(e) => {
-                    if is_incomplete_json_error(&e) {
+                    if is_incomplete_json_error_from_error(e.as_ref()) {
                         // Conservative fallback: with the framing above complete
                         // lines always carry complete JSON, so this should not
                         // trigger. If it ever does, buffer this line (plus the
@@ -221,6 +225,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_mid_event_name_split_is_buffered_until_continuation() {
+        let client = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let upstream = SupportedUpstreamAPIs::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let full = "event: response.reasoning_text.delta\ndata: {\"type\":\"response.reasoning_text.delta\",\"delta\":\"pondering\",\"sequence_number\":7}\n\n";
+        let (first_chunk, second_chunk) = full.as_bytes().split_at(b"event: respo".len());
+
+        let mut processor = SseChunkProcessor::new();
+        let first_events = processor
+            .process_chunk(first_chunk, &client, &upstream)
+            .unwrap();
+
+        assert!(
+            first_events.is_empty(),
+            "a trailing partial event-name line must not be emitted"
+        );
+        assert!(
+            processor.has_buffered_data(),
+            "the partial event-name line must be retained for the next chunk"
+        );
+        assert_eq!(processor.buffered_size(), first_chunk.len());
+
+        let output: String = processor
+            .process_chunk(second_chunk, &client, &upstream)
+            .unwrap()
+            .into_iter()
+            .map(|event| event.sse_transformed_lines)
+            .collect();
+
+        assert_eq!(output, full);
+        assert!(!processor.has_buffered_data());
+    }
+
     // Captured GPT-5.6 Responses-API SSE stream (direct from backend, streams fine).
     // ALL ids/tokens are obfuscated to fake same-format values. JSON shapes are byte-faithful.
     const GPT56_RESPONSES_STREAM: &str = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_0123456789abcdef0123456789abcdef0123456789abcdef01\",\"object\":\"response\",\"created_at\":1783941440,\"status\":\"in_progress\",\"background\":false,\"completed_at\":null,\"error\":null,\"frequency_penalty\":0.0,\"incomplete_details\":null,\"instructions\":\"Answer in one word.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.6-sol\",\"moderation\":null,\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":\"00000000-0000-4000-8000-000000000000\",\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"all_turns\",\"effort\":\"medium\",\"mode\":\"standard\",\"summary\":null},\"safety_identifier\":\"user-000000000000000000000000\",\"service_tier\":\"auto\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}},\"sequence_number\":0}\n\nevent: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_0123456789abcdef0123456789abcdef0123456789abcdef01\",\"object\":\"response\",\"created_at\":1783941440,\"status\":\"in_progress\",\"background\":false,\"completed_at\":null,\"error\":null,\"frequency_penalty\":0.0,\"incomplete_details\":null,\"instructions\":\"Answer in one word.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.6-sol\",\"moderation\":null,\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":\"00000000-0000-4000-8000-000000000000\",\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"all_turns\",\"effort\":\"medium\",\"mode\":\"standard\",\"summary\":null},\"safety_identifier\":\"user-000000000000000000000000\",\"service_tier\":\"auto\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":null,\"user\":null,\"metadata\":{}},\"sequence_number\":1}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"rs_fedcba9876543210fedcba9876543210fedcba9876543210fe\",\"type\":\"reasoning\",\"content\":[],\"summary\":[]},\"output_index\":0,\"sequence_number\":2}\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"rs_fedcba9876543210fedcba9876543210fedcba9876543210fe\",\"type\":\"reasoning\",\"content\":[],\"summary\":[]},\"output_index\":0,\"sequence_number\":3}\n\nevent: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_1a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f789012\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":1,\"sequence_number\":4}\n\nevent: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"content_index\":0,\"item_id\":\"msg_1a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f789012\",\"output_index\":1,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"},\"sequence_number\":5}\n\nevent: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"Hi\",\"item_id\":\"msg_1a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f789012\",\"logprobs\":[],\"obfuscation\":\"0000000000abcd\",\"output_index\":1,\"sequence_number\":6}\n\nevent: response.output_text.done\ndata: {\"type\":\"response.output_text.done\",\"content_index\":0,\"item_id\":\"msg_1a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f789012\",\"logprobs\":[],\"output_index\":1,\"sequence_number\":7,\"text\":\"Hi\"}\n\nevent: response.content_part.done\ndata: {\"type\":\"response.content_part.done\",\"content_index\":0,\"item_id\":\"msg_1a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f789012\",\"output_index\":1,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Hi\"},\"sequence_number\":8}\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"msg_1a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f789012\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Hi\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":1,\"sequence_number\":9}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_0123456789abcdef0123456789abcdef0123456789abcdef01\",\"object\":\"response\",\"created_at\":1783941440,\"status\":\"completed\",\"background\":false,\"completed_at\":1783941441,\"error\":null,\"frequency_penalty\":0.0,\"incomplete_details\":null,\"instructions\":\"Answer in one word.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.6-sol\",\"moderation\":null,\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":\"00000000-0000-4000-8000-000000000000\",\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"all_turns\",\"effort\":\"medium\",\"mode\":\"standard\",\"summary\":null},\"safety_identifier\":\"user-000000000000000000000000\",\"service_tier\":\"default\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":17,\"input_tokens_details\":{\"cache_write_tokens\":0,\"cached_tokens\":0},\"output_tokens\":16,\"output_tokens_details\":{\"reasoning_tokens\":9},\"total_tokens\":33},\"user\":null,\"metadata\":{}},\"sequence_number\":10}\n\n";
@@ -261,19 +298,21 @@ mod tests {
 
         let input = GPT56_RESPONSES_STREAM.as_bytes();
 
-        // Baseline: processed as a single chunk, everything must survive (sanity).
-        let baseline_len = {
+        // Baseline: the canonical fixture must survive a single-chunk identity pass unchanged.
+        let baseline = {
             let mut proc = SseChunkProcessor::new();
             let mut buf = PassthroughStreamBuffer::new();
             for ev in proc.process_chunk(input, &client, &upstream).unwrap() {
                 buf.add_transformed_event(ev);
             }
-            buf.to_bytes().len()
+            buf.to_bytes()
         };
-        assert!(
-            baseline_len > 0,
-            "baseline single-chunk output must be non-empty"
+        assert_eq!(
+            baseline.as_slice(),
+            input,
+            "single-chunk identity Responses output differs from the canonical fixture"
         );
+        let baseline_len = baseline.len();
 
         // Replay the stream for every boundary phase: start the fixed 64-byte chunking
         // at each `start_offset` in 0..64 so that, across all runs, every byte position
@@ -298,6 +337,13 @@ mod tests {
 
             let out = buf.to_bytes();
             let out_str = String::from_utf8_lossy(&out);
+
+            assert_eq!(
+                out.as_slice(),
+                input,
+                "start_offset={}: chunked identity Responses output differs from the canonical fixture",
+                start_offset,
+            );
 
             // Every event type must be present regardless of chunk boundary placement.
             for et in expected_event_types {

@@ -5,7 +5,7 @@ use crate::apis::amazon_bedrock::ConverseStreamEvent;
 use crate::apis::anthropic::MessagesStreamEvent;
 use crate::apis::openai::ChatCompletionsStreamResponse;
 use crate::apis::openai_responses::ResponsesAPIStreamEvent;
-use crate::apis::streaming_shapes::sse::is_incomplete_json_error;
+use crate::apis::streaming_shapes::sse::is_incomplete_json_error_from_error;
 use crate::apis::streaming_shapes::sse::SseEvent;
 use crate::apis::streaming_shapes::sse::SseStreamBuffer;
 use crate::apis::streaming_shapes::{
@@ -365,7 +365,7 @@ impl TryFrom<(SseEvent, &SupportedAPIsFromClient, &SupportedUpstreamAPIs)> for S
                 //                     no parsed response attached.
                 match ProviderStreamResponseType::try_from((data_bytes, client_api, upstream_api)) {
                     Ok(resp) => transformed_event.provider_stream_response = Some(resp),
-                    Err(e) if is_incomplete_json_error(&e) => return Err(e),
+                    Err(e) if is_incomplete_json_error_from_error(e.as_ref()) => return Err(e),
                     Err(_) => {}
                 }
 

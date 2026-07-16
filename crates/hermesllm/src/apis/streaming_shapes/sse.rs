@@ -211,18 +211,22 @@ impl From<SseEvent> for Vec<u8> {
     }
 }
 
-/// Classify a transformation error as an "incomplete JSON" (EOF-while-parsing)
-/// error versus any other error (unknown event type, validation failure, etc.).
-///
-/// This is the single source of truth for that classification, shared by the
-/// SSE chunk processor (to decide whether to buffer a line for cross-chunk
-/// recombination) and the identity passthrough transform (to decide whether to
-/// propagate the error so the processor can retry with the next chunk).
+/// Legacy display-text classifier retained for public API compatibility.
 pub fn is_incomplete_json_error<E: std::fmt::Display + ?Sized>(err: &E) -> bool {
     let msg = err.to_string().to_lowercase();
     msg.contains("eof while parsing")
         || msg.contains("unexpected end of json")
         || msg.contains("unexpected eof")
+}
+
+/// Classify a transformation error as incomplete JSON using serde's stable EOF
+/// category rather than the rendered error text. This is the single source of
+/// truth for internal streaming retry decisions.
+pub(crate) fn is_incomplete_json_error_from_error(
+    err: &(dyn Error + Send + Sync + 'static),
+) -> bool {
+    err.downcast_ref::<serde_json::Error>()
+        .is_some_and(serde_json::Error::is_eof)
 }
 
 #[derive(Debug)]
@@ -306,5 +310,45 @@ where
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_incomplete_json_error_only_accepts_serde_eof() {
+        let incomplete_json = serde_json::from_str::<serde_json::Value>(r#"{"partial":"#)
+            .expect_err("truncated JSON must fail");
+        assert!(incomplete_json.is_eof());
+        let incomplete_json: Box<dyn Error + Send + Sync> = Box::new(incomplete_json);
+        assert!(is_incomplete_json_error_from_error(
+            incomplete_json.as_ref()
+        ));
+
+        let invalid_json = serde_json::from_str::<serde_json::Value>(r#"{"value":]}"#)
+            .expect_err("invalid JSON must fail");
+        assert!(!invalid_json.is_eof());
+        let invalid_json: Box<dyn Error + Send + Sync> = Box::new(invalid_json);
+        assert!(!is_incomplete_json_error_from_error(invalid_json.as_ref()));
+
+        let unrelated_eof =
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected EOF");
+        let unrelated_eof: Box<dyn Error + Send + Sync> = Box::new(unrelated_eof);
+        assert!(!is_incomplete_json_error_from_error(unrelated_eof.as_ref()));
+    }
+
+    #[test]
+    fn test_is_incomplete_json_error_accepts_display_only_callers() {
+        struct DisplayOnly;
+
+        impl std::fmt::Display for DisplayOnly {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("not an error")
+            }
+        }
+
+        assert!(!is_incomplete_json_error(&DisplayOnly));
     }
 }
