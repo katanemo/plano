@@ -239,6 +239,7 @@ async fn routing_decision_inner(
                     context_tokens,
                     candidate_model: &candidate_model,
                     candidate_route: result.route_name.as_deref(),
+                    caching_enabled: prompt_caching.enabled,
                 },
             )
             .await;

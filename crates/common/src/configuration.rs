@@ -283,12 +283,13 @@ pub struct PromptCaching {
 ///
 /// This is a routing concern, not a caching one: it applies whenever configured,
 /// regardless of whether `prompt_caching` is enabled. The default posture is to stick
-/// to the model a session is warm on. When routing proposes a *different* model while
-/// that session's provider cache is plausibly still warm, switching forces the
-/// candidate to re-ingest the whole context at its uncached input rate. That
-/// input-token cost —
-/// `context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate)` —
-/// accrues into the session's cumulative switch spend. The gate allows a paid switch
+/// to the model a session is warm on. When routing proposes a *different* model,
+/// switching forces the candidate to re-ingest the whole context at its uncached input
+/// rate. With prompt caching the anchor is warm, so the cost is the cache-loss delta
+/// `context_tokens x (candidate_uncached_input_rate - anchor_cached_input_rate)`; without
+/// caching there is no warm cache to lose, so it is
+/// `context_tokens x (candidate_uncached_input_rate - anchor_uncached_input_rate)`. That
+/// input-token cost accrues into the session's cumulative switch spend. The gate allows a paid switch
 /// only while that spend stays within `max_overhead_pct` percent of the session's
 /// running *never-switch* baseline (the cost the session would have paid by staying
 /// on its anchor). A switch that is outright cheaper (negative cost) is free but

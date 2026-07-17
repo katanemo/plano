@@ -408,6 +408,7 @@ async fn llm_chat_inner(
             context_tokens,
             candidate_model: &candidate_model,
             candidate_route: candidate_route.as_deref(),
+            caching_enabled: prompt_caching.enabled,
         },
     )
     .await;

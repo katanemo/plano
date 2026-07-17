@@ -13,7 +13,10 @@
 //!   baseline (what staying on the session's `default_model` would have cost — priced
 //!   independently of the current anchor, which drifts as switches happen). An
 //!   outright-cheaper switch is free but never reduces that spend. The promise: this
-//!   conversation bills at most `max_overhead_pct`% above never-switching.
+//!   conversation bills at most `max_overhead_pct`% above never-switching. With prompt
+//!   caching the anchor is warm, so staying is priced at its cached rate and the switch
+//!   pays the cache-loss delta; without caching there is no warm cache, so both the
+//!   baseline and the switch cost are priced at the plain uncached input rate.
 //!
 //! The default posture is to stick. Quality and cost stay separate: the router decides
 //! whether a switch *improves quality*; the overhead cap decides whether it is *affordable*.
@@ -105,6 +108,11 @@ pub struct RouteFacts<'a> {
     /// The model the quality router picked for this request.
     pub candidate_model: &'a str,
     pub candidate_route: Option<&'a str>,
+    /// Whether automatic prompt caching is enabled for this instance. Selects how the
+    /// switch-cost gate prices context reads: with caching the anchor is warm (cached
+    /// rate, plus warm-token credit for A→B→A returns); without it there is no warm
+    /// cache, so both sides are priced at their plain uncached input rate.
+    pub caching_enabled: bool,
 }
 
 /// The routing decision plus the session state to carry into the response side.
@@ -276,10 +284,11 @@ pub async fn route(
             // growth this turn.
             let turn_baseline = match routing_budget {
                 Some(cfg) => orchestrator
-                    .cached_read_cost_in_usd(
+                    .context_read_cost_in_usd(
                         context_tokens,
                         &session_default,
                         cfg.cache_read_discount,
+                        facts.caching_enabled,
                     )
                     .await
                     .unwrap_or(0.0),
@@ -300,17 +309,21 @@ pub async fn route(
                 ceiling_opt = Some(ceiling);
                 // Credit any context the candidate still has cached from an earlier visit
                 // this session: a return to a still-warm model re-reads only the tokens
-                // appended since, not the whole context (the A→B→A case).
-                candidate_warm_tokens = b
-                    .history
-                    .iter()
-                    .find(|v| v.model == facts.candidate_model)
-                    .filter(|v| {
-                        now.duration_since(v.last_used).unwrap_or(Duration::MAX)
-                            <= warmth_window(&capability_for_model(facts.candidate_model))
-                    })
-                    .map(|v| v.cached_tokens.min(context_tokens))
-                    .unwrap_or(0);
+                // appended since, not the whole context (the A→B→A case). Only meaningful
+                // with prompt caching — without it there is no cache to return to.
+                candidate_warm_tokens = if facts.caching_enabled {
+                    b.history
+                        .iter()
+                        .find(|v| v.model == facts.candidate_model)
+                        .filter(|v| {
+                            now.duration_since(v.last_used).unwrap_or(Duration::MAX)
+                                <= warmth_window(&capability_for_model(facts.candidate_model))
+                        })
+                        .map(|v| v.cached_tokens.min(context_tokens))
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
                 match orchestrator
                     .estimate_switch_cost_in_usd(
                         context_tokens,
@@ -318,6 +331,7 @@ pub async fn route(
                         facts.candidate_model,
                         candidate_warm_tokens,
                         cfg.cache_read_discount,
+                        facts.caching_enabled,
                     )
                     .await
                 {
@@ -345,7 +359,7 @@ pub async fn route(
                                 anchor = %b.anchor_model,
                                 candidate = %facts.candidate_model,
                                 switch_cost_in_usd = cost,
-                                "switch allowed — candidate undercuts the cached rate"
+                                "switch allowed — candidate is no more expensive than staying"
                             );
                         } else if switch_spend_usd + cost <= ceiling {
                             switch_spend_usd += cost;
@@ -703,6 +717,7 @@ mod tests {
             context_tokens: 0,
             candidate_model: candidate,
             candidate_route: None,
+            caching_enabled: true,
         }
     }
 
@@ -790,10 +805,50 @@ mod tests {
             context_tokens: 0,
             candidate_model: "openai/pricey",
             candidate_route: None,
+            caching_enabled: true,
         };
         let d = route(&orch, Some(&st), facts).await;
         assert_eq!(d.model, "openai/pricey");
         assert!(!d.warm);
+    }
+
+    // With prompt caching OFF, the anchor holds no warm cache: the switch cost is priced
+    // against both models' *uncached* input rates and the never-switch baseline grows at
+    // the default model's uncached rate — no cache-loss penalty, no warm-token credit.
+    #[tokio::test]
+    async fn caching_off_prices_switch_against_uncached_rates() {
+        let orch = orch_with_rates();
+        // Warm on `expensive` (uncached 3.0/M). Seed baseline $1.00.
+        seed_warm_binding(&orch, 1.0, 0.0, 30).await;
+        let st = routing_budget(25.0);
+        let facts = RouteFacts {
+            session_id: Some("s1"),
+            tenant_id: None,
+            prefix_hash: Some(1),
+            context_tokens: 0,
+            candidate_model: "openai/pricey",
+            candidate_route: None,
+            caching_enabled: false,
+        };
+        let d = route(&orch, Some(&st), facts).await;
+
+        assert_eq!(d.model, "openai/pricey");
+        assert!(d.warm);
+        assert_eq!(d.switches, 1);
+        // Baseline grows at the default's *uncached* rate: 100k x 3.0/M = $0.30 -> $1.30.
+        assert!(
+            (d.baseline_usd - 1.30).abs() < 1e-6,
+            "baseline {} != 1.30 (uncached default rate)",
+            d.baseline_usd
+        );
+        // Switch cost = 100k x (pricey 5.0 - expensive 3.0)/1M = $0.20 (both uncached),
+        // well under the 25% x $1.30 = $0.325 ceiling. Contrast the caching-on cost of
+        // 100k x (5.0 - cached 0.3)/1M = $0.47, which would be vetoed here.
+        assert!(
+            (d.switch_spend_usd - 0.20).abs() < 1e-6,
+            "spend {} != 0.20 (uncached-vs-uncached switch cost)",
+            d.switch_spend_usd
+        );
     }
 
     #[tokio::test]
