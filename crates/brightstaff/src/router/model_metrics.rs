@@ -24,7 +24,8 @@ pub struct ModelRates {
     pub input_per_million: f64,
     pub output_per_million: f64,
     /// Cached (prompt-cache read) input rate. Present when the feed publishes it
-    /// (models.dev `cost.cache_read`); absent for feeds that don't (DO catalog).
+    /// (models.dev `cost.cache_read`, DO catalog `cache_read_input_price_per_million`
+    /// / `input_cache_read`); absent for models the feed prices without a cache SKU.
     pub cache_read_per_million: Option<f64>,
 }
 
@@ -268,11 +269,23 @@ struct DoModel {
 /// DigitalOcean catalog pricing. Despite the `_per_million` field names, the DO
 /// API returns these as USD **per token** (e.g. gpt-4o input `2.5e-6`), so they
 /// are scaled to per-million at ingestion to match `ModelRates`' convention.
+///
+/// The catalog publishes the cached-read rate under two names (a migration in
+/// flight): `cache_read_input_price_per_million` and `input_cache_read`. Entries
+/// may carry either or both; both are parsed and the explicit name wins.
 #[derive(serde::Deserialize)]
 struct DoPricing {
     input_price_per_million: Option<f64>,
     output_price_per_million: Option<f64>,
     cache_read_input_price_per_million: Option<f64>,
+    input_cache_read: Option<f64>,
+}
+
+impl DoPricing {
+    fn cache_read(&self) -> Option<f64> {
+        self.cache_read_input_price_per_million
+            .or(self.input_cache_read)
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -359,9 +372,7 @@ fn parse_do_pricing(
                     * TOKENS_PER_MILLION,
                 output_per_million: pricing.output_price_per_million.unwrap_or(0.0)
                     * TOKENS_PER_MILLION,
-                cache_read_per_million: pricing
-                    .cache_read_input_price_per_million
-                    .map(|r| r * TOKENS_PER_MILLION),
+                cache_read_per_million: pricing.cache_read().map(|r| r * TOKENS_PER_MILLION),
             };
             Some((key, rates))
         })
@@ -675,6 +686,58 @@ mod tests {
             switch_cost > 0.01,
             "expected ~$0.011 of switch cost, got {switch_cost}"
         );
+    }
+
+    #[test]
+    fn test_parse_do_pricing_reads_cache_rate_from_either_field_name() {
+        // Real catalog shape (Jul 2026): DO publishes the cached-read rate under
+        // both `cache_read_input_price_per_million` and `input_cache_read` for
+        // some models, and only one of the two for others. All variants must
+        // resolve; the explicit name wins when both are present.
+        let json = r#"{
+            "data": [
+                {
+                    "model_id": "kimi-k2.5",
+                    "pricing": {
+                        "input_price_per_million": 3.75e-7,
+                        "output_price_per_million": 2.025e-6,
+                        "cache_read_input_price_per_million": 2.03e-7,
+                        "input_cache_read": 2.03e-7
+                    }
+                },
+                {
+                    "model_id": "glm-5",
+                    "pricing": {
+                        "input_price_per_million": 6e-7,
+                        "output_price_per_million": 2.2e-6,
+                        "input_cache_read": 1.1e-7
+                    }
+                },
+                {
+                    "model_id": "legacy-model",
+                    "pricing": {
+                        "input_price_per_million": 5e-7,
+                        "output_price_per_million": 1e-6
+                    }
+                }
+            ]
+        }"#;
+        let list: DoModelList = serde_json::from_str(json).unwrap();
+        let rates = parse_do_pricing(list, &HashMap::new());
+
+        // Both names present -> parsed (and scaled per-token -> per-million).
+        let kimi = rates.get("kimi-k2.5").unwrap();
+        assert!((kimi.input_per_million - 0.375).abs() < 1e-9);
+        assert!((kimi.cache_read_per_million.unwrap() - 0.203).abs() < 1e-9);
+
+        // Only the new `input_cache_read` name -> still parsed.
+        let glm = rates.get("glm-5").unwrap();
+        assert!((glm.cache_read_per_million.unwrap() - 0.11).abs() < 1e-9);
+
+        // Neither -> None, so the budget falls back to input x cache_read_discount.
+        let legacy = rates.get("legacy-model").unwrap();
+        assert_eq!(legacy.cache_read_per_million, None);
+        assert!((legacy.cached_input_rate(0.1) - 0.05).abs() < 1e-9);
     }
 
     #[test]
