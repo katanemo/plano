@@ -216,7 +216,14 @@ async fn init_app_state(
         if latency_count > 1 {
             return Err("model_metrics_sources: only one latency metrics source is allowed".into());
         }
-        let svc = ModelMetricsService::new(sources, reqwest::Client::new()).await;
+        // The initial pricing fetch is awaited before listeners come up, so bound it —
+        // an unresponsive feed (models.dev / DO catalog) must not hang startup. The
+        // same client backs the periodic refresh loop.
+        let metrics_client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        let svc = ModelMetricsService::new(sources, metrics_client).await;
         Some(Arc::new(svc))
     } else {
         None
@@ -371,6 +378,25 @@ async fn init_app_state(
                     .into(),
             );
         }
+    }
+
+    // Session bindings (anchor model, budget spend) are keyed by tenant + session.
+    // Without a tenant header, sessions from different customers share one keyspace,
+    // so identical prompts from different tenants would collide on the same binding.
+    let session_state_in_use = prompt_caching.session_affinity || routing_budget.is_some();
+    if session_state_in_use
+        && config
+            .routing
+            .as_ref()
+            .and_then(|r| r.session_cache.as_ref())
+            .and_then(|c| c.tenant_header.as_ref())
+            .is_none()
+    {
+        warn!(
+            "session affinity / routing budget is enabled but routing.session_cache.tenant_header \
+             is not set — all requests share one session keyspace; set tenant_header to isolate \
+             sessions per customer in multi-tenant deployments"
+        );
     }
 
     Ok(AppState {
