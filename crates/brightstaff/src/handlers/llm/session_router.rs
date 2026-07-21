@@ -936,4 +936,127 @@ mod tests {
         // The candidate's own history entry is refreshed to the current model.
         assert!(d.history.iter().any(|v| v.model == "openai/pricey"));
     }
+
+    /// End-to-end cost validation over a full session lifetime: drive `route()` turn by
+    /// turn through the real session cache and pricing math, and check the feature's core
+    /// promise at every turn — cumulative switch spend never exceeds `max_overhead_pct`%
+    /// of the never-switch baseline.
+    ///
+    /// With a 100k context, each warm turn grows the baseline by 100k x $0.30/M = $0.03
+    /// (the `expensive` default's cached rate) and a switch to `pricey` costs
+    /// 100k x (5.0 - 0.3)/M = $0.47. At a 25% cap the ceiling is 0.25 x $0.03 x k after
+    /// k warm turns, so the switch must be vetoed through warm turn 62
+    /// (ceiling $0.465 < $0.47) and allowed exactly at warm turn 63 (ceiling $0.4725).
+    #[tokio::test]
+    async fn multi_turn_session_cost_stays_within_overhead_cap() {
+        let orch = orch_with_rates();
+        let st = routing_budget(25.0);
+        let cap_fraction = 25.0 / 100.0;
+        let facts_with_context = |candidate: &'static str| RouteFacts {
+            session_id: Some("s1"),
+            tenant_id: None,
+            prefix_hash: Some(1),
+            context_tokens: 100_000,
+            candidate_model: candidate,
+            candidate_route: None,
+            caching_enabled: true,
+        };
+
+        // Turn 1 — cold start: no binding yet, the candidate is honored and becomes both
+        // the anchor and the session's never-switch default.
+        let d = route(&orch, Some(&st), facts_with_context("anthropic/expensive")).await;
+        assert_eq!(d.model, "anthropic/expensive");
+        assert!(!d.warm);
+        assert_eq!(d.default_model, "anthropic/expensive");
+
+        // Warm turns: the router keeps proposing the pricier model every turn. The gate
+        // must veto until the accrued baseline makes the switch affordable.
+        let mut first_switch_warm_turn: Option<u32> = None;
+        let mut warm_turns = 0u32;
+        let mut last = None;
+        for turn in 1..=70u32 {
+            let d = route(&orch, Some(&st), facts_with_context("openai/pricey")).await;
+            assert!(d.warm, "turn {turn} should be warm (used moments ago)");
+            warm_turns = turn;
+
+            // The invariant under validation: spend never exceeds the cap.
+            assert!(
+                d.switch_spend_usd <= cap_fraction * d.baseline_usd + 1e-9,
+                "turn {turn}: spend {} exceeds {}% of baseline {}",
+                d.switch_spend_usd,
+                st.max_overhead_pct,
+                d.baseline_usd
+            );
+            // Baseline must track the independently computed never-switch cost:
+            // $0.03 per warm turn on the default model's cached rate.
+            let expected_baseline = 0.03 * turn as f64;
+            assert!(
+                (d.baseline_usd - expected_baseline).abs() < 1e-6,
+                "turn {turn}: baseline {} != expected never-switch cost {expected_baseline}",
+                d.baseline_usd
+            );
+
+            if d.model == "openai/pricey" {
+                first_switch_warm_turn = Some(turn);
+                assert_eq!(d.switches, 1);
+                assert!(
+                    (d.switch_spend_usd - 0.47).abs() < 1e-6,
+                    "allowed switch should charge the full cache-loss delta"
+                );
+                last = Some(d);
+                break;
+            }
+            // Vetoed turns retain the anchor and spend nothing.
+            assert_eq!(d.model, "anthropic/expensive");
+            assert_eq!(d.switches, 0);
+            assert!((d.switch_spend_usd - 0.0).abs() < 1e-9);
+        }
+
+        // ceiling(k) = 0.25 x 0.03k first covers $0.47 at k = 63.
+        assert_eq!(
+            first_switch_warm_turn,
+            Some(63),
+            "switch should flip from veto to allow exactly when the ceiling covers its cost"
+        );
+        let after_switch = last.unwrap();
+
+        // Same-anchor turn after the switch: no further spend accrues.
+        let d = route(&orch, Some(&st), facts_with_context("openai/pricey")).await;
+        warm_turns += 1;
+        assert_eq!(d.model, "openai/pricey");
+        assert_eq!(d.switches, 1);
+        assert!((d.switch_spend_usd - after_switch.switch_spend_usd).abs() < 1e-9);
+
+        // A -> B -> A return: `expensive` was dispatched last turn-but-one, so its cache
+        // is still warm — the return re-reads at cached rates and is free (never vetoed,
+        // never accrues spend).
+        let d = route(&orch, Some(&st), facts_with_context("anthropic/expensive")).await;
+        warm_turns += 1;
+        assert_eq!(
+            d.model, "anthropic/expensive",
+            "warm return must be allowed"
+        );
+        assert_eq!(d.switches, 2);
+        assert!(
+            (d.switch_spend_usd - after_switch.switch_spend_usd).abs() < 1e-9,
+            "free return must not change the running spend"
+        );
+
+        // Final end-to-end check of the promise: total switch overhead across the whole
+        // session is within max_overhead_pct% of the independently computed
+        // never-switch baseline.
+        let never_switch_cost = 0.03 * warm_turns as f64;
+        assert!(
+            (d.baseline_usd - never_switch_cost).abs() < 1e-6,
+            "final baseline {} != independently computed never-switch cost {never_switch_cost}",
+            d.baseline_usd
+        );
+        assert!(
+            d.switch_spend_usd <= cap_fraction * d.baseline_usd + 1e-9,
+            "session overhead {} exceeds the promised {}% of {}",
+            d.switch_spend_usd,
+            st.max_overhead_pct,
+            d.baseline_usd
+        );
+    }
 }
