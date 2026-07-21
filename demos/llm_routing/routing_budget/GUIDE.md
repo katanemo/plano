@@ -34,11 +34,19 @@ Start from `[config.yaml](config.yaml)` in this folder. The parts that matter:
 
 ```yaml
 # Per-model pricing is REQUIRED for the routing budget — the switch cost math needs
-# each model's input and cached-input rates.
+# each model's input and cached-input rates. This demo reads DigitalOcean's managed
+# pricing catalog, which publishes cached-read rates for its models. The catalog is
+# keyed by bare DO model ids, so model_aliases maps them onto the Plano model names
+# used in model_providers — without the mapping no rates match and every switch
+# decision fails open (reason="no_pricing").
 model_metrics_sources:
   - type: cost
-    provider: models.dev          # publishes real cache_read rates
+    provider: digitalocean
     refresh_interval: 86400
+    model_aliases:
+      openai-gpt-4o-mini: openai/gpt-4o-mini
+      openai-gpt-4o: openai/gpt-4o
+      anthropic-claude-4.6-sonnet: anthropic/claude-sonnet-4-6
 
 prompt_caching:
   enabled: true                   # automatic caching + session affinity (separate concern)
@@ -50,16 +58,21 @@ routing:
     # cache_read_discount: 0.1    # fallback when a feed omits cache_read
 ```
 
+`models.dev` works as a drop-in alternative cost source (`provider: models.dev`,
+no aliases needed — its keys already match `provider/model` routing names). The
+demo models are priced identically on both feeds, so every number in this guide
+holds either way.
+
 The routing budget lives under `routing` and is independent of prompt caching — it
 applies whether or not `prompt_caching.enabled` is set.
 
 
 
-### DigitalOcean variant
+### DigitalOcean-hosted models
 
-Address DO GenAI models with the `digitalocean/` prefix and point the cost feed
-at the DO catalog (or keep `models.dev`, which publishes cached-read rates the
-DO catalog doesn't):
+To route to DO GenAI models themselves (not just price from the DO catalog),
+address them with the `digitalocean/` prefix and alias the catalog keys to
+those names:
 
 ```yaml
 model_providers:
@@ -73,11 +86,15 @@ model_metrics_sources:
   - type: cost
     provider: digitalocean        # DO catalog
     refresh_interval: 86400
+    model_aliases:
+      anthropic-claude-4.6-sonnet: digitalocean/anthropic-claude-4.6-sonnet
+      openai-gpt-4o: digitalocean/openai-gpt-4o
 ```
 
-> The DO catalog does not publish a cached-read rate, so for DO-only setups the
-> gate falls back to `input_rate × cache_read_discount`. For exact cached rates,
-> add a `models.dev` cost source instead.
+> The DO catalog publishes cached-read rates
+> (`cache_read_input_price_per_million`), so the gate prices warm anchors at the
+> real cached rate. The `cache_read_discount` fallback only kicks in for models
+> whose catalog entry omits the field.
 
 ---
 
@@ -367,7 +384,7 @@ curl -s localhost:12000/v1/chat/completions \
 | ------------------------------------------------ | ------------------------------------------------------------------------------- |
 | `routing.routing_budget.max_overhead_pct`        | Switching overhead cap as a % of never-switching (higher = quality-first, more switching) |
 | `routing.routing_budget.replenish_on_rebind`     | Reset the running baseline/spend totals when a cold session re-binds            |
-| `routing.routing_budget.cache_read_discount`     | Assumed cached rate when a feed omits `cache_read` (DO fallback)                |
+| `routing.routing_budget.cache_read_discount`     | Assumed cached rate for models whose feed entry omits a cached-read rate       |
 | `routing.routing_budget.record_counterfactual`   | Emit `plano.switch.counterfactual_route` on vetoed switches (the road not taken)|
 | `prompt_caching.session_ttl_seconds`             | Session binding GC lifetime                                                     |
 | `prompt_caching.min_prefix_tokens`               | Minimum stable-prefix size before markers are injected                          |

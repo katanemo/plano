@@ -24,11 +24,27 @@ model_providers:
         description: generating new code snippets, functions, or boilerplate based on user prompts or requirements
 
 # Per-model pricing is required for the routing budget: the switch-cost
-# calculation needs each model's input and cached-input rates.
+# calculation needs each model's input and cached-input rates. This demo reads
+# DigitalOcean's managed pricing catalog, which publishes cached-read rates
+# (`cache_read_input_price_per_million` / `input_cache_read`). The catalog is
+# keyed by bare DO model ids (e.g. `openai-gpt-4o`), so model_aliases maps them
+# onto the Plano model names used in model_providers above — without the
+# mapping no rates match and every switch decision fails open (no_pricing).
 model_metrics_sources:
   - type: cost
-    provider: models.dev
+    provider: digitalocean
     refresh_interval: 86400
+    model_aliases:
+      openai-gpt-4o-mini: openai/gpt-4o-mini
+      openai-gpt-4o: openai/gpt-4o
+      anthropic-claude-4.6-sonnet: anthropic/claude-sonnet-4-6
+
+  # models.dev works identically and needs no aliases (its keys already match
+  # the provider/model routing names). Rates for these models are the same on
+  # both feeds, so the walkthrough numbers in GUIDE.md hold either way.
+  # - type: cost
+  #   provider: models.dev
+  #   refresh_interval: 86400
 
 # Automatic prompt caching (opt-in). Keeps a conversation pinned to the same
 # model so the upstream provider's prompt cache stays warm across turns, and
