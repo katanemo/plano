@@ -125,7 +125,7 @@ echo ""
 
 # --- Example 8: Session pinning - second call (pinned result) ---
 echo "--- 8. Session pinning - second call (same session, pinned) ---"
-echo "    Notice: same model returned with \"pinned\": true, routing was skipped"
+echo "    Notice: same anchor model returned with \"pinned\": true (warm session)"
 echo ""
 curl -s "$PLANO_URL/routing/v1/chat/completions" \
   -H "Content-Type: application/json" \

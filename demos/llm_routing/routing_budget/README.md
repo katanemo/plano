@@ -16,68 +16,23 @@ the cached rate you abandoned.
 
 The router runs every turn (routing stays cache-blind). When it proposes a model
 that differs from the session's warm anchor, Plano computes the **actual
-input-token cost** of abandoning the anchor's cache:
+input-token cost** of abandoning the anchor's cache and only allows the switch
+while the session's cumulative switch spend stays within `max_overhead_pct`% of
+what never-switching would have cost — otherwise it retains the warm anchor. The
+promise: the conversation bills at most `max_overhead_pct`% above never-switching.
 
-```
-switch_cost_in_usd = context_tokens x (candidate_uncached_input - anchor_cached_input) / 1M
-```
-
-- **Switch cost <= 0** — the candidate's uncached rate undercuts the anchor's
-  cached rate. Losing the cache costs nothing; switch freely. This never reduces the
-  session's switch spend — the "saving" is vs a path we didn't take, not real money.
-- **Switch cost > 0** — accrues into the session's cumulative switch spend. The
-  switch proceeds only while total spend stays within `max_overhead_pct`% of the
-  session's running never-switch baseline (what staying on the anchor would have
-  cost); otherwise Plano retains the anchor and its warm cache. The promise: the
-  conversation bills at most `max_overhead_pct`% above never-switching.
-
-Warmth is inferred from how long ago the session was last used vs. the
-provider's cache window — no per-call cache-hit signal is required, so the same
-decision works on both the full-proxy and `/routing` decision paths.
-
-The math is **input-only by design**: output-token cost is deliberately excluded,
-because output length is unknowable before generation. Quality and cost stay
-separate — the router still picks the best model; the budget only vetoes switches
-the session can't afford.
-
-## Configuration
-
-See [config.yaml](config.yaml). Requirements:
-
-- a cost source in `model_metrics_sources` (per-model rates feed the switch cost math)
-- a `routing.routing_budget` block — there is no default; presence turns it on and
-  startup fails without a `max_overhead_pct` (or without a cost source)
-
-`routing.routing_budget` fields:
-
-| Field | Meaning |
-|---|---|
-| `max_overhead_pct` | Switching overhead cap, as a percent of the never-switch baseline (`20` = 20%). `0` = never pay to switch |
-| `replenish_on_rebind` | Reset the running baseline/spend totals when a cold session re-binds (default true) |
-| `cache_read_discount` | Assumed cached rate when a feed omits `cache_read` (default 0.1) |
-| `record_counterfactual` | Record the switch that was vetoed, as a trace attribute (default false) |
-
-Prompt caching (`prompt_caching.enabled`) is a separate, optional concern that keeps
-the upstream cache warm and injects provider cache-control markers.
-
-## Observability
-
-Every decision is visible:
-
-- Metric: `brightstaff_session_switch_decisions_total{decision="allowed"|"retained",reason}`
-  (`reason` ∈ `same_anchor | free | within_cap | over_cap | no_pricing`)
-- Span attributes: `plano.cache.warm`, `plano.cache.idle_ms`,
-  `plano.switch.cost_in_usd`, `plano.switch.candidate_warm_tokens`,
-  `plano.switch.overhead_ceiling_in_usd`, `plano.switch.decision`,
-  `plano.session.overhead_pct`, `plano.session.switch_spend_in_usd`,
-  `plano.session.baseline_in_usd`, `plano.session.switches`,
-  `plano.session.total_cost_in_usd`
-- Per-request cost on each `plano(llm)` span: `llm.usage.input_cost_usd`,
-  `llm.usage.output_cost_usd`, `llm.usage.total_cost_usd` (cache creation priced at the
-  plain input rate)
+Quality and cost stay separate — the router still picks the best model; the
+budget only vetoes switches the session can't afford. Prompt caching
+(`prompt_caching.enabled`) is a separate, optional concern that keeps the
+upstream cache warm and injects provider cache-control markers.
 
 ## Run
 
 ```bash
 planoai up config.yaml
 ```
+
+See [config.yaml](config.yaml) for the annotated configuration, and
+**[GUIDE.md](GUIDE.md)** for the full hands-on walkthrough — running it as a
+routing decision, watching a switch get vetoed vs. allowed, the switch-cost
+math, and all the metrics and trace attributes for evals.

@@ -114,7 +114,7 @@ curl -s localhost:12000/v1/chat/completions \
   -d '{
     "model": "digitalocean/anthropic-claude-4.6-sonnet",
     "messages": [
-      {"role": "system", "content": "<paste a few thousand tokens of stable context>"},
+      {"role": "system", "content": "you are an intelligent agent"},
       {"role": "user", "content": "Scaffold the service"}
     ]
   }' | jq '.usage'
@@ -155,7 +155,130 @@ Each decision is emitted to metrics and traces (below) with a `reason` label
 
 
 
-## 6. Observability (for evals & benchmarks)
+## 6. Run it as a routing decision (no proxying)
+
+Everything above sends the full request through Plano, which then calls the
+upstream model itself. There's a second entry point that only makes the
+*decision* — same session lookup, same warmth inference, same routing budget —
+without ever calling an LLM or seeing a response: `/routing` + the same
+API path, on the same host:port as the model listener.
+
+This is for callers who want to make the actual upstream call themselves (or
+need it embedded in a broader pipeline, e.g. an intelligent-routing layer)
+but still want Plano's cache-aware pick and fallback order.
+
+Send a normal request with a **system prompt** and a user message — no affinity
+header. Plano derives the session key implicitly from
+`hash(system + tools + first user message)`, so you can watch the session pin
+and go warm across turns (the zero-config path from §4, now visible on the
+decision endpoint via `session_id` / `pinned`). Send `openai/gpt-4o-mini` as
+`model`; the router picks the real model from the *message content*.
+
+**Turn 1 — pin the session** with a generation prompt:
+
+```bash
+curl -s localhost:12000/routing/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "openai/gpt-4o-mini", "messages": [
+    {"role": "system", "content": "You are a senior Rust engineer."},
+    {"role": "user", "content": "Write a Rust function that reverses a linked list."}
+  ]}' | jq '{model: .models[0], session_id, pinned}'
+```
+
+```json
+{
+  "model": "anthropic/claude-sonnet-4-6",
+  "session_id": "implicit:8e76b367cc3a4336",
+  "pinned": false
+}
+```
+
+The router classified this as `code generation` → `anthropic/claude-sonnet-4-6`.
+`session_id` is the implicit key Plano derived from `system + tools + first
+user message` (deterministic — you'll get the same hash for these exact
+payloads), and `pinned` is `false` because this call *creates* the binding.
+
+**Turn 2 — same system prompt + same first message**, one turn later, within ~5 min:
+
+```bash
+curl -s localhost:12000/routing/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "openai/gpt-4o-mini", "messages": [
+    {"role": "system", "content": "You are a senior Rust engineer."},
+    {"role": "user", "content": "Write a Rust function that reverses a linked list."},
+    {"role": "assistant", "content": "Here is an idiomatic in-place reversal for a singly linked list:\n\n```rust\ntype Link = Option<Box<Node>>;\n\nstruct Node {\n    val: i32,\n    next: Link,\n}\n\nfn reverse(mut head: Link) -> Link {\n    let mut prev: Link = None;\n    while let Some(mut node) = head {\n        head = node.next.take();\n        node.next = prev;\n        prev = Some(node);\n    }\n    prev\n}\n```\n\nIt walks the list once, moving the next pointer of each node to its predecessor."},
+    {"role": "user", "content": "Now explain its time complexity in plain English — no code."}
+  ]}' | jq '{model: .models[0], session_id, pinned}'
+```
+
+```json
+{
+  "model": "anthropic/claude-sonnet-4-6",
+  "session_id": "implicit:8e76b367cc3a4336",
+  "pinned": true
+}
+```
+
+The `session_id` is **identical** to turn 1 — the head of the prompt
+(`system` + first user message) didn't change, so the implicit key stays stable
+as history grows — and `pinned` is now `true`: the session is warm and stuck to
+its anchor. **That's the pinning.**
+
+**Now the budget:** here the router *did* read turn 2 as a different route
+(`code understanding` → `openai/gpt-4o`), so with the anchor warm on
+`claude-sonnet-4-6` the budget evaluated the switch — and vetoed it. The
+brightstaff log shows exactly why:
+
+```text
+switch vetoed — would exceed session overhead cap, retaining anchor
+  anchor=anthropic/claude-sonnet-4-6 candidate=openai/gpt-4o
+  switch_cost_in_usd=3.96e-5 switch_spend_in_usd=0.0 overhead_ceiling_in_usd=1.08e-6
+```
+
+The switch would cost ~$3.96e-5 to re-read the context on `gpt-4o`, but only
+~$1.08e-6 of overhead was affordable (`max_overhead_pct`% of the still-tiny
+one-turn baseline) — so `.models[0]` stays `anthropic/claude-sonnet-4-6`. Confirm
+it with the metric:
+
+```bash
+curl -s localhost:9092/metrics | grep session_switch_decisions
+```
+
+```text
+brightstaff_session_switch_decisions_total{decision="retained",reason="over_cap"} 1
+```
+
+To see the **other** side, remove the `routing_budget` block (or set
+`max_overhead_pct` very high), restart, and repeat — turn 2 now returns
+`"model": "openai/gpt-4o"` and the metric reads `decision="allowed",reason="free"`.
+That before/after — same calls, one config line — is the whole point: the
+router's quality pick wins *unless* the budget says the warm cache it burns
+isn't worth it.
+
+> **If you see `same_anchor`,** the router classified both turns the same way,
+> so no switch was proposed — inherent to appended conversations, since the
+> router weighs the whole thread. To force `candidate ≠ anchor`
+> deterministically, pin the session with an explicit header instead
+> (`-H 'X-Model-Affinity: budget-demo'`) and send two *standalone* one-line
+> prompts that each route to a different model (an "explain this code" prompt,
+> then a "write a function" prompt). The budget behaves identically regardless
+> of how the session key was derived — `route()` doesn't branch on it.
+
+### Interoperability with the full-proxy path
+
+Because this endpoint **shares the same session cache and the same
+`session_router::route()` logic** as the full-proxy path, the two are fully
+interoperable: a session pinned via `/routing` is honored by a later
+`/v1/chat/completions` call (and vice versa), including the exact same
+`max_overhead_pct` gating. This is also why warmth here is inferred purely
+from idle-time vs. the provider's cache window rather than a cache-hit signal
+— this path never has a provider response to read one from.
+
+---
+
+
+
+## 7. Observability (for evals & benchmarks)
 
 **Prometheus metrics** — brightstaff exposes `/metrics` on **:9092**
 (Envoy admin/stats on **:9901/stats**):
@@ -206,7 +329,7 @@ conversation total, or read `plano.session.total_cost_in_usd` off the routing sp
 
 
 
-## 7. A/B methodology (baseline vs treatment)
+## 8. A/B methodology (baseline vs treatment)
 
 The cleanest benchmark is same-workload, caching off vs on — the exact shape of
 the caching-ON/OFF comparison:
@@ -237,7 +360,7 @@ curl -s localhost:12000/v1/chat/completions \
 
 
 
-## 8. Knobs to sweep
+## 9. Knobs to sweep
 
 
 | Setting                                          | Effect                                                                          |

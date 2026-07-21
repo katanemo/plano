@@ -108,10 +108,10 @@ The response contains the model list — your client should try `models[0]` firs
 
 ## Session Pinning
 
-Send an `X-Model-Affinity` header to pin the routing decision for a session. Once a model is selected, all subsequent requests with the same session ID return the same model without re-running routing.
+Send an `X-Model-Affinity` header to give a session a stable identity. Routing still runs on every request — pinning means the session sticks to its anchor model while the session is warm (recently used), so the provider-side prompt cache stays hot. The `pinned` field in the response signals a warm, stuck session. If a `routing_budget` is configured, a proposed switch away from the anchor is additionally gated by cost (see the [routing_budget demo](../routing_budget/)).
 
 ```bash
-# First call — runs routing, caches result
+# First call — creates the session binding
 curl http://localhost:12000/routing/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-Model-Affinity: my-session-123" \
@@ -121,10 +121,10 @@ curl http://localhost:12000/routing/v1/chat/completions \
   }'
 ```
 
-Response (first call):
+Response (first call — session is new, not yet warm):
 ```json
 {
-    "model": "anthropic/claude-sonnet-4-6",
+    "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "c16d1096c1af4a17abb48fb182918a88",
     "session_id": "my-session-123",
@@ -133,7 +133,7 @@ Response (first call):
 ```
 
 ```bash
-# Second call — same session, returns cached result
+# Second call — same session, sticks to the anchor while warm
 curl http://localhost:12000/routing/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "X-Model-Affinity: my-session-123" \
@@ -143,10 +143,10 @@ curl http://localhost:12000/routing/v1/chat/completions \
   }'
 ```
 
-Response (pinned):
+Response (warm session — `pinned: true`, the anchor model leads the list):
 ```json
 {
-    "model": "anthropic/claude-sonnet-4-6",
+    "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "a1b2c3d4e5f6...",
     "session_id": "my-session-123",
@@ -161,7 +161,7 @@ routing:
   session_max_entries: 10000    # default: 10000
 ```
 
-Without the `X-Model-Affinity` header, routing runs fresh every time (no breaking change).
+Without the `X-Model-Affinity` header, sessions can still be pinned implicitly when prompt caching or a routing budget is enabled — a session key is derived from the system prompt + tools + first user message. With neither enabled (as in this demo's config), every request routes fresh (no breaking change).
 
 ## Kubernetes Deployment (Self-hosted Plano-Orchestrator on GPU)
 
@@ -269,9 +269,9 @@ kubectl rollout restart deployment/plano
 }
 
 --- 8. Session pinning - second call (same session, pinned) ---
-    Notice: same model returned with "pinned": true, routing was skipped
+    Notice: same anchor model returned with "pinned": true (warm session)
 {
-    "model": "anthropic/claude-sonnet-4-6",
+    "models": ["anthropic/claude-sonnet-4-6", "openai/gpt-4o"],
     "route": "code_generation",
     "trace_id": "a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4",
     "session_id": "demo-session-001",
