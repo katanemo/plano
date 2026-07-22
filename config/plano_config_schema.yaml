@@ -547,8 +547,10 @@ properties:
       routing_budget:
         type: object
         description: >
-          Per-session cost gate on model switching. Independent of prompt caching — it
-          applies whenever configured (presence of this block turns it on). The default
+          Per-session cost gate on model switching. Self-sufficient and independent of
+          prompt_caching — it applies whenever configured (presence of this block turns
+          it on), derives implicit sessions on its own, and always prices warm anchors
+          at their cached input rate (provider caches are assumed real). The default
           posture is to stick to the model a session is warm on. When routing proposes a
           different model while that session's provider cache is plausibly still warm
           (inferred from the idle gap vs. the provider's cache window), the actual

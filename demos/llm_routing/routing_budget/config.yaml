@@ -46,12 +46,13 @@ model_metrics_sources:
   #   provider: models.dev
   #   refresh_interval: 86400
 
-# Automatic prompt caching (opt-in). Keeps a conversation pinned to the same
-# model so the upstream provider's prompt cache stays warm across turns, and
-# auto-injects cache-control markers where the provider needs them. This is a
-# separate concern from the routing budget below.
-prompt_caching:
-  enabled: true
+# Automatic prompt caching (opt-in). OPTIONAL for the routing budget: the budget
+# derives sessions and prices warm anchors at cached rates on its own. Enable this
+# only for what it adds — injecting cache-control markers on the full-proxy path
+# (required for the provider cache to be real on marker-based models like
+# anthropic/*; see GUIDE.md §4) and session affinity without a budget.
+# prompt_caching:
+#   enabled: true
 
 routing:
   # Per-session cost gate on model switching. Independent of prompt caching: it

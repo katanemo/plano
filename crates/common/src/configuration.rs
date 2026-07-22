@@ -33,9 +33,10 @@ pub struct Routing {
     pub session_ttl_seconds: Option<u64>,
     pub session_max_entries: Option<usize>,
     pub session_cache: Option<SessionCacheConfig>,
-    /// Cost gate on model switching within a session. Independent of prompt caching:
-    /// this is a routing decision that applies whenever it is configured, whether or
-    /// not `prompt_caching` is enabled. Presence of this block turns it on.
+    /// Cost gate on model switching within a session. Self-sufficient and independent
+    /// of prompt caching: presence of this block turns it on, implicit sessions are
+    /// derived on its own, and warm anchors are always priced at cached rates —
+    /// `prompt_caching` only controls marker injection and affinity-without-budget.
     pub routing_budget: Option<RoutingBudget>,
 }
 

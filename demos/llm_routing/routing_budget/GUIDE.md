@@ -9,8 +9,9 @@ There are two independent behaviors to observe:
 2. **Routing budget** — the router still runs every turn, but when it proposes a
   *different* model while the session's cache is plausibly warm, Plano only switches
   while the session's cumulative switch spend stays within `max_overhead_pct`% of what
-  staying put would have cost. This is a routing concern and works whether or not
-  prompt caching is on.
+  staying put would have cost. This is a routing concern and is self-sufficient:
+  it needs no `prompt_caching` config (it derives sessions and prices warm
+  anchors at cached rates on its own).
 
 ---
 
@@ -48,8 +49,10 @@ model_metrics_sources:
       openai-gpt-4o: openai/gpt-4o
       anthropic-claude-4.6-sonnet: anthropic/claude-sonnet-4-6
 
-prompt_caching:
-  enabled: true                   # automatic caching + session affinity (separate concern)
+# OPTIONAL for the routing budget — see below. Needed for §4 (real caching on
+# marker-based models when Plano proxies the request).
+# prompt_caching:
+#   enabled: true
 
 routing:
   routing_budget:                 # no default — presence turns it on
@@ -63,8 +66,12 @@ no aliases needed — its keys already match `provider/model` routing names). Th
 demo models are priced identically on both feeds, so every number in this guide
 holds either way.
 
-The routing budget lives under `routing` and is independent of prompt caching — it
-applies whether or not `prompt_caching.enabled` is set.
+The routing budget is fully self-sufficient: configuring it turns on implicit
+session derivation and prices warm anchors at cached rates on its own —
+`prompt_caching` is **not** required. Enable `prompt_caching` for what it adds:
+injecting provider cache-control markers when Plano proxies the request (without
+markers, marker-based models like `anthropic/*` never actually cache — see §4)
+and session affinity when no budget is configured.
 
 
 
@@ -121,9 +128,12 @@ The model listener comes up on **:12000** (per `config.yaml`).
 
 ## 4. See caching in action (single model)
 
-Send the same large system prompt across several turns. With caching enabled,
-Plano derives an implicit session from the stable prefix and pins the model, so
-turns 2+ read the prefix from the provider cache.
+This section needs `prompt_caching: { enabled: true }` (uncomment it in
+`config.yaml`): the model here is Anthropic-family, which only caches when the
+request carries cache-control markers, and it's Plano proxying the request —
+so Plano must inject them. Send the same large system prompt across several
+turns. Plano derives an implicit session from the stable prefix and pins the
+model, so turns 2+ read the prefix from the provider cache.
 
 ```bash
 curl -s localhost:12000/v1/chat/completions \
@@ -353,8 +363,9 @@ the caching-ON/OFF comparison:
 
 - **Baseline (no caching):** send requests with header `X-Plano-Cache: off`
 (disables implicit pinning + marker injection per request), or run with
-`prompt_caching.enabled: false`.
-- **Treatment (caching on):** default config in this folder.
+`prompt_caching` absent/disabled.
+- **Treatment (caching on):** the config in this folder with the
+`prompt_caching` block uncommented.
 
 Compare, over an identical multi-turn eval set:
 
@@ -400,6 +411,7 @@ curl -s localhost:12000/v1/chat/completions \
 
 - Caching **never** changes which model routing selects — the router still makes
 the quality call; the overhead cap only vetoes a switch that the session can't afford.
-- The routing budget is independent of prompt caching (it lives under `routing`) and
-is fully opt-in with **no baked-in cap**: configuring it without a `max_overhead_pct`
-(or without a cost source) fails startup with a clear message.
+- The routing budget is independent of prompt caching (it lives under `routing`,
+needs no `prompt_caching` config, and always prices warm anchors at cached rates)
+and is fully opt-in with **no baked-in cap**: configuring it without a
+`max_overhead_pct` (or without a cost source) fails startup with a clear message.
