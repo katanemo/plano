@@ -213,13 +213,12 @@ impl OrchestratorService {
     /// Estimate the input-cost (USD) of switching a session from `anchor_model`
     /// (the model that handled the latest request) to `candidate_model`.
     ///
-    /// When `caching_enabled`, the anchor is warm, so staying re-reads the context at its
-    /// *cached* rate and `candidate_warm_tokens` (context the candidate still holds from an
-    /// earlier visit this session) re-read at the candidate's cached rate. When caching is
-    /// off there is no warm cache on either side: staying re-reads at the anchor's *plain*
-    /// (uncached) rate and the candidate re-ingests the whole context uncached (no
-    /// warm-token credit), so the cost collapses to
-    /// `context_tokens x (candidate_uncached_rate - anchor_uncached_rate) / 1M`.
+    /// The anchor is warm (this is only called for warm sessions), so staying re-reads the
+    /// context at its *cached* rate, while `candidate_warm_tokens` (context the candidate
+    /// still holds from an earlier visit this session) re-read at the candidate's cached
+    /// rate. Provider caches are assumed real whenever the routing budget is active —
+    /// most providers cache automatically, with or without Plano's marker injection
+    /// (`prompt_caching.enabled` is not consulted here).
     ///
     /// Fetches per-model rates from the configured cost feed; returns `None` when pricing
     /// is missing for either side so the caller can fail open (switch freely) rather than
@@ -232,22 +231,13 @@ impl OrchestratorService {
         candidate_model: &str,
         candidate_warm_tokens: u64,
         cache_read_discount: f64,
-        caching_enabled: bool,
     ) -> Option<f64> {
         let anchor = self.model_rates(anchor_model).await?;
         let candidate = self.model_rates(candidate_model).await?;
-        let (anchor_read_rate, candidate_warm_tokens) = if caching_enabled {
-            (
-                anchor.cached_input_rate(cache_read_discount),
-                candidate_warm_tokens,
-            )
-        } else {
-            (anchor.input_per_million, 0)
-        };
         Some(switch_cost_in_usd(
             context_tokens,
             candidate_warm_tokens,
-            anchor_read_rate,
+            anchor.cached_input_rate(cache_read_discount),
             candidate.input_per_million,
             candidate.cached_input_rate(cache_read_discount),
         ))
@@ -256,26 +246,19 @@ impl OrchestratorService {
     /// This turn's contribution to the session's *never-switch* baseline: the USD cost of
     /// reading `context_tokens` on `model` — the session's `default_model`, i.e. what it
     /// would have paid by never switching (not the possibly-drifted current anchor). Priced
-    /// at the cached input rate when `caching_enabled` (the never-switch path stays warm),
-    /// at the plain uncached rate otherwise (nothing is cached, so every turn re-reads the
-    /// full context). Summed across turns, this is the denominator the percentage overhead
-    /// cap is measured against. `None` when the model has no pricing (the caller then can't
-    /// grow the baseline this turn).
+    /// at the cached input rate: the never-switch path stays warm, and provider caches are
+    /// assumed real whenever the routing budget is active. Summed across turns, this is
+    /// the denominator the percentage overhead cap is measured against. `None` when the
+    /// model has no pricing (the caller then can't grow the baseline this turn).
     pub async fn context_read_cost_in_usd(
         &self,
         context_tokens: u64,
         model: &str,
         cache_read_discount: f64,
-        caching_enabled: bool,
     ) -> Option<f64> {
         let rates = self.model_rates(model).await?;
         let context_millions = context_tokens as f64 / TOKENS_PER_MILLION;
-        let rate = if caching_enabled {
-            rates.cached_input_rate(cache_read_discount)
-        } else {
-            rates.input_per_million
-        };
-        Some(context_millions * rate)
+        Some(context_millions * rates.cached_input_rate(cache_read_discount))
     }
 
     // ---- LLM routing ----
