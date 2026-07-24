@@ -56,6 +56,8 @@ pub struct StreamContext {
     http_protocol: Option<String>,
     sse_buffer: Option<SseStreamBuffer>,
     sse_chunk_processor: Option<SseChunkProcessor>,
+    /// Accumulates upstream non-streaming response chunks until end of stream.
+    non_streaming_response_buffer: Vec<u8>,
 }
 
 impl StreamContext {
@@ -87,6 +89,7 @@ impl StreamContext {
             http_protocol: None,
             sse_buffer: None,
             sse_chunk_processor: None,
+            non_streaming_response_buffer: Vec::new(),
         }
     }
 
@@ -820,6 +823,31 @@ impl StreamContext {
             }
         }
     }
+
+    fn flush_streaming_response_tail(&mut self) -> Option<Vec<u8>> {
+        let provider_id = self.get_provider_id();
+        let has_buffered_sse = self
+            .sse_chunk_processor
+            .as_ref()
+            .is_some_and(|processor| processor.has_buffered_data());
+
+        if has_buffered_sse {
+            match self.handle_streaming_response(&[], provider_id) {
+                Ok(bytes) if !bytes.is_empty() => return Some(bytes),
+                Ok(_) => {}
+                Err(_) => return None,
+            }
+        }
+
+        self.sse_buffer.as_mut().and_then(|buffer| {
+            let bytes = buffer.to_bytes();
+            if bytes.is_empty() {
+                None
+            } else {
+                Some(bytes)
+            }
+        })
+    }
 }
 
 // HttpContext is the trait that allows the Rust code to interact with HTTP objects.
@@ -1178,6 +1206,21 @@ impl HttpContext for StreamContext {
 
         let current_time = get_current_time().unwrap();
         if end_of_stream && body_size == 0 {
+            if self.streaming_response {
+                if let Some(serialized_body) = self.flush_streaming_response_tail() {
+                    self.set_http_response_body(0, 0, &serialized_body);
+                }
+            } else if !self.non_streaming_response_buffer.is_empty() {
+                let body = std::mem::take(&mut self.non_streaming_response_buffer);
+                let provider_id = self.get_provider_id();
+                match self.handle_non_streaming_response(&body, provider_id) {
+                    Ok(serialized_body) => {
+                        self.set_http_response_body(0, 0, &serialized_body);
+                    }
+                    Err(action) => return action,
+                }
+            }
+
             debug!(
                 "request_id={}: response body complete, total_bytes={}",
                 self.request_identifier(),
@@ -1252,7 +1295,15 @@ impl HttpContext for StreamContext {
                 Err(action) => return action,
             }
         } else {
-            match self.handle_non_streaming_response(&body, provider_id) {
+            self.non_streaming_response_buffer.extend_from_slice(&body);
+            if !end_of_stream {
+                // Hold chunks until the full JSON body arrives.
+                self.set_http_response_body(0, body_size, &[]);
+                return Action::Continue;
+            }
+
+            let complete_body = std::mem::take(&mut self.non_streaming_response_buffer);
+            match self.handle_non_streaming_response(&complete_body, provider_id) {
                 Ok(serialized_body) => {
                     self.set_http_response_body(0, body_size, &serialized_body);
                 }
