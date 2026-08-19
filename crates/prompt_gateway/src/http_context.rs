@@ -7,8 +7,7 @@ use common::{
         ARCH_FC_MODEL_NAME, ARCH_INTERNAL_CLUSTER_NAME, ARCH_ROUTING_HEADER,
         ARCH_UPSTREAM_HOST_HEADER, ASSISTANT_ROLE, CHAT_COMPLETIONS_PATH, HEALTHZ_PATH,
         MODEL_SERVER_NAME, MODEL_SERVER_REQUEST_TIMEOUT_MS, REQUEST_ID_HEADER, TOOL_ROLE,
-        TRACE_PARENT_HEADER, USER_ROLE, X_ARCH_API_RESPONSE, X_ARCH_FC_MODEL_RESPONSE,
-        X_ARCH_STATE_HEADER, X_ARCH_TOOL_CALL,
+        TRACE_PARENT_HEADER, USER_ROLE, X_ARCH_STATE_HEADER,
     },
     errors::ServerError,
     http::{CallArgs, Client},
@@ -17,7 +16,6 @@ use common::{
 use http::StatusCode;
 use log::{debug, info, warn};
 use proxy_wasm::{traits::HttpContext, types::Action};
-use serde_json::Value;
 use std::{
     collections::HashMap,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -291,6 +289,10 @@ impl HttpContext for StreamContext {
         }
 
         if end_of_stream && body_size == 0 {
+            if !self.streaming_response && !self.non_streaming_response_buffer.is_empty() {
+                let body = std::mem::take(&mut self.non_streaming_response_buffer);
+                self.process_non_streaming_response_body(&body, 0);
+            }
             return Action::Continue;
         }
 
@@ -326,15 +328,15 @@ impl HttpContext for StreamContext {
             }
         };
 
-        let body_utf8 = match String::from_utf8(body) {
-            Ok(body_utf8) => body_utf8,
-            Err(e) => {
-                info!("could not convert to utf8: {}", e);
-                return Action::Continue;
-            }
-        };
-
         if self.streaming_response {
+            let body_utf8 = match String::from_utf8(body) {
+                Ok(body_utf8) => body_utf8,
+                Err(e) => {
+                    info!("could not convert to utf8: {}", e);
+                    return Action::Continue;
+                }
+            };
+
             debug!("streaming response");
 
             if self.tool_calls.is_some() && !self.tool_calls.as_ref().unwrap().is_empty() {
@@ -359,70 +361,15 @@ impl HttpContext for StreamContext {
                 self.set_http_response_body(0, body_size, response_str.as_bytes());
                 self.tool_calls = None;
             }
-        } else if let Some(tool_calls) = self.tool_calls.as_ref() {
-            if !tool_calls.is_empty() {
-                if self.arch_state.is_none() {
-                    self.arch_state = Some(Vec::new());
-                }
-
-                let mut data = match serde_json::from_str(&body_utf8) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        warn!(
-                            "could not deserialize response, sending data as it is: {}",
-                            e
-                        );
-                        return Action::Continue;
-                    }
-                };
-                // use serde::Value to manipulate the json object and ensure that we don't lose any data
-                if let Value::Object(ref mut map) = data {
-                    // serialize arch state and add to metadata
-                    let metadata = map
-                        .entry("metadata")
-                        .or_insert(Value::Object(serde_json::Map::new()));
-                    if metadata == &Value::Null {
-                        *metadata = Value::Object(serde_json::Map::new());
-                    }
-
-                    let tool_call_message = self.generate_tool_call_message();
-                    let tool_call_message_str = serde_json::to_string(&tool_call_message).unwrap();
-                    metadata.as_object_mut().unwrap().insert(
-                        X_ARCH_TOOL_CALL.to_string(),
-                        serde_json::Value::String(tool_call_message_str),
-                    );
-
-                    let api_response_message = self.generate_api_response_message();
-                    let api_response_message_str =
-                        serde_json::to_string(&api_response_message).unwrap();
-                    metadata.as_object_mut().unwrap().insert(
-                        X_ARCH_API_RESPONSE.to_string(),
-                        serde_json::Value::String(api_response_message_str),
-                    );
-
-                    let fc_messages = vec![tool_call_message, api_response_message];
-
-                    let fc_messages_str = serde_json::to_string(&fc_messages).unwrap();
-                    let arch_state = HashMap::from([("messages".to_string(), fc_messages_str)]);
-                    let arch_state_str = serde_json::to_string(&arch_state).unwrap();
-                    metadata.as_object_mut().unwrap().insert(
-                        X_ARCH_STATE_HEADER.to_string(),
-                        serde_json::Value::String(arch_state_str),
-                    );
-
-                    if let Some(arch_fc_response) = self.arch_fc_response.as_ref() {
-                        metadata.as_object_mut().unwrap().insert(
-                            X_ARCH_FC_MODEL_RESPONSE.to_string(),
-                            serde_json::Value::String(
-                                serde_json::to_string(arch_fc_response).unwrap(),
-                            ),
-                        );
-                    }
-                    let data_serialized = serde_json::to_string(&data).unwrap();
-                    info!("plano <= developer: {}", data_serialized);
-                    self.set_http_response_body(0, body_size, data_serialized.as_bytes());
-                };
+        } else {
+            self.non_streaming_response_buffer.extend_from_slice(&body);
+            if !end_of_stream {
+                self.set_http_response_body(0, body_size, &[]);
+                return Action::Continue;
             }
+
+            let complete_body = std::mem::take(&mut self.non_streaming_response_buffer);
+            self.process_non_streaming_response_body(&complete_body, body_size);
         }
 
         debug!("recv [S={}] end_stream={}", self.context_id, end_of_stream);
