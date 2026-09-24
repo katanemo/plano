@@ -357,6 +357,28 @@ impl SignalReport {
     }
 }
 
+/// Per-message report entry produced by `SignalAnalyzer::get_message_reports`
+/// / `analyze_step`. Loosely mirrors the dict shape of the Python
+/// reference's `get_message_reports` entries (`role`, `content`,
+/// `report: {quality, score, label, signal_class, signal_type, matched}`),
+/// flattened into a single struct for Rust ergonomics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageReport {
+    pub role: String,
+    pub content: String,
+    /// `InteractionQuality::as_str()` of the cumulative report as of this message.
+    pub quality: String,
+    pub score: f32,
+    /// One of `"positive"`, `"neutral"`, `"negative"`.
+    pub label: String,
+    /// Signal layer of the highest-priority new signal at this message
+    /// (`"interaction"` / `"execution"` / `"environment"`), or `None`.
+    pub signal_class: Option<String>,
+    /// Dotted category.leaf, e.g. `"misalignment.correction"`.
+    pub signal_type: Option<String>,
+    pub matched: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,6 +14,58 @@ pub struct ShareGptMsg<'a> {
     pub from: &'a str,
 }
 
+/// Compute turn metrics from turn counts.
+///
+/// Efficiency decays after the baseline: `1 / (1 + 0.25 * excess_turns)`. The
+/// conversation is dragging once efficiency drops below the threshold.
+/// Factored out of `analyze_dragging` so the incremental path
+/// (`SignalAnalyzer::_step`) can recompute metrics from running turn counts
+/// without re-scanning the whole conversation.
+pub fn compute_turn_metrics(
+    user_turns: usize,
+    assistant_turns: usize,
+    baseline_turns: usize,
+    efficiency_threshold: f32,
+) -> TurnMetrics {
+    let total_turns = user_turns;
+    let efficiency_score: f32 = if total_turns == 0 || total_turns <= baseline_turns {
+        1.0
+    } else {
+        let excess = (total_turns - baseline_turns) as f32;
+        1.0 / (1.0 + excess * 0.25)
+    };
+
+    TurnMetrics {
+        total_turns,
+        user_turns,
+        assistant_turns,
+        is_dragging: efficiency_score < efficiency_threshold,
+        efficiency_score,
+    }
+}
+
+/// Build the `stagnation.dragging` signal for the given turn metrics.
+pub fn dragging_signal(
+    turn_metrics: &TurnMetrics,
+    message_index: usize,
+    baseline_turns: usize,
+) -> SignalInstance {
+    SignalInstance::new(
+        SignalType::StagnationDragging,
+        message_index,
+        format!(
+            "Conversation dragging: {} turns (efficiency: {:.2})",
+            turn_metrics.total_turns, turn_metrics.efficiency_score
+        ),
+    )
+    .with_confidence(1.0 - turn_metrics.efficiency_score)
+    .with_metadata(json!({
+        "total_turns": turn_metrics.total_turns,
+        "efficiency_score": turn_metrics.efficiency_score,
+        "baseline_turns": baseline_turns,
+    }))
+}
+
 pub fn analyze_dragging(
     messages: &[ShareGptMsg<'_>],
     baseline_turns: usize,
@@ -31,41 +83,16 @@ pub fn analyze_dragging(
         }
     }
 
-    let total_turns = user_turns;
-    let efficiency_score: f32 = if total_turns == 0 || total_turns <= baseline_turns {
-        1.0
-    } else {
-        let excess = (total_turns - baseline_turns) as f32;
-        1.0 / (1.0 + excess * 0.25)
-    };
-
-    let is_dragging = efficiency_score < efficiency_threshold;
-    let metrics = TurnMetrics {
-        total_turns,
+    let metrics = compute_turn_metrics(
         user_turns,
         assistant_turns,
-        is_dragging,
-        efficiency_score,
-    };
+        baseline_turns,
+        efficiency_threshold,
+    );
 
-    if is_dragging {
+    if metrics.is_dragging {
         let last_idx = messages.len().saturating_sub(1);
-        group.add_signal(
-            SignalInstance::new(
-                SignalType::StagnationDragging,
-                last_idx,
-                format!(
-                    "Conversation dragging: {} turns (efficiency: {:.2})",
-                    total_turns, efficiency_score
-                ),
-            )
-            .with_confidence(1.0 - efficiency_score)
-            .with_metadata(json!({
-                "total_turns": total_turns,
-                "efficiency_score": efficiency_score,
-                "baseline_turns": baseline_turns,
-            })),
-        );
+        group.add_signal(dragging_signal(&metrics, last_idx, baseline_turns));
     }
 
     (group, metrics)
