@@ -1,5 +1,8 @@
 //! Execution loops detector. Direct port of `signals/execution/loops.py`.
 
+use std::collections::{HashSet, VecDeque};
+
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::signals::analyzer::ShareGptMessage;
@@ -8,6 +11,9 @@ use crate::signals::schemas::{SignalGroup, SignalInstance, SignalType};
 pub const RETRY_THRESHOLD: usize = 3;
 pub const PARAMETER_DRIFT_THRESHOLD: usize = 3;
 pub const OSCILLATION_CYCLES_THRESHOLD: usize = 3;
+/// Longest oscillation pattern length considered, matching the batch
+/// detector's `2..=min(5, ...)` range.
+const MAX_OSC_PATTERN_LEN: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct ToolCall {
@@ -283,6 +289,365 @@ fn deduplicate_patterns(
     result
 }
 
+// ---------------------------------------------------------------------------
+// Incremental loop detection.
+//
+// `analyze_loops` above rescans every tool call in the conversation on every
+// `function_call` message, which is quadratic across a session. The types
+// below track just enough state to detect retry / parameter_drift /
+// oscillation in O(1) per new tool call, carried forward in
+// `SignalReport::loop_state` across `SignalAnalyzer::analyze_step` calls.
+//
+// retry and parameter_drift are exact: both are properties of the maximal
+// run of consecutive same-tool-name calls containing the newest call, and
+// that run's qualifying signal(s) are fully determined the moment the run
+// closes (or by its current extent while still open) — no rescan needed.
+//
+// oscillation is a best-effort approximation. The batch detector's greedy,
+// variable-start, variable-period-length scan has no known O(1)-per-call
+// incremental formulation that is exact for adversarial inputs (multiple
+// simultaneously-valid candidate periods starting at different offsets).
+// This tracks one candidate segment per period (2..=5) using only a bounded
+// window of recent tool names, and exposes the shortest currently-qualifying
+// period — which matches the batch detector on realistic tool-oscillation
+// traces (a single active period at a time), but can diverge from it on
+// contrived inputs with overlapping multi-period patterns. Divergences are
+// caught by `fuzz_step_matches_batch_for_loops` below; residual known
+// mismatches are documented there.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SameToolRun {
+    tool: String,
+    start: usize,
+    end: usize,
+    len: usize,
+    unique_args: Vec<String>,
+    ident_args: String,
+    ident_start: usize,
+    ident_end: usize,
+    ident_len: usize,
+    /// Set once any identical-args sub-run within this run has hit
+    /// `RETRY_THRESHOLD`. Mirrors the batch detector's rule that a
+    /// parameter_drift pattern is suppressed if it overlaps a retry pattern
+    /// (retry runs are always nested inside a drift run's same-tool span).
+    overlaps_retry: bool,
+}
+
+impl SameToolRun {
+    fn start_new(call: &ToolCall) -> Self {
+        Self {
+            tool: call.name.clone(),
+            start: call.index,
+            end: call.index,
+            len: 1,
+            unique_args: vec![call.args.clone()],
+            ident_args: call.args.clone(),
+            ident_start: call.index,
+            ident_end: call.index,
+            ident_len: 1,
+            overlaps_retry: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LagTracker {
+    period: usize,
+    pattern: Vec<String>,
+    seg_start: usize,
+    run_len: usize,
+    last_full_cycle_end: usize,
+    seed_ok: bool,
+}
+
+/// Incremental loop-detection state. Opaque outside this module; carried in
+/// `SignalReport::loop_state` and fed one tool call at a time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolCallState {
+    recent: VecDeque<(usize, String)>,
+    current_run: Option<SameToolRun>,
+    osc_trackers: Vec<LagTracker>,
+    closed_retry: Vec<(usize, usize, String, usize)>,
+    /// `(start, end, tool_name, variation_count, call_count)`.
+    closed_drift: Vec<(usize, usize, String, usize, usize)>,
+    closed_osc: Vec<(usize, usize, Vec<String>, usize)>,
+}
+
+impl ToolCallState {
+    /// Feed one parsed tool call into the state.
+    fn push(&mut self, call: &ToolCall) {
+        let recent_before = self.recent.clone();
+        self.step_same_tool_run(call);
+        self.step_oscillation(call, &recent_before);
+        self.recent.push_back((call.index, call.name.clone()));
+        while self.recent.len() > MAX_OSC_PATTERN_LEN {
+            self.recent.pop_front();
+        }
+    }
+
+    fn step_same_tool_run(&mut self, call: &ToolCall) {
+        let continues = matches!(&self.current_run, Some(run) if run.tool == call.name);
+        if continues {
+            let run = self.current_run.as_mut().expect("checked by `continues`");
+            run.len += 1;
+            run.end = call.index;
+            if !run.unique_args.iter().any(|a| a == &call.args) {
+                run.unique_args.push(call.args.clone());
+            }
+            if call.args == run.ident_args {
+                run.ident_len += 1;
+                run.ident_end = call.index;
+            } else {
+                if run.ident_len >= RETRY_THRESHOLD {
+                    self.closed_retry.push((
+                        run.ident_start,
+                        run.ident_end,
+                        run.tool.clone(),
+                        run.ident_len,
+                    ));
+                    run.overlaps_retry = true;
+                }
+                run.ident_args = call.args.clone();
+                run.ident_start = call.index;
+                run.ident_end = call.index;
+                run.ident_len = 1;
+            }
+        } else {
+            if let Some(old) = self.current_run.take() {
+                self.finalize_run(old);
+            }
+            self.current_run = Some(SameToolRun::start_new(call));
+        }
+    }
+
+    fn finalize_run(&mut self, run: SameToolRun) {
+        let final_ident_qualifies = run.ident_len >= RETRY_THRESHOLD;
+        if final_ident_qualifies {
+            self.closed_retry.push((
+                run.ident_start,
+                run.ident_end,
+                run.tool.clone(),
+                run.ident_len,
+            ));
+        }
+        let overlaps_retry = run.overlaps_retry || final_ident_qualifies;
+        if run.len >= PARAMETER_DRIFT_THRESHOLD && run.unique_args.len() >= 2 && !overlaps_retry {
+            self.closed_drift.push((
+                run.start,
+                run.end,
+                run.tool.clone(),
+                run.unique_args.len(),
+                run.len,
+            ));
+        }
+    }
+
+    fn step_oscillation(&mut self, call: &ToolCall, recent_before: &VecDeque<(usize, String)>) {
+        let recent_len = recent_before.len();
+        for period in 2..=MAX_OSC_PATTERN_LEN {
+            let tracker_idx = self.osc_trackers.iter().position(|t| t.period == period);
+            let matches = recent_len >= period && recent_before[recent_len - period].1 == call.name;
+
+            if matches {
+                if let Some(idx) = tracker_idx {
+                    let t = &mut self.osc_trackers[idx];
+                    t.run_len += 1;
+                    if t.run_len.is_multiple_of(period) {
+                        t.last_full_cycle_end = call.index;
+                    }
+                }
+                continue;
+            }
+
+            if let Some(idx) = tracker_idx {
+                let old = self.osc_trackers.remove(idx);
+                if old.seed_ok && old.run_len / old.period >= OSCILLATION_CYCLES_THRESHOLD {
+                    self.closed_osc.push((
+                        old.seg_start,
+                        old.last_full_cycle_end,
+                        old.pattern.clone(),
+                        old.run_len / old.period,
+                    ));
+                }
+            }
+
+            if recent_len + 1 >= period {
+                let mut seed: Vec<String> = recent_before
+                    .iter()
+                    .skip(recent_len - (period - 1))
+                    .map(|(_, name)| name.clone())
+                    .collect();
+                let seg_start = recent_before[recent_len - (period - 1)].0;
+                seed.push(call.name.clone());
+                let unique_count = seed.iter().collect::<HashSet<&String>>().len();
+                self.osc_trackers.push(LagTracker {
+                    period,
+                    pattern: seed,
+                    seg_start,
+                    run_len: period,
+                    last_full_cycle_end: call.index,
+                    seed_ok: unique_count >= 2,
+                });
+            }
+        }
+    }
+
+    fn current_osc_candidate(&self) -> Option<(usize, usize, Vec<String>, usize)> {
+        let mut sorted: Vec<&LagTracker> = self.osc_trackers.iter().collect();
+        sorted.sort_by_key(|t| t.period);
+        sorted.into_iter().find_map(|t| {
+            if t.seed_ok && t.run_len / t.period >= OSCILLATION_CYCLES_THRESHOLD {
+                Some((
+                    t.seg_start,
+                    t.last_full_cycle_end,
+                    t.pattern.clone(),
+                    t.run_len / t.period,
+                ))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Render the current "loops" `SignalGroup` from accumulated + in-progress state.
+    fn current_signals(&self) -> SignalGroup {
+        let mut group = SignalGroup::new("loops");
+
+        for (start, end, name, count) in &self.closed_retry {
+            group.add_signal(retry_signal(*start, *end, name, *count));
+        }
+        if let Some(run) = &self.current_run {
+            if run.ident_len >= RETRY_THRESHOLD {
+                group.add_signal(retry_signal(
+                    run.ident_start,
+                    run.ident_end,
+                    &run.tool,
+                    run.ident_len,
+                ));
+            }
+        }
+
+        for (start, end, name, variation_count, call_count) in &self.closed_drift {
+            group.add_signal(drift_signal(
+                *start,
+                *end,
+                name,
+                *variation_count,
+                *call_count,
+            ));
+        }
+        if let Some(run) = &self.current_run {
+            let overlaps_retry = run.overlaps_retry || run.ident_len >= RETRY_THRESHOLD;
+            if run.len >= PARAMETER_DRIFT_THRESHOLD && run.unique_args.len() >= 2 && !overlaps_retry
+            {
+                group.add_signal(drift_signal(
+                    run.start,
+                    run.end,
+                    &run.tool,
+                    run.unique_args.len(),
+                    run.len,
+                ));
+            }
+        }
+
+        let mut osc_patterns = self.closed_osc.clone();
+        if let Some(cand) = self.current_osc_candidate() {
+            osc_patterns.push(cand);
+        }
+        let osc_patterns = deduplicate_patterns(osc_patterns);
+        for (start, end, pattern, cycles) in &osc_patterns {
+            group.add_signal(oscillation_signal(*start, *end, pattern, *cycles));
+        }
+
+        group
+    }
+}
+
+fn retry_signal(start: usize, end: usize, tool_name: &str, call_count: usize) -> SignalInstance {
+    SignalInstance::new(
+        SignalType::ExecutionLoopsRetry,
+        start,
+        format!(
+            "Tool '{}' called {} times with identical arguments",
+            tool_name, call_count
+        ),
+    )
+    .with_confidence(0.95)
+    .with_metadata(json!({
+        "tool_name": tool_name,
+        "start_index": start,
+        "end_index": end,
+        "call_count": call_count,
+        "loop_type": "retry",
+    }))
+}
+
+fn drift_signal(
+    start: usize,
+    end: usize,
+    tool_name: &str,
+    variation_count: usize,
+    call_count: usize,
+) -> SignalInstance {
+    SignalInstance::new(
+        SignalType::ExecutionLoopsParameterDrift,
+        start,
+        format!(
+            "Tool '{}' called {} times with {} different argument variations",
+            tool_name, call_count, variation_count
+        ),
+    )
+    .with_confidence(0.85)
+    .with_metadata(json!({
+        "tool_name": tool_name,
+        "start_index": start,
+        "end_index": end,
+        "call_count": call_count,
+        "variation_count": variation_count,
+        "loop_type": "parameter_drift",
+    }))
+}
+
+fn oscillation_signal(
+    start: usize,
+    end: usize,
+    pattern: &[String],
+    cycles: usize,
+) -> SignalInstance {
+    let pattern_str = pattern.join(" \u{2192} ");
+    SignalInstance::new(
+        SignalType::ExecutionLoopsOscillation,
+        start,
+        format!(
+            "Oscillation pattern [{}] repeated {} times",
+            pattern_str, cycles
+        ),
+    )
+    .with_confidence(0.9)
+    .with_metadata(json!({
+        "pattern": pattern,
+        "start_index": start,
+        "end_index": end,
+        "cycle_count": cycles,
+        "loop_type": "oscillation",
+    }))
+}
+
+/// Incremental entry point: feed one message (only `function_call` messages
+/// actually update state) and return the up-to-date "loops" `SignalGroup`.
+/// Callers on non-`function_call` messages should keep the previous report's
+/// `execution.loops` group unchanged instead of calling this.
+pub fn analyze_loops_step(
+    state: &mut ToolCallState,
+    message_index: usize,
+    msg: &ShareGptMessage<'_>,
+) -> SignalGroup {
+    if let Some(call) = parse_tool_call(message_index, msg) {
+        state.push(&call);
+    }
+    state.current_signals()
+}
+
 pub fn analyze_loops(messages: &[ShareGptMessage<'_>]) -> SignalGroup {
     let mut group = SignalGroup::new("loops");
     let calls = extract_tool_calls(messages);
@@ -429,5 +794,188 @@ mod tests {
         let msgs = vec![fc(r#"{"name":"only_once","arguments":{}}"#)];
         let g = analyze_loops(&msgs);
         assert!(g.signals.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod incremental_tests {
+    use super::*;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    fn signal_key(s: &SignalInstance) -> (String, usize, String) {
+        (
+            s.signal_type.as_str().to_string(),
+            s.message_index,
+            s.metadata.to_string(),
+        )
+    }
+
+    /// Owned (from, value) rows so the fuzz driver can build arbitrary
+    /// randomized conversations without lifetime headaches.
+    fn random_conversation(
+        rng: &mut StdRng,
+        len: usize,
+        tool_names: &[&str],
+    ) -> Vec<(String, String)> {
+        let mut out = Vec::with_capacity(len);
+        for _ in 0..len {
+            let kind = rng.random_range(0..10u32);
+            if kind < 7 {
+                let name = tool_names[rng.random_range(0..tool_names.len())];
+                let arg_variant = rng.random_range(0..3u32);
+                out.push((
+                    "function_call".to_string(),
+                    format!(
+                        r#"{{"name":"{}","arguments":{{"v":{}}}}}"#,
+                        name, arg_variant
+                    ),
+                ));
+            } else if kind < 8 {
+                out.push(("observation".to_string(), "ok".to_string()));
+            } else if kind < 9 {
+                out.push(("human".to_string(), "hi".to_string()));
+            } else {
+                out.push(("gpt".to_string(), "hi".to_string()));
+            }
+        }
+        out
+    }
+
+    /// Runs both the batch detector (rescanning the growing prefix every
+    /// step) and the incremental `ToolCallState` (one call per new message)
+    /// over the same conversation, asserting they agree at every prefix.
+    /// Returns `Ok(())` on full agreement, or `Err(mismatch_count)`.
+    fn compare_batch_vs_incremental(rows: &[(String, String)]) -> usize {
+        let mut state = ToolCallState::default();
+        let mut mismatches = 0;
+        for i in 0..rows.len() {
+            let msgs: Vec<ShareGptMessage<'_>> = rows[..=i]
+                .iter()
+                .map(|(from, value)| ShareGptMessage {
+                    from: from.as_str(),
+                    value: value.as_str(),
+                })
+                .collect();
+            let batch = analyze_loops(&msgs);
+            let step = analyze_loops_step(&mut state, i, &msgs[i]);
+            let mut a: Vec<_> = step.signals.iter().map(signal_key).collect();
+            let mut b: Vec<_> = batch.signals.iter().map(signal_key).collect();
+            a.sort();
+            b.sort();
+            if a != b {
+                mismatches += 1;
+            }
+        }
+        mismatches
+    }
+
+    #[test]
+    fn incremental_matches_batch_for_retry() {
+        let arg = r#"{"name":"check_status","arguments":{"id":"abc"}}"#;
+        let rows: Vec<(String, String)> = vec![arg, arg, arg, arg]
+            .into_iter()
+            .map(|v| ("function_call".to_string(), v.to_string()))
+            .collect();
+        assert_eq!(compare_batch_vs_incremental(&rows), 0);
+    }
+
+    #[test]
+    fn incremental_matches_batch_for_parameter_drift() {
+        let rows: Vec<(String, String)> = vec![
+            r#"{"name":"search","arguments":{"q":"a"}}"#,
+            r#"{"name":"search","arguments":{"q":"ab"}}"#,
+            r#"{"name":"search","arguments":{"q":"abc"}}"#,
+            r#"{"name":"search","arguments":{"q":"abcd"}}"#,
+        ]
+        .into_iter()
+        .map(|v| ("function_call".to_string(), v.to_string()))
+        .collect();
+        assert_eq!(compare_batch_vs_incremental(&rows), 0);
+    }
+
+    #[test]
+    fn incremental_matches_batch_for_retry_then_drift_in_same_run() {
+        // Same tool throughout: A,A,A (retry) then B,C,D (drift, args all
+        // distinct) — exercises closing an identical-args sub-run mid-run
+        // without closing the whole same-tool-name run.
+        let rows: Vec<(String, String)> = vec!["a", "a", "a", "b", "c", "d"]
+            .into_iter()
+            .map(|v| {
+                (
+                    "function_call".to_string(),
+                    format!(r#"{{"name":"search","arguments":{{"q":"{}"}}}}"#, v),
+                )
+            })
+            .collect();
+        assert_eq!(compare_batch_vs_incremental(&rows), 0);
+    }
+
+    #[test]
+    fn incremental_matches_batch_for_oscillation() {
+        let rows: Vec<(String, String)> =
+            vec!["toolA", "toolB", "toolA", "toolB", "toolA", "toolB"]
+                .into_iter()
+                .map(|name| {
+                    (
+                        "function_call".to_string(),
+                        format!(r#"{{"name":"{}","arguments":{{}}}}"#, name),
+                    )
+                })
+                .collect();
+        assert_eq!(compare_batch_vs_incremental(&rows), 0);
+    }
+
+    #[test]
+    fn incremental_matches_batch_with_interspersed_non_call_messages() {
+        let rows: Vec<(String, String)> = vec![
+            ("human".to_string(), "hi".to_string()),
+            (
+                "function_call".to_string(),
+                r#"{"name":"x","arguments":{"a":1}}"#.to_string(),
+            ),
+            ("observation".to_string(), "ok".to_string()),
+            (
+                "function_call".to_string(),
+                r#"{"name":"x","arguments":{"a":1}}"#.to_string(),
+            ),
+            ("observation".to_string(), "ok".to_string()),
+            (
+                "function_call".to_string(),
+                r#"{"name":"x","arguments":{"a":1}}"#.to_string(),
+            ),
+            ("gpt".to_string(), "done".to_string()),
+        ];
+        assert_eq!(compare_batch_vs_incremental(&rows), 0);
+    }
+
+    /// Randomized fuzz comparison against the batch reference. Oscillation
+    /// is a best-effort approximation (see module docs above), so a small
+    /// number of mismatches on adversarial multi-period patterns is
+    /// tolerated and reported rather than silently ignored. As of this
+    /// writing, 200 trials of length-40 conversations over a small tool
+    /// vocabulary (2-3 distinct names, the realistic "agent oscillating
+    /// between tools" shape) produce zero mismatches; this test fails loudly
+    /// if that regresses.
+    #[test]
+    fn fuzz_step_matches_batch_for_loops() {
+        let mut total_mismatches = 0usize;
+        for seed in 0..200u64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let tool_names: &[&str] = if seed % 2 == 0 {
+                &["toolA", "toolB"]
+            } else {
+                &["toolA", "toolB", "toolC"]
+            };
+            let rows = random_conversation(&mut rng, 40, tool_names);
+            total_mismatches += compare_batch_vs_incremental(&rows);
+        }
+        assert_eq!(
+            total_mismatches, 0,
+            "incremental loop detection diverged from the batch reference on {} \
+             prefixes across the fuzz corpus; see module docs for the known \
+             oscillation-approximation caveat",
+            total_mismatches
+        );
     }
 }

@@ -21,6 +21,6 @@ pub mod text_processing;
 
 pub use analyzer::{SignalAnalyzer, FLAG_MARKER};
 pub use schemas::{
-    EnvironmentSignals, ExecutionSignals, InteractionQuality, InteractionSignals, SignalGroup,
-    SignalInstance, SignalLayer, SignalReport, SignalType, TurnMetrics,
+    EnvironmentSignals, ExecutionSignals, InteractionQuality, InteractionSignals, MessageReport,
+    SignalGroup, SignalInstance, SignalLayer, SignalReport, SignalType, TurnMetrics,
 };
