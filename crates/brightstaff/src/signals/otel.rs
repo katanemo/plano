@@ -154,6 +154,7 @@ mod tests {
                 efficiency_score: 1.0,
             },
             summary: String::new(),
+            loop_state: Default::default(),
         }
     }
 

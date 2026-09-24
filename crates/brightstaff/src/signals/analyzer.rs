@@ -23,7 +23,7 @@ use serde_json::json;
 
 use super::environment::exhaustion::analyze_exhaustion;
 use super::execution::failure::analyze_failure;
-use super::execution::loops::analyze_loops;
+use super::execution::loops::{analyze_loops, analyze_loops_step, ToolCallState};
 use super::interaction::disengagement::analyze_disengagement;
 use super::interaction::misalignment::analyze_misalignment;
 use super::interaction::satisfaction::analyze_satisfaction;
@@ -205,6 +205,7 @@ impl SignalAnalyzer {
             quality_score: score,
             turn_metrics,
             summary,
+            loop_state: ToolCallState::default(),
         }
     }
 
@@ -292,6 +293,7 @@ impl SignalAnalyzer {
             .cloned()
             .collect();
         let mut loops_group = prev.execution.loops.clone();
+        let mut loop_state = prev.loop_state.clone();
 
         if (role == "human" || role == "gpt") && !value.is_empty() {
             let norm = NormalizedMessage::from_text(value, self.cfg.max_message_length);
@@ -370,9 +372,9 @@ impl SignalAnalyzer {
             }
             exhaustion_sig.extend(exhaustion_group.signals);
         } else if role == "function_call" {
-            // Loop detection needs the tool-call sequence; recompute only
-            // when a new call arrives.
-            loops_group = analyze_loops(&messages[..=i]);
+            // Feed the new call into the incremental loop-detection state
+            // instead of rescanning every tool call in the conversation.
+            loops_group = analyze_loops_step(&mut loop_state, i, &msg);
         }
 
         // Turn metrics and dragging.
@@ -422,6 +424,7 @@ impl SignalAnalyzer {
             quality_score: score,
             turn_metrics,
             summary,
+            loop_state,
         };
 
         let entry = message_report(msg, i, &report, score, &prev_counts);

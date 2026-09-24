@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::signals::execution::loops::ToolCallState;
+
 /// Hierarchical signal type. The 20 leaf variants mirror the paper taxonomy
 /// and the Python reference's `SignalType` string enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -233,6 +235,13 @@ impl SignalGroup {
         self.update_severity();
     }
 
+    /// Refresh `count`/`severity` after mutating `signals` directly (e.g.
+    /// `retain`/`insert`), bypassing `add_signal`.
+    pub fn recompute(&mut self) {
+        self.count = self.signals.len();
+        self.update_severity();
+    }
+
     fn update_severity(&mut self) {
         self.severity = match self.count {
             0 => 0,
@@ -321,6 +330,12 @@ pub struct SignalReport {
     pub quality_score: f32,
     pub turn_metrics: TurnMetrics,
     pub summary: String,
+    /// Incremental loop-detection state carried forward across
+    /// `SignalAnalyzer::analyze_step` calls, so loop detection never needs to
+    /// rescan tool-call history from scratch. See
+    /// `execution::loops::ToolCallState`.
+    #[serde(default)]
+    pub loop_state: ToolCallState,
 }
 
 impl Default for SignalReport {
@@ -333,6 +348,7 @@ impl Default for SignalReport {
             quality_score: 50.0,
             turn_metrics: TurnMetrics::default(),
             summary: String::new(),
+            loop_state: ToolCallState::default(),
         }
     }
 }
