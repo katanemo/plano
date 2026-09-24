@@ -150,7 +150,7 @@ async fn llm_chat_inner(
     .await
     {
         Ok(p) => p,
-        Err(response) => return Ok(response),
+        Err(response) => return Ok(*response),
     };
 
     let PreparedRequest {
@@ -301,7 +301,7 @@ async fn llm_chat_inner(
     .await
     {
         Ok(ctx) => ctx,
-        Err(response) => return Ok(response),
+        Err(response) => return Ok(*response),
     };
 
     // --- Phase 2a: Session affinity (see `session_router`) ---
@@ -593,14 +593,14 @@ async fn parse_and_validate_request(
     model_aliases: &Option<HashMap<String, ModelAlias>>,
     llm_providers: &Arc<RwLock<LlmProviders>>,
     signals_enabled: bool,
-) -> Result<PreparedRequest, Response<BoxBody<Bytes, hyper::Error>>> {
+) -> Result<PreparedRequest, Box<Response<BoxBody<Bytes, hyper::Error>>>> {
     let raw_bytes = request
         .collect()
         .await
         .map_err(|_| {
             let mut r = Response::new(full("Failed to read request body"));
             *r.status_mut() = StatusCode::BAD_REQUEST;
-            r
+            Box::new(r)
         })?
         .to_bytes();
 
@@ -615,14 +615,14 @@ async fn parse_and_validate_request(
             warn!(error = %err, "failed to parse request JSON");
             let mut r = Response::new(full(format!("Failed to parse request: {}", err)));
             *r.status_mut() = StatusCode::BAD_REQUEST;
-            r
+            Box::new(r)
         })?;
 
     let api_type = SupportedAPIsFromClient::from_endpoint(request_path).ok_or_else(|| {
         warn!(path = %request_path, "unsupported endpoint");
         let mut r = Response::new(full(format!("Unsupported endpoint: {}", request_path)));
         *r.status_mut() = StatusCode::BAD_REQUEST;
-        r
+        Box::new(r)
     })?;
 
     let mut client_request = ProviderRequestType::try_from((&chat_request_bytes[..], &api_type))
@@ -630,7 +630,7 @@ async fn parse_and_validate_request(
             warn!(error = %err, "failed to parse request as ProviderRequestType");
             let mut r = Response::new(full(format!("Failed to parse request: {}", err)));
             *r.status_mut() = StatusCode::BAD_REQUEST;
-            r
+            Box::new(r)
         })?;
 
     let is_responses_api_client =
@@ -657,7 +657,7 @@ async fn parse_and_validate_request(
         warn!(model = %alias_resolved_model, "model not found in configured providers");
         let mut r = Response::new(full(err_msg));
         *r.status_mut() = StatusCode::BAD_REQUEST;
-        return Err(r);
+        return Err(Box::new(r));
     }
 
     // Strip provider prefix for upstream (e.g. "openai/gpt-4" → "gpt-4")
@@ -729,7 +729,7 @@ async fn resolve_conversation_state(
     alias_resolved_model: &str,
     request_path: &str,
     is_streaming_request: bool,
-) -> Result<ConversationStateContext, Response<BoxBody<Bytes, hyper::Error>>> {
+) -> Result<ConversationStateContext, Box<Response<BoxBody<Bytes, hyper::Error>>>> {
     if !is_responses_api_client {
         return Ok(ConversationStateContext {
             should_manage_state: false,
@@ -794,7 +794,7 @@ async fn resolve_conversation_state(
                 );
                 let mut r = Response::new(full(err_msg));
                 *r.status_mut() = StatusCode::CONFLICT;
-                return Err(r);
+                return Err(Box::new(r));
             }
             Err(e) => {
                 warn!(
