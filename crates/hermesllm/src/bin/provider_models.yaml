@@ -14,6 +14,9 @@ providers:
   - amazon/amazon.nova-lite-v1:0
   - amazon/amazon.nova-micro-v1:0
   anthropic:
+  - anthropic/claude-fable-5-1
+  - anthropic/claude-opus-5-5
+  - anthropic/claude-sonnet-5
   - anthropic/claude-fable-5
   - anthropic/claude-opus-4-8
   - anthropic/claude-opus-4-7
@@ -399,5 +402,5 @@ providers:
   - z-ai/glm-5.1
 metadata:
   total_providers: 15
-  total_models: 380
-  last_updated: 2026-07-09T19:48:06.553850+00:00
+  total_models: 384
+  last_updated: 2026-09-26T00:00:00.000000+00:00
