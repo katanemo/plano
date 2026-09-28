@@ -127,6 +127,7 @@ providers:
   - meta/muse-spark-1.1
   minimax:
   - minimax/MiniMax-M3
+  - minimax/MiniMax-M2.7
   mistralai:
   - mistralai/codestral-2508
   - mistralai/codestral-latest
