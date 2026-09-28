@@ -374,10 +374,8 @@ impl SignalReport {
 }
 
 /// Per-message report entry produced by `SignalAnalyzer::get_message_reports`
-/// / `analyze_step`. Loosely mirrors the dict shape of the Python
-/// reference's `get_message_reports` entries (`role`, `content`,
-/// `report: {quality, score, label, signal_class, signal_type, matched}`),
-/// flattened into a single struct for Rust ergonomics.
+/// / `analyze_step`: the message's role and content, the cumulative quality
+/// as of this message, and the highest-priority new signal it introduced.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageReport {
     pub role: String,

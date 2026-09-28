@@ -12,8 +12,7 @@
 //!   report returned for the previous message. Every detector only looks a
 //!   bounded distance backwards, so this does constant work per text message
 //!   regardless of conversation length. [`SignalAnalyzer::get_message_reports`]
-//!   is built on it. Mirrors the `analyze_step` / `get_message_reports`
-//!   optimization in `signals/analyzer.py` (window + previous report).
+//!   is built on it.
 
 use std::collections::HashMap;
 
@@ -942,10 +941,9 @@ mod tests {
 
     // -----------------------------------------------------------------
     // Incremental analysis (analyze_step / get_message_reports) parity
-    // with the whole-conversation analyze_sharegpt. Mirrors the
-    // reference's `tests/test_incremental.py` equivalence property:
-    // stepping through a conversation message-by-message must land on
-    // the same signal counts and overall quality as batch analysis.
+    // with the whole-conversation analyze_sharegpt: stepping through a
+    // conversation message-by-message must land on the same signal
+    // counts and overall quality as batch analysis.
     // -----------------------------------------------------------------
 
     fn step_through(messages: &[ShareGptMessage<'_>]) -> SignalReport {
