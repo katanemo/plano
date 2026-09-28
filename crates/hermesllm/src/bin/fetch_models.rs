@@ -142,7 +142,7 @@ fn is_text_model(model_id: &str) -> bool {
 
     // Filter out known non-text models
     let non_text_patterns = [
-        "embedding",   // Embedding models
+        "embed",       // Embedding models (text-embedding-3, mistral-embed)
         "whisper",     // Audio transcription
         "-tts",        // Text-to-speech (with dash to avoid matching in middle of words)
         "tts-",        // Text-to-speech prefix
@@ -158,6 +158,8 @@ fn is_text_model(model_id: &str) -> bool {
         "-ocr-",       // OCR models
         "ocr-",        // OCR models prefix
         "voxtral",     // Audio/voice models
+        "lyria",       // Music generation models
+        "imagine",     // Image/video generation models (grok-imagine-*)
     ];
 
     // Additional pattern: models that are purely for image generation usually have "image" in the name
@@ -174,6 +176,11 @@ fn is_text_model(model_id: &str) -> bool {
 
     // Filter models starting with "gpt-image" (image generators)
     if id_lower.contains("/gpt-image") || id_lower.contains("/chatgpt-image") {
+        return false;
+    }
+
+    // Segment Anything image segmentation models
+    if id_lower.starts_with("sam-") {
         return false;
     }
 
@@ -254,7 +261,7 @@ fn fetch_google_models(api_key: &str) -> Result<Vec<String>, Box<dyn std::error:
 
     let response: GoogleResponse = serde_json::from_str(&response_body)?;
 
-    // Only include models that support generateContent
+    // Only include text models that support generateContent
     Ok(response
         .models
         .into_iter()
@@ -263,10 +270,10 @@ fn fetch_google_models(api_key: &str) -> Result<Vec<String>, Box<dyn std::error:
                 .as_ref()
                 .is_some_and(|methods| methods.contains(&"generateContent".to_string()))
         })
-        .map(|m| {
+        .filter_map(|m| {
             // Convert "models/gemini-pro" to "google/gemini-pro"
             let model_id = m.name.strip_prefix("models/").unwrap_or(&m.name);
-            format!("google/{}", model_id)
+            is_text_model(model_id).then(|| format!("google/{}", model_id))
         })
         .collect())
 }
