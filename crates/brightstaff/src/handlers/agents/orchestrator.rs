@@ -264,6 +264,7 @@ async fn select_and_build_agent_map(
 /// Execute the agent chain: run each selected agent sequentially, streaming
 /// the final agent's response back to the client.
 async fn execute_agent_chain(
+    mut pipeline_processor: PipelineProcessor,
     selected_agents: &[common::configuration::AgentFilterChain],
     agent_map: &std::collections::HashMap<String, common::configuration::Agent>,
     client_request: ProviderRequestType,
@@ -271,7 +272,6 @@ async fn execute_agent_chain(
     request_headers: &hyper::HeaderMap,
     custom_attrs: &std::collections::HashMap<String, String>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
-    let mut pipeline_processor = PipelineProcessor::default();
     let response_handler = ResponseHandler::new();
     let mut current_messages = messages;
     let agent_count = selected_agents.len();
@@ -420,6 +420,7 @@ async fn handle_agent_chat_inner(
     .await?;
 
     execute_agent_chain(
+        PipelineProcessor::default(),
         &selected_agents,
         &agent_map,
         agent_req.client_request,
@@ -428,4 +429,281 @@ async fn handle_agent_chat_inner(
         &custom_attrs,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::configuration::{Agent, AgentFilterChain};
+    use mockito::{Matcher, Server};
+    use std::collections::HashMap;
+
+    /// Build the client request the way production does: parse raw client bytes
+    /// through the real endpoint resolver.
+    fn client_request() -> ProviderRequestType {
+        let body = serde_json::json!({
+            "model": "gpt-4o",
+            "stream": false,
+            "messages": [{"role": "user", "content": "original question"}],
+        });
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let api_type = SupportedAPIsFromClient::from_endpoint("/v1/chat/completions").unwrap();
+        ProviderRequestType::try_from((&bytes[..], &api_type)).unwrap()
+    }
+
+    fn user_message(text: &str) -> OpenAIMessage {
+        OpenAIMessage {
+            role: hermesllm::apis::openai::Role::User,
+            content: Some(hermesllm::apis::openai::MessageContent::Text(
+                text.to_string(),
+            )),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    /// Minimal non-streaming OpenAI chat-completion envelope.
+    fn completion_body(content: &str) -> String {
+        serde_json::json!({
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop"
+            }]
+        })
+        .to_string()
+    }
+
+    fn chain_entry(id: &str) -> AgentFilterChain {
+        AgentFilterChain {
+            id: id.to_string(),
+            description: None,
+            default: None,
+            input_filters: None,
+        }
+    }
+
+    /// `invoke_agent` dials the api router and selects via `x-arch-upstream`.
+    fn agent_map(ids: &[&str]) -> HashMap<String, Agent> {
+        ids.iter()
+            .map(|id| {
+                (
+                    id.to_string(),
+                    Agent {
+                        id: id.to_string(),
+                        agent_type: None,
+                        url: "http://unused.invalid".to_string(),
+                        tool: None,
+                        transport: None,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    async fn run_chain(
+        url: String,
+        chain: &[AgentFilterChain],
+        ids: &[&str],
+    ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, AgentFilterChainError> {
+        execute_agent_chain(
+            PipelineProcessor::new(url),
+            chain,
+            &agent_map(ids),
+            client_request(),
+            vec![user_message("original question")],
+            &hyper::HeaderMap::new(),
+            &HashMap::new(),
+        )
+        .await
+    }
+
+    async fn body_to_string(response: Response<BoxBody<Bytes, hyper::Error>>) -> String {
+        let collected = response.into_body().collect().await.unwrap();
+        String::from_utf8(collected.to_bytes().to_vec()).unwrap()
+    }
+
+    /// Intermediate reply is injected as a named assistant turn; user ask stays last.
+    #[tokio::test]
+    async fn intermediate_reply_is_injected_as_named_assistant_before_user_turn() {
+        let mut server = Server::new_async().await;
+
+        let first = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "agent_one")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("answer from one"))
+            .create_async()
+            .await;
+
+        let second = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "agent_two")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "messages": [
+                    {"role": "assistant", "content": "answer from one", "name": "agent_one"},
+                    {"role": "user", "content": "original question"}
+                ]
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("answer from two"))
+            .create_async()
+            .await;
+
+        let chain = vec![chain_entry("agent_one"), chain_entry("agent_two")];
+        let result = run_chain(server.url(), &chain, &["agent_one", "agent_two"]).await;
+
+        assert!(result.is_ok(), "chain failed: {:?}", result.err());
+        first.assert_async().await;
+        second.assert_async().await;
+    }
+
+    /// Route order from the orchestrator is the order agents run.
+    #[tokio::test]
+    async fn chain_executes_agents_in_the_order_supplied() {
+        let mut server = Server::new_async().await;
+
+        let first = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "agent_one")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("answer from one"))
+            .create_async()
+            .await;
+
+        let second = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "agent_two")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("answer from two"))
+            .create_async()
+            .await;
+
+        let third = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "agent_three")
+            .match_body(Matcher::PartialJson(serde_json::json!({
+                "messages": [
+                    {"role": "assistant", "content": "answer from one", "name": "agent_one"},
+                    {"role": "assistant", "content": "answer from two", "name": "agent_two"},
+                    {"role": "user", "content": "original question"}
+                ]
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("answer from three"))
+            .create_async()
+            .await;
+
+        let chain = vec![
+            chain_entry("agent_one"),
+            chain_entry("agent_two"),
+            chain_entry("agent_three"),
+        ];
+        let result = run_chain(
+            server.url(),
+            &chain,
+            &["agent_one", "agent_two", "agent_three"],
+        )
+        .await;
+
+        assert!(result.is_ok(), "chain failed: {:?}", result.err());
+        first.assert_async().await;
+        second.assert_async().await;
+        third.assert_async().await;
+    }
+
+    /// Only the final agent's response reaches the client.
+    #[tokio::test]
+    async fn only_the_final_agent_response_is_returned_to_the_client() {
+        let mut server = Server::new_async().await;
+
+        let _first = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "agent_one")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("answer from one"))
+            .create_async()
+            .await;
+
+        let _second = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "agent_two")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("answer from two"))
+            .create_async()
+            .await;
+
+        let chain = vec![chain_entry("agent_one"), chain_entry("agent_two")];
+        let response = run_chain(server.url(), &chain, &["agent_one", "agent_two"])
+            .await
+            .expect("chain should succeed");
+
+        let body = body_to_string(response).await;
+        assert!(
+            body.contains("answer from two"),
+            "final agent reply missing from client response: {body}"
+        );
+        assert!(
+            !body.contains("answer from one"),
+            "intermediate reply leaked into the client response: {body}"
+        );
+    }
+
+    /// Single-agent chain streams straight through.
+    #[tokio::test]
+    async fn single_agent_chain_returns_that_agents_response() {
+        let mut server = Server::new_async().await;
+
+        let only = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "solo_agent")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(completion_body("solo answer"))
+            .create_async()
+            .await;
+
+        let chain = vec![chain_entry("solo_agent")];
+        let response = run_chain(server.url(), &chain, &["solo_agent"])
+            .await
+            .expect("chain should succeed");
+
+        only.assert_async().await;
+        assert!(body_to_string(response).await.contains("solo answer"));
+    }
+
+    /// Empty route list must not silently return an empty 200.
+    #[tokio::test]
+    async fn empty_chain_reports_incomplete_rather_than_succeeding() {
+        let result = run_chain("http://unused.invalid".to_string(), &[], &[]).await;
+
+        assert!(matches!(
+            result,
+            Err(AgentFilterChainError::IncompleteChain)
+        ));
+    }
+
+    /// Unknown agent in the chain is a hard error.
+    #[tokio::test]
+    async fn unknown_agent_in_chain_is_a_hard_error() {
+        let chain = vec![chain_entry("ghost_agent")];
+        let result = run_chain("http://unused.invalid".to_string(), &chain, &[]).await;
+
+        match result {
+            Err(AgentFilterChainError::AgentNotFound(name)) => assert_eq!(name, "ghost_agent"),
+            other => panic!("expected AgentNotFound, got {other:?}"),
+        }
+    }
 }
