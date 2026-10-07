@@ -407,6 +407,32 @@ model_providers:
 """,
     },
     {
+        "id": "valid_listener_output_filter_mode_buffered",
+        "expected_error": None,
+        "plano_config": """
+version: v0.4.0
+
+filters:
+  - id: output_guard
+    url: http://localhost:10501
+    type: http
+
+listeners:
+  - name: llm
+    type: model
+    port: 12000
+    output_filters:
+      - output_guard
+    output_filter_mode: buffered
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+
+""",
+    },
+    {
         "id": "valid_tracing_posthog_exporter",
         "expected_error": None,
         "plano_config": """

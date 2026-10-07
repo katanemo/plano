@@ -129,6 +129,7 @@ listeners:
       - input_guards
     output_filters:       # Filters applied to LLM responses before returning to client
       - input_guards
+    output_filter_mode: streaming  # Or buffered: collect the whole response, filter it once, then return it; a filter error withholds the body
 
   # Prompt listener for function calling (for prompt_targets)
   - type: prompt

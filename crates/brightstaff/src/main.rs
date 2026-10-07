@@ -155,6 +155,9 @@ async fn init_app_state(
             &global_agent_map,
         )
         .map_err(|e| format!("failed to resolve model listener output filters: {e}"))?,
+        output_mode: model_listener
+            .and_then(|l| l.output_filter_mode)
+            .unwrap_or_default(),
     });
 
     let overrides = config.overrides.clone().unwrap_or_default();

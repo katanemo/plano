@@ -946,6 +946,11 @@ async fn send_upstream(
         for (name, value) in response_headers.iter() {
             headers.insert(name, value.clone());
         }
+        // Output filters may change the body length, so the upstream length no
+        // longer describes what the client receives.
+        if filter_pipeline.has_output_filters() {
+            headers.remove(header::CONTENT_LENGTH);
+        }
     }
 
     let byte_stream = llm_response.bytes_stream();
@@ -1012,6 +1017,7 @@ async fn send_upstream(
             output_chain.clone(),
             filter_headers,
             request_path.to_string(),
+            filter_pipeline.output_mode,
         )
     } else {
         create_streaming_response(byte_stream, processor)
