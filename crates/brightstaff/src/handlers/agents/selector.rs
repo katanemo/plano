@@ -292,4 +292,196 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap().id, "agent1");
     }
+
+    fn user_turn(text: &str) -> Message {
+        Message {
+            role: hermesllm::apis::openai::Role::User,
+            content: Some(hermesllm::apis::openai::MessageContent::Text(
+                text.to_string(),
+            )),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn orchestrator_at(url: String) -> Arc<OrchestratorService> {
+        Arc::new(OrchestratorService::new(
+            url,
+            "test-model".to_string(),
+            "plano-orchestrator".to_string(),
+            crate::router::orchestrator_model_v1::MAX_TOKEN_LEN,
+        ))
+    }
+
+    /// Orchestrator mock that replies with a fixed route list.
+    async fn orchestrator_returning(
+        server: &mut mockito::Server,
+        route: serde_json::Value,
+    ) -> Arc<OrchestratorService> {
+        let content = serde_json::json!({ "route": route }).to_string();
+        server
+            .mock("POST", "/v1/chat/completions")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "id": "chatcmpl-orchestrator",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": "Plano-Orchestrator",
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": content},
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        orchestrator_at(format!("{}/v1/chat/completions", server.url()))
+    }
+
+    fn three_agent_listener() -> Listener {
+        create_test_listener(
+            "test-listener",
+            vec![
+                create_test_agent("agent_a", "Handles A", false),
+                create_test_agent("agent_b", "Handles B", true),
+                create_test_agent("agent_c", "Handles C", false),
+            ],
+        )
+    }
+
+    fn selected_ids(agents: &[AgentFilterChain]) -> Vec<&str> {
+        agents.iter().map(|a| a.id.as_str()).collect()
+    }
+
+    /// Selection keeps the model's route order for the chain.
+    #[tokio::test]
+    async fn select_agents_preserves_orchestrator_route_order() {
+        let mut server = mockito::Server::new_async().await;
+        let orchestrator =
+            orchestrator_returning(&mut server, serde_json::json!(["agent_c", "agent_a"])).await;
+        let selector = AgentSelector::new(orchestrator);
+
+        let selected = selector
+            .select_agents(&[user_turn("do the thing")], &three_agent_listener(), None)
+            .await
+            .expect("selection should succeed");
+
+        assert_eq!(selected_ids(&selected), vec!["agent_c", "agent_a"]);
+    }
+
+    /// One-agent listeners skip the orchestrator model call.
+    #[tokio::test]
+    async fn single_agent_listener_never_calls_the_orchestrator() {
+        let mut server = mockito::Server::new_async().await;
+        let never_called = server
+            .mock("POST", "/v1/chat/completions")
+            .expect(0)
+            .create_async()
+            .await;
+
+        let selector = AgentSelector::new(orchestrator_at(format!(
+            "{}/v1/chat/completions",
+            server.url()
+        )));
+        let listener = create_test_listener(
+            "test-listener",
+            vec![create_test_agent("solo_agent", "Only agent", false)],
+        );
+
+        let selected = selector
+            .select_agents(&[user_turn("anything")], &listener, None)
+            .await
+            .expect("selection should succeed");
+
+        assert_eq!(selected_ids(&selected), vec!["solo_agent"]);
+        never_called.assert_async().await;
+    }
+
+    /// Empty route list falls back to the default agent.
+    #[tokio::test]
+    async fn empty_route_list_falls_back_to_the_default_agent() {
+        let mut server = mockito::Server::new_async().await;
+        let orchestrator = orchestrator_returning(&mut server, serde_json::json!([])).await;
+        let selector = AgentSelector::new(orchestrator);
+
+        let selected = selector
+            .select_agents(&[user_turn("unrelated")], &three_agent_listener(), None)
+            .await
+            .expect("selection should succeed");
+
+        assert_eq!(selected_ids(&selected), vec!["agent_b"]);
+    }
+
+    /// Unknown route names are dropped during parse, then selection falls back.
+    #[tokio::test]
+    async fn unrecognized_route_falls_back_to_the_default_agent() {
+        let mut server = mockito::Server::new_async().await;
+        let orchestrator =
+            orchestrator_returning(&mut server, serde_json::json!(["not_a_real_agent"])).await;
+        let selector = AgentSelector::new(orchestrator);
+
+        let selected = selector
+            .select_agents(&[user_turn("do the thing")], &three_agent_listener(), None)
+            .await
+            .expect("selection should succeed");
+
+        assert_eq!(selected_ids(&selected), vec!["agent_b"]);
+    }
+
+    /// Orchestrator outage is an error, not a silent fallback.
+    #[tokio::test]
+    async fn orchestrator_failure_surfaces_as_an_error() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("POST", "/v1/chat/completions")
+            .with_status(500)
+            .with_body("upstream exploded")
+            .create_async()
+            .await;
+
+        let selector = AgentSelector::new(orchestrator_at(format!(
+            "{}/v1/chat/completions",
+            server.url()
+        )));
+
+        let result = selector
+            .select_agents(&[user_turn("do the thing")], &three_agent_listener(), None)
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(AgentSelectionError::OrchestrationError(_))
+        ));
+    }
+
+    /// Listener with no agents cannot be routed.
+    #[tokio::test]
+    async fn listener_without_agents_is_rejected() {
+        let selector = AgentSelector::new(create_test_orchestrator_service());
+        let listener = Listener {
+            listener_type: ListenerType::Agent,
+            name: "empty-listener".to_string(),
+            agents: None,
+            input_filters: None,
+            output_filters: None,
+            port: 8080,
+            router: None,
+        };
+
+        let result = selector
+            .select_agents(&[user_turn("anything")], &listener, None)
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(AgentSelectionError::NoAgentsConfigured(_))
+        ));
+    }
 }

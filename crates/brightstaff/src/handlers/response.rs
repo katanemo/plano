@@ -181,12 +181,31 @@ impl ResponseHandler {
             }
             Ok(accumulated_text)
         } else {
-            // If not SSE, treat as regular text response
             let response_text = String::from_utf8(response_bytes.to_vec()).map_err(|e| {
                 BrightStaffError::StreamError(format!("Failed to decode response: {}", e))
             })?;
 
-            Ok(response_text)
+            // transfer assistant's text to the next agent rather than the transport
+            // envelope.
+            match serde_json::from_str::<serde_json::Value>(&response_text) {
+                Ok(body) => match body
+                    .pointer("/choices/0/message/content")
+                    .and_then(serde_json::Value::as_str)
+                {
+                    Some(content) => Ok(content.to_string()),
+                    None => {
+                        warn!("no message content in agent response, passing body through");
+                        Ok(response_text)
+                    }
+                },
+                Err(err) => {
+                    warn!(
+                        error = %err,
+                        "agent response is not json, passing body through"
+                    );
+                    Ok(response_text)
+                }
+            }
         }
     }
 }
@@ -233,5 +252,179 @@ mod tests {
         let response = result.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert!(response.headers().contains_key("content-type"));
+    }
+
+    /// Serve `body` with `content_type` and hand back the live reqwest response.
+    async fn upstream_response(
+        server: &mut mockito::Server,
+        content_type: &str,
+        body: &str,
+    ) -> reqwest::Response {
+        server
+            .mock("GET", "/agent")
+            .with_status(200)
+            .with_header("content-type", content_type)
+            .with_body(body)
+            .create_async()
+            .await;
+
+        reqwest::Client::new()
+            .get(server.url() + "/agent")
+            .send()
+            .await
+            .unwrap()
+    }
+
+    /// Intermediate agent replies are injected into the next agent's context, so
+    /// they must carry the assistant's text and not the transport envelope.
+    #[tokio::test]
+    async fn collect_full_response_extracts_content_from_chat_completion() {
+        let mut server = mockito::Server::new_async().await;
+        let body = serde_json::json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "the actual answer"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+        })
+        .to_string();
+
+        let response = upstream_response(&mut server, "application/json", &body).await;
+        let collected = ResponseHandler::new()
+            .collect_full_response(response)
+            .await
+            .unwrap();
+
+        assert_eq!(collected, "the actual answer");
+    }
+
+    /// Agents are plain HTTP services and many omit `usage`. Extraction must not
+    /// depend on the full OpenAI response schema being present.
+    #[tokio::test]
+    async fn collect_full_response_extracts_content_without_usage_field() {
+        let mut server = mockito::Server::new_async().await;
+        let body = serde_json::json!({
+            "id": "chatcmpl-2",
+            "choices": [{"message": {"role": "assistant", "content": "terse agent"}}]
+        })
+        .to_string();
+
+        let response = upstream_response(&mut server, "application/json", &body).await;
+        let collected = ResponseHandler::new()
+            .collect_full_response(response)
+            .await
+            .unwrap();
+
+        assert_eq!(collected, "terse agent");
+    }
+
+    /// A body we cannot read is passed through rather than dropped.
+    #[tokio::test]
+    async fn collect_full_response_passes_through_non_json_body() {
+        let mut server = mockito::Server::new_async().await;
+
+        let response = upstream_response(&mut server, "text/plain", "plain text reply").await;
+        let collected = ResponseHandler::new()
+            .collect_full_response(response)
+            .await
+            .unwrap();
+
+        assert_eq!(collected, "plain text reply");
+    }
+
+    /// A completion with no textual content (for example tool calls only) also
+    /// falls back instead of yielding an empty message.
+    #[tokio::test]
+    async fn collect_full_response_passes_through_completion_without_content() {
+        let mut server = mockito::Server::new_async().await;
+        let body = serde_json::json!({
+            "id": "chatcmpl-3",
+            "choices": [{"message": {"role": "assistant", "content": null}}]
+        })
+        .to_string();
+
+        let response = upstream_response(&mut server, "application/json", &body).await;
+        let collected = ResponseHandler::new()
+            .collect_full_response(response)
+            .await
+            .unwrap();
+
+        assert_eq!(collected, body);
+    }
+
+    /// The streaming branch accumulates content deltas across chunks.
+    #[tokio::test]
+    async fn collect_full_response_accumulates_sse_content_deltas() {
+        let mut server = mockito::Server::new_async().await;
+        let body = concat!(
+            "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,",
+            "\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,",
+            "\"delta\":{\"content\":\"hello \"}}]}\n\n",
+            "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,",
+            "\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,",
+            "\"delta\":{\"content\":\"world\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+
+        let response = upstream_response(&mut server, "text/event-stream", body).await;
+        let collected = ResponseHandler::new()
+            .collect_full_response(response)
+            .await
+            .unwrap();
+
+        assert_eq!(collected, "hello world");
+    }
+
+    #[tokio::test]
+    async fn streamed_and_whole_deliveries_of_one_reply_collect_identically() {
+        let handler = ResponseHandler::new();
+
+        let mut streaming_server = mockito::Server::new_async().await;
+        let sse_body = concat!(
+            "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,",
+            "\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,",
+            "\"delta\":{\"content\":\"the same \"}}]}\n\n",
+            "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":0,",
+            "\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,",
+            "\"delta\":{\"content\":\"reply\"}}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let streamed = handler
+            .collect_full_response(
+                upstream_response(&mut streaming_server, "text/event-stream", sse_body).await,
+            )
+            .await
+            .unwrap();
+
+        let mut whole_server = mockito::Server::new_async().await;
+        let whole_body = serde_json::json!({
+            "id": "1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "the same reply"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+        })
+        .to_string();
+        let whole = handler
+            .collect_full_response(
+                upstream_response(&mut whole_server, "application/json", &whole_body).await,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            streamed, whole,
+            "streaming and non-streaming delivery of one reply must collect identically"
+        );
     }
 }
