@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::configuration::ResolvedFilterChain;
+use common::configuration::{OutputFilterMode, ResolvedFilterChain};
 use http_body_util::combinators::BoxBody;
 use http_body_util::StreamBody;
 use hyper::body::Frame;
@@ -16,6 +16,9 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 use crate::handlers::agents::pipeline::{PipelineError, PipelineProcessor};
 
 const STREAM_BUFFER_SIZE: usize = 16;
+/// Cap on the response body collected for `output_filter_mode: buffered`.
+/// A larger body is withheld rather than forwarded unfiltered.
+const MAX_BUFFERED_OUTPUT_FILTER_BYTES: usize = 64 * 1024 * 1024;
 /// Cap on accumulated response bytes kept for usage extraction.
 /// Most chat responses are well under this; pathological ones are dropped without
 /// affecting pass-through streaming to the client.
@@ -678,12 +681,15 @@ where
 /// Creates a streaming response that processes each raw chunk through output filters.
 /// Filters receive the raw LLM response bytes and request path (any API shape; not limited to
 /// chat completions). On filter error mid-stream the original chunk is passed through (headers already sent).
+/// With [`OutputFilterMode::Buffered`] the whole response is collected and filtered once instead,
+/// so filters see values that span chunk boundaries; a filter error withholds the body.
 pub fn create_streaming_response_with_output_filter<S, P>(
     mut byte_stream: S,
     mut inner_processor: P,
     output_chain: ResolvedFilterChain,
     request_headers: HeaderMap,
     request_path: String,
+    output_mode: OutputFilterMode,
 ) -> StreamingResponse
 where
     S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
@@ -694,6 +700,19 @@ where
 
     let processor_handle = tokio::spawn(
         async move {
+            if output_mode == OutputFilterMode::Buffered {
+                run_buffered_output_filter(
+                    byte_stream,
+                    inner_processor,
+                    output_chain,
+                    request_headers,
+                    request_path,
+                    tx,
+                )
+                .await;
+                return;
+            }
+
             let mut is_first_chunk = true;
             let mut pipeline_processor = PipelineProcessor::default();
             let chain = output_chain.to_agent_filter_chain("output_filter");
@@ -777,6 +796,91 @@ where
     }
 }
 
+/// Collects the whole upstream body, runs the output filter chain on it once and sends the
+/// result. Fails closed: a stream error, a body over [`MAX_BUFFERED_OUTPUT_FILTER_BYTES`] or a
+/// filter error sends nothing.
+async fn run_buffered_output_filter<S, P>(
+    mut byte_stream: S,
+    mut inner_processor: P,
+    output_chain: ResolvedFilterChain,
+    request_headers: HeaderMap,
+    request_path: String,
+    tx: mpsc::Sender<Bytes>,
+) where
+    S: StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
+    P: StreamProcessor,
+{
+    let mut collected: Vec<u8> = Vec::new();
+    let mut is_first_chunk = true;
+
+    while let Some(item) = byte_stream.next().await {
+        let chunk = match item {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                let err_msg = format!("Error receiving chunk: {:?}", err);
+                warn!(error = %err_msg, "stream error, buffered response withheld");
+                inner_processor.on_error(&err_msg);
+                inner_processor.on_complete();
+                return;
+            }
+        };
+
+        if is_first_chunk {
+            inner_processor.on_first_bytes();
+            is_first_chunk = false;
+        }
+
+        if collected.len() + chunk.len() > MAX_BUFFERED_OUTPUT_FILTER_BYTES {
+            let err_msg = format!(
+                "response exceeds {} bytes, buffered response withheld",
+                MAX_BUFFERED_OUTPUT_FILTER_BYTES
+            );
+            warn!(error = %err_msg, "output filter buffer limit");
+            inner_processor.on_error(&err_msg);
+            inner_processor.on_complete();
+            return;
+        }
+        collected.extend_from_slice(&chunk);
+    }
+
+    let mut pipeline_processor = PipelineProcessor::default();
+    let chain = output_chain.to_agent_filter_chain("output_filter");
+    let filtered = match pipeline_processor
+        .process_raw_filter_chain(
+            &collected,
+            &chain,
+            &output_chain.agents,
+            &request_headers,
+            &request_path,
+        )
+        .await
+    {
+        Ok(filtered) => filtered,
+        Err(e) => {
+            warn!(error = %e, "output filter error, buffered response withheld");
+            inner_processor.on_error(&format!("output filter error: {e}"));
+            inner_processor.on_complete();
+            return;
+        }
+    };
+
+    match inner_processor.process_chunk(filtered) {
+        Ok(Some(final_chunk)) => {
+            if tx.send(final_chunk).await.is_err() {
+                warn!("receiver dropped");
+            }
+        }
+        Ok(None) => {}
+        Err(err) => {
+            warn!("processor error: {}", err);
+            inner_processor.on_error(&err);
+        }
+    }
+
+    inner_processor.on_complete();
+    debug!("output filter buffered response completed");
+}
+
 /// Truncates a message to the specified maximum length, adding "..." if truncated.
 pub fn truncate_message(message: &str, max_length: usize) -> String {
     if message.chars().count() > max_length {
@@ -840,5 +944,116 @@ data: [DONE]
     #[test]
     fn no_usage_in_body_returns_default() {
         assert!(extract_usage_from_bytes(br#"{"ok":true}"#).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod output_filter_mode_tests {
+    use super::*;
+    use common::configuration::Agent;
+    use http_body_util::BodyExt;
+    use mockito::Server;
+    use std::collections::HashMap;
+
+    const REQUEST_PATH: &str = "/v1/chat/completions";
+
+    struct PassThrough;
+
+    impl StreamProcessor for PassThrough {
+        fn process_chunk(&mut self, chunk: Bytes) -> Result<Option<Bytes>, String> {
+            Ok(Some(chunk))
+        }
+    }
+
+    fn output_chain(url: String) -> ResolvedFilterChain {
+        let agent = Agent {
+            id: "output_redactor".to_string(),
+            transport: None,
+            tool: None,
+            url,
+            agent_type: Some("http".to_string()),
+        };
+        ResolvedFilterChain {
+            filter_ids: vec![agent.id.clone()],
+            agents: HashMap::from([(agent.id.clone(), agent)]),
+        }
+    }
+
+    fn split_upstream() -> impl StreamExt<Item = Result<Bytes, reqwest::Error>> + Send + Unpin {
+        tokio_stream::iter(vec![
+            Ok(Bytes::from_static(b"The token is SECRET_")),
+            Ok(Bytes::from_static(b"TOKEN.")),
+        ])
+    }
+
+    async fn run(url: String, mode: OutputFilterMode) -> Bytes {
+        let response = create_streaming_response_with_output_filter(
+            split_upstream(),
+            PassThrough,
+            output_chain(url),
+            HeaderMap::new(),
+            REQUEST_PATH.to_string(),
+            mode,
+        );
+        let body = response.body.collect().await.unwrap().to_bytes();
+        response.processor_handle.await.unwrap();
+        body
+    }
+
+    #[tokio::test]
+    async fn buffered_filter_sees_value_split_across_chunks() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", REQUEST_PATH)
+            .match_body("The token is SECRET_TOKEN.")
+            .with_body("The token is [REDACTED].")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let body = run(server.url(), OutputFilterMode::Buffered).await;
+
+        assert_eq!(body, Bytes::from_static(b"The token is [REDACTED]."));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn buffered_filter_error_withholds_body() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("POST", REQUEST_PATH)
+            .with_status(500)
+            .with_body("filter failed")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let body = run(server.url(), OutputFilterMode::Buffered).await;
+
+        assert!(body.is_empty());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn streaming_filter_sees_each_chunk_alone() {
+        let mut server = Server::new_async().await;
+        let whole = server
+            .mock("POST", REQUEST_PATH)
+            .match_body("The token is SECRET_TOKEN.")
+            .expect(0)
+            .create_async()
+            .await;
+        let per_chunk = server
+            .mock("POST", REQUEST_PATH)
+            .with_body_from_request(|request| request.body().unwrap().clone())
+            .expect(2)
+            .create_async()
+            .await;
+
+        let body = run(server.url(), OutputFilterMode::Streaming).await;
+
+        assert_eq!(body, Bytes::from_static(b"The token is SECRET_TOKEN."));
+        whole.assert_async().await;
+        per_chunk.assert_async().await;
     }
 }

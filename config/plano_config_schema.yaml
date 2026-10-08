@@ -102,6 +102,11 @@ properties:
               type: array
               items:
                 type: string
+            output_filter_mode:
+              type: string
+              enum:
+                - streaming
+                - buffered
           additionalProperties: false
           required:
             - type
