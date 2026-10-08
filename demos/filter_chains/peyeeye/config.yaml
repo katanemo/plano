@@ -1,0 +1,42 @@
+version: v0.3.0
+
+# Peyeeye PII redaction & rehydration filter chain.
+#
+# Prereqs:
+#   * export PEYEEYE_API_KEY=...     (required)
+#   * export OPENAI_API_KEY=...      (or any provider you wire up below)
+#
+# The peyeeye filter service runs on :10502 and exposes:
+#   POST /redact/{path}     — input filter
+#   POST /rehydrate/{path}  — output filter
+#
+# Plano appends the upstream path automatically (e.g. /v1/chat/completions),
+# so /redact/v1/chat/completions hits the redactor, and the model only ever
+# sees ``[EMAIL_0]``-style placeholders.
+
+filters:
+  - id: peyeeye_redact
+    url: http://localhost:10502/redact
+    type: http
+  - id: peyeeye_rehydrate
+    url: http://localhost:10502/rehydrate
+    type: http
+
+model_providers:
+  - model: openai/gpt-4o-mini
+    access_key: $OPENAI_API_KEY
+    default: true
+  - model: anthropic/claude-sonnet-4-20250514
+    access_key: $ANTHROPIC_API_KEY
+
+listeners:
+  - type: model
+    name: llm_gateway
+    port: 12000
+    input_filters:
+      - peyeeye_redact
+    output_filters:
+      - peyeeye_rehydrate
+
+tracing:
+  random_sampling: 100
