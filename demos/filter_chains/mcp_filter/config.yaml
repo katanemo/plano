@@ -7,16 +7,13 @@ agents:
 filters:
   - id: input_guards
     url: http://localhost:10500
-    # type: mcp (default)
-    # transport: streamable-http (default)
-    # tool: input_guards (default - same as filter id)
+    type: mcp
   - id: query_rewriter
     url: http://localhost:10501
-    # type: mcp (default)
-    # transport: streamable-http (default)
-    # tool: query_rewriter (default - same as filter id)
+    type: mcp
   - id: context_builder
     url: http://localhost:10502
+    type: mcp
 
 model_providers:
   - model: openai/gpt-4o-mini
