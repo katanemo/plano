@@ -7,12 +7,11 @@ Follow this guide to learn how to quickly set up Plano and integrate it into you
 
 - :ref:`Use Plano as a model proxy (Gateway) <llm_routing_quickstart>` to standardize access to multiple LLM providers.
 - :ref:`Build agents <quickstart_agents>` for multi-step workflows (e.g., travel assistants with flights and hotels).
-- :ref:`Call deterministic APIs via prompt targets <quickstart_prompt_targets>` to turn instructions directly into function calls.
 
 .. note::
-  This quickstart assumes basic familiarity with agents and prompt targets from the Concepts section. For background, see :ref:`Agents <agents>` and :ref:`Prompt Target <prompt_target>`.
+  This quickstart assumes basic familiarity with agents from the Concepts section. For background, see :ref:`Agents <agents>`.
 
-  The full agent and backend API implementations used here are available in the `plano-quickstart repository <https://github.com/plano-ai/plano-quickstart>`_. This guide focuses on wiring and configuring Plano (orchestration, prompt targets, and the model proxy), not application code.
+  The full agent and backend API implementations used here are available in the `plano-quickstart repository <https://github.com/plano-ai/plano-quickstart>`_. This guide focuses on wiring and configuring Plano (orchestration and the model proxy), not application code.
 
 Prerequisites
 -------------
@@ -62,7 +61,7 @@ Use Plano as a Model Proxy (Gateway)
 Step 1. Create plano config file
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Plano operates based on a configuration file where you can define LLM providers, prompt targets, guardrails, etc. Below is an example configuration that defines OpenAI and Anthropic LLM providers.
+Plano operates based on a configuration file where you can define LLM providers, guardrails, etc. Below is an example configuration that defines OpenAI and Anthropic LLM providers.
 
 Create ``plano_config.yaml`` file with the following content:
 
@@ -163,10 +162,7 @@ Make outbound calls via the Plano gateway:
 Build Agentic Apps with Plano
 -----------------------------
 
-Plano helps you build agentic applications in two complementary ways:
-
-* **Orchestrate agents**: Let Plano decide which agent or LLM should handle each request and in what sequence.
-* **Call deterministic backends**: Use prompt targets to turn natural-language prompts into structured, validated API calls.
+Plano helps you build agentic applications by orchestrating agents: let Plano decide which agent or LLM should handle each request and in what sequence.
 
 .. _quickstart_agents:
 
@@ -241,108 +237,6 @@ Now send a request to Plano using the OpenAI-compatible chat completions API—t
     http://localhost:8001/v1/chat/completions
 
 You can then ask a follow-up like "Also book me a hotel near JFK" and Plano-Orchestrator will route to ``hotel_agent``—your agents stay focused on business logic while Plano handles routing.
-
-.. _quickstart_prompt_targets:
-
-Deterministic API calls with prompt targets
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. deprecated:: v0.4.22
-   :ref:`Prompt Targets <prompt_target>` are deprecated and no longer actively
-   maintained. The walkthrough below is preserved for users on existing configs;
-   new applications should use :ref:`Agents <agents>` instead.
-
-Next, we'll show Plano's deterministic API calling using a single prompt target. We'll build a currency exchange backend powered by `https://api.frankfurter.dev/`, assuming USD as the base currency.
-
-Step 1. Create plano config file
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Create ``plano_config.yaml`` file with the following content:
-
-.. code-block:: yaml
-
-  version: v0.1.0
-
-  listeners:
-    ingress_traffic:
-      address: 0.0.0.0
-      port: 10000
-      message_format: openai
-      timeout: 30s
-
-   model_providers:
-     - access_key: $OPENAI_API_KEY
-       model: openai/gpt-4o
-
-   system_prompt: |
-     You are a helpful assistant.
-
-   prompt_targets:
-     - name: currency_exchange
-       description: Get currency exchange rate from USD to other currencies
-       parameters:
-         - name: currency_symbol
-           description: the currency that needs conversion
-           required: true
-           type: str
-           in_path: true
-       endpoint:
-         name: frankfurther_api
-         path: /v1/latest?base=USD&symbols={currency_symbol}
-       system_prompt: |
-         You are a helpful assistant. Show me the currency symbol you want to convert from USD.
-
-     - name: get_supported_currencies
-       description: Get list of supported currencies for conversion
-       endpoint:
-         name: frankfurther_api
-         path: /v1/currencies
-
-   endpoints:
-     frankfurther_api:
-       endpoint: api.frankfurter.dev:443
-       protocol: https
-
-Step 2. Start plano with currency conversion config
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: sh
-
-   $ planoai up plano_config.yaml
-   # Or if installed with uv tool: uvx planoai up plano_config.yaml
-   2024-12-05 16:56:27,979 - planoai.main - INFO - Starting plano cli version: 0.1.5
-   ...
-   2024-12-05 16:56:28,485 - planoai.utils - INFO - Schema validation successful!
-   2024-12-05 16:56:28,485 - planoai.main - INFO - Starting plano model server and plano gateway
-   ...
-   2024-12-05 16:56:51,647 - planoai.core - INFO - Container is healthy!
-
-Once the gateway is up, you can start interacting with it at port 10000 using the OpenAI chat completion API.
-
-Some sample queries you can ask include: ``what is currency rate for gbp?`` or ``show me list of currencies for conversion``.
-
-Step 3. Interacting with gateway using curl command
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Here is a sample curl command you can use to interact:
-
-.. code-block:: bash
-
-   $ curl --header 'Content-Type: application/json' \
-     --data '{"messages": [{"role": "user","content": "what is exchange rate for gbp"}], "model": "gpt-4o"}' \
-     http://localhost:10000/v1/chat/completions | jq ".choices[0].message.content"
-
-   "As of the date provided in your context, December 5, 2024, the exchange rate for GBP (British Pound) from USD (United States Dollar) is 0.78558. This means that 1 USD is equivalent to 0.78558 GBP."
-
-And to get the list of supported currencies:
-
-.. code-block:: bash
-
-   $ curl --header 'Content-Type: application/json' \
-     --data '{"messages": [{"role": "user","content": "show me list of currencies that are supported for conversion"}], "model": "gpt-4o"}' \
-     http://localhost:10000/v1/chat/completions | jq ".choices[0].message.content"
-
-   "Here is a list of the currencies that are supported for conversion from USD, along with their symbols:\n\n1. AUD - Australian Dollar\n2. BGN - Bulgarian Lev\n3. BRL - Brazilian Real\n4. CAD - Canadian Dollar\n5. CHF - Swiss Franc\n6. CNY - Chinese Renminbi Yuan\n7. CZK - Czech Koruna\n8. DKK - Danish Krone\n9. EUR - Euro\n10. GBP - British Pound\n11. HKD - Hong Kong Dollar\n12. HUF - Hungarian Forint\n13. IDR - Indonesian Rupiah\n14. ILS - Israeli New Sheqel\n15. INR - Indian Rupee\n16. ISK - Icelandic Króna\n17. JPY - Japanese Yen\n18. KRW - South Korean Won\n19. MXN - Mexican Peso\n20. MYR - Malaysian Ringgit\n21. NOK - Norwegian Krone\n22. NZD - New Zealand Dollar\n23. PHP - Philippine Peso\n24. PLN - Polish Złoty\n25. RON - Romanian Leu\n26. SEK - Swedish Krona\n27. SGD - Singapore Dollar\n28. THB - Thai Baht\n29. TRY - Turkish Lira\n30. USD - United States Dollar\n31. ZAR - South African Rand\n\nIf you want to convert USD to any of these currencies, you can select the one you are interested in."
 
 
 Observability

@@ -7,7 +7,7 @@ tags: advanced, multi-listener, architecture, agent, model, prompt
 
 ## Combine Multiple Listener Types for Layered Agent Architectures
 
-A single Plano `config.yaml` can define multiple listeners of different types, each on a separate port. This lets you serve different client types simultaneously: an OpenAI-compatible model gateway for direct API clients, a prompt gateway for LLM-callable function applications, and an agent orchestrator for multi-agent workflows — all from one Plano instance sharing the same model providers.
+A single Plano `config.yaml` can define multiple listeners of different types, each on a separate port. This lets you serve different client types simultaneously: an OpenAI-compatible model gateway for direct API clients, a prompt gateway for inbound prompt traffic, and an agent orchestrator for multi-agent workflows — all from one Plano instance sharing the same model providers.
 
 **Single listener (limited — forces all clients through one interface):**
 
@@ -19,34 +19,42 @@ listeners:
     name: model_gateway
     port: 12000
 
-# Prompt target clients and agent clients cannot connect
+# Agent clients cannot connect without an agent listener
 ```
 
-**Multi-listener architecture (serves all client types):**
+**Multi-listener architecture (serves model and agent clients):**
 
 ```yaml
-version: v0.3.0
+version: v0.4.0
 
 # --- Shared model providers ---
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true
-    routing_preferences:
-      - name: quick tasks
-        description: Short answers, formatting, classification, simple generation
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-    routing_preferences:
-      - name: complex reasoning
-        description: Multi-step analysis, code generation, research synthesis
 
   - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
-    routing_preferences:
-      - name: long documents
-        description: Summarizing or analyzing very long documents, PDFs, transcripts
+
+# --- Shared routing_preferences (top-level, v0.4.0+) ---
+routing_preferences:
+  - name: quick tasks
+    description: Short answers, formatting, classification, simple generation
+    models:
+      - openai/gpt-4o-mini
+  - name: complex reasoning
+    description: Multi-step analysis, code generation, research synthesis
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-sonnet-4-6
+  - name: long documents
+    description: Summarizing or analyzing very long documents, PDFs, transcripts
+    models:
+      - anthropic/claude-sonnet-4-6
+      - openai/gpt-4o
 
 # --- Listener 1: OpenAI-compatible API gateway ---
 # For: SDK clients, Claude Code, LangChain, etc.
@@ -56,10 +64,10 @@ listeners:
     port: 12000
     timeout: "120s"
 
-# --- Listener 2: Prompt function gateway ---
-# For: Applications that expose LLM-callable APIs
+# --- Listener 2: Prompt gateway ---
+# For: inbound prompt traffic via the prompt gateway WASM filter
   - type: prompt
-    name: function_gateway
+    name: prompt_gateway
     port: 10000
     timeout: "60s"
 
@@ -98,25 +106,6 @@ filters:
     type: mcp
     transport: streamable-http
 
-# --- Prompt targets (for function gateway) ---
-endpoints:
-  internal_api:
-    endpoint: host.docker.internal
-    protocol: http
-
-prompt_targets:
-  - name: search_knowledge_base
-    description: Search the internal knowledge base for relevant documents and facts.
-    parameters:
-      - name: query
-        type: str
-        required: true
-        description: Search query to find relevant information
-    endpoint:
-      name: internal_api
-      path: /kb/search?q={query}
-      http_method: GET
-
 # --- Observability ---
 model_aliases:
   plano.fast.v1:
@@ -134,6 +123,6 @@ tracing:
       - x-katanemo-
 ```
 
-This architecture serves: SDK clients on `:12000`, function-calling apps on `:10000`, and multi-agent orchestration on `:8000` — with shared cost-optimized routing across all three.
+This architecture serves: SDK clients on `:12000`, prompt-gateway traffic on `:10000`, and multi-agent orchestration on `:8000` — with shared cost-optimized routing across all three.
 
 Reference: [https://github.com/katanemo/archgw](https://github.com/katanemo/archgw)

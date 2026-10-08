@@ -3,7 +3,7 @@
 Agents
 ======
 
-Agents are autonomous systems that handle wide-ranging, open-ended tasks by calling models in a loop until the work is complete. Unlike deterministic :ref:`prompt targets <prompt_target>`, agents have access to tools, reason about which actions to take, and adapt their behavior based on intermediate results—making them ideal for complex workflows that require multi-step reasoning, external API calls, and dynamic decision-making.
+Agents are autonomous systems that handle wide-ranging, open-ended tasks by calling models in a loop until the work is complete. Agents have access to tools, reason about which actions to take, and adapt their behavior based on intermediate results—making them ideal for complex workflows that require multi-step reasoning, external API calls, and dynamic decision-making.
 
 Plano helps developers build and scale multi-agent systems by managing the orchestration layer—deciding which agent(s) or LLM(s) should handle each request, and in what sequence—while developers focus on implementing agent logic in any language or framework they choose.
 

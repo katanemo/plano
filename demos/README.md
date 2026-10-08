@@ -6,7 +6,6 @@ This directory contains demos showcasing Plano's capabilities as an AI-native pr
 
 | Demo | Description |
 |------|-------------|
-| [Weather Forecast](getting_started/weather_forecast/) | Core function calling with a weather query agent, interactive chat UI, and Jaeger tracing |
 | [LLM Gateway](getting_started/llm_gateway/) | Key management and dynamic routing to multiple LLM providers with header-based model override |
 
 ## LLM Routing
@@ -36,14 +35,10 @@ This directory contains demos showcasing Plano's capabilities as an AI-native pr
 
 | Demo | Description |
 |------|-------------|
-| [Ollama](integrations/ollama/) | Use Ollama as a local LLM provider through Plano |
-| [Spotify Bearer Auth](integrations/spotify_bearer_auth/) | Bearer token authentication for third-party APIs (Spotify new releases and top tracks) |
+| [Ollama](integrations/ollama/) | Use Ollama as a local LLM provider through Plano's model gateway |
 
 ## Advanced
 
 | Demo | Description |
 |------|-------------|
-| [Currency Exchange](advanced/currency_exchange/) | Function calling with public REST APIs (Frankfurter currency exchange) |
-| [Stock Quote](advanced/stock_quote/) | Protected REST API integration with access key management |
-| [Multi-Turn RAG](advanced/multi_turn_rag/) | Multi-turn conversational RAG agent for answering questions about energy sources |
 | [Model Choice Test Harness](advanced/model_choice_test_harness/) | Evaluation framework for safely testing and switching between models with benchmark fixtures |

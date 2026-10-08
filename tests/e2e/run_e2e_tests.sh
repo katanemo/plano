@@ -21,13 +21,6 @@ trap 'print_debug' INT TERM ERR
 
 log starting > ../build.log
 
-log starting weather_forecast agent natively
-log ===========================================
-cd ../../demos/getting_started/weather_forecast/
-bash start_agents.sh &
-AGENTS_PID=$!
-cd -
-
 log building and installing plano cli
 log ==================================
 cd ../../cli
@@ -44,17 +37,17 @@ cd -
 # Once we build plano we have to install the dependencies again to a new virtual environment.
 uv sync
 
-log startup plano gateway with function calling demo
+log startup plano gateway with model listener for API translation tests
 cd ../../
 planoai down --docker
-planoai up --docker demos/getting_started/weather_forecast/config.yaml
+planoai up --docker tests/e2e/config_native_smoke.yaml
 cd -
 
-log running e2e tests for prompt gateway
+log running e2e tests for llm/prompt gateway API translation
 log ====================================
 uv run pytest test_prompt_gateway.py
 
-log shutting down the plano gateway service for prompt_gateway demo
+log shutting down the plano gateway service
 log ===============================================================
 planoai down --docker
 
@@ -78,7 +71,3 @@ planoai up --docker config_memory_state_v1_responses.yaml
 log running e2e tests for openai responses api client
 log ========================================
 uv run pytest test_openai_responses_api_client_with_state.py
-
-log shutting down the weather_forecast agent
-log =======================================
-kill $AGENTS_PID 2>/dev/null || true

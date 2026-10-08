@@ -299,8 +299,6 @@ properties:
   overrides:
     type: object
     properties:
-      prompt_target_intent_matching_threshold:
-        type: number
       optimize_context_window:
         type: boolean
       use_agent_orchestrator:
@@ -352,80 +350,6 @@ properties:
     additionalProperties: false
   system_prompt:
     type: string
-  prompt_targets:
-    type: array
-    items:
-      type: object
-      properties:
-        name:
-          type: string
-        default:
-          type: boolean
-        description:
-          type: string
-        auto_llm_dispatch_on_response:
-          type: boolean
-        parameters:
-          type: array
-          items:
-            type: object
-            properties:
-              name:
-                type: string
-              additionalProperties: false
-              required:
-                type: boolean
-              default:
-                anyOf:
-                  - type: string
-                  - type: integer
-                  - type: boolean
-              description:
-                type: string
-              type:
-                type: string
-              enum:
-                type: array
-                items:
-                  anyOf:
-                    - type: string
-                    - type: integer
-                    - type: boolean
-              in_path:
-                type: boolean
-              format:
-                type: string
-            additionalProperties: false
-            required:
-              - name
-              - description
-              - type
-        endpoint:
-          type: object
-          properties:
-            name:
-              type: string
-            path:
-              type: string
-            http_method:
-              type: string
-              enum:
-                - GET
-                - POST
-            http_headers:
-              type: object
-              additionalProperties:
-                type: string
-          additionalProperties: false
-          required:
-            - name
-            - path
-        system_prompt:
-          type: string
-      additionalProperties: false
-      required:
-        - name
-        - description
   ratelimits:
     type: array
     items:

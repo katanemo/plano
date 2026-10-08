@@ -39,7 +39,6 @@
   - [7.3 Verify Listener Health Before Sending Requests](#verify-listener-health-before-sending-requests)
 - [Section 8: Advanced Patterns](#section-8)
   - [8.1 Combine Multiple Listener Types for Layered Agent Architectures](#combine-multiple-listener-types-for-layered-agent-architectures)
-  - [8.2 Design Prompt Targets with Precise Parameter Schemas](#design-prompt-targets-with-precise-parameter-schemas)
 
 ---
 
@@ -94,7 +93,7 @@ Reference: https://github.com/katanemo/archgw/blob/main/config/plano_config_sche
 
 ### 1.2 Choose the Right Listener Type for Your Use Case
 
-**Impact:** `CRITICAL` — The listener type determines the entire request processing pipeline — choosing the wrong type means features like prompt functions or agent routing are unavailable
+**Impact:** `CRITICAL` — The listener type determines the entire request processing pipeline — choosing the wrong type means features like agent routing are unavailable
 **Tags:** `config`, `listeners`, `architecture`, `routing`
 
 ## Choose the Right Listener Type for Your Use Case
@@ -104,7 +103,7 @@ Plano supports three listener types, each serving a distinct purpose. `listeners
 | Type | Use When | Key Feature |
 |------|----------|-------------|
 | `model` | You want an OpenAI-compatible LLM gateway | Routes to multiple LLM providers, supports model aliases and routing preferences |
-| `prompt` | You want LLM-callable custom functions | Define `prompt_targets` that the LLM dispatches as function calls |
+| `prompt` | You want inbound prompt traffic via the prompt gateway | Runs the prompt gateway WASM filter for guardrails, tracing, and prompt-path policies |
 | `agent` | You want multi-agent orchestration | Routes user requests to specialized sub-agents by matching agent descriptions |
 
 **Incorrect (using `model` when agents need orchestration):**
@@ -229,7 +228,7 @@ Reference: https://github.com/katanemo/archgw
 
 ## Use Environment Variable Substitution for All Secrets
 
-Plano supports `$VAR_NAME` substitution in config values. This applies to `access_key` fields, `connection_string` for state storage, and `http_headers` in prompt targets and endpoints. Never hardcode credentials — Plano reads them from environment variables or a `.env` file at startup via `planoai up`.
+Plano supports `$VAR_NAME` substitution in config values. This applies to `access_key` fields, `connection_string` for state storage, and headers on endpoints and providers. Never hardcode credentials — Plano reads them from environment variables or a `.env` file at startup via `planoai up`.
 
 **Incorrect (hardcoded secrets):**
 
@@ -244,12 +243,11 @@ state_storage:
   type: postgres
   connection_string: "postgresql://admin:mysecretpassword@prod-db:5432/plano"
 
-prompt_targets:
-  - name: get_data
-    endpoint:
-      name: my_api
-      http_headers:
-        Authorization: "Bearer abcdefghijklmnopqrstuvwxyz"   # Hardcoded token
+endpoints:
+  my_api:
+    endpoint: api.example.com:443
+    protocol: https
+    # Headers with hardcoded tokens — never do this
 ```
 
 **Correct (environment variable substitution):**
@@ -269,24 +267,22 @@ state_storage:
   type: postgres
   connection_string: "postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:5432/${DB_NAME}"
 
-prompt_targets:
-  - name: get_data
-    endpoint:
-      name: my_api
-      http_headers:
-        Authorization: "Bearer $MY_API_TOKEN"
+endpoints:
+  my_api:
+    endpoint: api.example.com:443
+    protocol: https
 ```
 
 **`.env` file pattern (loaded automatically by `planoai up`):**
 
 ```bash
 # .env — add to .gitignore
-OPENAI_API_KEY=abcdefghijklmnopqrstuvwxyz...
-ANTHROPIC_API_KEY=abcdefghijklmnopqrstuvwxyz...
+OPENAI_API_KEY=sk-proj-...
+ANTHROPIC_API_KEY=sk-ant-...
 DB_USER=plano
 DB_PASS=secure-password
 DB_HOST=localhost
-MY_API_TOKEN=abcdefghijklmnopqrstuvwxyz...
+MY_API_TOKEN=tok_live_...
 ```
 
 Plano also accepts keys set directly in the shell environment. Variables referenced in config but not found at startup cause `planoai up` to fail with a clear error listing the missing keys.
@@ -311,24 +307,20 @@ When a request does not match any routing preference, Plano forwards it to the `
 **Incorrect (no default provider set):**
 
 ```yaml
-version: v0.4.0
+version: v0.3.0
 
 model_providers:
   - model: openai/gpt-4o-mini     # No default: true anywhere
     access_key: $OPENAI_API_KEY
+    routing_preferences:
+      - name: summarization
+        description: Summarizing documents and extracting key points
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-
-routing_preferences:
-  - name: summarization
-    description: Summarizing documents and extracting key points
-    models:
-      - openai/gpt-4o-mini
-  - name: code_generation
-    description: Writing new functions and implementing algorithms
-    models:
-      - openai/gpt-4o
+    routing_preferences:
+      - name: code_generation
+        description: Writing new functions and implementing algorithms
 ```
 
 **Incorrect (multiple defaults — ambiguous):**
@@ -347,35 +339,25 @@ model_providers:
 **Correct (exactly one default, covering unmatched requests):**
 
 ```yaml
-version: v0.4.0
+version: v0.3.0
 
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY
     default: true               # Handles general/unclassified requests
+    routing_preferences:
+      - name: summarization
+        description: Summarizing documents, articles, and meeting notes
+      - name: classification
+        description: Categorizing inputs, labeling, and intent detection
 
   - model: openai/gpt-4o
     access_key: $OPENAI_API_KEY
-
-routing_preferences:
-  - name: summarization
-    description: Summarizing documents, articles, and meeting notes
-    models:
-      - openai/gpt-4o-mini
-      - openai/gpt-4o
-  - name: classification
-    description: Categorizing inputs, labeling, and intent detection
-    models:
-      - openai/gpt-4o-mini
-  - name: code_generation
-    description: Writing, debugging, and reviewing code
-    models:
-      - openai/gpt-4o
-      - openai/gpt-4o-mini
-  - name: complex_reasoning
-    description: Multi-step math, logical analysis, research synthesis
-    models:
-      - openai/gpt-4o
+    routing_preferences:
+      - name: code_generation
+        description: Writing, debugging, and reviewing code
+      - name: complex_reasoning
+        description: Multi-step math, logical analysis, research synthesis
 ```
 
 Choose your most cost-effective capable model as the default — it handles all traffic that doesn't match specialized preferences.
@@ -511,27 +493,21 @@ model_providers:
 **Combined: proxy for some models, Plano-managed for others:**
 
 ```yaml
-version: v0.4.0
-
 model_providers:
   - model: openai/gpt-4o-mini
     access_key: $OPENAI_API_KEY    # Plano manages this key
     default: true
+    routing_preferences:
+      - name: quick tasks
+        description: Short answers, simple lookups, fast completions
 
   - model: custom/vllm-llama
     base_url: http://gpu-server:8000
     provider_interface: openai
     passthrough_auth: true         # vLLM cluster handles its own auth
-
-routing_preferences:
-  - name: quick tasks
-    description: Short answers, simple lookups, fast completions
-    models:
-      - openai/gpt-4o-mini
-  - name: long context
-    description: Processing very long documents, multi-document analysis
-    models:
-      - custom/vllm-llama
+    routing_preferences:
+      - name: long context
+        description: Processing very long documents, multi-document analysis
 ```
 
 Reference: https://github.com/katanemo/archgw
@@ -547,7 +523,7 @@ Reference: https://github.com/katanemo/archgw
 
 Plano's `plano_orchestrator_v1` router uses a 1.5B preference-aligned LLM to classify incoming requests against your `routing_preferences` descriptions. It returns an ordered `models` list for the matched route; the client uses `models[0]` as primary and falls back to `models[1]`, `models[2]`... on `429`/`5xx` errors. Description quality directly determines routing accuracy.
 
-Starting in `v0.4.0`, `routing_preferences` lives at the **top level** of the config and each entry carries its own `models: [...]` candidate pool. Listing multiple models under a single route gives you automatic provider fallback without extra client logic. Configs still using the legacy v0.3.0 inline shape (under each `model_provider`) are auto-migrated with a deprecation warning — prefer the top-level form below.
+Starting in `v0.4.0`, `routing_preferences` lives at the **top level** of the config and each entry carries its own `models: [...]` candidate pool. Configs still using the legacy v0.3.0 inline shape (under each `model_provider`) are auto-migrated with a deprecation warning — prefer the top-level form below.
 
 **Incorrect (vague, overlapping descriptions):**
 
@@ -636,12 +612,12 @@ routing_preferences:
 - Use concrete action verbs: "writing", "reviewing", "translating", "summarizing"
 - List 3–5 specific sub-tasks or synonyms for each preference
 - Ensure preferences across routes are mutually exclusive in scope
-- Order `models` from most preferred to least — the client falls back in order on `429`/`5xx`
-- List multiple models under one route for automatic provider fallback without extra client logic
+- Order `models` from most preferred to least — the client will fall back in order on `429`/`5xx`
+- List multiple models under one route to get automatic provider fallback without additional client logic
 - Every model listed in `models` must be declared in `model_providers`
 - Test with representative queries using `planoai trace` and `--where` filters to verify routing decisions
 
-Reference: https://github.com/katanemo/archgw
+Reference: [Routing API](../../docs/routing-api.md) · https://github.com/katanemo/archgw
 
 ---
 
@@ -1411,7 +1387,7 @@ planoai cli_agent claude --path /path/to/project
 **Recommended config for Claude Code routing:**
 
 ```yaml
-version: v0.4.0
+version: v0.3.0
 
 listeners:
   - type: model
@@ -1422,25 +1398,19 @@ model_providers:
   - model: anthropic/claude-sonnet-4-6
     access_key: $ANTHROPIC_API_KEY
     default: true
+    routing_preferences:
+      - name: general coding
+        description: >
+          Writing code, debugging, code review, explaining concepts,
+          answering programming questions, general development tasks.
 
   - model: anthropic/claude-opus-4-6
     access_key: $ANTHROPIC_API_KEY
-
-routing_preferences:
-  - name: general coding
-    description: >
-      Writing code, debugging, code review, explaining concepts,
-      answering programming questions, general development tasks.
-    models:
-      - anthropic/claude-sonnet-4-6
-      - anthropic/claude-opus-4-6
-  - name: complex architecture
-    description: >
-      System design, complex refactoring across many files,
-      architectural decisions, performance optimization, security audits.
-    models:
-      - anthropic/claude-opus-4-6
-      - anthropic/claude-sonnet-4-6
+    routing_preferences:
+      - name: complex architecture
+        description: >
+          System design, complex refactoring across many files,
+          architectural decisions, performance optimization, security audits.
 
 model_aliases:
   claude.fast.v1:
@@ -1800,7 +1770,7 @@ Reference: https://github.com/katanemo/archgw
 
 ## Section 8: Advanced Patterns
 
-*Prompt targets, external API integration, rate limiting, and multi-listener architectures.*
+*Multi-listener architectures and layered orchestration patterns.*
 
 ### 8.1 Combine Multiple Listener Types for Layered Agent Architectures
 
@@ -1809,7 +1779,7 @@ Reference: https://github.com/katanemo/archgw
 
 ## Combine Multiple Listener Types for Layered Agent Architectures
 
-A single Plano `config.yaml` can define multiple listeners of different types, each on a separate port. This lets you serve different client types simultaneously: an OpenAI-compatible model gateway for direct API clients, a prompt gateway for LLM-callable function applications, and an agent orchestrator for multi-agent workflows — all from one Plano instance sharing the same model providers.
+A single Plano `config.yaml` can define multiple listeners of different types, each on a separate port. This lets you serve different client types simultaneously: an OpenAI-compatible model gateway for direct API clients, a prompt gateway for inbound prompt traffic, and an agent orchestrator for multi-agent workflows — all from one Plano instance sharing the same model providers.
 
 **Single listener (limited — forces all clients through one interface):**
 
@@ -1821,10 +1791,10 @@ listeners:
     name: model_gateway
     port: 12000
 
-# Prompt target clients and agent clients cannot connect
+# Agent clients cannot connect without an agent listener
 ```
 
-**Multi-listener architecture (serves all client types):**
+**Multi-listener architecture (serves model and agent clients):**
 
 ```yaml
 version: v0.4.0
@@ -1866,10 +1836,10 @@ listeners:
     port: 12000
     timeout: "120s"
 
-# --- Listener 2: Prompt function gateway ---
-# For: Applications that expose LLM-callable APIs
+# --- Listener 2: Prompt gateway ---
+# For: inbound prompt traffic via the prompt gateway WASM filter
   - type: prompt
-    name: function_gateway
+    name: prompt_gateway
     port: 10000
     timeout: "60s"
 
@@ -1908,25 +1878,6 @@ filters:
     type: mcp
     transport: streamable-http
 
-# --- Prompt targets (for function gateway) ---
-endpoints:
-  internal_api:
-    endpoint: host.docker.internal
-    protocol: http
-
-prompt_targets:
-  - name: search_knowledge_base
-    description: Search the internal knowledge base for relevant documents and facts.
-    parameters:
-      - name: query
-        type: str
-        required: true
-        description: Search query to find relevant information
-    endpoint:
-      name: internal_api
-      path: /kb/search?q={query}
-      http_method: GET
-
 # --- Observability ---
 model_aliases:
   plano.fast.v1:
@@ -1944,138 +1895,9 @@ tracing:
       - x-katanemo-
 ```
 
-This architecture serves: SDK clients on `:12000`, function-calling apps on `:10000`, and multi-agent orchestration on `:8000` — with shared cost-optimized routing across all three.
+This architecture serves: SDK clients on `:12000`, prompt-gateway traffic on `:10000`, and multi-agent orchestration on `:8000` — with shared cost-optimized routing across all three.
 
 Reference: [https://github.com/katanemo/archgw](https://github.com/katanemo/archgw)
-
----
-
-### 8.2 Design Prompt Targets with Precise Parameter Schemas
-
-**Impact:** `HIGH` — Imprecise parameter definitions cause the LLM to hallucinate values, skip required fields, or produce malformed API calls — the schema is the contract between the LLM and your API
-**Tags:** `advanced`, `prompt-targets`, `functions`, `llm`, `api-integration`
-
-## Design Prompt Targets with Precise Parameter Schemas
-
-`prompt_targets` define functions that Plano's LLM can call autonomously when it determines a user request matches the function's description. The parameter schema tells the LLM exactly what values to extract from user input — vague schemas lead to hallucinated parameters and failed API calls.
-
-**Incorrect (too few constraints — LLM must guess):**
-
-```yaml
-prompt_targets:
-  - name: get_flight_info
-    description: Get flight information
-    parameters:
-      - name: flight         # What format? "AA123"? "AA 123"? "American 123"?
-        type: str
-        required: true
-    endpoint:
-      name: flights_api
-      path: /flight?id={flight}
-```
-
-**Correct (fully specified schema with descriptions, formats, and enums):**
-
-```yaml
-version: v0.3.0
-
-endpoints:
-  flights_api:
-    endpoint: api.flightaware.com
-    protocol: https
-    connect_timeout: "5s"
-
-prompt_targets:
-  - name: get_flight_status
-    description: >
-      Get real-time status, gate information, and delays for a specific flight number.
-      Use when the user asks about a flight's current status, arrival time, or gate.
-    parameters:
-      - name: flight_number
-        description: >
-          IATA airline code followed by flight number, e.g., "AA123", "UA456", "DL789".
-          Extract from user message — do not include spaces.
-        type: str
-        required: true
-        format: "^[A-Z]{2}[0-9]{1,4}$"    # Regex hint for validation
-
-      - name: date
-        description: >
-          Flight date in YYYY-MM-DD format. Use today's date if not specified.
-        type: str
-        required: false
-        format: date
-
-    endpoint:
-      name: flights_api
-      path: /flights/{flight_number}?date={date}
-      http_method: GET
-      http_headers:
-        Authorization: "Bearer $FLIGHTAWARE_API_KEY"
-
-  - name: search_flights
-    description: >
-      Search for available flights between two cities or airports.
-      Use when the user wants to find flights, compare options, or book travel.
-    parameters:
-      - name: origin
-        description: Departure airport IATA code (e.g., "JFK", "LAX", "ORD")
-        type: str
-        required: true
-      - name: destination
-        description: Arrival airport IATA code (e.g., "LHR", "CDG", "NRT")
-        type: str
-        required: true
-      - name: departure_date
-        description: Departure date in YYYY-MM-DD format
-        type: str
-        required: true
-        format: date
-      - name: cabin_class
-        description: Preferred cabin class
-        type: str
-        required: false
-        default: economy
-        enum: [economy, premium_economy, business, first]
-      - name: passengers
-        description: Number of adult passengers (1-9)
-        type: int
-        required: false
-        default: 1
-
-    endpoint:
-      name: flights_api
-      path: /search?from={origin}&to={destination}&date={departure_date}&class={cabin_class}&pax={passengers}
-      http_method: GET
-      http_headers:
-        Authorization: "Bearer $FLIGHTAWARE_API_KEY"
-
-    system_prompt: |
-      You are a travel assistant. Present flight search results clearly,
-      highlighting the best value options. Include price, duration, and
-      number of stops for each option.
-
-model_providers:
-  - model: openai/gpt-4o
-    access_key: $OPENAI_API_KEY
-    default: true
-
-listeners:
-  - type: prompt
-    name: travel_functions
-    port: 10000
-    timeout: "30s"
-```
-
-**Key principles:**
-- `description` on the target tells the LLM when to call it — be specific about trigger conditions
-- `description` on each parameter tells the LLM what value to extract — include format examples
-- Use `enum` to constrain categorical values — prevents the LLM from inventing categories
-- Use `format: date` or regex patterns to hint at expected format
-- Use `default` for optional parameters so the API never receives null values
-- `system_prompt` on the target customizes how the LLM formats the API response to the user
-
-Reference: https://github.com/katanemo/archgw
 
 ---
 

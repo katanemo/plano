@@ -4,7 +4,6 @@ pub mod consts;
 pub mod errors;
 pub mod http;
 pub mod llm_providers;
-pub mod path;
 pub mod pii;
 pub mod ratelimit;
 pub mod routing;

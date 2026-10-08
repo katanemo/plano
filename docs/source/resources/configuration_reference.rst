@@ -4,8 +4,8 @@ Configuration Reference
 =======================
 
 The following is a complete reference of the ``plano_config.yml`` that controls the behavior of a single instance of
-the Plano gateway. This where you enable capabilities like routing to upstream LLm providers, defining prompt_targets
-where prompts get routed to, apply guardrails, and enable critical agent observability features.
+the Plano gateway. This is where you enable capabilities like routing to upstream LLM providers,
+apply guardrails, and enable critical agent observability features.
 
 Model provider headers
 ----------------------

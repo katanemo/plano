@@ -1,33 +1,11 @@
 @arch_llm_router_endpoint = http://35.192.87.187:8000
 
-POST https://archfc.katanemo.dev/v1/chat/completions HTTP/1.1
-Content-Type: application/json
-
-{
-  "model": "cotran2/qwen-4-epoch-2600",
-  "messages": [
-    {
-      "role": "user",
-      "content": "You are an advanced Routing Assistant designed to select the optimal route based on user requests. \nYour task is to analyze conversations and match them to the most appropriate predefined route.\nReview the available routes config:\n\n# ROUTES CONFIG START\n- name: gpt-4o()\n  description: \"complex reasoning problem, require multi step answer\\n\"\n- name: o4-mini()\n  description: \"simple requests, basic fact retrieval, easy to answer\\n\"\n\n# ROUTES CONFIG END\n\nExamine the following conversation between a user and an assistant:\n\n# CONVERSATION START\n\nuser: Hello\nassistant: Hi! How can I assist you today?\nuser: List us presidents who are born in odd years and are still alive. Order them by their age and I also know what is their home city they were born. And what year they became president. Also give me summary of which president was the best for economy of the US.\n\n# CONVERSATION END\n\nYour goal is to identify the most appropriate route that matches the user's LATEST intent. Follow these steps:\n\n1. Carefully read and analyze the provided conversation, focusing on the user's latest request and the conversation scenario.\n2. Check if the user's request and scenario matches any of the routes in the routing configuration (focus on the description).\n3. Find the route that best matches.\n4. Use context clues from the entire conversation to determine the best fit.\n5. Return the best match possible. You only response the name of the route that best matches the user's request, use the exact name in the routes config.\n6. If no route relatively close to matches the user's latest intent or user last message is thank you or greeting, return an empty route ''. \n\n\n# OUTPUT FORMAT\nYour final output must follow this JSON format:\n{\n  \"route\": \"route_name\" # The matched route name, or empty string '' if no match\n}\n\nBased on your analysis, provide only the JSON object as your final output with no additional text, explanations, or whitespace."
-    }
-  ]
-}
-
 ### test 2
 
 POST {{arch_llm_router_endpoint}}/v1/chat/completions HTTP/1.1
 Content-Type: application/json
 
 {"model":"cotran2/llama-1b-4-26","messages":[{"role":"user","content":"\nYou are an advanced Routing Assistant designed to select the optimal route based on user requests. \nYour task is to analyze conversations and match them to the most appropriate predefined route.\nReview the available routes config:\n\n# ROUTES CONFIG START\n- name: gpt-4o\n  description: simple requests, basic fact retrieval, easy to answer\n- name: o4-mini()\n  description: complex reasoning problem, require multi step answer\n# ROUTES CONFIG END\n\nExamine the following conversation between a user and an assistant:\n\n# CONVERSATION START\n[{\"role\":\"user\",\"content\":\"What is the capital of France?\"}]\n# CONVERSATION END\n\nYour goal is to identify the most appropriate route that matches the user's LATEST intent. Follow these steps:\n\n1. Carefully read and analyze the provided conversation, focusing on the user's latest request and the conversation scenario.\n2. Check if the user's request and scenario matches any of the routes in the routing configuration (focus on the description).\n3. Find the route that best matches.\n4. Use context clues from the entire conversation to determine the best fit.\n5. Return the best match possible. You only response the name of the route that best matches the user's request, use the exact name in the routes config.\n6. If no route relatively close to matches the user's latest intent or user last message is thank you or greeting, return an empty route ''. \n\n# OUTPUT FORMAT\nYour final output must follow this JSON format:\n{\n  \"route\": \"route_name\" # The matched route name, or empty string '' if no match\n}\n\nBased on your analysis, provide only the JSON object as your final output with no additional text, explanations, or whitespace.\n"}],"stream":false}
-
-### get model list from arch-function
-GET https://archfc.katanemo.dev/v1/models HTTP/1.1
-model: Plano-Orchestrator
-
-### get model list from Plano-Orchestrator (notice model header)
-GET https://archfc.katanemo.dev/v1/models HTTP/1.1
-model: Plano-Orchestrator
-
 
 ### test try code generating
 POST http://localhost:12000/v1/chat/completions HTTP/1.1

@@ -26,7 +26,7 @@ Filter chains show up most often in patterns like:
 * **Query rewriting, RAG, and Memory**: Rewriting user queries for retrieval, normalizing entities, and assembling RAG context envelopes while pulling in relevant memory (for example, conversation history, user profiles, or prior tool results) before calling a model or tool.
 * **Cross-cutting Observability**: Injecting correlation IDs, sampling traces, or logging enriched request metadata at consistent points in the request path.
 
-Because these behaviors live in the dataplane rather than inside individual agents, you define them once, attach them to many agents and prompt targets, and can add, remove, or reorder them without changing application code.
+Because these behaviors live in the dataplane rather than inside individual agents, you define them once, attach them to many agents, and can add, remove, or reorder them without changing application code.
 
 Configuration example
 ---------------------

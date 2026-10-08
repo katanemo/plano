@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs the prompt_gateway e2e test suite.
+# Runs remaining prompt/LLM gateway e2e tests (API translation via model listener).
 # Requires the plano Docker image to already be built/loaded.
 set -e
 
@@ -32,25 +32,17 @@ cd -
 # Re-sync e2e deps
 uv sync
 
-# Start weather_forecast service natively (needed for prompt_gateway tests)
-log "starting weather_forecast agent natively"
-cd ../../demos/getting_started/weather_forecast/
-bash start_agents.sh &
-AGENTS_PID=$!
-cd -
-
-# Start gateway with prompt_gateway config
-log "startup plano gateway with function calling demo"
+# Start gateway with a model listener config (API translation tests)
+log "startup plano gateway with model listener"
 cd ../../
 planoai down --docker || true
-planoai up --docker demos/getting_started/weather_forecast/config.yaml
+planoai up --docker tests/e2e/config_native_smoke.yaml
 cd -
 
 # Run tests
-log "running e2e tests for prompt gateway"
+log "running e2e tests for llm/prompt gateway API translation"
 uv run pytest test_prompt_gateway.py
 
 # Cleanup
 log "shutting down"
 planoai down --docker || true
-kill $AGENTS_PID 2>/dev/null || true

@@ -1,8 +1,6 @@
 use crate::metrics::Metrics;
 use crate::stream_context::StreamContext;
-use common::configuration::{
-    Configuration, Endpoint, Overrides, PromptGuards, PromptTarget, Tracing,
-};
+use common::configuration::{Configuration, Endpoint, Overrides, Tracing};
 use common::http::Client;
 use common::stats::Gauge;
 use log::trace;
@@ -21,10 +19,7 @@ pub struct FilterContext {
     // callouts stores token_id to request mapping that we use during #on_http_call_response to match the response to the request.
     callouts: RefCell<HashMap<u32, FilterCallContext>>,
     overrides: Rc<Option<Overrides>>,
-    system_prompt: Rc<Option<String>>,
-    prompt_targets: Rc<HashMap<String, PromptTarget>>,
     endpoints: Rc<Option<HashMap<String, Endpoint>>>,
-    prompt_guards: Rc<PromptGuards>,
     tracing: Rc<Option<Tracing>>,
 }
 
@@ -33,10 +28,7 @@ impl FilterContext {
         FilterContext {
             callouts: RefCell::new(HashMap::new()),
             metrics: Rc::new(Metrics::new()),
-            system_prompt: Rc::new(None),
-            prompt_targets: Rc::new(HashMap::new()),
             overrides: Rc::new(None),
-            prompt_guards: Rc::new(PromptGuards::default()),
             endpoints: Rc::new(None),
             tracing: Rc::new(None),
         }
@@ -70,19 +62,7 @@ impl RootContext for FilterContext {
         };
 
         self.overrides = Rc::new(config.overrides);
-
-        let mut prompt_targets = HashMap::new();
-        for pt in config.prompt_targets.unwrap_or_default() {
-            prompt_targets.insert(pt.name.clone(), pt.clone());
-        }
-        self.system_prompt = Rc::new(config.system_prompt);
-        self.prompt_targets = Rc::new(prompt_targets);
         self.endpoints = Rc::new(config.endpoints);
-
-        if let Some(prompt_guards) = config.prompt_guards {
-            self.prompt_guards = Rc::new(prompt_guards)
-        }
-
         self.tracing = Rc::new(config.tracing);
 
         true
@@ -97,8 +77,6 @@ impl RootContext for FilterContext {
         Some(Box::new(StreamContext::new(
             context_id,
             Rc::clone(&self.metrics),
-            Rc::clone(&self.system_prompt),
-            Rc::clone(&self.prompt_targets),
             Rc::clone(&self.endpoints),
             Rc::clone(&self.overrides),
             Rc::clone(&self.tracing),

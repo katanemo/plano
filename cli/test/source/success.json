@@ -7,7 +7,7 @@
             "traceId": "86f21585168a31a23578d77096cc143b",
             "spanId": "1d6159b920daf4e9",
             "parentSpanId": "c5d6cd3cfb32b551",
-            "name": "POST archfc.katanemo.dev/v1/chat/completions",
+            "name": "POST api.example.com/v1/chat/completions",
             "startTimeUnixNano": "1770937700292451000",
             "endTimeUnixNano": "1770937700552403000",
             "service": "plano(outbound)",
@@ -33,7 +33,7 @@
               {
                 "key": "http.url",
                 "value": {
-                  "stringValue": "https://archfc.katanemo.dev/v1/chat/completions"
+                  "stringValue": "https://api.example.com/v1/chat/completions"
                 }
               },
               {
