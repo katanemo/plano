@@ -775,6 +775,10 @@ mod tests {
             models.iter().any(|m| m == "MiniMax-M3"),
             "minimax models should include MiniMax-M3"
         );
+        assert!(
+            models.iter().any(|m| m == "MiniMax-M2.7"),
+            "minimax models should include MiniMax-M2.7"
+        );
         for model in &models {
             assert!(
                 !model.contains('/'),
