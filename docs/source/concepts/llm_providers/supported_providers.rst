@@ -683,6 +683,26 @@ Ollama
         base_url: http://localhost:11434
 
 
+OrcaRouter
+~~~~~~~~~~
+
+**Provider Prefix:** ``orcarouter/``
+
+**API Endpoint:** ``/v1/chat/completions`` (OpenAI-compatible meta-router/gateway)
+
+**Authentication:** API Key - Get your OrcaRouter API key from `OrcaRouter <https://www.orcarouter.ai>`_.
+
+**Supported Chat Models:** All models routed by OrcaRouter, namespaced by upstream provider. Use the full namespaced id (e.g. ``orcarouter/openai/gpt-5.5``) or the dynamic ``orcarouter/orcarouter/auto`` route.
+
+.. code-block:: yaml
+
+    llm_providers:
+      # Route any model through OrcaRouter behind one key
+      - model: orcarouter/*
+        base_url: https://api.orcarouter.ai/v1
+        access_key: $ORCAROUTER_API_KEY
+
+
 OpenAI-Compatible Providers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

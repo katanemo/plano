@@ -96,6 +96,16 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         base_url="https://openrouter.ai/api/v1",
         model_pattern="openrouter/*",
     ),
+    # OrcaRouter is an OpenAI-compatible meta-router/gateway routing to many
+    # upstream models behind one key — same treatment as OpenRouter, no
+    # provider_interface override needed. Model ids are namespaced upstream
+    # (e.g. `orcarouter/openai/gpt-5.5` or `orcarouter/orcarouter/auto`).
+    ProviderDefault(
+        name="orcarouter",
+        env_var="ORCAROUTER_API_KEY",
+        base_url="https://api.orcarouter.ai/v1",
+        model_pattern="orcarouter/*",
+    ),
     # Eden AI is an EU-based, OpenAI-compatible gateway routing to many upstream
     # providers behind one key — same treatment as OpenRouter, no
     # provider_interface override needed.

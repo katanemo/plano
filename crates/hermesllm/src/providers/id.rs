@@ -49,6 +49,7 @@ pub enum ProviderId {
     DigitalOcean,
     Vercel,
     OpenRouter,
+    OrcaRouter,
     Astraflow,
     AstraflowCN,
     Meta,
@@ -87,6 +88,7 @@ impl TryFrom<&str> for ProviderId {
             "do_ai" => Ok(ProviderId::DigitalOcean), // alias
             "vercel" => Ok(ProviderId::Vercel),
             "openrouter" => Ok(ProviderId::OpenRouter),
+            "orcarouter" => Ok(ProviderId::OrcaRouter),
             "astraflow" => Ok(ProviderId::Astraflow),
             "astraflow_cn" => Ok(ProviderId::AstraflowCN),
             "meta" => Ok(ProviderId::Meta),
@@ -155,7 +157,10 @@ fn model_family(model_name: &str) -> ModelFamily {
 fn accepts_openai_content_part_cache_control(provider: ProviderId) -> bool {
     matches!(
         provider,
-        ProviderId::DigitalOcean | ProviderId::OpenRouter | ProviderId::EdenAI
+        ProviderId::DigitalOcean
+            | ProviderId::OpenRouter
+            | ProviderId::OrcaRouter
+            | ProviderId::EdenAI
     )
 }
 
@@ -174,6 +179,7 @@ fn is_automatic_cache_provider(provider: ProviderId) -> bool {
             | ProviderId::XAI
             | ProviderId::DigitalOcean
             | ProviderId::OpenRouter
+            | ProviderId::OrcaRouter
             | ProviderId::EdenAI
     )
 }
@@ -272,6 +278,7 @@ pub fn provider_cache_capability(provider: ProviderId) -> ProviderCacheCapabilit
         ProviderId::Anthropic
         | ProviderId::DigitalOcean
         | ProviderId::OpenRouter
+        | ProviderId::OrcaRouter
         | ProviderId::EdenAI
         | ProviderId::Vercel => ProviderCacheCapability::default(),
         // OpenAI-family automatic prefix caching also lives on the order of minutes;
@@ -379,6 +386,7 @@ impl ProviderId {
                 | ProviderId::Qwen
                 | ProviderId::DigitalOcean
                 | ProviderId::OpenRouter
+                | ProviderId::OrcaRouter
                 | ProviderId::ChatGPT
                 | ProviderId::Astraflow
                 | ProviderId::AstraflowCN
@@ -406,6 +414,7 @@ impl ProviderId {
                 | ProviderId::Qwen
                 | ProviderId::DigitalOcean
                 | ProviderId::OpenRouter
+                | ProviderId::OrcaRouter
                 | ProviderId::ChatGPT
                 | ProviderId::Astraflow
                 | ProviderId::AstraflowCN
@@ -482,6 +491,7 @@ impl Display for ProviderId {
             ProviderId::DigitalOcean => write!(f, "digitalocean"),
             ProviderId::Vercel => write!(f, "vercel"),
             ProviderId::OpenRouter => write!(f, "openrouter"),
+            ProviderId::OrcaRouter => write!(f, "orcarouter"),
             ProviderId::Astraflow => write!(f, "astraflow"),
             ProviderId::AstraflowCN => write!(f, "astraflow_cn"),
             ProviderId::Meta => write!(f, "meta"),
@@ -530,6 +540,33 @@ mod tests {
             strategy,
             CacheMarkerStrategy::OpenAiContentPartCacheControl { .. }
         ));
+    }
+
+    #[test]
+    fn orcarouter_anthropic_uses_openai_content_part_markers() {
+        // OrcaRouter is an OpenAI-compatible gateway like OpenRouter; Anthropic-family
+        // models over its chat-completions endpoint get content-part cache markers.
+        let strategy = cache_marker_strategy(
+            ProviderId::OrcaRouter,
+            "anthropic/claude-3.5-sonnet",
+            &chat_completions(),
+        );
+        assert!(matches!(
+            strategy,
+            CacheMarkerStrategy::OpenAiContentPartCacheControl { .. }
+        ));
+    }
+
+    #[test]
+    fn orcarouter_parses_from_str() {
+        assert_eq!(
+            ProviderId::try_from("orcarouter"),
+            Ok(ProviderId::OrcaRouter)
+        );
+        assert_eq!(
+            ProviderId::try_from("OrcaRouter").map(|p| p.to_string()),
+            Ok("orcarouter".to_string())
+        );
     }
 
     #[test]
