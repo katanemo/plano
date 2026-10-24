@@ -152,11 +152,11 @@ fn describe_all() {
     );
     describe_counter!(
         "brightstaff_llm_tokens_total",
-        "Tokens reported in the provider `usage` field, by provider, model and kind (prompt/completion)."
+        "Tokens reported in the provider `usage` field, by provider, model, org (from tracing.attribution_header, or `unattributed`), service (from X-Fikar-Service, `unattributed` or `invalid`) and kind (prompt/completion/cache_read/cache_write)."
     );
     describe_counter!(
         "brightstaff_llm_tokens_usage_missing_total",
-        "LLM responses that completed without a usable `usage` block (so token counts are unknown)."
+        "LLM responses that completed without a usable `usage` block (so token counts are unknown), by provider, model, org and service."
     );
 
     describe_counter!(
@@ -332,21 +332,35 @@ pub fn record_llm_ttft(provider: &str, model: &str, ttft: Duration) {
     .record(ttft.as_secs_f64());
 }
 
-pub fn record_llm_tokens(provider: &str, model: &str, kind: &'static str, count: u64) {
+/// `org` and `service` must already be normalized ([`labels::normalize_org`],
+/// [`labels::normalize_service`]); they are the only labels whose values originate
+/// from a request.
+pub fn record_llm_tokens(
+    provider: &str,
+    model: &str,
+    org: &str,
+    service: &str,
+    kind: &'static str,
+    count: u64,
+) {
     counter!(
         "brightstaff_llm_tokens_total",
         "provider" => provider.to_string(),
         "model" => model.to_string(),
+        "org" => org.to_string(),
+        "service" => service.to_string(),
         "kind" => kind,
     )
     .increment(count);
 }
 
-pub fn record_llm_tokens_usage_missing(provider: &str, model: &str) {
+pub fn record_llm_tokens_usage_missing(provider: &str, model: &str, org: &str, service: &str) {
     counter!(
         "brightstaff_llm_tokens_usage_missing_total",
         "provider" => provider.to_string(),
         "model" => model.to_string(),
+        "org" => org.to_string(),
+        "service" => service.to_string(),
     )
     .increment(1);
 }
@@ -432,4 +446,72 @@ pub fn record_session_switch_decision(decision: &'static str, reason: &'static s
         "reason" => reason,
     )
     .increment(1);
+}
+
+/// Minimal in-memory counter recorder shared by tests.
+#[cfg(test)]
+pub mod capture {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    /// Minimal recorder capturing counter increments keyed by `name{labels}`.
+    #[derive(Default, Clone)]
+    pub struct Capture(pub Arc<Mutex<BTreeMap<String, u64>>>);
+
+    struct Cell(Arc<Mutex<BTreeMap<String, u64>>>, String);
+    impl metrics::CounterFn for Cell {
+        fn increment(&self, v: u64) {
+            *self.0.lock().unwrap().entry(self.1.clone()).or_default() += v;
+        }
+        fn absolute(&self, v: u64) {
+            self.0.lock().unwrap().insert(self.1.clone(), v);
+        }
+    }
+
+    impl metrics::Recorder for Capture {
+        fn describe_counter(
+            &self,
+            _: metrics::KeyName,
+            _: Option<metrics::Unit>,
+            _: metrics::SharedString,
+        ) {
+        }
+        fn describe_gauge(
+            &self,
+            _: metrics::KeyName,
+            _: Option<metrics::Unit>,
+            _: metrics::SharedString,
+        ) {
+        }
+        fn describe_histogram(
+            &self,
+            _: metrics::KeyName,
+            _: Option<metrics::Unit>,
+            _: metrics::SharedString,
+        ) {
+        }
+        fn register_counter(
+            &self,
+            key: &metrics::Key,
+            _: &metrics::Metadata<'_>,
+        ) -> metrics::Counter {
+            let mut labels: Vec<String> = key
+                .labels()
+                .map(|l| format!("{}={}", l.key(), l.value()))
+                .collect();
+            labels.sort();
+            let id = format!("{}{{{}}}", key.name(), labels.join(","));
+            metrics::Counter::from_arc(Arc::new(Cell(self.0.clone(), id)))
+        }
+        fn register_gauge(&self, _: &metrics::Key, _: &metrics::Metadata<'_>) -> metrics::Gauge {
+            metrics::Gauge::noop()
+        }
+        fn register_histogram(
+            &self,
+            _: &metrics::Key,
+            _: &metrics::Metadata<'_>,
+        ) -> metrics::Histogram {
+            metrics::Histogram::noop()
+        }
+    }
 }

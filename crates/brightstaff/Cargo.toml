@@ -63,6 +63,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
+tempfile = "3"
 mockito = "1.0"
 tokio-stream = "0.1.17"
 tracing = "0.1.41"

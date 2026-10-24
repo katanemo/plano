@@ -193,6 +193,11 @@ impl StreamProcessor for Box<dyn StreamProcessor> {
 pub struct LlmMetricsCtx {
     pub provider: String,
     pub model: String,
+    /// Normalized caller attribution: `org` and `service` label the counters, all four
+    /// fields go on the usage line.
+    pub attribution: crate::handlers::Attribution,
+    /// Usage-log handle; `None` when `FIKAR_USAGE_LOG_DIR` is unset.
+    pub usage_log: Option<crate::usage_log::UsageLog>,
     /// HTTP status of the upstream response. Used to pick `status_class` and
     /// `error_class` on `on_complete`.
     pub upstream_status: u16,
@@ -497,6 +502,8 @@ impl StreamProcessor for ObservableStreamProcessor {
                 bs_metrics::record_llm_tokens(
                     &ctx.provider,
                     &ctx.model,
+                    &ctx.attribution.org,
+                    &ctx.attribution.service,
                     metric_labels::TOKEN_KIND_PROMPT,
                     v.max(0) as u64,
                 );
@@ -505,6 +512,8 @@ impl StreamProcessor for ObservableStreamProcessor {
                 bs_metrics::record_llm_tokens(
                     &ctx.provider,
                     &ctx.model,
+                    &ctx.attribution.org,
+                    &ctx.attribution.service,
                     metric_labels::TOKEN_KIND_COMPLETION,
                     v.max(0) as u64,
                 );
@@ -516,6 +525,8 @@ impl StreamProcessor for ObservableStreamProcessor {
                 bs_metrics::record_llm_tokens(
                     &ctx.provider,
                     &ctx.model,
+                    &ctx.attribution.org,
+                    &ctx.attribution.service,
                     metric_labels::TOKEN_KIND_CACHE_READ,
                     v.max(0) as u64,
                 );
@@ -524,6 +535,8 @@ impl StreamProcessor for ObservableStreamProcessor {
                 bs_metrics::record_llm_tokens(
                     &ctx.provider,
                     &ctx.model,
+                    &ctx.attribution.org,
+                    &ctx.attribution.service,
                     metric_labels::TOKEN_KIND_CACHE_WRITE,
                     v.max(0) as u64,
                 );
@@ -542,7 +555,26 @@ impl StreamProcessor for ObservableStreamProcessor {
                 );
             }
             if usage.prompt_tokens.is_none() && usage.completion_tokens.is_none() {
-                bs_metrics::record_llm_tokens_usage_missing(&ctx.provider, &ctx.model);
+                bs_metrics::record_llm_tokens_usage_missing(
+                    &ctx.provider,
+                    &ctx.model,
+                    &ctx.attribution.org,
+                    &ctx.attribution.service,
+                );
+            }
+            if let Some(log) = ctx.usage_log.as_ref() {
+                log.record(
+                    crate::usage_log::ENDPOINT_CHAT,
+                    &ctx.attribution,
+                    &ctx.provider,
+                    &ctx.model,
+                    &crate::usage_log::TokenCounts {
+                        prompt: usage.prompt_tokens.map(|v| v.max(0) as u64),
+                        completion: usage.completion_tokens.map(|v| v.max(0) as u64),
+                        cache_read: usage.cached_input_tokens.map(|v| v.max(0) as u64),
+                        cache_write: usage.cache_creation_tokens.map(|v| v.max(0) as u64),
+                    },
+                );
             }
             self.metrics_recorded = true;
         }
@@ -840,5 +872,128 @@ data: [DONE]
     #[test]
     fn no_usage_in_body_returns_default() {
         assert!(extract_usage_from_bytes(br#"{"ok":true}"#).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod usage_log_tests {
+    use super::*;
+    use crate::handlers::Attribution;
+    use crate::metrics::capture::Capture;
+    use crate::usage_log::UsageLog;
+
+    fn ctx(log: Option<UsageLog>) -> LlmMetricsCtx {
+        LlmMetricsCtx {
+            provider: "azure_openai".into(),
+            model: "gpt-5.6-terra".into(),
+            attribution: Attribution {
+                org: "3".into(),
+                service: "chat".into(),
+                user: "42".into(),
+                execution: "turn-8c1d2e".into(),
+            },
+            usage_log: log,
+            upstream_status: 200,
+        }
+    }
+
+    fn run(ctx: LlmMetricsCtx, chunks: &[&[u8]]) {
+        let mut p = ObservableStreamProcessor::new("plano(llm)", "op", Instant::now(), None)
+            .with_llm_metrics(ctx);
+        for c in chunks {
+            p.process_chunk(Bytes::copy_from_slice(c)).unwrap();
+        }
+        p.on_complete();
+    }
+
+    async fn lines(dir: &std::path::Path) -> Vec<String> {
+        let mut out = Vec::new();
+        for f in std::fs::read_dir(dir).unwrap() {
+            let t = std::fs::read_to_string(f.unwrap().path()).unwrap();
+            out.extend(t.lines().map(str::to_string));
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn non_streaming_response_writes_one_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = UsageLog::start(dir.path().to_path_buf(), "routed");
+        let cap = Capture::default();
+        let body = br#"{"id":"x","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":34,"total_tokens":46,"prompt_tokens_details":{"cached_tokens":5}}}"#;
+        metrics::with_local_recorder(&cap, || run(ctx(Some(log.clone())), &[body]));
+        log.flush().await;
+        let got = cap.0.lock().unwrap().clone();
+        assert_eq!(
+            got.get("brightstaff_llm_tokens_total{kind=prompt,model=gpt-5.6-terra,org=3,provider=azure_openai,service=chat}"),
+            Some(&12)
+        );
+        let l = lines(dir.path()).await;
+        assert_eq!(l.len(), 1);
+        println!("EXAMPLE LINE: {}", l[0]);
+        let v: serde_json::Value = serde_json::from_str(&l[0]).unwrap();
+        assert_eq!(v["endpoint"], "chat");
+        assert_eq!(v["instance"], "routed");
+        assert_eq!(v["prompt"], 12);
+        assert_eq!(v["completion"], 34);
+        assert_eq!(v["cache_read"], 5);
+        assert_eq!(v["cache_write"], 0);
+        assert_eq!(v["service"], "chat");
+        assert_eq!(v["user"], "42");
+        assert_eq!(v["execution"], "turn-8c1d2e");
+    }
+
+    #[tokio::test]
+    async fn streaming_response_writes_one_line_after_usage_arrives() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = UsageLog::start(dir.path().to_path_buf(), "pinned");
+        let mut p = ObservableStreamProcessor::new("plano(llm)", "op", Instant::now(), None)
+            .with_llm_metrics(ctx(Some(log.clone())));
+        p.process_chunk(Bytes::from_static(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+        ))
+        .unwrap();
+        p.process_chunk(Bytes::from_static(
+            b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10}}\n\ndata: [DONE]\n\n",
+        ))
+        .unwrap();
+        // Usage has arrived but the stream is not complete: nothing written yet.
+        log.flush().await;
+        assert!(lines(dir.path()).await.is_empty());
+        p.on_complete();
+        log.flush().await;
+        let l = lines(dir.path()).await;
+        assert_eq!(l.len(), 1);
+        let v: serde_json::Value = serde_json::from_str(&l[0]).unwrap();
+        assert_eq!(
+            (v["prompt"].as_u64(), v["completion"].as_u64()),
+            (Some(7), Some(3))
+        );
+    }
+
+    #[tokio::test]
+    async fn usage_missing_counts_with_service_and_writes_no_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = UsageLog::start(dir.path().to_path_buf(), "");
+        let cap = Capture::default();
+        metrics::with_local_recorder(&cap, || {
+            run(ctx(Some(log.clone())), &[br#"{"choices":[]}"#.as_slice()])
+        });
+        log.flush().await;
+        assert!(lines(dir.path()).await.is_empty());
+        let got = cap.0.lock().unwrap().clone();
+        assert_eq!(
+            got.get("brightstaff_llm_tokens_usage_missing_total{model=gpt-5.6-terra,org=3,provider=azure_openai,service=chat}"),
+            Some(&1)
+        );
+    }
+
+    #[test]
+    fn without_a_log_handle_nothing_is_written() {
+        let cap = Capture::default();
+        let body = br#"{"usage":{"prompt_tokens":1,"completion_tokens":1}}"#;
+        // No handle, no task, no panic outside a runtime.
+        metrics::with_local_recorder(&cap, || run(ctx(None), &[body]));
+        assert!(!cap.0.lock().unwrap().is_empty());
     }
 }

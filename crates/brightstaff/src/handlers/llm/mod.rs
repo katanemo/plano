@@ -30,6 +30,7 @@ use crate::handlers::agents::pipeline::PipelineProcessor;
 use crate::handlers::extract_request_id;
 use crate::handlers::full;
 use crate::handlers::routing_budget_request;
+use crate::handlers::{take_attribution_from_headers, Attribution};
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
 use crate::state::response_state_processor::ResponsesStateProcessor;
@@ -118,6 +119,11 @@ async fn llm_chat_inner(
             });
         }
     }
+
+    // Caller organization for metering: validated, stamped on the span, then
+    // removed so the provider never sees it.
+    let attribution =
+        take_attribution_from_headers(&mut request_headers, state.attribution_header.as_deref());
 
     let explicit_session_id: Option<String> = request_headers
         .get(MODEL_AFFINITY_HEADER)
@@ -558,6 +564,8 @@ async fn llm_chat_inner(
         request_id,
         &state.filter_pipeline,
         session_update_ctx,
+        &attribution,
+        state.usage_log.clone(),
     )
     .await
 }
@@ -679,6 +687,9 @@ async fn parse_and_validate_request(
 
     // Set the upstream model name and strip routing metadata
     client_request.set_model(model_name_only.clone());
+    if client_request.ensure_stream_usage() {
+        debug!("stream_options.include_usage set so the final usage chunk is metered");
+    }
     if client_request.remove_metadata_key("archgw_preference_config") {
         debug!("removed archgw_preference_config from metadata");
     }
@@ -836,6 +847,8 @@ async fn send_upstream(
     request_id: String,
     filter_pipeline: &Arc<FilterPipeline>,
     session_update_ctx: Option<SessionUpdateCtx>,
+    attribution: &Attribution,
+    usage_log: Option<crate::usage_log::UsageLog>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let span_name = if model_from_request == resolved_model {
         format!("POST {} {}", request_path, resolved_model)
@@ -868,6 +881,12 @@ async fn send_upstream(
         }),
     );
     request_headers.remove(header::CONTENT_LENGTH);
+    // Providers gzip non-streaming bodies when allowed to; the usage extractor
+    // reads the raw buffered bytes, so ask for an identity body instead.
+    request_headers.insert(
+        header::ACCEPT_ENCODING,
+        header::HeaderValue::from_static("identity"),
+    );
 
     // Inject current span's trace context so upstream spans are children of plano(llm)
     global::get_text_map_propagator(|propagator| {
@@ -960,6 +979,8 @@ async fn send_upstream(
     .with_llm_metrics(LlmMetricsCtx {
         provider: metric_provider.clone(),
         model: metric_model.clone(),
+        attribution: attribution.clone(),
+        usage_log,
         upstream_status: upstream_status.as_u16(),
     });
     // Only refresh the session binding for successful responses — errors carry no

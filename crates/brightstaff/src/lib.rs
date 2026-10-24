@@ -8,3 +8,4 @@ pub mod signals;
 pub mod state;
 pub mod streaming;
 pub mod tracing;
+pub mod usage_log;

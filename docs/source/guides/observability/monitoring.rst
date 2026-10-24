@@ -126,3 +126,19 @@ Files:
   hand via *Dashboards → New → Import*.
 * ``config/grafana/provisioning/`` — Grafana provisioning files for the
   datasource and dashboard provider.
+
+Per-organization token attribution
+----------------------------------
+
+Set ``tracing.attribution_header`` to the name of a request header that carries the
+caller's organization (for example ``x-fikar-org``). brightstaff validates the value
+(at most 64 characters of letters, digits, ``.``, ``_`` and ``-``), adds it as the
+``org`` label on ``brightstaff_llm_tokens_total`` and
+``brightstaff_llm_tokens_usage_missing_total``, sets ``plano.org`` on the ``plano(llm)``
+span, and removes the header before the request reaches the provider. A missing or
+empty header counts as ``org="unattributed"``; a malformed one as ``org="invalid"``.
+
+.. code-block:: yaml
+
+  tracing:
+    attribution_header: x-fikar-org

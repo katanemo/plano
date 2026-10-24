@@ -61,6 +61,24 @@ pub trait ProviderRequest: Send + Sync {
 }
 
 impl ProviderRequestType {
+    /// For a streaming OpenAI chat request, ask the provider to append the final
+    /// `usage` chunk so the gateway can meter tokens even when the client did not
+    /// request it. Returns true when the request was changed.
+    pub fn ensure_stream_usage(&mut self) -> bool {
+        match self {
+            Self::ChatCompletionsRequest(r) if r.stream.unwrap_or(false) => {
+                let opts = r.stream_options.get_or_insert_with(Default::default);
+                if opts.include_usage == Some(true) {
+                    false
+                } else {
+                    opts.include_usage = Some(true);
+                    true
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// Set message history from OpenAI Message format
     /// This converts OpenAI messages to the appropriate format for each provider type
     pub fn set_messages(&mut self, messages: &[crate::apis::openai::Message]) {
@@ -937,6 +955,37 @@ mod tests {
         assert!(req.stream_options.is_none());
         assert!(req.reasoning_effort.is_none());
         assert!(req.web_search_options.is_none());
+    }
+
+    #[test]
+    fn ensure_stream_usage_sets_include_usage_only_for_streaming_chat() {
+        let streaming =
+            br#"{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}]}"#;
+        let mut req = ProviderRequestType::try_from((
+            &streaming[..],
+            &SupportedAPIsFromClient::OpenAIChatCompletions(ChatCompletions),
+        ))
+        .unwrap();
+        assert!(req.ensure_stream_usage());
+        assert!(!req.ensure_stream_usage(), "second call is a no-op");
+        match &req {
+            ProviderRequestType::ChatCompletionsRequest(r) => {
+                assert_eq!(r.stream_options.as_ref().unwrap().include_usage, Some(true));
+            }
+            _ => panic!("expected chat completions"),
+        }
+
+        let plain = br#"{"model":"m","messages":[{"role":"user","content":"hi"}]}"#;
+        let mut req = ProviderRequestType::try_from((
+            &plain[..],
+            &SupportedAPIsFromClient::OpenAIChatCompletions(ChatCompletions),
+        ))
+        .unwrap();
+        assert!(!req.ensure_stream_usage());
+        match &req {
+            ProviderRequestType::ChatCompletionsRequest(r) => assert!(r.stream_options.is_none()),
+            _ => panic!("expected chat completions"),
+        }
     }
 
     #[test]

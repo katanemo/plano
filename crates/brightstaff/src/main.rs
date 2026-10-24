@@ -5,6 +5,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 use brightstaff::app_state::AppState;
 use brightstaff::handlers::agents::orchestrator::agent_chat;
 use brightstaff::handlers::debug;
+use brightstaff::handlers::embeddings::embeddings;
 use brightstaff::handlers::empty;
 use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
@@ -334,6 +335,13 @@ async fn init_app_state(
         .as_ref()
         .and_then(|tracing| tracing.span_attributes.clone());
 
+    let attribution_header = config
+        .tracing
+        .as_ref()
+        .and_then(|tracing| tracing.attribution_header.clone())
+        .map(|h| h.trim().to_ascii_lowercase())
+        .filter(|h| !h.is_empty());
+
     // Resolve the distinct_id header from the first PostHog exporter that
     // declares one, so the LLM handler can stamp `plano.distinct_id` on spans.
     let distinct_id_header = config
@@ -414,6 +422,8 @@ async fn init_app_state(
         llm_provider_url,
         span_attributes,
         distinct_id_header,
+        attribution_header,
+        usage_log: brightstaff::usage_log::UsageLog::from_env(),
         http_client: reqwest::Client::new(),
         filter_pipeline,
         signals_enabled,
@@ -528,6 +538,7 @@ fn handler_label_for(method: &Method, path: &str) -> &'static str {
         (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
             metric_labels::HANDLER_LLM_CHAT
         }
+        (&Method::POST, "/v1/embeddings") => metric_labels::HANDLER_EMBEDDINGS,
         (&Method::POST, "/function_calling") => metric_labels::HANDLER_FUNCTION_CALLING,
         (&Method::GET, "/v1/models" | "/agents/v1/models") => metric_labels::HANDLER_LIST_MODELS,
         (&Method::OPTIONS, "/v1/models" | "/agents/v1/models") => {
@@ -605,6 +616,11 @@ async fn dispatch(
     match (req.method(), path.as_str()) {
         (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
             llm_chat(req, Arc::clone(&state))
+                .with_context(parent_cx)
+                .await
+        }
+        (&Method::POST, "/v1/embeddings") => {
+            embeddings(req, Arc::clone(&state))
                 .with_context(parent_cx)
                 .await
         }
@@ -692,6 +708,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn embeddings_path_has_its_own_handler_label() {
+        assert_eq!(
+            handler_label_for(&Method::POST, "/v1/embeddings"),
+            "embeddings"
+        );
+        // Only POST is routed; anything else stays a 404.
+        assert_eq!(
+            handler_label_for(&Method::GET, "/v1/embeddings"),
+            metric_labels::HANDLER_NOT_FOUND
+        );
+    }
 
     fn test_agent(id: &str) -> Agent {
         Agent {

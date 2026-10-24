@@ -759,7 +759,7 @@ pub struct FunctionCallDelta {
 
 /// Stream options for controlling streaming behavior
 #[skip_serializing_none]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct StreamOptions {
     pub include_usage: Option<bool>,
 }

@@ -163,6 +163,10 @@ pub mod plano {
     /// `tracing.exporters[].distinct_id_header`. Absent for anonymous calls.
     pub const DISTINCT_ID: &str = "plano.distinct_id";
 
+    /// Caller organization taken from `tracing.attribution_header`, after
+    /// validation (`unattributed` when the header is missing).
+    pub const ORG: &str = "plano.org";
+
     /// Whether the session's provider cache was inferred warm at decision time
     /// (from the idle gap vs. the provider's cache window).
     pub const CACHE_WARM: &str = "plano.cache.warm";

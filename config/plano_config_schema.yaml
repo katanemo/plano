@@ -469,6 +469,8 @@ properties:
         type: boolean
       opentracing_grpc_endpoint:
         type: string
+      attribution_header:
+        type: string
       span_attributes:
         type: object
         properties:

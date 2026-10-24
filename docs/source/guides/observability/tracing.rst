@@ -707,3 +707,10 @@ External References
 
 .. Note::
    Replace placeholders such as ``<Your-Aws-Region>`` and ``<Your-Datadog-Api-Key>`` with your actual configurations.
+
+Organization attribute
+~~~~~~~~~~~~~~~~~~~~~~
+
+``tracing.attribution_header`` (see the monitoring guide) also stamps the validated
+organization value as ``plano.org`` on every ``plano(llm)`` span, independent of
+``span_attributes``.

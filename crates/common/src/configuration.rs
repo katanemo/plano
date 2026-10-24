@@ -483,6 +483,11 @@ pub struct Tracing {
     pub random_sampling: Option<u32>,
     pub opentracing_grpc_endpoint: Option<String>,
     pub span_attributes: Option<SpanAttributes>,
+    /// Request header whose validated value becomes the `org` label on the
+    /// token counters and the `plano.org` span attribute, then is stripped
+    /// before the request reaches the provider. Missing or empty values are
+    /// counted as `unattributed`, malformed ones as `invalid`.
+    pub attribution_header: Option<String>,
     /// Provider-agnostic telemetry export destinations. Each entry is tagged by
     /// its `type` (e.g. `posthog`) so new backends can be added without breaking
     /// existing configs. LLM spans are translated into each backend's native
