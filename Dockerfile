@@ -1,5 +1,5 @@
 # Envoy version — keep in sync with cli/planoai/consts.py ENVOY_VERSION
-ARG ENVOY_VERSION=v1.37.0
+ARG ENVOY_VERSION=v1.37.8
 
 # --- Dependency cache ---
 FROM rust:1.93.0 AS deps
