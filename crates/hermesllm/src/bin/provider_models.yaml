@@ -76,7 +76,6 @@ providers:
   - digitalocean/glm-5
   - digitalocean/kimi-k2.5
   - digitalocean/llama3.3-70b-instruct
-  - digitalocean/minimax-m2.5
   - digitalocean/nvidia-nemotron-3-super-120b
   - digitalocean/qwen3-coder-flash
   - digitalocean/qwen3.5-397b-a17b
@@ -127,6 +126,7 @@ providers:
   - meta/muse-spark-1.1
   minimax:
   - minimax/MiniMax-M3
+  - minimax/MiniMax-M3.1-Flash
   mistralai:
   - mistralai/codestral-2508
   - mistralai/codestral-latest
