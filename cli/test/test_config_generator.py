@@ -7,6 +7,7 @@ from planoai.config_generator import (
     migrate_inline_routing_preferences,
     normalize_kimi_code_base_url,
     validate_and_render_schema,
+    validate_prompt_config,
 )
 
 
@@ -866,3 +867,93 @@ def test_apply_kimi_code_provider_defaults_injects_user_agent():
     apply_kimi_code_provider_defaults(provider)
     assert provider["base_url"] == "https://api.kimi.com/coding/v1"
     assert provider["headers"]["User-Agent"] == "KimiCLI/1.3"
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer ${AGENT_TOKEN}"}])
+def test_agent_headers_validate_and_render(tmp_path, monkeypatch, headers):
+    config = {
+        "version": "v0.4.0",
+        "agents": [
+            {"id": "private_agent", "url": "http://127.0.0.1:10510", "headers": headers}
+        ],
+        "listeners": [{"name": "agents", "type": "agent", "port": 8000}],
+        "model_providers": [
+            {"model": "openai/gpt-4o-mini", "access_key": "${MODEL_TOKEN}"}
+        ],
+    }
+    config_file = tmp_path / "plano.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    rendered_file = tmp_path / "rendered.yaml"
+    monkeypatch.setenv("PLANO_CONFIG_FILE", str(config_file))
+    monkeypatch.setenv("PLANO_CONFIG_SCHEMA_FILE", "../config/plano_config_schema.yaml")
+    monkeypatch.setenv("TEMPLATE_ROOT", "../config")
+    monkeypatch.setenv("ENVOY_CONFIG_TEMPLATE_FILE", "envoy.template.yaml")
+    monkeypatch.setenv("PLANO_CONFIG_FILE_RENDERED", str(rendered_file))
+    monkeypatch.setenv("ENVOY_CONFIG_FILE_RENDERED", str(tmp_path / "envoy.yaml"))
+    validate_and_render_schema()
+    assert yaml.safe_load(rendered_file.read_text())["agents"] == config["agents"]
+
+
+@pytest.mark.parametrize(
+    "headers", [{"Authorization": 123}, ["Authorization"], "token"]
+)
+def test_agent_headers_require_string_map(tmp_path, headers):
+    from jsonschema import ValidationError
+
+    config = {
+        "version": "v0.4.0",
+        "agents": [
+            {"id": "private_agent", "url": "http://127.0.0.1", "headers": headers}
+        ],
+    }
+    config_file = tmp_path / "plano.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    with pytest.raises(ValidationError):
+        validate_prompt_config(str(config_file), "../config/plano_config_schema.yaml")
+
+
+def test_agent_header_environment_variables_expand_in_native_config(
+    tmp_path, monkeypatch
+):
+    from planoai import native_runner
+
+    config_file = tmp_path / "plano.yaml"
+    config_file.write_text(
+        yaml.safe_dump(
+            {
+                "version": "v0.4.0",
+                "agents": [
+                    {
+                        "id": "private_agent",
+                        "url": "http://127.0.0.1:10510",
+                        "headers": {"Authorization": "Bearer ${AGENT_TOKEN}"},
+                    }
+                ],
+                "listeners": [{"name": "agents", "type": "agent", "port": 8000}],
+                "model_providers": [
+                    {"model": "openai/gpt-4o-mini", "access_key": "${MODEL_TOKEN}"}
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr(native_runner, "PLANO_RUN_DIR", str(tmp_path / "run"))
+    # Only render the real config; no Envoy/WASM binary download or process is needed.
+    monkeypatch.setattr(
+        native_runner,
+        "ensure_wasm_plugins",
+        lambda: ("/unused/prompt.wasm", "/unused/llm.wasm"),
+    )
+    _, rendered = native_runner.render_native_config(
+        str(config_file),
+        {
+            "AGENT_TOKEN": "synthetic-agent-token",
+            "MODEL_TOKEN": "synthetic-model-token",
+        },
+    )
+    with open(rendered) as file:
+        config = yaml.safe_load(file)
+    assert (
+        config["agents"][0]["headers"]["Authorization"]
+        == "Bearer synthetic-agent-token"
+    )
+    assert "${AGENT_TOKEN}" in config_file.read_text()

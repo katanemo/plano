@@ -20,6 +20,11 @@ properties:
           type: string
         url:
           type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Headers added to this agent's outbound requests, overriding matching incoming headers. Supports the usual environment variable substitution."
       additionalProperties: false
       required:
         - id

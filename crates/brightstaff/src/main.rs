@@ -697,6 +697,7 @@ mod tests {
         Agent {
             id: id.to_string(),
             transport: None,
+            headers: None,
             tool: None,
             url: "http://localhost:10500".to_string(),
             agent_type: Some("http".to_string()),
