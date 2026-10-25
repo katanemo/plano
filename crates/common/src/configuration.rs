@@ -49,7 +49,8 @@ pub struct ModelAlias {
     pub target: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(derivative::Derivative, Clone, Serialize, Deserialize)]
+#[derivative(Debug)]
 pub struct Agent {
     pub id: String,
     pub transport: Option<String>,
@@ -57,6 +58,9 @@ pub struct Agent {
     pub url: String,
     #[serde(rename = "type")]
     pub agent_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[derivative(Debug = "ignore")]
+    pub headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -940,6 +944,24 @@ mod test {
         DEFAULT_MIN_PREFIX_TOKENS,
     };
     use crate::api::open_ai::ToolType;
+
+    #[test]
+    fn test_agent_headers_roundtrip_and_debug_redaction() {
+        let agent: super::Agent = serde_yaml::from_str(
+            "id: private_agent\nurl: http://localhost:10510\nheaders:\n  Authorization: Bearer synthetic-private-token\n",
+        ).unwrap();
+        assert_eq!(
+            agent.headers.as_ref().unwrap()["Authorization"],
+            "Bearer synthetic-private-token"
+        );
+        assert!(!format!("{agent:?}").contains("synthetic-private-token"));
+        let roundtrip: super::Agent =
+            serde_yaml::from_str(&serde_yaml::to_string(&agent).unwrap()).unwrap();
+        assert_eq!(agent.headers, roundtrip.headers);
+        let no_headers: super::Agent =
+            serde_yaml::from_str("id: public_agent\nurl: http://localhost:10520\n").unwrap();
+        assert!(no_headers.headers.is_none());
+    }
 
     #[test]
     fn test_deserialize_configuration() {

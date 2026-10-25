@@ -28,6 +28,8 @@ pub enum PipelineError {
     ParseError(#[from] serde_json::Error),
     #[error("Agent '{0}' not found in agent map")]
     AgentNotFound(String),
+    #[error("Invalid configured headers for agent '{0}'")]
+    InvalidAgentHeaders(String),
     #[error("No choices in response from agent '{0}'")]
     NoChoicesInResponse(String),
     #[error("No content in response from agent '{0}'")]
@@ -82,9 +84,20 @@ impl PipelineProcessor {
     /// content-length, injects trace context, sets upstream host and retry.
     fn build_agent_headers(
         request_headers: &HeaderMap,
-        agent_id: &str,
+        agent: &Agent,
     ) -> Result<HeaderMap, PipelineError> {
+        let agent_id = &agent.id;
         let mut headers = request_headers.clone();
+        if let Some(configured_headers) = &agent.headers {
+            for (name, value) in configured_headers {
+                let name = hyper::header::HeaderName::from_bytes(name.as_bytes())
+                    .map_err(|_| PipelineError::InvalidAgentHeaders(agent_id.clone()))?;
+                let mut value = hyper::header::HeaderValue::from_str(value)
+                    .map_err(|_| PipelineError::InvalidAgentHeaders(agent_id.clone()))?;
+                value.set_sensitive(true);
+                headers.insert(name, value);
+            }
+        }
         headers.remove(hyper::header::CONTENT_LENGTH);
 
         // Inject OpenTelemetry trace context automatically
@@ -113,10 +126,10 @@ impl PipelineProcessor {
     fn build_mcp_headers(
         &self,
         request_headers: &HeaderMap,
-        agent_id: &str,
+        agent: &Agent,
         session_id: Option<&str>,
     ) -> Result<HeaderMap, PipelineError> {
-        let mut headers = Self::build_agent_headers(request_headers, agent_id)?;
+        let mut headers = Self::build_agent_headers(request_headers, agent)?;
 
         headers.insert(
             "Accept",
@@ -252,7 +265,7 @@ impl PipelineProcessor {
         let mcp_session_id = if let Some(session_id) = self.agent_id_session_map.get(&agent.id) {
             session_id.clone()
         } else {
-            let session_id = self.get_new_session_id(&agent.id, request_headers).await?;
+            let session_id = self.get_new_session_id(agent, request_headers).await?;
             self.agent_id_session_map
                 .insert(agent.id.clone(), session_id.clone());
             session_id
@@ -268,7 +281,7 @@ impl PipelineProcessor {
             self.build_tool_call_request_with_body(tool_name, &body, request_path)?;
 
         let agent_headers =
-            self.build_mcp_headers(request_headers, &agent.id, Some(&mcp_session_id))?;
+            self.build_mcp_headers(request_headers, agent, Some(&mcp_session_id))?;
 
         let response = self
             .send_mcp_request(&json_rpc_request, &agent_headers, &agent.id)
@@ -372,10 +385,11 @@ impl PipelineProcessor {
     /// Send initialized notification after session creation
     async fn send_initialized_notification(
         &self,
-        agent_id: &str,
+        agent: &Agent,
         session_id: &str,
         request_headers: &HeaderMap,
     ) -> Result<(), PipelineError> {
+        let agent_id = &agent.id;
         let initialized_notification = JsonRpcNotification {
             jsonrpc: JSON_RPC_VERSION.to_string(),
             method: MCP_INITIALIZE_NOTIFICATION.to_string(),
@@ -385,7 +399,7 @@ impl PipelineProcessor {
         let notification_body = serde_json::to_string(&initialized_notification)?;
         debug!("sending initialized notification for agent {}", agent_id);
 
-        let headers = self.build_mcp_headers(request_headers, agent_id, Some(session_id))?;
+        let headers = self.build_mcp_headers(request_headers, agent, Some(session_id))?;
 
         let response = self
             .client
@@ -405,13 +419,14 @@ impl PipelineProcessor {
 
     async fn get_new_session_id(
         &self,
-        agent_id: &str,
+        agent: &Agent,
         request_headers: &HeaderMap,
     ) -> Result<String, PipelineError> {
+        let agent_id = &agent.id;
         info!("initializing MCP session for agent {}", agent_id);
 
         let initialize_request = self.build_initialize_request();
-        let headers = self.build_mcp_headers(request_headers, agent_id, None)?;
+        let headers = self.build_mcp_headers(request_headers, agent, None)?;
 
         let response = self
             .send_mcp_request(&initialize_request, &headers, agent_id)
@@ -437,7 +452,7 @@ impl PipelineProcessor {
         );
 
         // Send initialized notification
-        self.send_initialized_notification(agent_id, &session_id, &headers)
+        self.send_initialized_notification(agent, &session_id, &headers)
             .await?;
 
         Ok(session_id)
@@ -468,7 +483,7 @@ impl PipelineProcessor {
             span.update_name(format!("execute_raw_filter ({})", agent.id));
         });
 
-        let mut agent_headers = Self::build_agent_headers(request_headers, &agent.id)?;
+        let mut agent_headers = Self::build_agent_headers(request_headers, agent)?;
         agent_headers.insert(
             "Accept",
             hyper::header::HeaderValue::from_static("application/json"),
@@ -582,7 +597,7 @@ impl PipelineProcessor {
             .map_err(|e| PipelineError::NoContentInResponse(e.to_string()))?;
         debug!("sending request to terminal agent {}", terminal_agent.id);
 
-        let agent_headers = Self::build_agent_headers(request_headers, &terminal_agent.id)?;
+        let agent_headers = Self::build_agent_headers(request_headers, terminal_agent)?;
 
         let response = self
             .client
@@ -654,6 +669,7 @@ mod tests {
         let agent = Agent {
             id: "agent-1".to_string(),
             transport: None,
+            headers: None,
             tool: None,
             url: server_url,
             agent_type: None,
@@ -694,6 +710,7 @@ mod tests {
         let agent = Agent {
             id: "agent-3".to_string(),
             transport: None,
+            headers: None,
             tool: None,
             url: server_url,
             agent_type: None,
@@ -747,6 +764,7 @@ mod tests {
         let agent = Agent {
             id: "agent-2".to_string(),
             transport: None,
+            headers: None,
             tool: None,
             url: server_url,
             agent_type: None,
@@ -767,5 +785,169 @@ mod tests {
             }
             _ => panic!("Expected client error when isError flag is set"),
         }
+    }
+
+    fn configured_agent(id: &str, url: &str, headers: serde_json::Value) -> Agent {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "url": url, "headers": headers,
+        }))
+        .unwrap()
+    }
+
+    fn test_client_request() -> ProviderRequestType {
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}],
+        }))
+        .unwrap();
+        let api =
+            hermesllm::clients::SupportedAPIsFromClient::from_endpoint("/v1/chat/completions")
+                .unwrap();
+        ProviderRequestType::try_from((&bytes[..], &api)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn configured_headers_are_selected_per_agent_without_leaking() {
+        let mut server = Server::new_async().await;
+        let first = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "private_agent")
+            .match_header("authorization", "Bearer synthetic-agent-token")
+            .match_header("x-agent-only", "first")
+            .with_status(200)
+            .create_async()
+            .await;
+        let second = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("x-arch-upstream", "public_agent")
+            .match_header("authorization", "Bearer synthetic-caller-token")
+            .match_header("x-agent-only", mockito::Matcher::Missing)
+            .with_status(200)
+            .create_async()
+            .await;
+        let processor = PipelineProcessor::new(server.url());
+        let private = configured_agent(
+            "private_agent",
+            &server.url(),
+            serde_json::json!({
+                "aUtHoRiZaTiOn": "Bearer synthetic-agent-token", "x-agent-only": "first",
+                "x-arch-upstream": "must-not-change-routing", "content-length": "999",
+            }),
+        );
+        let public = configured_agent("public_agent", &server.url(), serde_json::Value::Null);
+        let mut incoming = HeaderMap::new();
+        incoming.insert(
+            "authorization",
+            hyper::header::HeaderValue::from_static("Bearer synthetic-caller-token"),
+        );
+        for agent in [&private, &public] {
+            let response = processor
+                .invoke_agent(&[], test_client_request(), agent, &incoming)
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+        }
+        assert_eq!(incoming["authorization"], "Bearer synthetic-caller-token");
+        assert!(!incoming.contains_key("x-agent-only"));
+        first.assert_async().await;
+        second.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn invalid_configured_headers_fail_without_disclosing_values() {
+        let mut server = Server::new_async().await;
+        let unexpected = server
+            .mock("POST", "/v1/chat/completions")
+            .expect(0)
+            .create_async()
+            .await;
+        let processor = PipelineProcessor::new(server.url());
+        for headers in [
+            serde_json::json!({"bad header": "synthetic-private-token"}),
+            serde_json::json!({"authorization": "synthetic-private-token\ninvalid"}),
+        ] {
+            let agent = configured_agent("private_agent", &server.url(), headers);
+            let result = processor
+                .invoke_agent(&[], test_client_request(), &agent, &HeaderMap::new())
+                .await;
+            let error = result.unwrap_err().to_string();
+            assert!(error.contains("Invalid configured headers"), "{error}");
+            assert!(!error.contains("synthetic-private-token"));
+        }
+        unexpected.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn configured_headers_authenticate_mcp_initialization_and_calls() {
+        let mut server = Server::new_async().await;
+        let initialize = server
+            .mock("POST", "/mcp")
+            .match_header("authorization", "Bearer synthetic-agent-token")
+            .match_body(mockito::Matcher::PartialJson(
+                serde_json::json!({"method": "initialize"}),
+            ))
+            .with_header("mcp-session-id", "synthetic-session")
+            .with_body("{}")
+            .create_async()
+            .await;
+        let notification = server
+            .mock("POST", "/mcp")
+            .match_header("authorization", "Bearer synthetic-agent-token")
+            .match_header("mcp-session-id", "synthetic-session")
+            .match_body(mockito::Matcher::PartialJson(
+                serde_json::json!({"method": "notifications/initialized"}),
+            ))
+            .with_status(202)
+            .create_async()
+            .await;
+        let tool = server
+            .mock("POST", "/mcp")
+            .match_header("authorization", "Bearer synthetic-agent-token")
+            .match_header("mcp-session-id", "synthetic-session")
+            .match_body(mockito::Matcher::PartialJson(
+                serde_json::json!({"method": "tools/call"}),
+            ))
+            .with_status(400)
+            .with_body("test tool error")
+            .create_async()
+            .await;
+        let agent = configured_agent(
+            "private_agent",
+            &server.url(),
+            serde_json::json!({"Authorization": "Bearer synthetic-agent-token"}),
+        );
+        let mut processor = PipelineProcessor::new(server.url());
+        let result = processor
+            .execute_mcp_filter_raw(b"{}", &agent, &HeaderMap::new(), "/v1/chat/completions")
+            .await;
+        assert!(matches!(
+            result,
+            Err(PipelineError::ClientError { status: 400, .. })
+        ));
+        initialize.assert_async().await;
+        notification.assert_async().await;
+        tool.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn configured_headers_authenticate_raw_agent_filters() {
+        let mut server = Server::new_async().await;
+        let request = server
+            .mock("POST", "/v1/chat/completions")
+            .match_header("authorization", "Bearer synthetic-agent-token")
+            .with_status(200)
+            .with_body("{}")
+            .create_async()
+            .await;
+        let agent = configured_agent(
+            "private_agent",
+            &server.url(),
+            serde_json::json!({"Authorization": "Bearer synthetic-agent-token"}),
+        );
+        let mut processor = PipelineProcessor::new(server.url());
+        let result = processor
+            .execute_raw_filter(b"{}", &agent, &HeaderMap::new(), "/v1/chat/completions")
+            .await;
+        assert_eq!(result.unwrap(), Bytes::from_static(b"{}"));
+        request.assert_async().await;
     }
 }

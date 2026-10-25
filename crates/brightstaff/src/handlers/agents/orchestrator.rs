@@ -500,6 +500,7 @@ mod tests {
                         url: "http://unused.invalid".to_string(),
                         tool: None,
                         transport: None,
+                        headers: None,
                     },
                 )
             })

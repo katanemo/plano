@@ -7,6 +7,28 @@ The following is a complete reference of the ``plano_config.yml`` that controls 
 the Plano gateway. This where you enable capabilities like routing to upstream LLm providers, defining prompt_targets
 where prompts get routed to, apply guardrails, and enable critical agent observability features.
 
+Agent headers
+-------------
+
+Each entry under ``agents`` may include an optional ``headers`` map of strings. Plano adds these headers only to
+requests for that selected agent, including calls made when it is used in a filter chain. Configured values override
+matching incoming headers (header names are case-insensitive). Other agents keep their own configuration, and omitting
+``headers`` preserves existing header forwarding. Plano's routing, tracing, retry and content-length handling still apply.
+
+Use the usual ``$VAR`` or ``${VAR}`` environment variable substitution to supply credentials at startup:
+
+.. code-block:: yaml
+
+    agents:
+      - id: billing_agent
+        url: http://billing-agent.team-x:8080
+        headers:
+          Authorization: "Bearer ${BILLING_AGENT_TOKEN}"
+
+Invalid HTTP header names or values cause the agent request to fail without including the configured value in the error.
+This uses the existing startup environment substitution; it does not introduce a secret-manager integration or a new
+``passthrough_auth`` option for agents.
+
 Model provider headers
 ----------------------
 
