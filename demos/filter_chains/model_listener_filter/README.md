@@ -150,6 +150,29 @@ curl http://localhost:12000/v1/chat/completions \
 
 The fake provider emits `SECRET_TOKEN`; the output filter redacts it to `[REDACTED]`.
 
+## Streaming and Chunk Boundaries
+
+By default (`output_filter_mode: streaming`) Plano sends each upstream chunk to the output
+filters on its own. A filter that matches text, like `output_filter.py`, misses a value
+the provider splits across two chunks (for example `SECRET_` then `TOKEN.`), and if a
+filter call fails the original chunk is forwarded. To filter the complete response, set
+`output_filter_mode: buffered` on the model listener:
+
+```yaml
+listeners:
+  - type: model
+    name: llm_gateway
+    port: 12000
+    output_filters:
+      - output_redactor
+    output_filter_mode: buffered
+```
+
+Plano then collects the whole upstream response, sends it through the filters once and
+returns the result, so the client receives the response only after the provider
+finishes. If a filter fails, the response body is withheld. See
+[#1036](https://github.com/katanemo/plano/issues/1036).
+
 ## Why This Helps Developers
 
 Model-listener filters are guardrails for applications that call Plano as a transparent

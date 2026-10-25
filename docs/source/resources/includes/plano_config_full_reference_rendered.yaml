@@ -101,6 +101,7 @@ listeners:
     protocol: https
     provider_interface: moonshotai
   name: model_1
+  output_filter_mode: streaming
   output_filters:
   - input_guards
   port: 12000

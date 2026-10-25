@@ -90,11 +90,25 @@ impl ResolvedFilterChain {
     }
 }
 
+/// How a model listener hands the upstream response to its output filters.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputFilterMode {
+    /// Each upstream chunk goes through the filter chain on its own, so a filter
+    /// never sees text that spans a chunk boundary.
+    #[default]
+    Streaming,
+    /// The whole upstream body is collected and filtered once before anything is
+    /// returned. A filter error withholds the body.
+    Buffered,
+}
+
 /// Holds resolved input and output filter chains for a model listener.
 #[derive(Debug, Clone, Default)]
 pub struct FilterPipeline {
     pub input: Option<ResolvedFilterChain>,
     pub output: Option<ResolvedFilterChain>,
+    pub output_mode: OutputFilterMode,
 }
 
 impl FilterPipeline {
@@ -124,6 +138,7 @@ pub struct Listener {
     pub agents: Option<Vec<AgentFilterChain>>,
     pub input_filters: Option<Vec<String>>,
     pub output_filters: Option<Vec<String>>,
+    pub output_filter_mode: Option<OutputFilterMode>,
     pub port: u16,
 }
 
@@ -1226,6 +1241,43 @@ disable_signals: false
         let yaml_missing = "{}";
         let overrides: super::Overrides = serde_yaml::from_str(yaml_missing).unwrap();
         assert_eq!(overrides.disable_signals, None);
+    }
+
+    #[test]
+    fn test_listener_output_filter_mode_deserialize() {
+        let yaml = r#"
+type: model
+name: llm
+port: 12000
+output_filters:
+  - output_guard
+output_filter_mode: buffered
+"#;
+        let listener: super::Listener = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            listener.output_filter_mode,
+            Some(super::OutputFilterMode::Buffered)
+        );
+
+        let yaml_missing = r#"
+type: model
+name: llm
+port: 12000
+"#;
+        let listener: super::Listener = serde_yaml::from_str(yaml_missing).unwrap();
+        assert_eq!(listener.output_filter_mode, None);
+        assert_eq!(
+            listener.output_filter_mode.unwrap_or_default(),
+            super::OutputFilterMode::Streaming
+        );
+
+        let yaml_unknown = r#"
+type: model
+name: llm
+port: 12000
+output_filter_mode: chunked
+"#;
+        assert!(serde_yaml::from_str::<super::Listener>(yaml_unknown).is_err());
     }
 
     #[test]

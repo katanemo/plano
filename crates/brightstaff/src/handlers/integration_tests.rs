@@ -78,6 +78,7 @@ mod tests {
             agents: Some(vec![agent_pipeline.clone()]),
             input_filters: None,
             output_filters: None,
+            output_filter_mode: None,
             port: 8080,
             router: None,
         };

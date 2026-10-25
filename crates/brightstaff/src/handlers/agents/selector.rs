@@ -197,6 +197,7 @@ mod tests {
             agents: Some(agents),
             input_filters: None,
             output_filters: None,
+            output_filter_mode: None,
             port: 8080,
             router: None,
         }
