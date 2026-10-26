@@ -222,6 +222,9 @@ pub enum LatencyProvider {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Configuration {
     pub version: String,
+    /// Budget for retained legacy prompt-target callouts, independent of connect timeouts.
+    #[serde(default)]
+    pub request_timeout: RequestTimeout,
     pub endpoints: Option<HashMap<String, Endpoint>>,
     pub model_providers: Vec<LlmProvider>,
     pub model_aliases: Option<HashMap<String, ModelAlias>>,
@@ -244,6 +247,52 @@ pub struct Configuration {
     pub state_storage: Option<StateStorageConfig>,
     pub routing_preferences: Option<Vec<TopLevelRoutingPreference>>,
     pub model_metrics_sources: Option<Vec<MetricsSource>>,
+}
+
+/// A positive whole-second duration bounded by the proxy-WASM millisecond ABI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RequestTimeout(u32);
+
+impl Default for RequestTimeout {
+    fn default() -> Self {
+        Self(120_000)
+    }
+}
+
+impl RequestTimeout {
+    pub fn as_millis(self) -> u32 {
+        self.0
+    }
+
+    pub fn as_duration(self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.0.into())
+    }
+}
+
+impl Serialize for RequestTimeout {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&format!("{}s", self.0 / 1000))
+    }
+}
+
+impl<'de> Deserialize<'de> for RequestTimeout {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        let invalid = || {
+            serde::de::Error::custom("request_timeout must be whole seconds from 1s to 4294967s")
+        };
+        let seconds = value.strip_suffix('s').ok_or_else(invalid)?;
+        if seconds.starts_with('0') || !seconds.bytes().all(|c| c.is_ascii_digit()) {
+            return Err(invalid());
+        }
+        let millis = seconds
+            .parse::<u32>()
+            .ok()
+            .and_then(|seconds| seconds.checked_mul(1000))
+            .filter(|millis| *millis > 0)
+            .ok_or_else(invalid)?;
+        Ok(Self(millis))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -940,6 +989,44 @@ mod test {
         DEFAULT_MIN_PREFIX_TOKENS,
     };
     use crate::api::open_ai::ToolType;
+
+    #[test]
+    fn legacy_request_timeout_defaults_and_round_trips() {
+        let old_config = "version: v0.4.0\nmodel_providers: []\nlisteners: []\n";
+        let config: super::Configuration = serde_yaml::from_str(old_config).unwrap();
+        assert_eq!(config.request_timeout.as_millis(), 120_000);
+        for (value, millis) in [("1s", 1000), ("40s", 40_000), ("4294967s", 4_294_967_000)] {
+            let configured = format!("{old_config}request_timeout: {value}\n");
+            let config: super::Configuration = serde_yaml::from_str(&configured).unwrap();
+            assert_eq!(config.request_timeout.as_millis(), millis);
+            assert_eq!(
+                config.request_timeout.as_duration().as_millis(),
+                millis as u128
+            );
+            assert_eq!(serde_json::to_value(config.request_timeout).unwrap(), value);
+        }
+    }
+
+    #[test]
+    fn legacy_request_timeout_rejects_zero_invalid_and_overflowing_budgets() {
+        for value in [
+            "0s",
+            "-1s",
+            "1.5s",
+            "1m",
+            "01s",
+            "4294968s",
+            "999999999999999999999s",
+        ] {
+            assert!(
+                serde_json::from_value::<super::RequestTimeout>(serde_json::json!(value)).is_err(),
+                "accepted {value}"
+            );
+        }
+        for value in [serde_json::json!(120), serde_json::Value::Null] {
+            assert!(serde_json::from_value::<super::RequestTimeout>(value).is_err());
+        }
+    }
 
     #[test]
     fn test_deserialize_configuration() {

@@ -6,9 +6,8 @@ use common::{
     consts::{
         ARCH_FC_MODEL_NAME, ARCH_INTERNAL_CLUSTER_NAME, ARCH_ROUTING_HEADER,
         ARCH_UPSTREAM_HOST_HEADER, ASSISTANT_ROLE, CHAT_COMPLETIONS_PATH, HEALTHZ_PATH,
-        MODEL_SERVER_NAME, MODEL_SERVER_REQUEST_TIMEOUT_MS, REQUEST_ID_HEADER, TOOL_ROLE,
-        TRACE_PARENT_HEADER, USER_ROLE, X_ARCH_API_RESPONSE, X_ARCH_FC_MODEL_RESPONSE,
-        X_ARCH_STATE_HEADER, X_ARCH_TOOL_CALL,
+        MODEL_SERVER_NAME, REQUEST_ID_HEADER, TOOL_ROLE, TRACE_PARENT_HEADER, USER_ROLE,
+        X_ARCH_API_RESPONSE, X_ARCH_FC_MODEL_RESPONSE, X_ARCH_STATE_HEADER, X_ARCH_TOOL_CALL,
     },
     errors::ServerError,
     http::{CallArgs, Client},
@@ -20,7 +19,7 @@ use proxy_wasm::{traits::HttpContext, types::Action};
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 // HttpContext is the trait that allows the Rust code to interact with HTTP objects.
@@ -205,7 +204,7 @@ impl HttpContext for StreamContext {
         info!("on_http_request_body: sending request to model server");
         debug!("request body: {}", json_data);
 
-        let timeout_str = MODEL_SERVER_REQUEST_TIMEOUT_MS.to_string();
+        let timeout_str = self.request_timeout.as_millis().to_string();
 
         let mut headers = vec![
             (ARCH_UPSTREAM_HOST_HEADER, MODEL_SERVER_NAME),
@@ -230,7 +229,7 @@ impl HttpContext for StreamContext {
             headers,
             Some(json_data.as_bytes()),
             vec![],
-            Duration::from_secs(5),
+            self.request_timeout.as_duration(),
         );
 
         if let Some(content) = self.user_prompt.as_ref().unwrap().content.as_ref() {

@@ -11,6 +11,14 @@ properties:
       - v0.3.0
       - v0.4.0
 
+  request_timeout:
+    type: string
+    pattern: '^[1-9][0-9]*s$'
+    description: >
+      Request budget for retained legacy prompt_targets, in positive whole seconds
+      (1s through 4294967s). Defaults to 120s. Explicit prompt-listener timeouts
+      remain outer limits. Does not change Agent/model or connection timeouts.
+
   agents:
     type: array
     items:

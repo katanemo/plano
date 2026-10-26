@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 from planoai.utils import convert_legacy_listeners
 from jinja2 import Environment, FileSystemLoader
@@ -93,6 +94,27 @@ def get_endpoint_and_port(endpoint, protocol):
         else:
             port = 443
         return endpoint, port
+
+
+def legacy_request_timeout(config_yaml):
+    """Validate the single legacy callout budget before rendering it into WASM config."""
+    timeout = config_yaml.get("request_timeout", "120s")
+    if (
+        not isinstance(timeout, str)
+        or not re.fullmatch(r"[1-9][0-9]*s", timeout)
+        or int(timeout[:-1]) > 4_294_967
+    ):
+        raise ValueError("request_timeout must be whole seconds from 1s to 4294967s")
+    return timeout
+
+
+def has_prompt_listener_timeout(listeners):
+    if isinstance(listeners, dict):
+        return "timeout" in listeners.get("ingress_traffic", {})
+    return any(
+        listener.get("type") == "prompt" and "timeout" in listener
+        for listener in listeners or []
+    )
 
 
 def migrate_inline_routing_preferences(config_yaml):
@@ -244,9 +266,15 @@ def validate_and_render_schema():
 
     migrate_inline_routing_preferences(config_yaml)
 
+    source_listeners = config_yaml.get("listeners")
+    request_timeout = legacy_request_timeout(config_yaml)
+    config_yaml["request_timeout"] = request_timeout
+    prompt_timeout_explicit = has_prompt_listener_timeout(source_listeners)
     listeners, llm_gateway, prompt_gateway = convert_legacy_listeners(
-        config_yaml.get("listeners"), config_yaml.get("model_providers")
+        source_listeners, config_yaml.get("model_providers")
     )
+    if not prompt_timeout_explicit:
+        prompt_gateway["timeout"] = request_timeout
 
     config_yaml["listeners"] = listeners
 

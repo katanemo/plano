@@ -1,7 +1,7 @@
 use crate::metrics::Metrics;
 use crate::stream_context::StreamContext;
 use common::configuration::{
-    Configuration, Endpoint, Overrides, PromptGuards, PromptTarget, Tracing,
+    Configuration, Endpoint, Overrides, PromptGuards, PromptTarget, RequestTimeout, Tracing,
 };
 use common::http::Client;
 use common::stats::Gauge;
@@ -26,6 +26,7 @@ pub struct FilterContext {
     endpoints: Rc<Option<HashMap<String, Endpoint>>>,
     prompt_guards: Rc<PromptGuards>,
     tracing: Rc<Option<Tracing>>,
+    request_timeout: RequestTimeout,
 }
 
 impl FilterContext {
@@ -39,6 +40,7 @@ impl FilterContext {
             prompt_guards: Rc::new(PromptGuards::default()),
             endpoints: Rc::new(None),
             tracing: Rc::new(None),
+            request_timeout: RequestTimeout::default(),
         }
     }
 }
@@ -70,6 +72,7 @@ impl RootContext for FilterContext {
         };
 
         self.overrides = Rc::new(config.overrides);
+        self.request_timeout = config.request_timeout;
 
         let mut prompt_targets = HashMap::new();
         for pt in config.prompt_targets.unwrap_or_default() {
@@ -94,7 +97,7 @@ impl RootContext for FilterContext {
             context_id
         );
 
-        Some(Box::new(StreamContext::new(
+        let mut context = StreamContext::new(
             context_id,
             Rc::clone(&self.metrics),
             Rc::clone(&self.system_prompt),
@@ -102,7 +105,9 @@ impl RootContext for FilterContext {
             Rc::clone(&self.endpoints),
             Rc::clone(&self.overrides),
             Rc::clone(&self.tracing),
-        )))
+        );
+        context.request_timeout = self.request_timeout;
+        Some(Box::new(context))
     }
 
     fn get_type(&self) -> Option<ContextType> {
