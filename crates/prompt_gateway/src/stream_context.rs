@@ -4,11 +4,10 @@ use common::api::open_ai::{
     to_server_events, ArchState, ChatCompletionStreamResponse, ChatCompletionsRequest,
     ChatCompletionsResponse, ContentType, Message, ToolCall,
 };
-use common::configuration::{Endpoint, Overrides, PromptTarget, Tracing};
+use common::configuration::{Endpoint, Overrides, PromptTarget, RequestTimeout, Tracing};
 use common::consts::{
-    API_REQUEST_TIMEOUT_MS, ARCH_FC_MODEL_NAME, ARCH_INTERNAL_CLUSTER_NAME,
-    ARCH_UPSTREAM_HOST_HEADER, ASSISTANT_ROLE, DEFAULT_TARGET_REQUEST_TIMEOUT_MS, MESSAGES_KEY,
-    REQUEST_ID_HEADER, SYSTEM_ROLE, TOOL_ROLE, TRACE_PARENT_HEADER, USER_ROLE,
+    ARCH_FC_MODEL_NAME, ARCH_INTERNAL_CLUSTER_NAME, ARCH_UPSTREAM_HOST_HEADER, ASSISTANT_ROLE,
+    MESSAGES_KEY, REQUEST_ID_HEADER, SYSTEM_ROLE, TOOL_ROLE, TRACE_PARENT_HEADER, USER_ROLE,
     X_ARCH_FC_MODEL_RESPONSE,
 };
 use common::errors::ServerError;
@@ -22,7 +21,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
 pub enum ResponseHandlerType {
@@ -45,6 +44,7 @@ pub struct StreamCallContext {
 }
 
 pub struct StreamContext {
+    pub request_timeout: RequestTimeout,
     system_prompt: Rc<Option<String>>,
     pub prompt_targets: Rc<HashMap<String, PromptTarget>>,
     pub endpoints: Rc<Option<HashMap<String, Endpoint>>>,
@@ -79,6 +79,7 @@ impl StreamContext {
         tracing: Rc<Option<Tracing>>,
     ) -> Self {
         StreamContext {
+            request_timeout: RequestTimeout::default(),
             context_id,
             metrics,
             system_prompt,
@@ -171,7 +172,7 @@ impl StreamContext {
                     callout_context.request_body.messages.clone(),
                 );
                 let arch_messages_json = serde_json::to_string(&params).unwrap();
-                let timeout_str = DEFAULT_TARGET_REQUEST_TIMEOUT_MS.to_string();
+                let timeout_str = self.request_timeout.as_millis().to_string();
 
                 let mut headers = vec![
                     (":method", "POST"),
@@ -193,7 +194,7 @@ impl StreamContext {
                     headers,
                     Some(arch_messages_json.as_bytes()),
                     vec![],
-                    Duration::from_secs(5),
+                    self.request_timeout.as_duration(),
                 );
                 callout_context.response_handler_type = ResponseHandlerType::DefaultTarget;
                 callout_context.prompt_target_name = Some(default_prompt_target.name.clone());
@@ -422,7 +423,7 @@ impl StreamContext {
 
         debug!("on_http_call_response: api call body {:?}", api_call_body);
 
-        let timeout_str = API_REQUEST_TIMEOUT_MS.to_string();
+        let timeout_str = self.request_timeout.as_millis().to_string();
 
         let http_method_str = http_method.to_string();
         let mut headers: HashMap<_, _> = [
@@ -448,7 +449,10 @@ impl StreamContext {
         // override http headers that are set in the prompt target
         let http_headers = endpoint_details.http_headers.clone().unwrap_or_default();
         for (key, value) in http_headers.iter() {
-            headers.insert(key.as_str(), value.as_str());
+            // Keep the configured budget authoritative over this Envoy control header.
+            if !key.eq_ignore_ascii_case("x-envoy-upstream-rq-timeout-ms") {
+                headers.insert(key.as_str(), value.as_str());
+            }
         }
 
         let call_args = CallArgs::new(
@@ -457,7 +461,7 @@ impl StreamContext {
             headers.into_iter().collect(),
             api_call_body.as_deref().map(|s| s.as_bytes()),
             vec![],
-            Duration::from_secs(5),
+            self.request_timeout.as_duration(),
         );
 
         info!(

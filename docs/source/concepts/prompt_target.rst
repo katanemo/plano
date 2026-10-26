@@ -57,6 +57,30 @@ Configuring prompt targets involves defining them in Plano's configuration file.
 - ``endpoint``: Required if you want to call a tool or specific API. ``name`` and ``path`` ``http_method`` are the three attributes of the endpoint.
 - ``parameters`` (Optional): A list of parameters to extract from the prompt.
 
+Request Budget for Existing Configurations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Retained ``prompt_targets`` configurations can set one top-level request budget:
+
+.. code-block:: yaml
+
+    request_timeout: 120s
+
+The default is ``120s``. Values are positive whole seconds, from ``1s`` through
+``4294967s`` (the proxy-WASM millisecond limit). The budget applies to the legacy
+function-selection, default-target, and API-tool callouts, including their Envoy
+upstream timeout headers and dispatch deadlines. It replaces the fixed 30-second
+callout limit; it does not change connection timeouts or Agent/model listeners.
+API-tool ``http_headers`` cannot override this internal Envoy timeout header;
+use ``request_timeout`` to change the budget.
+
+The prompt listener also uses this budget when its ``timeout`` is omitted.
+An explicitly configured prompt-listener ``timeout`` remains an independent
+outer limit, in both list and legacy mapping listener formats. A smaller explicit
+listener timeout can therefore end the request sooner; increasing
+``request_timeout`` does not remove that limit. Multiple callouts share the
+outer request lifetime, rather than each extending it.
+
 .. _defining_prompt_target_parameters:
 
 Defining Parameters
