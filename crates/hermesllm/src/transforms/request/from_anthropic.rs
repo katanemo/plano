@@ -242,11 +242,17 @@ impl From<FinishReason> for MessagesStopReason {
 
 impl From<Usage> for MessagesUsage {
     fn from(val: Usage) -> Self {
+        // OpenAI `prompt_tokens` includes the cached subset, while Anthropic `input_tokens`
+        // excludes cache reads (they are reported separately), so move the cached tokens over.
+        let openai_cached = val
+            .prompt_tokens_details
+            .as_ref()
+            .and_then(|d| d.cached_tokens);
         MessagesUsage {
-            input_tokens: val.prompt_tokens,
+            input_tokens: val.prompt_tokens.saturating_sub(openai_cached.unwrap_or(0)),
             output_tokens: val.completion_tokens,
-            cache_creation_input_tokens: None,
-            cache_read_input_tokens: None,
+            cache_creation_input_tokens: val.cache_creation_input_tokens,
+            cache_read_input_tokens: openai_cached.or(val.cache_read_input_tokens),
         }
     }
 }
@@ -711,5 +717,68 @@ mod tests {
         } else {
             panic!("Expected text content block");
         }
+    }
+
+    #[test]
+    fn test_openai_usage_to_messages_usage_moves_cached_tokens_to_cache_read() {
+        use crate::apis::openai::{PromptTokensDetails, Usage};
+
+        let usage = Usage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: Some(80),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let messages_usage: MessagesUsage = usage.into();
+
+        // Anthropic `input_tokens` excludes the cache read, which is reported separately.
+        assert_eq!(messages_usage.input_tokens, 20);
+        assert_eq!(messages_usage.output_tokens, 20);
+        assert_eq!(messages_usage.cache_read_input_tokens, Some(80));
+        assert_eq!(messages_usage.cache_creation_input_tokens, None);
+    }
+
+    #[test]
+    fn test_openai_usage_without_cache_details_is_unchanged() {
+        use crate::apis::openai::Usage;
+
+        let usage = Usage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            ..Default::default()
+        };
+
+        let messages_usage: MessagesUsage = usage.into();
+
+        assert_eq!(messages_usage.input_tokens, 100);
+        assert_eq!(messages_usage.cache_read_input_tokens, None);
+        assert_eq!(messages_usage.cache_creation_input_tokens, None);
+    }
+
+    #[test]
+    fn test_openai_usage_with_gateway_cache_counters_passes_them_through() {
+        use crate::apis::openai::Usage;
+
+        // Gateways fronting Anthropic report Anthropic-style counters instead of prompt_tokens_details.
+        let usage = Usage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            cache_read_input_tokens: Some(80),
+            cache_creation_input_tokens: Some(12),
+            ..Default::default()
+        };
+
+        let messages_usage: MessagesUsage = usage.into();
+
+        assert_eq!(messages_usage.input_tokens, 100);
+        assert_eq!(messages_usage.cache_read_input_tokens, Some(80));
+        assert_eq!(messages_usage.cache_creation_input_tokens, Some(12));
     }
 }
