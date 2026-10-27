@@ -26,13 +26,6 @@ impl TryFrom<ChatCompletionsResponse> for MessagesResponse {
             .map(|fr| fr.into())
             .unwrap_or(MessagesStopReason::EndTurn);
 
-        let usage = MessagesUsage {
-            input_tokens: resp.usage.prompt_tokens,
-            output_tokens: resp.usage.completion_tokens,
-            cache_creation_input_tokens: None,
-            cache_read_input_tokens: None,
-        };
-
         Ok(MessagesResponse {
             id: resp.id,
             obj_type: "message".to_string(),
@@ -41,7 +34,7 @@ impl TryFrom<ChatCompletionsResponse> for MessagesResponse {
             model: resp.model,
             stop_reason,
             stop_sequence: None,
-            usage,
+            usage: resp.usage.into(),
             container: None,
         })
     }
@@ -757,5 +750,33 @@ mod tests {
 
         // Should use fallback model name
         assert_eq!(anthropic_response_fallback.model, "bedrock-model");
+    }
+
+    #[test]
+    fn test_openai_chat_response_to_anthropic_reports_cached_tokens_as_cache_read() {
+        let openai_response: ChatCompletionsResponse = serde_json::from_value(json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "Hello"},
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+                "prompt_tokens_details": {"cached_tokens": 80}
+            }
+        }))
+        .unwrap();
+
+        let anthropic_response: MessagesResponse = openai_response.try_into().unwrap();
+
+        assert_eq!(anthropic_response.usage.input_tokens, 20);
+        assert_eq!(anthropic_response.usage.output_tokens, 20);
+        assert_eq!(anthropic_response.usage.cache_read_input_tokens, Some(80));
     }
 }
