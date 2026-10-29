@@ -31,6 +31,7 @@ def test_zero_env_vars_produces_pure_passthrough():
     assert "vercel" in names
     assert "openrouter" in names
     assert "edenai" in names
+    assert "runcrate" in names
     assert "openai" in names
     assert "anthropic" in names
 
@@ -125,3 +126,18 @@ def test_edenai_env_key_promotes_to_env_keyed():
     by_name = {p["name"]: p for p in cfg["model_providers"]}
     assert by_name["edenai"].get("access_key") == "$EDENAI_API_KEY"
     assert by_name["edenai"].get("passthrough_auth") is None
+
+
+def test_provider_defaults_runcrate_is_configured():
+    by_name = {p.name: p for p in PROVIDER_DEFAULTS}
+    assert "runcrate" in by_name
+    assert by_name["runcrate"].env_var == "RUNCRATE_API_KEY"
+    assert by_name["runcrate"].base_url == "https://api.runcrate.ai/v1"
+    assert by_name["runcrate"].model_pattern == "runcrate/*"
+
+
+def test_runcrate_env_key_promotes_to_env_keyed():
+    cfg = synthesize_default_config(env={"RUNCRATE_API_KEY": "rc-1"})
+    by_name = {p["name"]: p for p in cfg["model_providers"]}
+    assert by_name["runcrate"].get("access_key") == "$RUNCRATE_API_KEY"
+    assert by_name["runcrate"].get("passthrough_auth") is None

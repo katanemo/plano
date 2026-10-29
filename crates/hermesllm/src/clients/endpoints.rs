@@ -768,4 +768,30 @@ mod tests {
             "/v1/responses"
         );
     }
+
+    #[test]
+    fn test_runcrate_targets_chat_completions_under_base_url_prefix() {
+        // `base_url: https://api.runcrate.ai/v1` gives a `/v1` path prefix; every
+        // client API lands on Runcrate's OpenAI-compatible /v1/chat/completions.
+        let chat = SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let messages = SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
+        let responses = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        for (api, request_path) in [
+            (chat, "/v1/chat/completions"),
+            (messages, "/v1/messages"),
+            (responses, "/v1/responses"),
+        ] {
+            assert_eq!(
+                api.target_endpoint_for_provider(
+                    &ProviderId::Runcrate,
+                    request_path,
+                    "deepseek-ai/DeepSeek-V4.1-Flash",
+                    true,
+                    Some("/v1"),
+                    false
+                ),
+                "/v1/chat/completions"
+            );
+        }
+    }
 }

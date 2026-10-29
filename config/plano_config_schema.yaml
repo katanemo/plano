@@ -201,6 +201,7 @@ properties:
             - vercel
             - openrouter
             - edenai
+            - runcrate
             - moonshotai
         headers:
           type: object
@@ -260,6 +261,7 @@ properties:
             - vercel
             - openrouter
             - edenai
+            - runcrate
             - moonshotai
         headers:
           type: object

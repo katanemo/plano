@@ -54,6 +54,7 @@ pub enum ProviderId {
     Meta,
     Minimax,
     EdenAI,
+    Runcrate,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -92,6 +93,7 @@ impl TryFrom<&str> for ProviderId {
             "meta" => Ok(ProviderId::Meta),
             "minimax" => Ok(ProviderId::Minimax),
             "edenai" => Ok(ProviderId::EdenAI),
+            "runcrate" => Ok(ProviderId::Runcrate),
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -384,7 +386,8 @@ impl ProviderId {
                 | ProviderId::AstraflowCN
                 | ProviderId::Meta
                 | ProviderId::Minimax
-                | ProviderId::EdenAI,
+                | ProviderId::EdenAI
+                | ProviderId::Runcrate,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -411,7 +414,8 @@ impl ProviderId {
                 | ProviderId::AstraflowCN
                 | ProviderId::Meta
                 | ProviderId::Minimax
-                | ProviderId::EdenAI,
+                | ProviderId::EdenAI
+                | ProviderId::Runcrate,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -487,6 +491,7 @@ impl Display for ProviderId {
             ProviderId::Meta => write!(f, "meta"),
             ProviderId::Minimax => write!(f, "minimax"),
             ProviderId::EdenAI => write!(f, "edenai"),
+            ProviderId::Runcrate => write!(f, "runcrate"),
         }
     }
 }
@@ -859,6 +864,59 @@ mod tests {
             strategy,
             CacheMarkerStrategy::OpenAiContentPartCacheControl { .. }
         ));
+    }
+
+    #[test]
+    fn test_runcrate_parsing() {
+        assert_eq!(ProviderId::try_from("runcrate"), Ok(ProviderId::Runcrate));
+        assert_eq!(ProviderId::try_from("Runcrate"), Ok(ProviderId::Runcrate));
+        assert_eq!(ProviderId::Runcrate.to_string(), "runcrate");
+    }
+
+    #[test]
+    fn test_runcrate_empty_models() {
+        // Runcrate model ids are `vendor/model` (e.g. `deepseek-ai/DeepSeek-V4.1-Flash`)
+        // and the catalog is served live at /v1/models, so like OpenRouter and Eden AI
+        // there is no static list: models() falls through to empty.
+        assert!(ProviderId::Runcrate.models().is_empty());
+    }
+
+    #[test]
+    fn test_runcrate_compatible_api() {
+        use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
+
+        let openai_client =
+            SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let upstream = ProviderId::Runcrate.compatible_api_for_client(&openai_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "Runcrate should map OpenAI client to OpenAIChatCompletions upstream"
+        );
+
+        let anthropic_client =
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
+        let upstream = ProviderId::Runcrate.compatible_api_for_client(&anthropic_client, true);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "Runcrate should translate Anthropic client to OpenAIChatCompletions upstream"
+        );
+
+        let responses_client = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let upstream = ProviderId::Runcrate.compatible_api_for_client(&responses_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "Runcrate should translate Responses API client to OpenAIChatCompletions upstream"
+        );
+    }
+
+    #[test]
+    fn runcrate_open_models_get_no_cache_markers() {
+        let strategy = cache_marker_strategy(
+            ProviderId::Runcrate,
+            "deepseek-ai/DeepSeek-V4.1-Flash",
+            &chat_completions(),
+        );
+        assert_eq!(strategy, CacheMarkerStrategy::None);
     }
 
     #[test]

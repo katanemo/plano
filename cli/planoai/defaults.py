@@ -105,6 +105,15 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         base_url="https://api.edenai.run/v3",
         model_pattern="edenai/*",
     ),
+    # Runcrate serves open models (`vendor/model` ids such as
+    # `deepseek-ai/DeepSeek-V4.1-Flash`) over an OpenAI-compatible API, so it
+    # gets the same treatment as OpenRouter and Eden AI.
+    ProviderDefault(
+        name="runcrate",
+        env_var="RUNCRATE_API_KEY",
+        base_url="https://api.runcrate.ai/v1",
+        model_pattern="runcrate/*",
+    ),
 ]
 
 
