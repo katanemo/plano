@@ -6,6 +6,7 @@
 
 use crate::apis::openai_responses::{
     InputContent, InputItem, InputMessage, MessageContent, MessageRole, OutputContent, OutputItem,
+    OutputItemStatus,
 };
 
 /// Converts an OutputItem from a response into an InputItem for the next request
@@ -48,25 +49,38 @@ pub fn convert_responses_output_to_input_items(output: &OutputItem) -> Option<In
                 content: MessageContent::Items(input_content),
             }))
         }
-        // For function calls, we'll create an assistant message with the tool call info
-        // This matches how conversation history is typically built
+        // Keep tool calls structured so stored history pairs with the client's
+        // follow-up function_call_output by call_id; flattening to text would
+        // orphan that tool result on the next turn.
         OutputItem::FunctionCall {
-            name, arguments, ..
+            id,
+            status,
+            call_id,
+            name,
+            arguments,
         } => {
-            let tool_call_text = if let (Some(n), Some(args)) = (name, arguments) {
-                format!("Called function: {} with arguments: {}", n, args)
-            } else {
-                "Called a function".to_string()
+            // Preserve the status as its wire string.
+            let status_str = match status {
+                OutputItemStatus::InProgress => "in_progress",
+                OutputItemStatus::Completed => "completed",
+                OutputItemStatus::Incomplete => "incomplete",
             };
 
-            Some(InputItem::Message(InputMessage {
-                role: MessageRole::Assistant,
-                content: MessageContent::Items(vec![InputContent::OutputText {
-                    text: tool_call_text,
-                }]),
-            }))
+            Some(InputItem::FunctionCall {
+                // Name/arguments are optional on the output wire but required on
+                // the input side. The pair is keyed by call_id, so an empty
+                // string stands in for an upstream that omitted them.
+                name: name.clone().unwrap_or_default(),
+                arguments: arguments.clone().unwrap_or_default(),
+                call_id: call_id.clone(),
+                id: Some(id.clone()),
+                status: Some(status_str.to_string()),
+            })
         }
-        // Skip other output types (tool outputs, etc.) as they don't convert to input
+        // Remaining output types do not convert to input. CustomToolCall in
+        // particular is dropped because the output type has no name field, so
+        // the required `name` on InputItem::CustomToolCall cannot be
+        // reconstructed without widening the output schema.
         _ => None,
     }
 }
@@ -130,20 +144,61 @@ mod tests {
         let input = convert_responses_output_to_input_items(&output).unwrap();
 
         match input {
-            InputItem::Message(msg) => {
-                assert!(matches!(msg.role, MessageRole::Assistant));
-                match &msg.content {
-                    MessageContent::Items(items) => match &items[0] {
-                        InputContent::OutputText { text } => {
-                            assert!(text.contains("get_weather"));
-                        }
-                        _ => panic!("Expected OutputText"),
-                    },
-                    _ => panic!("Expected MessageContent::Items"),
-                }
+            InputItem::FunctionCall {
+                name,
+                arguments,
+                call_id,
+                id,
+                status,
+            } => {
+                assert_eq!(name, "get_weather");
+                assert_eq!(arguments, r#"{"location":"SF"}"#);
+                assert_eq!(call_id, "call_123");
+                assert_eq!(id.as_deref(), Some("fc_123"));
+                assert_eq!(status.as_deref(), Some("completed"));
             }
-            _ => panic!("Expected Message variant"),
+            _ => panic!("Expected FunctionCall variant"),
         }
+    }
+
+    #[test]
+    fn function_call_round_trips_with_call_id() {
+        let output = OutputItem::FunctionCall {
+            id: "fc_abc".to_string(),
+            status: OutputItemStatus::Completed,
+            call_id: "call_abc".to_string(),
+            name: Some("get_weather".to_string()),
+            arguments: Some(r#"{"location":"SF"}"#.to_string()),
+        };
+
+        let stored = outputs_to_inputs(std::slice::from_ref(&output));
+
+        // The stored history must keep the call structured instead of
+        // flattening it into assistant text, so the client's follow-up
+        // `function_call_output` pairs with it by `call_id` rather than
+        // arriving as an orphaned tool result on the next turn.
+        assert_eq!(stored.len(), 1);
+        match &stored[0] {
+            InputItem::FunctionCall {
+                name,
+                arguments,
+                call_id,
+                id,
+                status,
+            } => {
+                assert_eq!(name, "get_weather");
+                assert_eq!(arguments, r#"{"location":"SF"}"#);
+                assert_eq!(call_id, "call_abc");
+                assert_eq!(id.as_deref(), Some("fc_abc"));
+                assert_eq!(status.as_deref(), Some("completed"));
+            }
+            other => panic!("Expected structured FunctionCall, got {other:?}"),
+        }
+
+        // Downstream pairing of the stored call with the client's follow-up
+        // `function_call_output` is covered by
+        // `transforms::request::from_openai::tests::test_responses_function_call_and_output_preserve_call_id_link`;
+        // this test only pins the storage-side shape that makes it possible.
     }
 
     #[test]
