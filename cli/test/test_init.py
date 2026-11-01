@@ -29,6 +29,18 @@ def test_init_template_builtin_writes_config(tmp_path, monkeypatch):
     assert "model_providers:" in config_text
 
 
+def test_init_coding_agent_routing_default_model_is_current(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(init, ["--template", "coding_agent_routing"])
+
+    assert result.exit_code == 0, result.output
+    config_text = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    assert "anthropic/claude-sonnet-4-5" not in config_text
+    assert "anthropic/claude-sonnet-4-6\n    default: true" in config_text
+
+
 def test_init_refuses_overwrite_without_force(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text("hello", encoding="utf-8")
