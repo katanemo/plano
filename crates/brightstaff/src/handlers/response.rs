@@ -17,6 +17,13 @@ use super::full;
 /// Service for handling HTTP responses and streaming
 pub struct ResponseHandler;
 
+fn created_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 impl ResponseHandler {
     pub fn new() -> Self {
         Self
@@ -56,6 +63,67 @@ impl ResponseHandler {
         response.headers_mut().insert(
             hyper::header::CONTENT_TYPE,
             hyper::header::HeaderValue::from_static("application/json"),
+        );
+        response
+    }
+
+    /// Used for merged agent answers, which arrive as a string
+    pub fn create_completion_response(
+        content: &str,
+        model: &str,
+    ) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let body = serde_json::json!({
+            "id": format!("chatcmpl-{}", uuid::Uuid::new_v4()),
+            "object": "chat.completion",
+            "created": created_timestamp(),
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop"
+            }]
+        });
+
+        let mut response = Response::new(Self::create_full_body(body.to_string()));
+        response.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        response
+    }
+
+    /// emitted as SSE so clients that asked for `stream: true` get the shape they expect
+    pub fn create_synthetic_stream_response(
+        content: &str,
+        model: &str,
+    ) -> Response<BoxBody<Bytes, hyper::Error>> {
+        let id = format!("chatcmpl-{}", uuid::Uuid::new_v4());
+        let created = created_timestamp();
+
+        let chunk = |delta: serde_json::Value, finish: Option<&str>| {
+            serde_json::json!({
+                "id": id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]
+            })
+            .to_string()
+        };
+
+        let payload = format!(
+            "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+            chunk(
+                serde_json::json!({"role": "assistant", "content": content}),
+                None
+            ),
+            chunk(serde_json::json!({}), Some("stop")),
+        );
+
+        let mut response = Response::new(Self::create_full_body(payload));
+        response.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("text/event-stream"),
         );
         response
     }

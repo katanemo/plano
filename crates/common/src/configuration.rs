@@ -115,6 +115,283 @@ pub enum ListenerType {
     Prompt,
 }
 
+/// How the agents the orchestrator selected are run.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionMode {
+    /// Chain agents, last reply wins. Current behavior.
+    #[default]
+    Sequential,
+    /// Run agents concurrently and merge their replies.
+    Parallel,
+}
+
+/// What to do when one agent in a parallel run fails.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BranchErrorPolicy {
+    /// Record the failure and aggregate whatever else succeeded.
+    #[default]
+    Continue,
+    /// Fail the whole turn.
+    Fail,
+}
+
+/// How collected agent replies become one client answer.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CompositionStrategy {
+    /// Call an LLM (or agent) to rewrite the replies into one prose answer.
+    #[default]
+    Synthesize,
+    /// Deterministic labeled join. No extra model call — the right default for
+    /// complementary specialists whose answers do not compete.
+    Concat,
+}
+
+/// Opt-in composition settings for an agent listener. Absent means today's
+/// sequential, last-agent-wins behavior.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Orchestration {
+    #[serde(default)]
+    pub execution: ExecutionMode,
+    #[serde(default)]
+    pub strategy: CompositionStrategy,
+    /// A model_providers name (preferred) or an agents id that merges replies.
+    /// Required when `strategy` is `synthesize`.
+    pub aggregator: Option<String>,
+    pub branch_timeout: Option<String>,
+    #[serde(default)]
+    pub on_branch_error: BranchErrorPolicy,
+}
+
+/// What `orchestration.aggregator` resolved to. Model providers are the
+/// default path; an agent id is the escape hatch for custom merge logic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AggregatorTarget {
+    /// Called directly as an LLM, like the orchestrator's own model call.
+    Model { provider: String, model: String },
+    /// Called as a normal agent over the Envoy api router.
+    Agent(String),
+}
+
+impl Orchestration {
+    /// Branch timeout as a duration, defaulting to 60s when unset or unparsable.
+    /// Accepts `ms`, `s`, or `m` suffixes, e.g. `500ms`, `30s`, `2m`.
+    pub fn branch_timeout_or_default(&self) -> std::time::Duration {
+        const DEFAULT: std::time::Duration = std::time::Duration::from_secs(60);
+        let Some(raw) = self.branch_timeout.as_deref().map(str::trim) else {
+            return DEFAULT;
+        };
+
+        let (value, unit_millis) = if let Some(v) = raw.strip_suffix("ms") {
+            (v, 1)
+        } else if let Some(v) = raw.strip_suffix('s') {
+            (v, 1_000)
+        } else if let Some(v) = raw.strip_suffix('m') {
+            (v, 60_000)
+        } else {
+            return DEFAULT;
+        };
+
+        value
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .map(|n| std::time::Duration::from_millis(n * unit_millis))
+            .unwrap_or(DEFAULT)
+    }
+
+    /// Resolve `aggregator` against configured model providers first, then agents.
+    pub fn resolve_aggregator<'a, I>(
+        &self,
+        model_providers: I,
+        agent_ids: &[String],
+    ) -> Option<AggregatorTarget>
+    where
+        I: IntoIterator<Item = &'a LlmProvider>,
+    {
+        let name = self.aggregator.as_deref()?;
+
+        if let Some(provider) = model_providers
+            .into_iter()
+            .find(|p| p.name == name || p.model.as_deref() == Some(name))
+        {
+            return Some(AggregatorTarget::Model {
+                provider: provider.name.clone(),
+                model: provider.model.clone().unwrap_or_else(|| name.to_string()),
+            });
+        }
+
+        agent_ids
+            .iter()
+            .find(|id| id.as_str() == name)
+            .map(|id| AggregatorTarget::Agent(id.clone()))
+    }
+}
+
+#[cfg(test)]
+mod orchestration_tests {
+    use super::*;
+
+    fn provider(name: &str, model: &str) -> LlmProvider {
+        LlmProvider {
+            name: name.to_string(),
+            provider_interface: LlmProviderType::OpenAI,
+            access_key: None,
+            model: Some(model.to_string()),
+            default: None,
+            stream: None,
+            endpoint: None,
+            port: None,
+            rate_limits: None,
+            usage: None,
+            cluster_name: None,
+            base_url_path_prefix: None,
+            internal: None,
+            passthrough_auth: None,
+            headers: None,
+        }
+    }
+
+    fn with_aggregator(name: &str) -> Orchestration {
+        Orchestration {
+            execution: ExecutionMode::Parallel,
+            strategy: CompositionStrategy::Synthesize,
+            aggregator: Some(name.to_string()),
+            branch_timeout: None,
+            on_branch_error: BranchErrorPolicy::default(),
+        }
+    }
+
+    /// Absent block means today's sequential behavior.
+    #[test]
+    fn defaults_are_sequential_and_continue() {
+        let o = Orchestration::default();
+        assert_eq!(o.execution, ExecutionMode::Sequential);
+        assert_eq!(o.on_branch_error, BranchErrorPolicy::Continue);
+        assert!(o.aggregator.is_none());
+    }
+
+    /// A model provider name resolves to the direct-model path.
+    #[test]
+    fn aggregator_resolves_provider_name_to_model_target() {
+        let providers = vec![provider("openai", "openai/gpt-4o")];
+        let target = with_aggregator("openai").resolve_aggregator(&providers, &[]);
+        assert_eq!(
+            target,
+            Some(AggregatorTarget::Model {
+                provider: "openai".to_string(),
+                model: "openai/gpt-4o".to_string(),
+            })
+        );
+    }
+
+    /// The model id resolves too, so users can name either.
+    #[test]
+    fn aggregator_resolves_model_id_to_model_target() {
+        let providers = vec![provider("openai", "openai/gpt-4o")];
+        let target = with_aggregator("openai/gpt-4o").resolve_aggregator(&providers, &[]);
+        assert!(matches!(target, Some(AggregatorTarget::Model { .. })));
+    }
+
+    /// An agents id is the escape hatch for custom merge logic.
+    #[test]
+    fn aggregator_falls_back_to_agent_id() {
+        let agents = vec!["summary_agent".to_string()];
+        let target = with_aggregator("summary_agent").resolve_aggregator(&[], &agents);
+        assert_eq!(
+            target,
+            Some(AggregatorTarget::Agent("summary_agent".into()))
+        );
+    }
+
+    /// Model providers win when a name exists in both places.
+    #[test]
+    fn model_provider_takes_precedence_over_agent_of_same_name() {
+        let providers = vec![provider("merge", "openai/gpt-4o")];
+        let agents = vec!["merge".to_string()];
+        let target = with_aggregator("merge").resolve_aggregator(&providers, &agents);
+        assert!(matches!(target, Some(AggregatorTarget::Model { .. })));
+    }
+
+    /// An unknown name resolves to nothing; callers treat that as a config error.
+    #[test]
+    fn unknown_aggregator_resolves_to_none() {
+        assert!(with_aggregator("ghost")
+            .resolve_aggregator(&[], &[])
+            .is_none());
+    }
+
+    #[test]
+    fn branch_timeout_parses_supported_units() {
+        let timeout = |raw: Option<&str>| {
+            Orchestration {
+                execution: ExecutionMode::Parallel,
+                strategy: CompositionStrategy::default(),
+                aggregator: None,
+                branch_timeout: raw.map(str::to_string),
+                on_branch_error: BranchErrorPolicy::default(),
+            }
+            .branch_timeout_or_default()
+        };
+
+        assert_eq!(
+            timeout(Some("500ms")),
+            std::time::Duration::from_millis(500)
+        );
+        assert_eq!(timeout(Some("30s")), std::time::Duration::from_secs(30));
+        assert_eq!(timeout(Some("2m")), std::time::Duration::from_secs(120));
+        // Unset, malformed, and zero all fall back rather than failing the turn.
+        assert_eq!(timeout(None), std::time::Duration::from_secs(60));
+        assert_eq!(timeout(Some("later")), std::time::Duration::from_secs(60));
+        assert_eq!(timeout(Some("0s")), std::time::Duration::from_secs(60));
+    }
+
+    /// A typo'd key is a config error, not a silently ignored setting.
+    #[test]
+    fn unknown_orchestration_keys_are_rejected() {
+        let yaml = "execution: parallel\naggregater: openai\n";
+        assert!(serde_yaml::from_str::<Orchestration>(yaml).is_err());
+    }
+
+    /// The block is additive: a listener without it still deserializes.
+    #[test]
+    fn listener_without_orchestration_deserializes() {
+        let yaml = r#"
+type: agent
+name: travel
+port: 8001
+"#;
+        let listener: Listener = serde_yaml::from_str(yaml).unwrap();
+        assert!(listener.orchestration.is_none());
+    }
+
+    #[test]
+    fn listener_with_orchestration_deserializes() {
+        let yaml = r#"
+type: agent
+name: travel
+port: 8001
+orchestration:
+  execution: parallel
+  aggregator: openai/gpt-4o
+  branch_timeout: 30s
+  on_branch_error: fail
+"#;
+        let listener: Listener = serde_yaml::from_str(yaml).unwrap();
+        let o = listener.orchestration.expect("orchestration should parse");
+        assert_eq!(o.execution, ExecutionMode::Parallel);
+        assert_eq!(o.on_branch_error, BranchErrorPolicy::Fail);
+        assert_eq!(
+            o.branch_timeout_or_default(),
+            std::time::Duration::from_secs(30)
+        );
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Listener {
     #[serde(rename = "type")]
@@ -122,6 +399,7 @@ pub struct Listener {
     pub name: String,
     pub router: Option<String>,
     pub agents: Option<Vec<AgentFilterChain>>,
+    pub orchestration: Option<Orchestration>,
     pub input_filters: Option<Vec<String>>,
     pub output_filters: Option<Vec<String>>,
     pub port: u16,

@@ -112,6 +112,13 @@ listeners:
     port: 8001
     router: plano_orchestrator_v1
     address: 0.0.0.0
+    # Optional. How the selected agents run and how their answers combine.
+    # Omit for the default: sequential chaining, last agent's answer returned.
+    orchestration:
+      execution: parallel # sequential (default) | parallel
+      strategy: concat # concat | synthesize (default); aggregator required for synthesize
+      branch_timeout: 30s # optional, default 60s
+      on_branch_error: continue # continue (default) | fail
     agents:
       - id: rag_agent
         description: virtual assistant for retrieval augmented generation tasks

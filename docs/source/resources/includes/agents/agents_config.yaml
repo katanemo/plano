@@ -18,6 +18,14 @@ listeners:
     name: travel_booking_service
     port: 8001
     router: plano_orchestrator_v1
+    # Run every selected agent concurrently and merge their answers into one
+    # reply. Without this block the agents run in sequence and only the last
+    # one's answer reaches the client.
+    orchestration:
+      execution: parallel
+      strategy: concat
+      branch_timeout: 30s
+      on_branch_error: continue
     agents:
       - id: weather_agent
         description: |
@@ -33,7 +41,6 @@ listeners:
             * Provides detailed weather information
             * Understands conversation context to resolve location references from previous messages
             * Handles weather-related questions including "What's the weather in [city]?", "What's the forecast for [city]?", "How's the weather in [city]?"
-            * When queries include both weather and other travel questions (e.g., flights, currency), this agent answers ONLY the weather part
 
       - id: flight_agent
         description: |
@@ -51,7 +58,6 @@ listeners:
             * Automatically resolves city names to airport codes (IATA/ICAO)
             * Understands conversation context to infer origin/destination from follow-up questions
             * Handles flight-related questions including "What flights go from [city] to [city]?", "Do flights go to [city]?", "Are there direct flights from [city]?"
-            * When queries include both flight and other travel questions (e.g., weather, currency), this agent answers ONLY the flight part
 
 tracing:
   random_sampling: 100

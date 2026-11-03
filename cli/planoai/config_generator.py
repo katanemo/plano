@@ -611,6 +611,46 @@ def validate_and_render_schema():
                         f"which is not defined in agents or filters. Available ids: {', '.join(sorted(agent_id_keys))}"
                     )
 
+    # Validate listener orchestration. synthesize needs an aggregator; concat
+    # does not (it joins replies deterministically). Model providers win over
+    # agents when names collide.
+    for listener in listeners:
+        orchestration = listener.get("orchestration")
+        if not orchestration:
+            continue
+
+        listener_name = listener.get("name", "unknown")
+        strategy = orchestration.get("strategy", "synthesize")
+        aggregator = orchestration.get("aggregator")
+
+        if strategy == "synthesize" and not aggregator:
+            raise Exception(
+                f"Listener '{listener_name}' sets orchestration.strategy: synthesize "
+                f"but no orchestration.aggregator. Synthesis needs a model (or agent) to merge replies."
+            )
+
+        if aggregator is None:
+            continue
+
+        is_model = (
+            aggregator in model_name_keys or aggregator in model_provider_name_set
+        )
+        is_agent = aggregator in agent_id_keys
+        if not is_model and not is_agent:
+            raise Exception(
+                f"Listener '{listener_name}' references orchestration.aggregator '{aggregator}' "
+                f"which is not a configured model provider or agent id."
+            )
+
+        # An agent aggregator that is also a selectable branch would be fed its own output.
+        if not is_model:
+            branch_ids = [a.get("id") for a in listener.get("agents", [])]
+            if aggregator in branch_ids:
+                raise Exception(
+                    f"Listener '{listener_name}' uses agent '{aggregator}' as orchestration.aggregator "
+                    f"but also lists it under agents. The aggregator cannot be one of the agents it merges."
+                )
+
     # Validate model aliases if present
     if "model_aliases" in config_yaml:
         model_aliases = config_yaml["model_aliases"]

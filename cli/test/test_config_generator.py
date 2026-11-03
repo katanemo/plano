@@ -433,7 +433,237 @@ tracing:
 
 """,
     },
+    {
+        "id": "valid_orchestration_with_model_aggregator",
+        "expected_error": None,
+        "plano_config": """
+version: v0.4.0
+
+agents:
+  - id: weather_agent
+    url: http://localhost:10500
+  - id: currency_agent
+    url: http://localhost:10501
+
+listeners:
+  - name: travel
+    type: agent
+    router: plano_orchestrator_v1
+    orchestration:
+      execution: parallel
+      aggregator: openai/gpt-4o
+      branch_timeout: 30s
+      on_branch_error: continue
+    agents:
+      - id: weather_agent
+        description: weather lookups
+      - id: currency_agent
+        description: currency conversion
+    port: 8000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+""",
+    },
+    {
+        "id": "orchestration_aggregator_not_configured",
+        "expected_error": "is not a configured model provider or agent id",
+        "plano_config": """
+version: v0.4.0
+
+agents:
+  - id: weather_agent
+    url: http://localhost:10500
+
+listeners:
+  - name: travel
+    type: agent
+    router: plano_orchestrator_v1
+    orchestration:
+      execution: parallel
+      aggregator: openai/does-not-exist
+    agents:
+      - id: weather_agent
+        description: weather lookups
+    port: 8000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+""",
+    },
+    {
+        "id": "orchestration_synthesize_without_aggregator",
+        "expected_error": "Synthesis needs a model",
+        "plano_config": """
+version: v0.4.0
+
+agents:
+  - id: weather_agent
+    url: http://localhost:10500
+
+listeners:
+  - name: travel
+    type: agent
+    router: plano_orchestrator_v1
+    orchestration:
+      execution: parallel
+      strategy: synthesize
+    agents:
+      - id: weather_agent
+        description: weather lookups
+    port: 8000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+""",
+    },
+    {
+        "id": "valid_orchestration_concat_without_aggregator",
+        "expected_error": None,
+        "plano_config": """
+version: v0.4.0
+
+agents:
+  - id: weather_agent
+    url: http://localhost:10500
+  - id: currency_agent
+    url: http://localhost:10501
+
+listeners:
+  - name: travel
+    type: agent
+    router: plano_orchestrator_v1
+    orchestration:
+      execution: parallel
+      strategy: concat
+      branch_timeout: 5s
+    agents:
+      - id: weather_agent
+        description: weather lookups
+      - id: currency_agent
+        description: currency conversion
+    port: 8000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+""",
+    },
+    {
+        "id": "orchestration_agent_aggregator_is_also_a_branch",
+        "expected_error": "cannot be one of the agents it merges",
+        "plano_config": """
+version: v0.4.0
+
+agents:
+  - id: weather_agent
+    url: http://localhost:10500
+  - id: summary_agent
+    url: http://localhost:10501
+
+listeners:
+  - name: travel
+    type: agent
+    router: plano_orchestrator_v1
+    orchestration:
+      execution: parallel
+      aggregator: summary_agent
+    agents:
+      - id: weather_agent
+        description: weather lookups
+      - id: summary_agent
+        description: summarizer
+    port: 8000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+""",
+    },
 ]
+
+
+def orchestration_config(block):
+    return f"""
+version: v0.4.0
+
+agents:
+  - id: weather_agent
+    url: http://localhost:10500
+
+listeners:
+  - name: travel
+    type: agent
+    router: plano_orchestrator_v1
+    orchestration:
+{block}
+    agents:
+      - id: weather_agent
+        description: weather lookups
+    port: 8000
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+"""
+
+
+def run_schema_validation_expecting_exit(monkeypatch, plano_config):
+    monkeypatch.setenv("PLANO_CONFIG_FILE", "fake_plano_config.yaml")
+    monkeypatch.setenv("PLANO_CONFIG_SCHEMA_FILE", "fake_plano_config_schema.yaml")
+    monkeypatch.setenv("ENVOY_CONFIG_TEMPLATE_FILE", "./envoy.template.yaml")
+    monkeypatch.setenv("PLANO_CONFIG_FILE_RENDERED", "fake_plano_config_rendered.yaml")
+    monkeypatch.setenv("ENVOY_CONFIG_FILE_RENDERED", "fake_envoy.yaml")
+    monkeypatch.setenv("TEMPLATE_ROOT", "../")
+
+    with open("../config/plano_config_schema.yaml", "r") as file:
+        plano_config_schema = file.read()
+
+    m_open = mock.mock_open()
+    m_open.side_effect = [
+        mock.mock_open(read_data=plano_config).return_value,
+        mock.mock_open(read_data=plano_config_schema).return_value,
+    ]
+    with mock.patch("builtins.open", m_open):
+        with mock.patch("planoai.config_generator.Environment"):
+            with pytest.raises(SystemExit):
+                validate_and_render_schema()
+
+
+def test_orchestration_execution_is_restricted_by_schema(monkeypatch, capsys):
+    """The schema, not just the semantic pass, rejects unknown execution modes."""
+    run_schema_validation_expecting_exit(
+        monkeypatch,
+        orchestration_config(
+            "      execution: fan_out_somehow\n      aggregator: openai/gpt-4o"
+        ),
+    )
+    assert "is not one of ['sequential', 'parallel']" in capsys.readouterr().out
+
+
+def test_orchestration_branch_timeout_requires_a_known_unit(monkeypatch, capsys):
+    """An unrecognized unit would silently fall back to 60s, so reject it up front."""
+    run_schema_validation_expecting_exit(
+        monkeypatch,
+        orchestration_config(
+            '      aggregator: openai/gpt-4o\n      branch_timeout: "30sec"'
+        ),
+    )
+    assert "does not match" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

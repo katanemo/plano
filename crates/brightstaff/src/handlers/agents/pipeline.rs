@@ -78,6 +78,17 @@ impl PipelineProcessor {
         }
     }
 
+    /// A processor for one parallel branch. The HTTP client is shared so
+    /// branches reuse connections; only the MCP session map is per-branch,
+    /// since filter state must not be aliased across concurrent tasks.
+    pub fn branch(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            url: self.url.clone(),
+            agent_id_session_map: HashMap::new(),
+        }
+    }
+
     /// Prepare headers shared by all agent/filter requests: removes
     /// content-length, injects trace context, sets upstream host and retry.
     fn build_agent_headers(

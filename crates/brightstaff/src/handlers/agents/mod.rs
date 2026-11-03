@@ -1,3 +1,4 @@
+pub mod aggregator;
 pub mod errors;
 pub mod jsonrpc;
 pub mod orchestrator;

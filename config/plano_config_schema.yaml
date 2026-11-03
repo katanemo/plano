@@ -94,6 +94,30 @@ properties:
                 required:
                   - id
                   - description
+            orchestration:
+              type: object
+              properties:
+                execution:
+                  type: string
+                  enum:
+                    - sequential
+                    - parallel
+                strategy:
+                  type: string
+                  enum:
+                    - synthesize
+                    - concat
+                aggregator:
+                  type: string
+                branch_timeout:
+                  type: string
+                  pattern: "^[0-9]+(ms|s|m)$"
+                on_branch_error:
+                  type: string
+                  enum:
+                    - continue
+                    - fail
+              additionalProperties: false
             input_filters:
               type: array
               items:

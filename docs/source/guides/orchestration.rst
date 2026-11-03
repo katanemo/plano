@@ -41,7 +41,51 @@ Configure your agents in the ``listeners`` section of your ``plano_config.yaml``
 * **agent listener**: A listener of ``type: agent`` tells Plano to perform intent analysis and routing for incoming requests.
 * **agents list**: Define each agent with an ``id``, ``description`` (used for routing decisions)
 * **router**: The ``plano_orchestrator_v1`` router uses Plano-Orchestrator to analyze user intent and select the appropriate agent.
+* **orchestration**: Controls how the selected agents run and how their answers combine. See `Composing Multiple Agents`_ below.
 * **filter_chain**: Optionally attach :ref:`filter chains <filter_chain>` to agents for guardrails, query rewriting, or context enrichment.
+
+.. _composing_multiple_agents:
+
+Composing Multiple Agents
+-------------------------
+
+A single prompt often has more than one intent — *"What's the weather in Paris, and what's the euro exchange rate?"* Plano-Orchestrator selects every agent that can help, but by default those agents run one after another and only the last one's answer is returned.
+
+The optional ``orchestration`` block changes that. It runs the selected agents concurrently and merges their answers into a single reply:
+
+.. code-block:: yaml
+
+    listeners:
+      - type: agent
+        name: travel_booking_service
+        port: 8001
+        router: plano_orchestrator_v1
+        orchestration:
+          execution: parallel      # sequential (default) | parallel
+          strategy: concat         # concat | synthesize (default)
+          # aggregator required only for synthesize:
+          # aggregator: openai/gpt-4o
+          branch_timeout: 30s      # optional, default 60s
+          on_branch_error: continue  # continue (default) | fail
+        agents:
+          - id: weather_agent
+            description: ...
+
+**Fields**
+
+* ``execution`` — ``sequential`` (the default) runs agents in a chain, each seeing the previous answers. ``parallel`` runs them concurrently, each seeing only the user's conversation.
+* ``strategy`` — ``synthesize`` (the default) calls an LLM to rewrite replies into one prose answer. ``concat`` joins labeled answers with no extra model call — prefer this for complementary specialists (weather + flights) where a second LLM is pure latency tax.
+* ``aggregator`` — **required when** ``strategy`` is ``synthesize``. A ``model_providers`` name, or an ``agents`` id for custom merge logic (must not also be one of the agents being merged). Unused for ``concat``.
+* ``branch_timeout`` — budget for the whole fan-out, as ``500ms``, ``30s``, or ``2m``. Agents still running when it expires are cancelled and reported as unavailable.
+* ``on_branch_error`` — ``continue`` merges whatever succeeded, ``fail`` fails the turn if any agent fails.
+
+**Behavior notes**
+
+* Omitting the block changes nothing: agents chain sequentially and the last answer is returned, exactly as before.
+* A turn that selects only one agent skips the merge entirely and streams that agent's response directly.
+* Each parallel agent receives only the user's conversation, never a sibling's answer. Agents therefore do not need description text telling them to answer "only their part."
+* The aggregator is told which agents failed, so a partial answer says what is missing rather than appearing complete.
+* Because the merged answer is assembled before it is sent, clients requesting ``stream: true`` receive it as a single streamed chunk rather than token by token.
 
 **Writing Effective Agent Descriptions**
 
