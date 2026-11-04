@@ -40,6 +40,11 @@ listeners:
     input_filters:
     - input_guards
   name: travel_booking_service
+  orchestration:
+    branch_timeout: 30s
+    execution: parallel
+    on_branch_error: continue
+    strategy: concat
   port: 8001
   router: plano_orchestrator_v1
   type: agent
