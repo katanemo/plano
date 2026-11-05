@@ -212,11 +212,14 @@ Response when pinned:
   "trace_id": "...",
   "session_id": "a1b2c3d4-5678-...",
   "pinned": true,
-  "switched": false
+  "switched": false,
+  "prefix_hash": "3f9a1c0e7b2d4a65"
 }
 ```
 
 `pinned` reports that the session was warm on its bound model, so callers can treat it as a signal to keep that provider's cache warm.
+
+`prefix_hash` is the same 16-hex value the proxy sends upstream as `x-plano-prefix-hash`. Callers that dispatch inference to self-hosted multi-replica backends can key a consistent-hash load-balancing policy on it (Envoy ring-hash or equivalent), so requests sharing a prompt prefix land on the replica holding its warm KV cache, mirroring Plano's own `prefix_affinity` clusters. It is omitted when the request sent `X-Plano-Cache: off` or has no anchorable prompt.
 
 The decision endpoint applies the same loop handling as the proxy, so a client polling it between tool calls gets a stable answer for the whole turn.
 

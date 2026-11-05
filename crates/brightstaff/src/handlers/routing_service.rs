@@ -15,6 +15,7 @@ use std::sync::Arc;
 use tracing::{debug, info, info_span, warn, Instrument};
 
 use super::extract_or_generate_traceparent;
+use crate::affinity::prefix_hash_hex;
 use crate::handlers::llm::model_selection::{router_chat_get_upstream_model, RoutingResult};
 use crate::handlers::llm::resolve_model_alias;
 use crate::handlers::llm::session_router;
@@ -67,6 +68,11 @@ struct RoutingDecisionResponse {
     pinned: bool,
     /// Whether the routing budget allowed a model switch this turn (`plano.switch.decision=allowed`).
     switched: bool,
+    /// Prompt-prefix hash as 16 hex chars, the `x-plano-prefix-hash` format. Key a
+    /// consistent-hash LB on it for KV-cache replica stickiness. Omitted when the
+    /// request opted out (`X-Plano-Cache: off`) or has no anchorable prompt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefix_hash: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -317,6 +323,7 @@ async fn routing_decision_inner(
                 // "keep this provider's cache warm".
                 pinned: decision.warm,
                 switched: decision.switched,
+                prefix_hash: request_prefix_hash.map(prefix_hash_hex),
             };
 
             // Distinguish "decision served" (a concrete model picked) from
@@ -496,6 +503,7 @@ mod tests {
             session_id: Some("sess-abc".to_string()),
             pinned: true,
             switched: true,
+            prefix_hash: Some(prefix_hash_hex(0xdead_beef)),
         };
         let json = serde_json::to_string(&response).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -506,6 +514,7 @@ mod tests {
         assert_eq!(parsed["session_id"], "sess-abc");
         assert_eq!(parsed["pinned"], true);
         assert_eq!(parsed["switched"], true);
+        assert_eq!(parsed["prefix_hash"], "00000000deadbeef");
     }
 
     #[test]
@@ -517,14 +526,57 @@ mod tests {
             session_id: None,
             pinned: false,
             switched: false,
+            prefix_hash: None,
         };
         let json = serde_json::to_string(&response).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["models"][0], "none");
         assert!(parsed["route"].is_null());
         assert!(parsed.get("session_id").is_none());
+        assert!(parsed.get("prefix_hash").is_none());
         assert_eq!(parsed["pinned"], false);
         assert_eq!(parsed["switched"], false);
+    }
+
+    /// Decision-endpoint callers get the same prefix hash the proxy path stamps as
+    /// `x-plano-prefix-hash`, so they can key replica stickiness on it; it is omitted
+    /// when the request opts out with `X-Plano-Cache: off`.
+    #[test]
+    fn routing_decision_response_exposes_prefix_hash() {
+        let body = br#"{"model":"gpt-4o-mini","messages":[{"role":"system","content":"You are a coding agent."},{"role":"user","content":"hi"}]}"#;
+        let client_request = ProviderRequestType::try_from((
+            &body[..],
+            &SupportedAPIsFromClient::from_endpoint("/v1/chat/completions").unwrap(),
+        ))
+        .unwrap();
+        let messages = client_request.get_messages();
+
+        for (cache_off, expected) in [(false, true), (true, false)] {
+            let resolution =
+                session_router::resolve_session(None, &messages, None, None, false, cache_off);
+            let response = RoutingDecisionResponse {
+                models: vec!["openai/gpt-4o-mini".to_string()],
+                route: None,
+                trace_id: "abc123".to_string(),
+                session_id: resolution.session_id,
+                pinned: false,
+                switched: false,
+                prefix_hash: resolution.request_prefix_hash.map(prefix_hash_hex),
+            };
+            let parsed: serde_json::Value =
+                serde_json::from_str(&serde_json::to_string(&response).unwrap()).unwrap();
+            if expected {
+                let hash = parsed["prefix_hash"].as_str().unwrap();
+                assert_eq!(hash.len(), 16);
+                assert!(hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')));
+                assert_eq!(
+                    hash,
+                    prefix_hash_hex(resolution.request_prefix_hash.unwrap())
+                );
+            } else {
+                assert!(parsed.get("prefix_hash").is_none());
+            }
+        }
     }
 
     /// The lane a decision is stored under must be the resolved model, matching the
