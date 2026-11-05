@@ -25,6 +25,7 @@ pub(crate) mod model_selection;
 pub(crate) mod prompt_caching;
 pub(crate) mod session_router;
 
+use crate::affinity::prefix_hash_hex;
 use crate::app_state::AppState;
 use crate::handlers::agents::pipeline::PipelineProcessor;
 use crate::handlers::extract_request_id;
@@ -532,7 +533,7 @@ async fn llm_chat_inner(
     // KV-aware replica stickiness (consistent-hash on this header at the
     // cluster layer).
     if let Some(hash) = request_prefix_hash {
-        if let Ok(val) = header::HeaderValue::from_str(&format!("{hash:016x}")) {
+        if let Ok(val) = header::HeaderValue::from_str(&prefix_hash_hex(hash)) {
             request_headers.insert(
                 header::HeaderName::from_static(PLANO_PREFIX_HASH_HEADER),
                 val,

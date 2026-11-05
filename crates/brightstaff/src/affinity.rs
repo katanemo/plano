@@ -36,6 +36,12 @@ pub struct ImplicitAffinity {
     pub prefix_hash: u64,
 }
 
+/// Render a prefix hash the way it is exposed to callers: 16 lowercase hex chars,
+/// shared by the `x-plano-prefix-hash` header and the routing decision response.
+pub fn prefix_hash_hex(prefix_hash: u64) -> String {
+    format!("{prefix_hash:016x}")
+}
+
 /// FNV-1a 64-bit — stable across processes and Rust versions (unlike `DefaultHasher`),
 /// dependency-free, and plenty for cache keying (collisions merely over-pin, which is
 /// cache-friendly).
