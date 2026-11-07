@@ -243,14 +243,7 @@ impl TryFrom<MessagesResponse> for ChatCompletionsResponse {
             logprobs: None,
         };
 
-        let usage = Usage {
-            prompt_tokens: resp.usage.input_tokens,
-            completion_tokens: resp.usage.output_tokens,
-            total_tokens: resp.usage.input_tokens + resp.usage.output_tokens,
-            prompt_tokens_details: None,
-            completion_tokens_details: None,
-            ..Default::default()
-        };
+        let usage: Usage = resp.usage.into();
 
         Ok(ChatCompletionsResponse {
             id: resp.id,
@@ -312,14 +305,17 @@ impl TryFrom<ConverseResponse> for ChatCompletionsResponse {
         };
 
         // Convert token usage
-        let usage = Usage {
+        let mut usage = Usage {
             prompt_tokens: resp.usage.input_tokens,
             completion_tokens: resp.usage.output_tokens,
             total_tokens: resp.usage.total_tokens,
             prompt_tokens_details: None,
             completion_tokens_details: None,
-            ..Default::default()
+            cache_read_input_tokens: resp.usage.cache_read_input_tokens,
+            cache_creation_input_tokens: resp.usage.cache_write_input_tokens,
         };
+        // Surface Bedrock cache reads to OpenAI clients as cached_tokens.
+        usage.normalize_cache_tokens();
 
         // Generate a response ID (using timestamp since Bedrock doesn't provide one)
         let id = format!(
@@ -481,6 +477,84 @@ mod tests {
         assert_eq!(openai_response.usage.prompt_tokens, 10);
         assert_eq!(openai_response.usage.completion_tokens, 25);
         assert_eq!(openai_response.usage.total_tokens, 35);
+    }
+
+    #[test]
+    fn test_anthropic_to_openai_preserves_cache_tokens() {
+        use crate::apis::anthropic::{
+            MessagesContentBlock, MessagesResponse, MessagesRole, MessagesStopReason, MessagesUsage,
+        };
+
+        let anthropic_response = MessagesResponse {
+            id: "msg_1".to_string(),
+            obj_type: "message".to_string(),
+            role: MessagesRole::Assistant,
+            content: vec![MessagesContentBlock::Text {
+                text: "Cached".to_string(),
+                cache_control: None,
+            }],
+            model: "claude".to_string(),
+            stop_reason: MessagesStopReason::EndTurn,
+            stop_sequence: None,
+            usage: MessagesUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_creation_input_tokens: Some(20),
+                cache_read_input_tokens: Some(10),
+            },
+            container: None,
+        };
+
+        let openai_response: ChatCompletionsResponse = anthropic_response.try_into().unwrap();
+
+        assert_eq!(
+            openai_response
+                .usage
+                .prompt_tokens_details
+                .and_then(|d| d.cached_tokens),
+            Some(10)
+        );
+        assert_eq!(openai_response.usage.cache_read_input_tokens, Some(10));
+        assert_eq!(openai_response.usage.cache_creation_input_tokens, Some(20));
+    }
+
+    #[test]
+    fn test_bedrock_to_openai_preserves_cache_tokens() {
+        let bedrock_response = ConverseResponse {
+            output: ConverseOutput::Message {
+                message: BedrockMessage {
+                    role: ConversationRole::Assistant,
+                    content: vec![ContentBlock::Text {
+                        text: "Cached response".to_string(),
+                    }],
+                },
+            },
+            stop_reason: StopReason::EndTurn,
+            usage: BedrockTokenUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+                total_tokens: 150,
+                cache_write_input_tokens: Some(20),
+                cache_read_input_tokens: Some(10),
+                ..Default::default()
+            },
+            metrics: None,
+            trace: None,
+            additional_model_response_fields: None,
+            performance_config: None,
+        };
+
+        let openai_response: ChatCompletionsResponse = bedrock_response.try_into().unwrap();
+
+        assert_eq!(
+            openai_response
+                .usage
+                .prompt_tokens_details
+                .and_then(|d| d.cached_tokens),
+            Some(10)
+        );
+        assert_eq!(openai_response.usage.cache_read_input_tokens, Some(10));
+        assert_eq!(openai_response.usage.cache_creation_input_tokens, Some(20));
     }
 
     #[test]
