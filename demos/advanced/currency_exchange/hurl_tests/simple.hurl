@@ -14,7 +14,7 @@ HTTP 200
 [Asserts]
 header "content-type" == "application/json"
 jsonpath "$.model" matches /^gpt-4o/
-jsonpath "$.metadata.x-arch-state" != null
+jsonpath "$.metadata['x-arch-state']" != null
 jsonpath "$.usage" != null
 jsonpath "$.choices[0].message.content" != null
 jsonpath "$.choices[0].message.role" == "assistant"
