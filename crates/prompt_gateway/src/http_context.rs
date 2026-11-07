@@ -23,6 +23,15 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+fn parse_arch_state(
+    metadata: Option<&HashMap<String, String>>,
+) -> Result<Option<Vec<ArchState>>, serde_json::Error> {
+    match metadata.and_then(|metadata| metadata.get(X_ARCH_STATE_HEADER)) {
+        Some(arch_state) => serde_json::from_str(arch_state).map(Some),
+        None => Ok(None),
+    }
+}
+
 // HttpContext is the trait that allows the Rust code to interact with HTTP objects.
 impl HttpContext for StreamContext {
     // Envoy's HTTP model is event driven. The WASM ABI has given implementors events to hook onto
@@ -124,17 +133,15 @@ impl HttpContext for StreamContext {
             }
         };
 
-        self.arch_state = match deserialized_body.metadata {
-            Some(ref metadata) => {
-                if metadata.contains_key(X_ARCH_STATE_HEADER) {
-                    let arch_state_str = metadata[X_ARCH_STATE_HEADER].clone();
-                    let arch_state: Vec<ArchState> = serde_json::from_str(&arch_state_str).unwrap();
-                    Some(arch_state)
-                } else {
-                    None
-                }
+        self.arch_state = match parse_arch_state(deserialized_body.metadata.as_ref()) {
+            Ok(arch_state) => arch_state,
+            Err(error) => {
+                self.send_server_error(
+                    ServerError::Deserialization(error),
+                    Some(StatusCode::BAD_REQUEST),
+                );
+                return Action::Pause;
             }
-            None => None,
         };
 
         self.streaming_response = deserialized_body.stream;
@@ -428,5 +435,19 @@ impl HttpContext for StreamContext {
         debug!("recv [S={}] end_stream={}", self.context_id, end_of_stream);
 
         Action::Continue
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_arch_state;
+    use common::consts::X_ARCH_STATE_HEADER;
+    use std::collections::HashMap;
+
+    #[test]
+    fn malformed_arch_state_metadata_returns_deserialization_error() {
+        let metadata = HashMap::from([(X_ARCH_STATE_HEADER.to_string(), "not-json".to_string())]);
+
+        assert!(parse_arch_state(Some(&metadata)).is_err());
     }
 }
