@@ -299,16 +299,6 @@ def validate_and_render_schema():
 
     print("defined clusters from plano_config.yaml: ", json.dumps(inferred_clusters))
 
-    if "prompt_targets" in config_yaml:
-        for prompt_target in config_yaml["prompt_targets"]:
-            name = prompt_target.get("endpoint", {}).get("name", None)
-            if not name:
-                continue
-            if name not in inferred_clusters:
-                raise Exception(
-                    f"Unknown endpoint {name}, please add it in endpoints section in your plano_config.yaml file"
-                )
-
     plano_tracing = config_yaml.get("tracing", {})
 
     # Resolution order: config yaml > OTEL_TRACING_GRPC_ENDPOINT env var > hardcoded default
@@ -554,17 +544,6 @@ def validate_and_render_schema():
                 "name": "plano-orchestrator",
                 "provider_interface": "plano",
                 "model": router_model_id,
-                "internal": True,
-            }
-        )
-
-    # Always add arch-function model provider if not already defined
-    if "arch-function" not in model_provider_name_set:
-        updated_model_providers.append(
-            {
-                "name": "arch-function",
-                "provider_interface": "plano",
-                "model": "Arch-Function",
                 "internal": True,
             }
         )

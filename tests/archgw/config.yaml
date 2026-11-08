@@ -1,18 +1,13 @@
-version: v0.1.0
+version: v0.3.0
 
 listeners:
-  ingress_traffic:
+  - type: model
+    name: model_listener
     address: 0.0.0.0
-    port: 10000
-    message_format: openai
+    port: 12000
     timeout: 30s
 
-endpoints:
-  weather_forecast_service:
-    endpoint: host.docker.internal:51001
-    connect_timeout: 0.005s
-
-llm_providers:
+model_providers:
   - access_key: $OPENAI_API_KEY
     model: openai/gpt-4o-mini
     default: true
@@ -22,37 +17,3 @@ llm_providers:
 
   - access_key: $OPENAI_API_KEY
     model: openai/gpt-4o
-
-system_prompt: |
-  You are a helpful assistant.
-
-prompt_targets:
-  - name: get_current_weather
-    description: Get current weather at a location.
-    parameters:
-      - name: location
-        description: The location to get the weather for
-        required: true
-        type: string
-        format: city, state
-      - name: days
-        description: the number of days for the request
-        required: true
-        type: string
-    endpoint:
-      name: weather_forecast_service
-      path: /weather
-      http_method: POST
-
-  - name: default_target
-    default: true
-    description: This is the default target for all unmatched prompts.
-    endpoint:
-      name: weather_forecast_service
-      path: /default_target
-      http_method: POST
-    system_prompt: |
-      You are a helpful assistant! Summarize the user's request and provide a helpful response.
-    # if it is set to false arch will send response that it received from this prompt target to the user
-    # if true arch will forward the response to the default LLM
-    auto_llm_dispatch_on_response: false

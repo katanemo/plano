@@ -1,7 +1,4 @@
-use crate::{
-    configuration::LlmProvider,
-    consts::{ARCH_FC_MODEL_NAME, ASSISTANT_ROLE},
-};
+use crate::{configuration::LlmProvider, consts::ASSISTANT_ROLE};
 use serde::{ser::SerializeMap, Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
@@ -300,7 +297,7 @@ impl ChatCompletionsResponse {
                 message: Message {
                     role: ASSISTANT_ROLE.to_string(),
                     content: Some(ContentType::Text(message)),
-                    model: Some(ARCH_FC_MODEL_NAME.to_string()),
+                    model: None,
                     tool_calls: None,
                     tool_call_id: None,
                 },
@@ -308,7 +305,7 @@ impl ChatCompletionsResponse {
                 finish_reason: Some("done".to_string()),
             }],
             usage: None,
-            model: ARCH_FC_MODEL_NAME.to_string(),
+            model: String::new(),
             metadata: None,
         }
     }

@@ -35,7 +35,6 @@ Built by contributors to the widely adopted `Envoy Proxy <https://www.envoyproxy
       concepts/agents
       concepts/filter_chain
       concepts/llm_providers/llm_providers
-      concepts/prompt_target
       concepts/signals
 
   .. tab-item:: Guides
@@ -47,7 +46,6 @@ Built by contributors to the widely adopted `Envoy Proxy <https://www.envoyproxy
 
       guides/orchestration
       guides/llm_router
-      guides/function_calling
       guides/observability/observability
       guides/prompt_guard
       guides/state

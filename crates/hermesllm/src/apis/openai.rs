@@ -111,7 +111,7 @@ pub struct ChatCompletionsRequest {
     pub user: Option<String>,
     pub web_search_options: Option<Value>,
 
-    // VLLM-specific parameters (used by Arch-Function)
+    // VLLM-specific parameters
     pub top_k: Option<u32>,
     pub stop_token_ids: Option<Vec<u32>>,
     pub continue_final_message: Option<bool>,

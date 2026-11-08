@@ -59,16 +59,16 @@ enables scaling to very high core count CPUs.
    │                                         │                                           │
    │          ┌──────────────────────────────┼──────────────────────────┐                │
    │          │                              │                          │                │
-   │   ┌──────▼──────────┐         ┌─────────▼────────┐       ┌────────▼─────────┐       │
-   │   │  Agent Port(s)  │         │   Model Port     │       │  Function-Call   │       │
-   │   │  :8001+         │         │   :12000         │       │  Port  :10000    │       │
-   │   │                 │         │                  │       │                  │       │
-   │   │  route your     │         │  direct LLM      │       │  prompt-target / │       │
-   │   │  prompts to     │         │  calls with      │       │  tool dispatch   │       │
-   │   │  the right      │         │  model-alias     │       │  with parameter  │       │
-   │   │  agent          │         │  translation     │       │  extraction      │       │
-   │   └──────┬──────────┘         └─────────┬────────┘       └────────┬─────────┘       │
-   │          └──────────────────────────────┼─────────────────────────┘                 │
+   │   ┌──────▼──────────┐         ┌─────────▼────────┐                                 │
+   │   │  Agent Port(s)  │         │   Model Port     │                                 │
+   │   │  :8001+         │         │   :12000         │                                 │
+   │   │                 │         │                  │                                 │
+   │   │  route your     │         │  direct LLM      │                                 │
+   │   │  prompts to     │         │  calls with      │                                 │
+   │   │  the right      │         │  model-alias     │                                 │
+   │   │  agent          │         │  translation     │                                 │
+   │   └──────┬──────────┘         └─────────┬────────┘                                 │
+   │          └──────────────────────────────┼───────────────────────────────────────────│
    │                                         │                                           │
    │  ╔══════════════════════════════════════▼══════════════════════════════════════╗    │
    │  ║            BRIGHTSTAFF (SUBSYSTEM) —  Agentic Control Plane                 ║    │
@@ -167,41 +167,27 @@ A brief outline of the lifecycle of a request and response using the example con
    The listener filter chain provides SNI and other pre-TLS information. The transport socket, typically TLS,
    decrypts incoming data for processing.
 
-3. **Routing Decision (Agent vs Prompt Target)**:
+3. **Routing Decision**:
    The decrypted data stream is de-framed by the HTTP/2 codec in Plano's HTTP connection manager. Plano performs
-   intent matching (via the Bright Staff controller and prompt-handling logic) using the configured agents and
-   :ref:`prompt targets <prompt_target>`, determining whether this request should be handled by an agent workflow
-   (with optional :ref:`Filter Chains <filter_chain>`) or by a deterministic prompt target.
+   intent matching (via the Bright Staff controller and prompt-handling logic) using the configured agents,
+   determining which agent workflow should handle the request (with optional :ref:`Filter Chains <filter_chain>`).
 
-4a. **Agent Path: Orchestration and Filter Chains**
+4. **Agent Path: Orchestration and Filter Chains**
 
-   If the request is routed to an **agent**, Plano executes any attached :ref:`Filter Chains <filter_chain>` first. These filters can apply guardrails, rewrite prompts, or enrich context (for example, RAG retrieval) before the agent runs. Once filters complete, the Bright Staff controller orchestrates which downstream tools, APIs, or LLMs the agent should call and in what sequence.
+   When a request is routed to an **agent**, Plano executes any attached :ref:`Filter Chains <filter_chain>` first. These filters can apply guardrails, rewrite prompts, or enrich context (for example, RAG retrieval) before the agent runs. Once filters complete, the Bright Staff controller orchestrates which downstream tools, APIs, or LLMs the agent should call and in what sequence.
 
    * Plano may call one or more backend APIs or tools on behalf of the agent.
    * If an endpoint cluster is identified, load balancing is performed, circuit breakers are checked, and the request is proxied to the appropriate upstream endpoint.
    * If no specific endpoint is required, the prompt is sent to an upstream LLM using Plano's model proxy for
      completion or summarization.
 
-   For more on agent workflows and orchestration, see :ref:`Prompt Targets and Agents <prompt_target>` and
+   For more on agent workflows and orchestration, see :ref:`Agents <agents>` and
    :ref:`Agent Filter Chains <filter_chain>`.
 
-4b. **Prompt Target Path: Deterministic Tool/API Calls**
-
-   If the request is routed to a **prompt target**, Plano treats it as a deterministic, task-specific call.
-   Plano engages its function-calling and parameter-gathering capabilities to extract the necessary details
-   from the incoming prompt(s) and produce the structured inputs your backend expects.
-
-   * **Parameter Gathering**: Plano extracts and validates parameters defined on the prompt target (for example,
-     currency symbols, dates, or entity identifiers) so your backend does not need to parse natural language.
-   * **API Call Execution**: Plano then routes the call to the configured backend endpoint. If an endpoint cluster is identified, load balancing and circuit-breaker checks are applied before proxying the request upstream.
-
-   For more on how to design and configure prompt targets, see :ref:`Prompt Target <prompt_target>`.
-
 5. **Error Handling and Forwarding**:
-   Errors encountered during processing, such as failed function calls or guardrail detections, are forwarded to
+   Errors encountered during processing, such as failed upstream calls or guardrail detections, are forwarded to
    designated error targets. Error details are communicated through specific headers to the application:
 
-   - ``X-Function-Error-Code``: Code indicating the type of function call error.
    - ``X-Prompt-Guard-Error-Code``: Code specifying violations detected by prompt guardrails.
    - Additional headers carry messages and timestamps to aid in debugging and logging.
 

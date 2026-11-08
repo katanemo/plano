@@ -1,7 +1,7 @@
 ---
 title: Choose the Right Listener Type for Your Use Case
 impact: CRITICAL
-impactDescription: The listener type determines the entire request processing pipeline — choosing the wrong type means features like prompt functions or agent routing are unavailable
+impactDescription: The listener type determines the entire request processing pipeline — choosing the wrong type means features like agent routing are unavailable
 tags: config, listeners, architecture, routing
 ---
 
@@ -12,7 +12,7 @@ Plano supports three listener types, each serving a distinct purpose. `listeners
 | Type | Use When | Key Feature |
 |------|----------|-------------|
 | `model` | You want an OpenAI-compatible LLM gateway | Routes to multiple LLM providers, supports model aliases and routing preferences |
-| `prompt` | You want LLM-callable custom functions | Define `prompt_targets` that the LLM dispatches as function calls |
+| `prompt` | You want inbound prompt traffic via the prompt gateway | Runs the prompt gateway WASM filter for guardrails, tracing, and prompt-path policies |
 | `agent` | You want multi-agent orchestration | Routes user requests to specialized sub-agents by matching agent descriptions |
 
 **Incorrect (using `model` when agents need orchestration):**

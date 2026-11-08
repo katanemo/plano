@@ -6,7 +6,6 @@ use brightstaff::app_state::AppState;
 use brightstaff::handlers::agents::orchestrator::agent_chat;
 use brightstaff::handlers::debug;
 use brightstaff::handlers::empty;
-use brightstaff::handlers::function_calling::function_calling_chat_handler;
 use brightstaff::handlers::llm::llm_chat;
 use brightstaff::handlers::models::list_models;
 use brightstaff::handlers::routing_service::routing_decision;
@@ -528,7 +527,6 @@ fn handler_label_for(method: &Method, path: &str) -> &'static str {
         (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
             metric_labels::HANDLER_LLM_CHAT
         }
-        (&Method::POST, "/function_calling") => metric_labels::HANDLER_FUNCTION_CALLING,
         (&Method::GET, "/v1/models" | "/agents/v1/models") => metric_labels::HANDLER_LIST_MODELS,
         (&Method::OPTIONS, "/v1/models" | "/agents/v1/models") => {
             metric_labels::HANDLER_CORS_PREFLIGHT
@@ -605,12 +603,6 @@ async fn dispatch(
     match (req.method(), path.as_str()) {
         (&Method::POST, CHAT_COMPLETIONS_PATH | MESSAGES_PATH | OPENAI_RESPONSES_API_PATH) => {
             llm_chat(req, Arc::clone(&state))
-                .with_context(parent_cx)
-                .await
-        }
-        (&Method::POST, "/function_calling") => {
-            let url = format!("{}/v1/chat/completions", state.llm_provider_url);
-            function_calling_chat_handler(req, url)
                 .with_context(parent_cx)
                 .await
         }

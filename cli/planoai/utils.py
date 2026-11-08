@@ -188,18 +188,6 @@ def get_llm_provider_access_keys(plano_config_file):
         plano_config_yaml.get("listeners"), plano_config_yaml.get("model_providers")
     )
 
-    for prompt_target in plano_config_yaml.get("prompt_targets", []):
-        for k, v in prompt_target.get("endpoint", {}).get("http_headers", {}).items():
-            if k.lower() == "authorization":
-                print(
-                    f"found auth header: {k} for prompt_target: {prompt_target.get('name')}/{prompt_target.get('endpoint').get('name')}"
-                )
-                auth_tokens = v.split(" ")
-                if len(auth_tokens) > 1:
-                    access_key_list.append(auth_tokens[1])
-                else:
-                    access_key_list.append(v)
-
     for listener in listeners:
         for llm_provider in listener.get("model_providers", []):
             access_key = llm_provider.get("access_key")

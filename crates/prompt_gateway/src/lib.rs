@@ -7,7 +7,6 @@ mod filter_context;
 mod http_context;
 mod metrics;
 mod stream_context;
-mod tools;
 
 proxy_wasm::main! {{
     proxy_wasm::set_log_level(LogLevel::Trace);

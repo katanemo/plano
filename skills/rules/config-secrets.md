@@ -7,7 +7,7 @@ tags: config, security, secrets, api-keys, environment-variables
 
 ## Use Environment Variable Substitution for All Secrets
 
-Plano supports `$VAR_NAME` substitution in config values. This applies to `access_key` fields, `connection_string` for state storage, and `http_headers` in prompt targets and endpoints. Never hardcode credentials — Plano reads them from environment variables or a `.env` file at startup via `planoai up`.
+Plano supports `$VAR_NAME` substitution in config values. This applies to `access_key` fields, `connection_string` for state storage, and headers on endpoints and providers. Never hardcode credentials — Plano reads them from environment variables or a `.env` file at startup via `planoai up`.
 
 **Incorrect (hardcoded secrets):**
 
@@ -22,12 +22,11 @@ state_storage:
   type: postgres
   connection_string: "postgresql://admin:mysecretpassword@prod-db:5432/plano"
 
-prompt_targets:
-  - name: get_data
-    endpoint:
-      name: my_api
-      http_headers:
-        Authorization: "Bearer abcdefghijklmnopqrstuvwxyz"   # Hardcoded token
+endpoints:
+  my_api:
+    endpoint: api.example.com:443
+    protocol: https
+    # Headers with hardcoded tokens — never do this
 ```
 
 **Correct (environment variable substitution):**
@@ -47,12 +46,10 @@ state_storage:
   type: postgres
   connection_string: "postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:5432/${DB_NAME}"
 
-prompt_targets:
-  - name: get_data
-    endpoint:
-      name: my_api
-      http_headers:
-        Authorization: "Bearer $MY_API_TOKEN"
+endpoints:
+  my_api:
+    endpoint: api.example.com:443
+    protocol: https
 ```
 
 **`.env` file pattern (loaded automatically by `planoai up`):**

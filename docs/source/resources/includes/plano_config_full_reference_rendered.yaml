@@ -107,7 +107,7 @@ listeners:
   timeout: 30s
   type: model
 - address: 0.0.0.0
-  name: prompt_function_listener
+  name: prompt_listener
   port: 10000
   type: prompt
 model_aliases:
@@ -185,10 +185,6 @@ model_providers:
   name: plano-orchestrator
   provider_interface: plano
 - internal: true
-  model: Arch-Function
-  name: arch-function
-  provider_interface: plano
-- internal: true
   model: Plano-Orchestrator
   name: plano/orchestrator
   provider_interface: plano
@@ -197,7 +193,6 @@ overrides:
   disable_signals: false
   llm_routing_model: Plano-Orchestrator
   optimize_context_window: true
-  prompt_target_intent_matching_threshold: 0.7
   upstream_connect_timeout: 10s
   upstream_tls_ca_path: /etc/ssl/certs/ca-certificates.crt
   use_agent_orchestrator: false
@@ -206,25 +201,6 @@ prompt_guards:
     jailbreak:
       on_exception:
         message: I'm sorry, I can't help with that request.
-prompt_targets:
-- auto_llm_dispatch_on_response: true
-  description: Get current weather at a location.
-  endpoint:
-    http_method: POST
-    name: app_server
-    path: /weather
-  name: get_current_weather
-  parameters:
-  - description: The location to get the weather for
-    format: City, State
-    name: location
-    required: true
-    type: string
-  - description: the number of days for the request
-    name: days
-    required: true
-    type: int
-  system_prompt: You are a weather expert. Provide accurate and concise weather information.
 ratelimits:
 - limit:
     tokens: 100000
@@ -262,9 +238,6 @@ routing_preferences:
     prefer: cheapest
 state_storage:
   type: memory
-system_prompt: 'You are a helpful assistant. Always respond concisely and accurately.
-
-  '
 tracing:
   exporters:
   - api_key: $POSTHOG_API_KEY

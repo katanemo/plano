@@ -19,29 +19,29 @@ request path.
 Network Topology
 ^^^^^^^^^^^^^^^^
 
-The diagram below shows how inbound and outbound traffic flow through Plano and how listeners relate to agents,
-prompt targets, and upstream LLMs:
+The diagram below shows how inbound and outbound traffic flow through Plano and how listeners relate to agents
+and upstream LLMs:
 
 .. image:: /_static/img/network-topology-ingress-egress.png
    :width: 100%
    :align: center
 
 
-Inbound (Agent & Prompt Target)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Inbound (Agent & Prompt)
+^^^^^^^^^^^^^^^^^^^^^^^^
 Developers configure **inbound listeners** to accept connections from clients such as web frontends, backend
 services, or other gateways. An inbound listener acts as the primary entry point for prompt traffic, handling
-initial connection setup, TLS termination, guardrails, and forwarding incoming traffic to the appropriate prompt
-targets or agents.
+initial connection setup, TLS termination, guardrails, and forwarding incoming traffic to the appropriate agents
+or prompt-gateway processing path.
 
 There are two primary types of inbound connections exposed via listeners:
 
 * **Agent Inbound (Edge)**: Clients (web/mobile apps or other services) connect to Plano, send prompts, and receive
   responses. This is typically your public/edge listener where Plano applies guardrails, routing, and orchestration
-  before returning results to the caller.
+  before returning results to the caller. Configure with ``type: agent``.
 
-* **Prompt Target Inbound (Edge)**: Your application server calls Plano's internal listener targeting
-  :ref:`prompt targets <prompt_target>` that can invoke tools and LLMs directly on its behalf.
+* **Prompt Inbound (Edge)**: An inbound listener that runs the prompt gateway WASM filter for prompt traffic
+  processing (guardrails, tracing, and related prompt-path policies). Configure with ``type: prompt``.
 
 Inbound listeners are where you attach :ref:`Filter Chains <filter_chain>` so that safety and context-building happen
 consistently at the edge.
@@ -51,7 +51,7 @@ Outbound (Model Proxy & Egress)
 Plano also exposes an **egress listener** that your applications call when sending requests to upstream LLM providers
 or self-hosted models. From your application's perspective this looks like a single OpenAI-compatible HTTP endpoint
 (for example, ``http://127.0.0.1:12000/v1``), while Plano handles provider selection, retries, and failover behind
-the scenes.
+the scenes. Configure with ``type: model``.
 
 Under the hood, Plano opens outbound HTTP(S) connections to upstream LLM providers using its unified API surface and
 smart model routing. For more details on how Plano talks to models and how providers are configured, see
@@ -65,19 +65,19 @@ Configure Listeners
 ^^^^^^^^^^^^^^^^^^^
 
 Listeners are configured via the ``listeners`` block in your Plano configuration. You can define one or more inbound
-listeners (for example, ``type:edge``) or one or more outbound/model listeners (for example, ``type:model``), or both
-in the same deployment.
+listeners (for example, ``type: agent`` or ``type: prompt``) or one or more outbound/model listeners (for example,
+``type: model``), or both in the same deployment.
 
-To configure an inbound (edge) listener, add a ``listeners`` block to your configuration file and define at least one
+To configure an inbound (agent) listener, add a ``listeners`` block to your configuration file and define at least one
 listener with address, port, and protocol details:
 
 .. literalinclude:: ./includes/plano_config.yaml
     :language: yaml
     :linenos:
-    :lines: 1-13
-    :emphasize-lines: 3-7
+    :lines: 1-12
+    :emphasize-lines: 3-11
     :caption: Example Configuration
 
 When you start Plano, you specify a listener address/port that you want to bind downstream. Plano also exposes a
 predefined internal listener (``127.0.0.1:12000``) that you can use to proxy egress calls originating from your
-application to LLMs (API-based or hosted) via prompt targets.
+application to LLMs (API-based or hosted).

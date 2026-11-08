@@ -92,7 +92,7 @@ const SECTIONS: Section[] = [
     number: 8,
     title: "Advanced Patterns",
     description:
-      "Prompt targets, external API integration, rate limiting, and multi-listener architectures.",
+      "Multi-listener architectures and layered orchestration patterns.",
   },
 ];
 

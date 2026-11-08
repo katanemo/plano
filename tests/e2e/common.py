@@ -6,7 +6,6 @@ PROMPT_GATEWAY_ENDPOINT = os.getenv(
 )
 
 PROMPT_GATEWAY_PATH = os.getenv("PROMPT_GATEWAY_PATH", "/v1/chat/completions")
-MODEL_SERVER_FUNC_PATH = os.getenv("MODEL_SERVER_FUNC_PATH", "/function_calling")
 
 LLM_GATEWAY_ENDPOINT = os.getenv(
     "LLM_GATEWAY_ENDPOINT", "http://localhost:12000/v1/chat/completions"
@@ -22,64 +21,6 @@ PREFILL_LIST = [
     "Of course",
     "Can",
 ]
-
-TEST_CASE_FIXTURES = {
-    "SIMPLE": {
-        "input": {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "how is the weather in seattle for next 2 days",
-                }
-            ]
-        },
-        "model_server_response": {
-            "id": 0,
-            "object": "chat_completion",
-            "created": "",
-            "choices": [
-                {
-                    "id": 0,
-                    "message": {
-                        "role": "",
-                        "content": "",
-                        "tool_call_id": "",
-                        "tool_calls": [
-                            {
-                                "id": "call_6009",
-                                "type": "function",
-                                "function": {
-                                    "name": "get_current_weather",
-                                    "arguments": {
-                                        "location": "Seattle, WA",
-                                        "days": "2",
-                                    },
-                                },
-                            }
-                        ],
-                    },
-                    "finish_reason": "stop",
-                }
-            ],
-            "model": "Arch-Function",
-            "metadata": {"intent_latency": "455.092", "function_latency": "312.744"},
-        },
-        "api_server_response": [
-            {
-                "date": "2024-12-12",
-                "temperature": {"min": 72, "max": 90},
-                "units": "Farenheit",
-                "query_time": "2024-12-12 22:06:30.420319+00:00",
-            },
-            {
-                "date": "2024-12-13",
-                "temperature": {"min": 52, "max": 70},
-                "units": "Farenheit",
-                "query_time": "2024-12-12 22:06:30.420349+00:00",
-            },
-        ],
-    }
-}
 
 
 def get_data_chunks(stream, n=1):

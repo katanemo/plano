@@ -13,4 +13,4 @@ Files are assigned to sections based on their filename prefix.
 | `observe-`  | 5         | Observability & Debugging  | MEDIUM-HIGH | OpenTelemetry tracing, log levels, span attributes, and sampling for production visibility                              |
 | `cli-`      | 6         | CLI Operations             | MEDIUM      | Using the planoai CLI for startup, tracing, CLI agents, project init, and code generation                               |
 | `deploy-`   | 7         | Deployment & Security      | HIGH        | Docker deployment, environment variable management, health checks, and state storage for production                     |
-| `advanced-` | 8         | Advanced Patterns          | MEDIUM      | Prompt targets, external API integration, and multi-listener architectures                                              |
+| `advanced-` | 8         | Advanced Patterns          | MEDIUM      | Multi-listener architectures and layered orchestration patterns                                                          |

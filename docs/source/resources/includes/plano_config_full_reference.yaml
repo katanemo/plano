@@ -104,7 +104,7 @@ model_metrics_sources:
     query: avg by (model_name) (rate(plano_llm_latency_seconds_sum[5m]))
     refresh_interval: 60
 
-# HTTP listeners - entry points for agent routing, prompt targets, and direct LLM access
+# HTTP listeners - entry points for agent routing and direct LLM access
 listeners:
   # Agent listener for routing requests to multiple agents
   - type: agent
@@ -130,9 +130,9 @@ listeners:
     output_filters:       # Filters applied to LLM responses before returning to client
       - input_guards
 
-  # Prompt listener for function calling (for prompt_targets)
+  # Prompt listener — runs the prompt gateway WASM filter for inbound prompt traffic
   - type: prompt
-    name: prompt_function_listener
+    name: prompt_listener
     address: 0.0.0.0
     port: 10000
 
@@ -150,34 +150,6 @@ endpoints:
     endpoint: api.example.com:443
     protocol: https
     http_host: api.example.com  # Override the Host header sent upstream
-
-# Optional top-level system prompt applied to all prompt_targets
-system_prompt: |
-  You are a helpful assistant. Always respond concisely and accurately.
-
-# Prompt targets for function calling and API orchestration
-prompt_targets:
-  - name: get_current_weather
-    description: Get current weather at a location.
-    parameters:
-      - name: location
-        description: The location to get the weather for
-        required: true
-        type: string
-        format: City, State
-      - name: days
-        description: the number of days for the request
-        required: true
-        type: int
-    endpoint:
-      name: app_server
-      path: /weather
-      http_method: POST
-    # Per-target system prompt (overrides top-level system_prompt for this target)
-    system_prompt: You are a weather expert. Provide accurate and concise weather information.
-    # auto_llm_dispatch_on_response: when true, the LLM is called again with the
-    # function response to produce a final natural-language answer for the user
-    auto_llm_dispatch_on_response: true
 
 # Rate limits - control token usage per model and request selector
 ratelimits:
@@ -199,8 +171,6 @@ ratelimits:
 
 # Global behavior overrides
 overrides:
-  # Threshold for routing a request to a prompt_target (0.0–1.0). Lower = more permissive.
-  prompt_target_intent_matching_threshold: 0.7
   # Trim conversation history to fit within the model's context window
   optimize_context_window: true
   # Use Plano's agent orchestrator for multi-agent request routing

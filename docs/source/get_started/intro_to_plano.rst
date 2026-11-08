@@ -29,8 +29,6 @@ These LLMs are designed to be best-in-class for critical tasks like:
 
 * **Agent Orchestration:** `Plano-Orchestrator <https://huggingface.co/collections/katanemo/plano-orchestrator>`_ is a family of state-of-the-art routing and orchestration models that decide which agent(s) or LLM(s) should handle each request, and in what sequence. Built for real-world multi-agent deployments, it analyzes user intent and conversation context to make precise routing and orchestration decisions while remaining efficient enough for low-latency production use across general chat, coding, and long-context multi-turn conversations.
 
-* **Function Calling:** Plano lets you expose application-specific (API) operations as tools so that your agents can update records, fetch data, or trigger determininistic workflows via prompts. Under the hood this is backed by Arch-Function-Chat; for more details, read :ref:`Function Calling <function_calling>`.
-
 * **Guardrails:** Plano helps you improve the safety of your application by applying prompt guardrails in a centralized way for better governance hygiene.
   With prompt guardrails you can prevent ``jailbreak attempts`` present in user's prompts without having to write a single line of code.
   To learn more about how to configure guardrails available in Plano, read :ref:`Prompt Guard <prompt_guard>`.

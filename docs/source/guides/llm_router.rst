@@ -777,6 +777,6 @@ The following features are **not supported** by the Plano-Orchestrator routing m
 
 - **Multi-modality**: The model is not trained to process raw image or audio inputs. It can handle textual queries *about* these modalities (e.g., "generate an image of a cat"), but cannot interpret encoded multimedia data directly.
 
-- **Function calling**: Plano-Orchestrator is designed for **semantic preference matching**, not exact intent classification or tool execution. For structured function invocation, use models in the Plano Function Calling collection instead.
+- **Tool use**: Plano-Orchestrator is designed for **semantic preference matching**, not exact intent classification or tool execution. Tool calling should be handled by your agents or upstream models that support it.
 
 - **System prompt dependency**: Plano-Orchestrator routes based solely on the user’s conversation history. It does not use or rely on system prompts for routing decisions.

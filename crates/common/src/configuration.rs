@@ -3,10 +3,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;
 
-use crate::api::open_ai::{
-    ChatCompletionTool, FunctionDefinition, FunctionParameter, FunctionParameters, ParameterType,
-};
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionCacheType {
@@ -233,7 +229,6 @@ pub struct Configuration {
     pub prompt_caching: Option<PromptCaching>,
     pub system_prompt: Option<String>,
     pub prompt_guards: Option<PromptGuards>,
-    pub prompt_targets: Option<Vec<PromptTarget>>,
     pub error_target: Option<ErrorTargetDetail>,
     pub ratelimits: Option<Vec<Ratelimit>>,
     pub tracing: Option<Tracing>,
@@ -248,7 +243,6 @@ pub struct Configuration {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Overrides {
-    pub prompt_target_intent_matching_threshold: Option<f64>,
     pub optimize_context_window: Option<bool>,
     pub use_agent_orchestrator: Option<bool>,
     pub llm_routing_model: Option<String>,
@@ -842,20 +836,6 @@ pub struct Endpoint {
     pub endpoint: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Parameter {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub parameter_type: Option<String>,
-    pub description: String,
-    pub required: Option<bool>,
-    #[serde(rename = "enum")]
-    pub enum_values: Option<Vec<String>>,
-    pub default: Option<String>,
-    pub in_path: Option<bool>,
-    pub format: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum HttpMethod {
     #[default]
@@ -883,52 +863,6 @@ pub struct EndpointDetails {
     pub http_headers: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PromptTarget {
-    pub name: String,
-    pub default: Option<bool>,
-    pub description: String,
-    pub endpoint: Option<EndpointDetails>,
-    pub parameters: Option<Vec<Parameter>>,
-    pub system_prompt: Option<String>,
-    pub auto_llm_dispatch_on_response: Option<bool>,
-}
-
-// convert PromptTarget to ChatCompletionTool
-impl From<&PromptTarget> for ChatCompletionTool {
-    fn from(val: &PromptTarget) -> Self {
-        let properties: HashMap<String, FunctionParameter> = match val.parameters {
-            Some(ref entities) => {
-                let mut properties: HashMap<String, FunctionParameter> = HashMap::new();
-                for entity in entities.iter() {
-                    let param = FunctionParameter {
-                        parameter_type: ParameterType::from(
-                            entity.parameter_type.clone().unwrap_or("str".to_string()),
-                        ),
-                        description: entity.description.clone(),
-                        required: entity.required,
-                        enum_values: entity.enum_values.clone(),
-                        default: entity.default.clone(),
-                        format: entity.format.clone(),
-                    };
-                    properties.insert(entity.name.clone(), param);
-                }
-                properties
-            }
-            None => HashMap::new(),
-        };
-
-        ChatCompletionTool {
-            tool_type: crate::api::open_ai::ToolType::Function,
-            function: FunctionDefinition {
-                name: val.name.clone(),
-                description: val.description.clone(),
-                parameters: FunctionParameters { properties },
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
@@ -939,7 +873,6 @@ mod test {
         PromptCaching, Routing, RoutingBudget, DEFAULT_CACHE_READ_DISCOUNT,
         DEFAULT_MIN_PREFIX_TOKENS,
     };
-    use crate::api::open_ai::ToolType;
 
     #[test]
     fn test_deserialize_configuration() {
@@ -951,13 +884,6 @@ mod test {
         let config: super::Configuration = serde_yaml::from_str(&ref_config).unwrap();
         assert_eq!(config.version, "v0.4.0");
 
-        if let Some(prompt_targets) = &config.prompt_targets {
-            assert!(
-                !prompt_targets.is_empty(),
-                "prompt_targets should not be empty if present"
-            );
-        }
-
         if let Some(tracing) = config.tracing.as_ref() {
             if let Some(sampling_rate) = tracing.sampling_rate {
                 assert_eq!(sampling_rate, 0.1);
@@ -966,60 +892,6 @@ mod test {
 
         let mode = config.mode.as_ref().unwrap_or(&super::GatewayMode::Prompt);
         assert_eq!(*mode, super::GatewayMode::Prompt);
-    }
-
-    #[test]
-    fn test_tool_conversion() {
-        let ref_config = fs::read_to_string(
-            "../../docs/source/resources/includes/plano_config_full_reference_rendered.yaml",
-        )
-        .expect("reference config file not found");
-        let config: super::Configuration = serde_yaml::from_str(&ref_config).unwrap();
-        if let Some(prompt_targets) = &config.prompt_targets {
-            if let Some(prompt_target) = prompt_targets
-                .iter()
-                .find(|p| p.name == "reboot_network_device")
-            {
-                let chat_completion_tool: super::ChatCompletionTool = prompt_target.into();
-                assert_eq!(chat_completion_tool.tool_type, ToolType::Function);
-                assert_eq!(chat_completion_tool.function.name, "reboot_network_device");
-                assert_eq!(
-                    chat_completion_tool.function.description,
-                    "Reboot a specific network device"
-                );
-                assert_eq!(chat_completion_tool.function.parameters.properties.len(), 2);
-                assert!(chat_completion_tool
-                    .function
-                    .parameters
-                    .properties
-                    .contains_key("device_id"));
-                let device_id_param = chat_completion_tool
-                    .function
-                    .parameters
-                    .properties
-                    .get("device_id")
-                    .unwrap();
-                assert_eq!(
-                    device_id_param.parameter_type,
-                    crate::api::open_ai::ParameterType::String
-                );
-                assert_eq!(
-                    device_id_param.description,
-                    "Identifier of the network device to reboot.".to_string()
-                );
-                assert_eq!(device_id_param.required, Some(true));
-                let confirmation_param = chat_completion_tool
-                    .function
-                    .parameters
-                    .properties
-                    .get("confirmation")
-                    .unwrap();
-                assert_eq!(
-                    confirmation_param.parameter_type,
-                    crate::api::open_ai::ParameterType::Bool
-                );
-            }
-        }
     }
 
     #[test]

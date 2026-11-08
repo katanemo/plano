@@ -7,7 +7,7 @@
             "traceId": "f7a31829c4b5d6e8a9f0b1c2d3e4f5a6",
             "spanId": "2e7269ca30eb05fa",
             "parentSpanId": "d6e7de4dfc43c662",
-            "name": "POST archfc.katanemo.dev/v1/chat/completions",
+            "name": "POST api.example.com/v1/chat/completions",
             "startTimeUnixNano": "1770937800292451000",
             "endTimeUnixNano": "1770937800552403000",
             "service": "plano(outbound)",
@@ -33,7 +33,7 @@
               {
                 "key": "http.url",
                 "value": {
-                  "stringValue": "https://archfc.katanemo.dev/v1/chat/completions"
+                  "stringValue": "https://api.example.com/v1/chat/completions"
                 }
               },
               {
@@ -462,7 +462,7 @@
             "traceId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
             "spanId": "3f8379db41fc16gb",
             "parentSpanId": "e7f8ef5efd54d773",
-            "name": "POST archfc.katanemo.dev/v1/chat/completions",
+            "name": "POST api.example.com/v1/chat/completions",
             "startTimeUnixNano": "1770937900292451000",
             "endTimeUnixNano": "1770937900552403000",
             "service": "plano(outbound)",
@@ -488,7 +488,7 @@
               {
                 "key": "http.url",
                 "value": {
-                  "stringValue": "https://archfc.katanemo.dev/v1/chat/completions"
+                  "stringValue": "https://api.example.com/v1/chat/completions"
                 }
               },
               {

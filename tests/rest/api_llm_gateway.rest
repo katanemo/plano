@@ -101,7 +101,7 @@ x-arch-llm-provider-hint: gpt-3.5-turbo-0125
   ]
 }
 
-### llm gateway request with function calling (default target)
+### llm gateway streaming request with tools
 POST {{llm_endpoint}}/v1/chat/completions HTTP/1.1
 Content-Type: application/json
 

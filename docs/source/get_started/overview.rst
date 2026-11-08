@@ -8,7 +8,7 @@ Plano pulls out the rote plumbing work (the “hidden AI middleware”) and deco
 
 Built by core contributors to the widely adopted `Envoy Proxy <https://www.envoyproxy.io/>`_, Plano gives you a production‑grade foundation for agentic applications. It helps **developers** stay focused on the core logic of their agents, helps **product teams** shorten feedback loops for learning, and helps **engineering teams**  standardize policy and safety across agents and LLMs. Plano is grounded in open protocols (de facto: OpenAI‑style v1/responses, de jure: MCP) and proven patterns like sidecar deployments, so it plugs in cleanly while remaining robust, scalable, and flexible.
 
-In this documentation, you’ll learn how to set up Plano quickly, trigger API calls via prompts, apply guardrails without tight coupling with application code, simplify model and provider integration, and improve observability — so that you can focus on what matters most: the core product logic of your agents.
+In this documentation, you’ll learn how to set up Plano quickly, apply guardrails without tight coupling with application code, simplify model and provider integration, and improve observability — so that you can focus on what matters most: the core product logic of your agents.
 
 .. figure:: /_static/img/plano_network_diagram_high_level.png
    :width: 100%
@@ -57,10 +57,10 @@ Deep dive into essential ideas and mechanisms behind Plano:
 
         Explore Plano's LLM integration options
 
-    .. grid-item-card:: :octicon:`workflow` Prompt Target (Deprecated)
-        :link: ../concepts/prompt_target.html
+    .. grid-item-card:: :octicon:`broadcast` Listeners
+        :link: ../concepts/listeners.html
 
-        Deprecated — kept for existing users. New apps should use Agents.
+        Learn how inbound and outbound listeners bind traffic to Plano
 
 
 Guides

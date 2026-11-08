@@ -1,9 +1,19 @@
-version: v0.2.0
+version: v0.3.0
 
 listeners:
-  ingress_traffic:
+  - type: agent
+    name: network_assistant
     address: 0.0.0.0
     port: 10000
+    router: plano_orchestrator_v1
+    agents:
+      - id: app_server
+        description: Handles network device operations and information extraction.
+
+  - type: model
+    name: model_gateway
+    address: 0.0.0.0
+    port: 12000
 
 # Centralized way to manage LLMs, manage keys, retry logic, failover and limits in a central way
 model_providers:
@@ -11,40 +21,6 @@ model_providers:
     model: openai/gpt-4o
     default: true
 
-prompt_targets:
-  - name: information_extraction
-    default: true
-    description: handel all scenarios that are question and answer in nature. Like summarization, information extraction, etc.
-    endpoint:
-      name: app_server
-      path: /agent/summary
-    # Plano uses the default LLM and treats the response from the endpoint as the prompt to send to the LLM
-    auto_llm_dispatch_on_response: true
-    # override system prompt for this prompt target
-    system_prompt: You are a helpful information extraction assistant. Use the information that is provided to you.
-
-  - name: reboot_network_device
-    description: Reboot a specific network device
-    endpoint:
-      name: app_server
-      path: /agent/action
-    parameters:
-      - name: device_id
-        type: str
-        description: Identifier of the network device to reboot.
-        required: true
-      - name: confirmation
-        type: bool
-        description: Confirmation flag to proceed with reboot.
-        default: false
-        enum: [true, false]
-
-# Plano creates a round-robin load balancing between different endpoints, managed via the cluster subsystem.
-endpoints:
-  app_server:
-    # value could be ip address or a hostname with port
-    # this could also be a list of endpoints for load balancing
-    # for example endpoint: [ ip1:port, ip2:port ]
-    endpoint: 127.0.0.1:80
-    # max time to wait for a connection to be established
-    connect_timeout: 0.005s
+agents:
+  - id: app_server
+    url: http://127.0.0.1:80

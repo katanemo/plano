@@ -1,21 +1,17 @@
 # e2e tests
 
-e2e tests for arch llm gateway and prompt gateway
+e2e tests for the Plano LLM gateway (model listener) and related API translation.
 
-To be able to run e2e tests successfully run_e2e_script prepares environment in following way,
+To be able to run e2e tests successfully `run_e2e_tests.sh` prepares the environment as follows:
 
-1. build and start weather_forecast demo (using docker compose)
-1. build, install and start model server async (using uv)
-1. build and start Plano gateway (using docker compose)
-1. wait for model server to be ready
-1. wait for Plano gateway to be ready
+1. build, install and start the Plano CLI
+1. build and start Plano gateway (using docker)
 1. start e2e tests (using uv)
-   1. runs llm gateway tests for llm routing
-   2. runs prompt gateway tests to test function calling, parameter gathering and summarization
+   1. runs LLM gateway API translation tests (OpenAI / Anthropic clients)
+   2. runs model alias routing tests
+   3. runs OpenAI responses API client tests
 2. cleanup
    1. stops Plano gateway
-   2. stops model server
-   3. stops weather_forecast demo
 
 ## How to run
 
@@ -29,6 +25,7 @@ To run locally make sure that following requirements are met.
 
 ### Running tests locally
 
-```sh
-sh run_e2e_test.sh
+```bash
+cd tests/e2e
+./run_e2e_tests.sh
 ```
