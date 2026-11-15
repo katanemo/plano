@@ -9,9 +9,10 @@ use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
 use llm_token_visualizer::{detect, LogprobToken, Report};
+use opentelemetry::trace::get_active_span;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -1007,9 +1008,10 @@ impl ArchFunctionHandler {
                             .and_then(|d| d.get("content"))
                             .and_then(|c| c.as_str())
                         {
-                            if hallucination_state.append_and_check_logprob_tokens(
+                            hallucination_state.record_logprob_tokens(chunk_logprob_tokens(choice));
+                            if hallucination_state.append_and_check_token_hallucination(
                                 content.to_string(),
-                                chunk_logprob_tokens(choice),
+                                chunk_top_logprobs(choice),
                             ) {
                                 has_hallucination = true;
                                 break;
@@ -1029,21 +1031,34 @@ impl ArchFunctionHandler {
                     "detected hallucination: {}",
                     hallucination_state.error_message
                 );
-                let report = hallucination_state.uncertain_spans();
-                let spans: Vec<String> = report
-                    .spans
-                    .iter()
-                    .map(|span| format!("{:?}: {}", span.text, span.describe()))
-                    .collect();
+                let report = hallucination_state.take_uncertain_spans();
+                let uncertain_spans = describe_uncertain_spans(&report);
                 info!(
-                    "tokens below p={}: {}",
-                    report.threshold,
-                    if spans.is_empty() {
-                        "none".to_string()
-                    } else {
-                        spans.join("; ")
-                    }
+                    threshold = report.threshold,
+                    uncertain_spans = %uncertain_spans,
+                    "retrying with clarify prompt"
                 );
+                // Put the flag on the request span next to the clarify retry,
+                // so the trace shows which argument values were weak and what
+                // the model weighed instead.
+                get_active_span(|span| {
+                    span.set_attribute(opentelemetry::KeyValue::new(
+                        "function_calling.hallucination.parameter",
+                        hallucination_state
+                            .parameter_name
+                            .last()
+                            .cloned()
+                            .unwrap_or_default(),
+                    ));
+                    span.set_attribute(opentelemetry::KeyValue::new(
+                        "function_calling.hallucination.uncertain_span_count",
+                        report.spans.len() as i64,
+                    ));
+                    span.set_attribute(opentelemetry::KeyValue::new(
+                        "function_calling.hallucination.uncertain_spans",
+                        uncertain_spans,
+                    ));
+                });
 
                 let clarify_messages = self.prefill_message(messages.clone(), &self.clarify_prefix);
                 let clarify_request = self.create_request_with_extra_body(clarify_messages, false);
@@ -1622,13 +1637,58 @@ pub fn calculate_uncertainty(log_probs: &[f64]) -> UncertaintyMetrics {
     }
 }
 
+/// How many streamed tokens [`HallucinationState`] keeps to explain a flag.
+pub const MAX_LOGPROB_TOKENS: usize = 128;
+
 /// Reads the `logprobs.content` entries of a streamed chunk's choice
-/// (OpenAI-compatible shape). Empty when the chunk carries no logprobs.
+/// (OpenAI-compatible shape), entry by entry: an entry that does not parse is
+/// skipped rather than dropping the whole chunk. Empty when the chunk carries
+/// no logprobs.
 pub fn chunk_logprob_tokens(choice: &Value) -> Vec<LogprobToken> {
     choice
         .pointer("/logprobs/content")
-        .and_then(|c| serde_json::from_value(c.clone()).ok())
+        .and_then(|c| c.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| LogprobToken::deserialize(entry).ok())
+                .collect()
+        })
         .unwrap_or_default()
+}
+
+/// The `top_logprobs` values of a streamed chunk's first `logprobs.content`
+/// entry, read straight from the JSON: this is what the hallucination check
+/// scores, and unreadable values are skipped.
+pub fn chunk_top_logprobs(choice: &Value) -> Vec<f64> {
+    choice
+        .get("logprobs")
+        .and_then(|lp| lp.get("content"))
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|token| token.get("top_logprobs"))
+        .and_then(|tlp| tlp.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.get("logprob").and_then(|lp| lp.as_f64()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One line per flagged span of `report`, e.g.
+/// `"tomorrow": p=0.60 at "tomorrow"; model also considered "today" (0.30)`,
+/// joined with `; `, or `none`.
+pub fn describe_uncertain_spans(report: &Report) -> String {
+    if report.spans.is_empty() {
+        return "none".to_string();
+    }
+    report
+        .spans
+        .iter()
+        .map(|span| format!("{:?}: {}", span.text, span.describe()))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Checks if uncertainty metrics exceed thresholds
@@ -1675,7 +1735,9 @@ pub fn is_parameter_property(
 pub struct HallucinationState {
     pub tokens: Vec<String>,
     pub logprobs: Vec<Vec<f64>>,
-    pub logprob_tokens: Vec<LogprobToken>,
+    /// The most recent [`MAX_LOGPROB_TOKENS`] streamed tokens with their
+    /// alternatives, kept only to explain a hallucination flag.
+    logprob_tokens: VecDeque<LogprobToken>,
     pub state: Option<String>,
     pub mask: Vec<MaskToken>,
     pub parameter_name_done: bool,
@@ -1702,7 +1764,7 @@ impl HallucinationState {
         Self {
             tokens: Vec::new(),
             logprobs: Vec::new(),
-            logprob_tokens: Vec::new(),
+            logprob_tokens: VecDeque::new(),
             state: None,
             mask: Vec::new(),
             parameter_name_done: false,
@@ -1731,32 +1793,22 @@ impl HallucinationState {
         self.hallucination
     }
 
-    /// Appends a streamed chunk with its `logprobs.content` entries and checks
-    /// for hallucination. The check uses the `top_logprobs` of the chunk's
-    /// first token; all entries are kept for [`Self::uncertain_spans`].
-    pub fn append_and_check_logprob_tokens(
-        &mut self,
-        token: String,
-        logprob_tokens: Vec<LogprobToken>,
-    ) -> bool {
-        let logprob = logprob_tokens
-            .first()
-            .map(|t| {
-                t.top_logprobs
-                    .iter()
-                    .map(|a| a.logprob)
-                    .filter(|lp| !lp.is_nan())
-                    .collect()
-            })
-            .unwrap_or_default();
+    /// Keeps a streamed chunk's `logprobs.content` entries for
+    /// [`Self::take_uncertain_spans`]. Only the last [`MAX_LOGPROB_TOKENS`]
+    /// are held, since a flag is raised at the token being streamed. Does not
+    /// affect the hallucination check.
+    pub fn record_logprob_tokens(&mut self, logprob_tokens: Vec<LogprobToken>) {
         self.logprob_tokens.extend(logprob_tokens);
-        self.append_and_check_token_hallucination(token, logprob)
+        let excess = self.logprob_tokens.len().saturating_sub(MAX_LOGPROB_TOKENS);
+        self.logprob_tokens.drain(..excess);
     }
 
-    /// Words generated so far with a token below `thresholds.probability`,
-    /// each with the alternatives the model weighed at its weakest token.
-    pub fn uncertain_spans(&self) -> Report {
-        detect(&self.logprob_tokens, self.thresholds.probability)
+    /// Words in the recorded tokens with a token below
+    /// `thresholds.probability`, each with the alternatives the model weighed
+    /// at its weakest token. Releases the recorded tokens.
+    pub fn take_uncertain_spans(&mut self) -> Report {
+        let tokens = std::mem::take(&mut self.logprob_tokens);
+        detect(&Vec::from(tokens), self.thresholds.probability)
     }
 
     /// Resets internal parameters
@@ -2112,6 +2164,12 @@ mod hallucination_tests {
             .unwrap());
     }
 
+    /// Feeds one streamed choice the way the handler does.
+    fn feed(state: &mut HallucinationState, token: &str, choice: &Value) -> bool {
+        state.record_logprob_tokens(chunk_logprob_tokens(choice));
+        state.append_and_check_token_hallucination(token.to_string(), chunk_top_logprobs(choice))
+    }
+
     #[test]
     fn test_chunk_logprob_tokens() {
         let choice = json!({
@@ -2131,12 +2189,41 @@ mod hallucination_tests {
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].top_logprobs.len(), 3);
         assert!(chunk_logprob_tokens(&json!({"delta": {"content": "x"}})).is_empty());
+        assert_eq!(chunk_top_logprobs(&choice), vec![-0.51, -1.2]);
 
-        // The check still sees the first token's top_logprobs, nulls dropped.
         let mut state = HallucinationState::new(&[]);
-        state.append_and_check_logprob_tokens("Seattle".to_string(), tokens);
+        feed(&mut state, "Seattle", &choice);
         assert_eq!(state.logprobs, vec![vec![-0.51, -1.2]]);
         assert_eq!(state.logprob_tokens.len(), 1);
+    }
+
+    #[test]
+    fn test_unreadable_logprob_entries_are_skipped() {
+        // The first entry has no "token", so it is not a LogprobToken; the
+        // check must still score its top_logprobs exactly as before.
+        let choice = json!({"logprobs": {"content": [
+            {"logprob": -0.1, "top_logprobs": [{"logprob": -0.1}, {"logprob": -2.5}]},
+            {"token": "x", "logprob": -0.2, "top_logprobs": [{"token": "x", "logprob": -0.2}]}
+        ]}});
+        assert_eq!(chunk_top_logprobs(&choice), vec![-0.1, -2.5]);
+        let tokens = chunk_logprob_tokens(&choice);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token, "x");
+    }
+
+    #[test]
+    fn test_logprob_tokens_are_bounded_and_released() {
+        let mut state = HallucinationState::new(&[]);
+        let choice = json!({"logprobs": {"content": [
+            {"token": "a", "logprob": -0.1, "top_logprobs": [{"token": "a", "logprob": -0.1}]}
+        ]}});
+        for _ in 0..MAX_LOGPROB_TOKENS + 50 {
+            feed(&mut state, "a", &choice);
+        }
+        assert_eq!(state.logprob_tokens.len(), MAX_LOGPROB_TOKENS);
+        assert_eq!(state.tokens.len(), MAX_LOGPROB_TOKENS + 50);
+        state.take_uncertain_spans();
+        assert!(state.logprob_tokens.is_empty());
     }
 
     #[test]
@@ -2185,31 +2272,30 @@ mod hallucination_tests {
             " \"",
         ] {
             let sure = chunk(t, &[(t, -0.00001)]);
-            assert!(
-                !state.append_and_check_logprob_tokens(t.to_string(), chunk_logprob_tokens(&sure))
-            );
+            assert!(!feed(&mut state, t, &sure));
         }
         let unsure = chunk(
             "tomorrow",
             &[("tomorrow", -0.51), ("today", -1.2), ("Friday", -3.0)],
         );
-        assert!(state.append_and_check_logprob_tokens(
-            "tomorrow".to_string(),
-            chunk_logprob_tokens(&unsure)
-        ));
+        assert!(feed(&mut state, "tomorrow", &unsure));
         assert_eq!(
             state.parameter_name.last().map(String::as_str),
             Some("date")
         );
 
         // The report points at the argument value and what the model weighed.
-        let report = state.uncertain_spans();
+        let report = state.take_uncertain_spans();
         assert_eq!(report.threshold, 0.8);
         assert_eq!(report.spans.len(), 1);
         assert_eq!(report.spans[0].text, "tomorrow");
         assert_eq!(
             report.spans[0].describe(),
             r#"p=0.60 at "tomorrow"; model also considered "today" (0.30), "Friday" (0.05)"#
+        );
+        assert_eq!(
+            describe_uncertain_spans(&report),
+            r#""tomorrow": p=0.60 at "tomorrow"; model also considered "today" (0.30), "Friday" (0.05)"#
         );
     }
 
