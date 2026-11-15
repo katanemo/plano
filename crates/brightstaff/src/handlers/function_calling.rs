@@ -8,6 +8,7 @@ use hermesllm::apis::openai::{
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
+use llm_token_visualizer::{detect, LogprobToken, Report};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -1006,24 +1007,10 @@ impl ArchFunctionHandler {
                             .and_then(|d| d.get("content"))
                             .and_then(|c| c.as_str())
                         {
-                            // Extract logprobs
-                            let logprobs: Vec<f64> = choice
-                                .get("logprobs")
-                                .and_then(|lp| lp.get("content"))
-                                .and_then(|c| c.as_array())
-                                .and_then(|arr| arr.first())
-                                .and_then(|token| token.get("top_logprobs"))
-                                .and_then(|tlp| tlp.as_array())
-                                .map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|v| v.get("logprob").and_then(|lp| lp.as_f64()))
-                                        .collect()
-                                })
-                                .unwrap_or_default();
-
-                            if hallucination_state
-                                .append_and_check_token_hallucination(content.to_string(), logprobs)
-                            {
+                            if hallucination_state.append_and_check_logprob_tokens(
+                                content.to_string(),
+                                chunk_logprob_tokens(choice),
+                            ) {
                                 has_hallucination = true;
                                 break;
                             }
@@ -1041,6 +1028,21 @@ impl ArchFunctionHandler {
                 info!(
                     "detected hallucination: {}",
                     hallucination_state.error_message
+                );
+                let report = hallucination_state.uncertain_spans();
+                let spans: Vec<String> = report
+                    .spans
+                    .iter()
+                    .map(|span| format!("{:?}: {}", span.text, span.describe()))
+                    .collect();
+                info!(
+                    "tokens below p={}: {}",
+                    report.threshold,
+                    if spans.is_empty() {
+                        "none".to_string()
+                    } else {
+                        spans.join("; ")
+                    }
                 );
 
                 let clarify_messages = self.prefill_message(messages.clone(), &self.clarify_prefix);
@@ -1620,6 +1622,15 @@ pub fn calculate_uncertainty(log_probs: &[f64]) -> UncertaintyMetrics {
     }
 }
 
+/// Reads the `logprobs.content` entries of a streamed chunk's choice
+/// (OpenAI-compatible shape). Empty when the chunk carries no logprobs.
+pub fn chunk_logprob_tokens(choice: &Value) -> Vec<LogprobToken> {
+    choice
+        .pointer("/logprobs/content")
+        .and_then(|c| serde_json::from_value(c.clone()).ok())
+        .unwrap_or_default()
+}
+
 /// Checks if uncertainty metrics exceed thresholds
 pub fn check_threshold(
     entropy: f64,
@@ -1664,6 +1675,7 @@ pub fn is_parameter_property(
 pub struct HallucinationState {
     pub tokens: Vec<String>,
     pub logprobs: Vec<Vec<f64>>,
+    pub logprob_tokens: Vec<LogprobToken>,
     pub state: Option<String>,
     pub mask: Vec<MaskToken>,
     pub parameter_name_done: bool,
@@ -1690,6 +1702,7 @@ impl HallucinationState {
         Self {
             tokens: Vec::new(),
             logprobs: Vec::new(),
+            logprob_tokens: Vec::new(),
             state: None,
             mask: Vec::new(),
             parameter_name_done: false,
@@ -1716,6 +1729,34 @@ impl HallucinationState {
         self.logprobs.push(logprob);
         self.process_token();
         self.hallucination
+    }
+
+    /// Appends a streamed chunk with its `logprobs.content` entries and checks
+    /// for hallucination. The check uses the `top_logprobs` of the chunk's
+    /// first token; all entries are kept for [`Self::uncertain_spans`].
+    pub fn append_and_check_logprob_tokens(
+        &mut self,
+        token: String,
+        logprob_tokens: Vec<LogprobToken>,
+    ) -> bool {
+        let logprob = logprob_tokens
+            .first()
+            .map(|t| {
+                t.top_logprobs
+                    .iter()
+                    .map(|a| a.logprob)
+                    .filter(|lp| !lp.is_nan())
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.logprob_tokens.extend(logprob_tokens);
+        self.append_and_check_token_hallucination(token, logprob)
+    }
+
+    /// Words generated so far with a token below `thresholds.probability`,
+    /// each with the alternatives the model weighed at its weakest token.
+    pub fn uncertain_spans(&self) -> Report {
+        detect(&self.logprob_tokens, self.thresholds.probability)
     }
 
     /// Resets internal parameters
@@ -2069,6 +2110,107 @@ mod hallucination_tests {
         assert!(handler
             .validate_or_convert_parameter(&json!(3.15), "number")
             .unwrap());
+    }
+
+    #[test]
+    fn test_chunk_logprob_tokens() {
+        let choice = json!({
+            "delta": {"content": "Seattle"},
+            "logprobs": {"content": [{
+                "token": "Seattle",
+                "logprob": -0.51,
+                "bytes": [83, 101],
+                "top_logprobs": [
+                    {"token": "Seattle", "logprob": -0.51},
+                    {"token": "Portland", "logprob": -1.2},
+                    {"token": "Boston", "logprob": null}
+                ]
+            }]}
+        });
+        let tokens = chunk_logprob_tokens(&choice);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].top_logprobs.len(), 3);
+        assert!(chunk_logprob_tokens(&json!({"delta": {"content": "x"}})).is_empty());
+
+        // The check still sees the first token's top_logprobs, nulls dropped.
+        let mut state = HallucinationState::new(&[]);
+        state.append_and_check_logprob_tokens("Seattle".to_string(), tokens);
+        assert_eq!(state.logprobs, vec![vec![-0.51, -1.2]]);
+        assert_eq!(state.logprob_tokens.len(), 1);
+    }
+
+    #[test]
+    fn test_uncertain_spans_name_the_argument() {
+        let tools = vec![Tool {
+            tool_type: "function".to_string(),
+            function: hermesllm::apis::openai::Function {
+                name: "get_weather".to_string(),
+                description: None,
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"},
+                        "date": {"type": "string"}
+                    },
+                    "required": ["location", "date"]
+                }),
+                strict: None,
+            },
+        }];
+        let chunk = |token: &str, alternatives: &[(&str, f64)]| {
+            let top: Vec<Value> = alternatives
+                .iter()
+                .map(|(t, lp)| json!({"token": t, "logprob": lp}))
+                .collect();
+            json!({"logprobs": {"content": [{
+                "token": token,
+                "logprob": alternatives[0].1,
+                "top_logprobs": top
+            }]}})
+        };
+        let mut state = HallucinationState::new(&tools);
+        for t in [
+            r#"{"name":""#,
+            "get_weather",
+            "\",",
+            r#" "arguments":{"#,
+            "\"location",
+            "\":",
+            " \"",
+            "Seattle",
+            "\",",
+            " \"",
+            "date",
+            "\":",
+            " \"",
+        ] {
+            let sure = chunk(t, &[(t, -0.00001)]);
+            assert!(
+                !state.append_and_check_logprob_tokens(t.to_string(), chunk_logprob_tokens(&sure))
+            );
+        }
+        let unsure = chunk(
+            "tomorrow",
+            &[("tomorrow", -0.51), ("today", -1.2), ("Friday", -3.0)],
+        );
+        assert!(state.append_and_check_logprob_tokens(
+            "tomorrow".to_string(),
+            chunk_logprob_tokens(&unsure)
+        ));
+        assert_eq!(
+            state.parameter_name.last().map(String::as_str),
+            Some("date")
+        );
+
+        // The report points at the argument value and what the model weighed.
+        let report = state.uncertain_spans();
+        assert_eq!(report.threshold, 0.8);
+        assert_eq!(report.spans.len(), 1);
+        assert_eq!(report.spans[0].text, "tomorrow");
+        assert_eq!(
+            report.spans[0].describe(),
+            r#"p=0.60 at "tomorrow"; model also considered "today" (0.30), "Friday" (0.05)"#
+        );
     }
 
     #[test]
