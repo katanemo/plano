@@ -693,6 +693,7 @@ mod tests {
     #[test]
     fn test_v1_messages_to_v1_chat_completions_roundtrip() {
         let anthropic_req = AnthropicMessagesRequest {
+            output_config: None,
             model: "claude-3-sonnet".to_string(),
             system: Some(crate::apis::anthropic::MessagesSystemPrompt::Single(
                 "You are a helpful assistant".to_string(),
@@ -1184,6 +1185,7 @@ mod tests {
         use crate::apis::openai::OpenAIApi::Responses;
 
         let messages_req = AnthropicMessagesRequest {
+            output_config: None,
             model: "claude-3-sonnet".to_string(),
             messages: vec![crate::apis::anthropic::MessagesMessage {
                 role: crate::apis::anthropic::MessagesRole::User,
@@ -1282,6 +1284,7 @@ mod tests {
         };
 
         let anthropic_req = MessagesRequest {
+            output_config: None,
             model: "claude-3-sonnet".to_string(),
             messages: vec![MessagesMessage {
                 role: MessagesRole::User,

@@ -480,6 +480,7 @@ mod tests {
     #[test]
     fn test_anthropic_to_bedrock_basic_request() {
         let anthropic_request = MessagesRequest {
+            output_config: None,
             model: "claude-3-5-sonnet-20241022".to_string(),
             messages: vec![MessagesMessage {
                 role: MessagesRole::User,
@@ -532,6 +533,7 @@ mod tests {
     #[test]
     fn test_anthropic_to_bedrock_with_tools() {
         let anthropic_request = MessagesRequest {
+            output_config: None,
             model: "claude-3-5-sonnet-20241022".to_string(),
             messages: vec![MessagesMessage {
                 role: MessagesRole::User,
@@ -597,6 +599,7 @@ mod tests {
     #[test]
     fn test_anthropic_to_bedrock_auto_tool_choice() {
         let anthropic_request = MessagesRequest {
+            output_config: None,
             model: "claude-3-5-sonnet-20241022".to_string(),
             messages: vec![MessagesMessage {
                 role: MessagesRole::User,
@@ -643,6 +646,7 @@ mod tests {
     #[test]
     fn test_anthropic_to_bedrock_multi_message_conversation() {
         let anthropic_request = MessagesRequest {
+            output_config: None,
             model: "claude-3-5-sonnet-20241022".to_string(),
             messages: vec![
                 MessagesMessage {

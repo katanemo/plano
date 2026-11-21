@@ -120,6 +120,8 @@ pub struct MessagesRequest {
     pub stop_sequences: Option<Vec<String>>,
     pub tools: Option<Vec<MessagesTool>>,
     pub tool_choice: Option<MessagesToolChoice>,
+    /// Structured output config, e.g. `{"format": {"type": "json_schema", "schema": {...}}}`
+    pub output_config: Option<Value>,
 }
 
 // Messages API specific types
@@ -832,6 +834,7 @@ mod tests {
 
     fn cache_test_request(system: Option<MessagesSystemPrompt>) -> MessagesRequest {
         MessagesRequest {
+            output_config: None,
             model: "claude-sonnet-4".to_string(),
             messages: vec![
                 MessagesMessage {
