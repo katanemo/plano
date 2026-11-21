@@ -819,7 +819,21 @@ impl TryFrom<ChatCompletionsRequest> for AnthropicMessagesRequest {
         let anthropic_tool_choice =
             convert_openai_tool_choice(req.tool_choice, req.parallel_tool_calls);
 
+        // Map OpenAI `response_format` json_schema to Anthropic `output_config.format`.
+        // `json_object`, absent response_format, and a json_schema without a schema are not forwarded.
+        let output_config = req
+            .response_format
+            .as_ref()
+            .filter(|rf| rf.get("type").and_then(|t| t.as_str()) == Some("json_schema"))
+            .and_then(|rf| rf.get("json_schema")?.get("schema"))
+            .map(|schema| {
+                serde_json::json!({
+                    "format": { "type": "json_schema", "schema": schema }
+                })
+            });
+
         Ok(AnthropicMessagesRequest {
+            output_config,
             model: req.model,
             system: system_prompt,
             messages,
@@ -1778,5 +1792,88 @@ mod tests {
             converted.messages.iter().all(|m| m.tool_calls.is_none()),
             "the malformed call must not be synthesized into a tool call"
         );
+    }
+
+    #[test]
+    fn test_openai_json_schema_response_format_maps_to_anthropic_output_config() {
+        let openai_request: ChatCompletionsRequest = serde_json::from_value(json!({
+            "model": "claude-sonnet-4-5",
+            "messages": [{"role": "user", "content": "Give me a person"}],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "person",
+                    "schema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                        "additionalProperties": false
+                    },
+                    "strict": true
+                }
+            }
+        }))
+        .unwrap();
+
+        let anthropic: AnthropicMessagesRequest = openai_request.try_into().unwrap();
+        let output_config = anthropic
+            .output_config
+            .expect("json_schema response_format must map to output_config");
+        assert_eq!(output_config["format"]["type"], "json_schema");
+        assert_eq!(
+            output_config["format"]["schema"]["required"],
+            json!(["name"])
+        );
+        assert_eq!(
+            output_config["format"]["schema"]["additionalProperties"],
+            json!(false)
+        );
+    }
+
+    #[test]
+    fn test_openai_without_response_format_has_no_anthropic_output_config() {
+        let openai_request: ChatCompletionsRequest = serde_json::from_value(json!({
+            "model": "claude-sonnet-4-5",
+            "messages": [{"role": "user", "content": "hi"}]
+        }))
+        .unwrap();
+        let anthropic: AnthropicMessagesRequest = openai_request.try_into().unwrap();
+        assert!(anthropic.output_config.is_none());
+    }
+
+    #[test]
+    fn test_openai_json_schema_output_config_reaches_serialized_anthropic_body() {
+        let openai_request: ChatCompletionsRequest = serde_json::from_value(json!({
+            "model": "claude-sonnet-4-5",
+            "messages": [{"role": "user", "content": "Give me a person"}],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "person",
+                    "schema": {"type": "object", "properties": {"name": {"type": "string"}}}
+                }
+            }
+        }))
+        .unwrap();
+        let anthropic: AnthropicMessagesRequest = openai_request.try_into().unwrap();
+        let body = serde_json::to_value(&anthropic).unwrap();
+        assert_eq!(body["output_config"]["format"]["type"], "json_schema");
+        assert_eq!(
+            body["output_config"]["format"]["schema"]["properties"]["name"]["type"],
+            "string"
+        );
+        assert!(body["output_config"].get("name").is_none());
+    }
+
+    #[test]
+    fn test_openai_json_schema_without_schema_is_not_forwarded() {
+        let openai_request: ChatCompletionsRequest = serde_json::from_value(json!({
+            "model": "claude-sonnet-4-5",
+            "messages": [{"role": "user", "content": "hi"}],
+            "response_format": {"type": "json_schema", "json_schema": {"name": "person"}}
+        }))
+        .unwrap();
+        let anthropic: AnthropicMessagesRequest = openai_request.try_into().unwrap();
+        assert!(anthropic.output_config.is_none());
     }
 }
