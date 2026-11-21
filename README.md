@@ -19,6 +19,88 @@
 Star ⭐️ the repo if you found Plano useful — new releases and updates land here first.
 </div>
 
+# What is Plano?
+
+Plano is an **AI-native proxy server and data plane** designed specifically for agentic applications. Instead of embedding routing, orchestration, safety, and observability code directly into your application, Plano externalizes these concerns into a centralized, high-performance data plane that sits between your agents and your users.
+
+## Key Capabilities
+
+| Capability | Description |
+|-----------|-------------|
+| **🚦 Agent Orchestration** | Intelligently route requests between multiple agents based on intent, with low-latency decision making powered by purpose-built LLMs |
+| **🔗 Smart LLM Routing** | Route to any model by name, alias, or automatic preference-based selection across 200+ LLMs from 50+ providers |
+| **🕵 Agentic Signals™** | Automatically capture rich signals and OpenTelemetry traces across every agent interaction — zero instrumentation required |
+| **🛡️ Guardrails & Safety** | Apply consistent moderation, jailbreak protection, and policy enforcement via configurable filter chains |
+| **🧠 Memory & Context** | Add memory hooks and context management consistently across all your agents |
+| **📊 Observability** | Get end-to-end tracing, metrics, and logs out of the box for continuous improvement |
+
+## Why Plano?
+
+Traditional agentic applications require you to build custom routing logic, handle multiple LLM provider APIs, implement tracing and observability, and add safety filters — all within your application code. This creates tight coupling and makes it hard to iterate.
+
+**Plano decouples these concerns:**
+- ✅ **Language agnostic** — Use any programming language or framework (Python, Node.js, Go, Rust, etc.)
+- ✅ **Framework agnostic** — Works with LangChain, LlamaIndex, AutoGen, or raw HTTP servers
+- ✅ **Model agnostic** — Switch between OpenAI, Anthropic, Google, or self-hosted models without code changes
+- ✅ **Production-ready** — Built on Envoy proxy, battle-tested at scale
+
+---
+
+# Quick Start
+
+Get Plano running in under 5 minutes:
+
+## 1. Install Plano
+
+```bash
+# macOS (Homebrew)
+brew tap katanemo/plano
+brew install plano
+
+# Linux (from releases)
+curl -fsSL https://planoai.dev/install.sh | sh
+
+# Docker
+docker run -p 12001:12001 katanemo/plano:latest
+```
+
+## 2. Create a Configuration File
+
+Create `config.yaml`:
+```yaml
+version: v0.3.0
+
+model_providers:
+  - model: openai/gpt-4o
+    access_key: $OPENAI_API_KEY
+    default: true
+
+listeners:
+  - type: llm
+    port: 12001
+```
+
+## 3. Start Plano
+
+```bash
+planoai up config.yaml
+```
+
+## 4. Make Your First Request
+
+```bash
+curl http://localhost:12001/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "messages": [{"role": "user", "content": "Hello, Plano!"}]
+  }'
+```
+
+**Next steps:** Check out the [Build Agentic Apps with Plano](#build-agentic-apps-with-plano) section below for a complete multi-agent example, or visit our [documentation](https://docs.planoai.dev).
+
+---
+
 # Overview
 Building agentic demos is easy. Shipping agentic applications safely, reliably, and repeatably to production is hard. After the thrill of a quick hack, you end up building the “hidden middleware” to reach production: routing logic to reach the right agent, guardrail hooks for safety and moderation, evaluation and observability glue for continuous learning, and model/provider quirks scattered across frameworks and application code.
 
