@@ -31,6 +31,7 @@ def test_zero_env_vars_produces_pure_passthrough():
     assert "vercel" in names
     assert "openrouter" in names
     assert "edenai" in names
+    assert "martllm" in names
     assert "openai" in names
     assert "anthropic" in names
 
@@ -125,3 +126,18 @@ def test_edenai_env_key_promotes_to_env_keyed():
     by_name = {p["name"]: p for p in cfg["model_providers"]}
     assert by_name["edenai"].get("access_key") == "$EDENAI_API_KEY"
     assert by_name["edenai"].get("passthrough_auth") is None
+
+
+def test_provider_defaults_martllm_is_configured():
+    by_name = {p.name: p for p in PROVIDER_DEFAULTS}
+    assert "martllm" in by_name
+    assert by_name["martllm"].env_var == "MARTLLM_API_KEY"
+    assert by_name["martllm"].base_url == "https://api.martllm.com/v1"
+    assert by_name["martllm"].model_pattern == "martllm/*"
+
+
+def test_martllm_env_key_promotes_to_env_keyed():
+    cfg = synthesize_default_config(env={"MARTLLM_API_KEY": "ullm-1"})
+    by_name = {p["name"]: p for p in cfg["model_providers"]}
+    assert by_name["martllm"].get("access_key") == "$MARTLLM_API_KEY"
+    assert by_name["martllm"].get("passthrough_auth") is None

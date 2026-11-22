@@ -54,6 +54,7 @@ pub enum ProviderId {
     Meta,
     Minimax,
     EdenAI,
+    MartLLM,
 }
 
 impl TryFrom<&str> for ProviderId {
@@ -92,6 +93,7 @@ impl TryFrom<&str> for ProviderId {
             "meta" => Ok(ProviderId::Meta),
             "minimax" => Ok(ProviderId::Minimax),
             "edenai" => Ok(ProviderId::EdenAI),
+            "martllm" => Ok(ProviderId::MartLLM),
             _ => Err(format!("Unknown provider: {}", value)),
         }
     }
@@ -384,7 +386,8 @@ impl ProviderId {
                 | ProviderId::AstraflowCN
                 | ProviderId::Meta
                 | ProviderId::Minimax
-                | ProviderId::EdenAI,
+                | ProviderId::EdenAI
+                | ProviderId::MartLLM,
                 SupportedAPIsFromClient::AnthropicMessagesAPI(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -411,7 +414,8 @@ impl ProviderId {
                 | ProviderId::AstraflowCN
                 | ProviderId::Meta
                 | ProviderId::Minimax
-                | ProviderId::EdenAI,
+                | ProviderId::EdenAI
+                | ProviderId::MartLLM,
                 SupportedAPIsFromClient::OpenAIChatCompletions(_),
             ) => SupportedUpstreamAPIs::OpenAIChatCompletions(OpenAIApi::ChatCompletions),
 
@@ -487,6 +491,7 @@ impl Display for ProviderId {
             ProviderId::Meta => write!(f, "meta"),
             ProviderId::Minimax => write!(f, "minimax"),
             ProviderId::EdenAI => write!(f, "edenai"),
+            ProviderId::MartLLM => write!(f, "martllm"),
         }
     }
 }
@@ -859,6 +864,48 @@ mod tests {
             strategy,
             CacheMarkerStrategy::OpenAiContentPartCacheControl { .. }
         ));
+    }
+
+    #[test]
+    fn test_martllm_parsing() {
+        assert_eq!(ProviderId::try_from("martllm"), Ok(ProviderId::MartLLM));
+        assert_eq!(ProviderId::MartLLM.to_string(), "martllm");
+        assert!(ProviderId::try_from("mart_llm").is_err());
+    }
+
+    #[test]
+    fn test_martllm_empty_models() {
+        // MartLLM is a multi-vendor gateway like OpenRouter/Eden AI: no static
+        // model list to keep, models() falls through to empty.
+        assert!(ProviderId::MartLLM.models().is_empty());
+    }
+
+    #[test]
+    fn test_martllm_compatible_api() {
+        use crate::clients::endpoints::{SupportedAPIsFromClient, SupportedUpstreamAPIs};
+
+        let openai_client =
+            SupportedAPIsFromClient::OpenAIChatCompletions(OpenAIApi::ChatCompletions);
+        let upstream = ProviderId::MartLLM.compatible_api_for_client(&openai_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "MartLLM should map OpenAI client to OpenAIChatCompletions upstream"
+        );
+
+        let anthropic_client =
+            SupportedAPIsFromClient::AnthropicMessagesAPI(AnthropicApi::Messages);
+        let upstream = ProviderId::MartLLM.compatible_api_for_client(&anthropic_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "MartLLM should translate Anthropic client to OpenAIChatCompletions upstream"
+        );
+
+        let responses_client = SupportedAPIsFromClient::OpenAIResponsesAPI(OpenAIApi::Responses);
+        let upstream = ProviderId::MartLLM.compatible_api_for_client(&responses_client, false);
+        assert!(
+            matches!(upstream, SupportedUpstreamAPIs::OpenAIChatCompletions(_)),
+            "MartLLM should translate Responses API client to OpenAIChatCompletions upstream"
+        );
     }
 
     #[test]
