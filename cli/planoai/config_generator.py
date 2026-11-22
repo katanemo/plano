@@ -34,7 +34,7 @@ SUPPORTED_PROVIDERS_WITHOUT_BASE_URL = [
     "vercel",
     "openrouter",
     "edenai",
-    "uberllm",
+    "martllm",
 ]
 
 CHATGPT_API_BASE = "https://chatgpt.com/backend-api/codex"

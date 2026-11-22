@@ -316,7 +316,7 @@ model_providers:
 """,
     },
     {
-        "id": "uberllm_is_supported_provider",
+        "id": "martllm_is_supported_provider",
         "expected_error": None,
         "plano_config": """
 version: v0.4.0
@@ -327,8 +327,8 @@ listeners:
     port: 12000
 
 model_providers:
-  - model: uberllm/*
-    base_url: https://api.uberllm.dev/v1
+  - model: martllm/*
+    base_url: https://api.martllm.com/v1
     passthrough_auth: true
 
 """,

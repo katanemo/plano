@@ -105,14 +105,14 @@ PROVIDER_DEFAULTS: list[ProviderDefault] = [
         base_url="https://api.edenai.run/v3",
         model_pattern="edenai/*",
     ),
-    # UberLLM is an OpenAI-compatible gateway routing to many upstream
+    # MartLLM is an OpenAI-compatible gateway routing to many upstream
     # providers behind one key — same treatment as OpenRouter, no
     # provider_interface override needed.
     ProviderDefault(
-        name="uberllm",
-        env_var="UBERLLM_API_KEY",
-        base_url="https://api.uberllm.dev/v1",
-        model_pattern="uberllm/*",
+        name="martllm",
+        env_var="MARTLLM_API_KEY",
+        base_url="https://api.martllm.com/v1",
+        model_pattern="martllm/*",
     ),
 ]
 

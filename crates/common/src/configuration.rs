@@ -676,8 +676,8 @@ pub enum LlmProviderType {
     OpenRouter,
     #[serde(rename = "edenai")]
     EdenAI,
-    #[serde(rename = "uberllm")]
-    UberLLM,
+    #[serde(rename = "martllm")]
+    MartLLM,
     #[serde(rename = "astraflow")]
     Astraflow,
     #[serde(rename = "astraflow_cn")]
@@ -708,7 +708,7 @@ impl Display for LlmProviderType {
             LlmProviderType::Vercel => write!(f, "vercel"),
             LlmProviderType::OpenRouter => write!(f, "openrouter"),
             LlmProviderType::EdenAI => write!(f, "edenai"),
-            LlmProviderType::UberLLM => write!(f, "uberllm"),
+            LlmProviderType::MartLLM => write!(f, "martllm"),
             LlmProviderType::Astraflow => write!(f, "astraflow"),
             LlmProviderType::AstraflowCN => write!(f, "astraflow_cn"),
         }
@@ -1108,7 +1108,7 @@ mod test {
             ("vercel", LlmProviderType::Vercel),
             ("openrouter", LlmProviderType::OpenRouter),
             ("edenai", LlmProviderType::EdenAI),
-            ("uberllm", LlmProviderType::UberLLM),
+            ("martllm", LlmProviderType::MartLLM),
         ] {
             let parsed: LlmProviderType =
                 serde_yaml::from_str(yaml_value).expect("variant should deserialize");
