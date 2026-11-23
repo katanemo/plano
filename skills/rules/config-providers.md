@@ -21,6 +21,7 @@ Plano translates requests between its internal format and each provider's API. T
 | `deepseek/*` | DeepSeek | `deepseek/deepseek-chat` |
 | `xai/*` | Grok (OpenAI-compat) | `xai/grok-2` |
 | `together_ai/*` | Together.ai | `together_ai/meta-llama/Llama-3` |
+| `orcarouter/*` | OpenAI | `orcarouter/openai/gpt-5.5` |
 | `custom/*` | Requires `provider_interface` | `custom/my-local-model` |
 
 **Incorrect (missing provider prefix, ambiguous format):**

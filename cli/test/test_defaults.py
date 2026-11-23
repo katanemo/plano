@@ -30,6 +30,7 @@ def test_zero_env_vars_produces_pure_passthrough():
     assert "digitalocean" in names
     assert "vercel" in names
     assert "openrouter" in names
+    assert "orcarouter" in names
     assert "edenai" in names
     assert "openai" in names
     assert "anthropic" in names
