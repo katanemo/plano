@@ -766,10 +766,10 @@ impl StreamContext {
                     Ok(response) => response,
                     Err(e) => {
                         warn!(
-                            "request_id={}: upstream response parse error: {} | body: {}",
+                            "request_id={}: upstream response parse error: {} | body_size={}",
                             self.request_identifier(),
                             e,
-                            String::from_utf8_lossy(body)
+                            body.len()
                         );
                         self.send_server_error(
                             ServerError::LogicError(format!("Response parsing error: {}", e)),
@@ -981,10 +981,10 @@ impl HttpContext for StreamContext {
                     Ok(deserialized) => deserialized,
                     Err(e) => {
                         warn!(
-                            "request_id={}: client request parse error: {} | body: {}",
+                            "request_id={}: client request parse error: {} | body_size={}",
                             self.request_identifier(),
                             e,
-                            String::from_utf8_lossy(&body_bytes)
+                            body_bytes.len()
                         );
                         self.send_server_error(
                             ServerError::LogicError(format!("Request parsing error: {}", e)),

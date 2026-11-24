@@ -483,6 +483,10 @@ pub struct Tracing {
     pub random_sampling: Option<u32>,
     pub opentracing_grpc_endpoint: Option<String>,
     pub span_attributes: Option<SpanAttributes>,
+    /// When true, record a truncated preview of the latest user message on LLM
+    /// spans (`llm.user_message_preview`). Defaults to `false` so prompt content
+    /// is never exported with traces.
+    pub capture_message_preview: Option<bool>,
     /// Provider-agnostic telemetry export destinations. Each entry is tagged by
     /// its `type` (e.g. `posthog`) so new backends can be added without breaking
     /// existing configs. LLM spans are translated into each backend's native

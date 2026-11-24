@@ -469,8 +469,11 @@ impl OrchestratorService {
             .orchestrator_model
             .parse_response(&content, &usage_preferences)?;
 
-        info!(
+        debug!(
             content = %content.replace("\n", "\\n"),
+            "plano-orchestrator raw response"
+        );
+        info!(
             selected_routes = ?parsed,
             response_time_ms = elapsed.as_millis(),
             "plano-orchestrator determined routes"

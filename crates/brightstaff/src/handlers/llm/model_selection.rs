@@ -8,7 +8,6 @@ use tracing::{debug, info, warn};
 use crate::metrics as bs_metrics;
 use crate::metrics::labels as metric_labels;
 use crate::router::orchestrator::OrchestratorService;
-use crate::streaming::truncate_message;
 use crate::tracing::routing;
 
 /// Classify a request path (already stripped of `/agents` or `/routing` by
@@ -91,21 +90,9 @@ pub async fn router_chat_get_upstream_model(
         "router request"
     );
 
-    // Prepare log message with latest message from chat request
-    let latest_message_for_log = chat_request
-        .messages
-        .last()
-        .map_or("None".to_string(), |msg| {
-            msg.content
-                .as_ref()
-                .map_or("None".to_string(), |c| c.to_string().replace('\n', "\\n"))
-        });
-
-    let latest_message_for_log = truncate_message(&latest_message_for_log, 50);
-
     info!(
         path = %request_path,
-        latest_message = %latest_message_for_log,
+        message_count = chat_request.messages.len(),
         "processing router request"
     );
 

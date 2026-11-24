@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 // ============================================================================
 // CONSTANTS FOR HALLUCINATION DETECTION
@@ -940,7 +940,7 @@ impl ArchFunctionHandler {
         &self,
         request: ChatCompletionsRequest,
     ) -> Result<ChatCompletionsResponse> {
-        use tracing::{error, info};
+        use tracing::{debug, error, info};
 
         info!("processing chat completion request");
 
@@ -1075,7 +1075,7 @@ impl ArchFunctionHandler {
 
         let response_dict = self.parse_model_response(&model_response);
 
-        info!(
+        debug!(
             raw_response = %response_dict.raw_response,
             "arch-fc model response"
         );
@@ -1126,7 +1126,7 @@ impl ArchFunctionHandler {
                         let verification = self.verify_tool_calls(tools, &response_dict.tool_calls);
 
                         if verification.is_valid {
-                            info!(
+                            debug!(
                                 "tool calls extracted: {:?}",
                                 response_dict
                                     .tool_calls
@@ -1168,7 +1168,7 @@ impl ArchFunctionHandler {
                         }
                     }
                 } else {
-                    info!(
+                    debug!(
                         "tool calls extracted: {:?}",
                         response_dict
                             .tool_calls
@@ -1202,7 +1202,11 @@ impl ArchFunctionHandler {
                 }
             }
         } else {
-            error!(response = %model_response, "invalid model response");
+            error!(
+                response_len = model_response.len(),
+                "invalid model response"
+            );
+            debug!(response = %model_response, "invalid model response body");
             ResponseMessage {
                 role: Role::Assistant,
                 content: Some(String::new()),
@@ -1246,7 +1250,7 @@ impl ArchFunctionHandler {
             metadata: Some(metadata),
         };
 
-        info!(response = ?chat_completion_response, "arch-fc response");
+        debug!(response = ?chat_completion_response, "arch-fc response");
 
         Ok(chat_completion_response)
     }
@@ -1356,7 +1360,7 @@ pub async fn function_calling_chat_handler(
     // Parse as ChatCompletionsRequest
     let chat_request: ChatCompletionsRequest = match serde_json::from_value(body_json) {
         Ok(req) => {
-            info!(
+            debug!(
                 request_body = %serde_json::to_string(&req).unwrap_or_default(),
                 "received request"
             );

@@ -266,6 +266,7 @@ system_prompt: 'You are a helpful assistant. Always respond concisely and accura
 
   '
 tracing:
+  capture_message_preview: false
   exporters:
   - api_key: $POSTHOG_API_KEY
     capture_messages: false
