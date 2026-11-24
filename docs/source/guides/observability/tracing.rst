@@ -338,12 +338,10 @@ destination (including ``opentracing_grpc_endpoint``), not just PostHog.
 
 **Message previews in traces**
 
-By default no prompt content is recorded on spans. To include a truncated (50
-character) preview of the latest user message as the
-``llm.user_message_preview`` span attribute, set::
-
-  tracing:
-    capture_message_preview: true
+By default no prompt content is recorded on spans. A truncated (50 character)
+preview of the latest user message is recorded as the
+``llm.user_message_preview`` span attribute only when Plano runs with
+``LOG_LEVEL=debug`` (or a PostHog exporter has ``capture_messages: true``).
 
 Plano also never logs prompt or response content at ``info`` level or above;
 request and response bodies are only emitted at ``debug``.

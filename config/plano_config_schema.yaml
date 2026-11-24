@@ -469,8 +469,6 @@ properties:
         type: boolean
       opentracing_grpc_endpoint:
         type: string
-      capture_message_preview:
-        type: boolean
       span_attributes:
         type: object
         properties:

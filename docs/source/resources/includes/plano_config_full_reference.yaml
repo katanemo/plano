@@ -255,9 +255,6 @@ tracing:
   trace_arch_internal: false
   # gRPC endpoint for OpenTelemetry collector (e.g., Jaeger, Tempo)
   opentracing_grpc_endpoint: http://localhost:4317
-  # Record a truncated preview of the latest user message on LLM spans
-  # (llm.user_message_preview). Off by default so prompt content is never exported.
-  capture_message_preview: false
   span_attributes:
     # Propagate request headers whose names start with these prefixes as span attributes
     header_prefixes:

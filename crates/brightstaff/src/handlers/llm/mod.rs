@@ -670,13 +670,14 @@ async fn parse_and_validate_request(
 
     // Extract span attributes and messages before mutating client_request
     let tool_names = client_request.get_tool_names();
-    let user_message_preview = if capture_message_preview {
-        client_request
-            .get_recent_user_message()
-            .map(|msg| truncate_message(&msg, 50))
-    } else {
-        None
-    };
+    let user_message_preview =
+        if capture_message_preview || tracing::enabled!(tracing::Level::DEBUG) {
+            client_request
+                .get_recent_user_message()
+                .map(|msg| truncate_message(&msg, 50))
+        } else {
+            None
+        };
     let messages_for_signals = if signals_enabled {
         Some(client_request.get_messages())
     } else {
