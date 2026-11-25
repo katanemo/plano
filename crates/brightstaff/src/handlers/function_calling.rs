@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 // ============================================================================
 // CONSTANTS FOR HALLUCINATION DETECTION
@@ -1356,7 +1356,7 @@ pub async fn function_calling_chat_handler(
     // Parse as ChatCompletionsRequest
     let chat_request: ChatCompletionsRequest = match serde_json::from_value(body_json) {
         Ok(req) => {
-            info!(
+            debug!(
                 request_body = %serde_json::to_string(&req).unwrap_or_default(),
                 "received request"
             );

@@ -103,7 +103,7 @@ pub async fn router_chat_get_upstream_model(
 
     let latest_message_for_log = truncate_message(&latest_message_for_log, 50);
 
-    info!(
+    debug!(
         path = %request_path,
         latest_message = %latest_message_for_log,
         "processing router request"

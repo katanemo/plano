@@ -245,7 +245,7 @@ impl StreamContext {
 
                 let chat_completion_request_json =
                     serde_json::to_string(&chat_completion_request).unwrap();
-                info!(
+                debug!(
                     "plano => upstream llm request: {}",
                     chat_completion_request_json
                 );
@@ -357,7 +357,7 @@ impl StreamContext {
                 };
 
                 let body_str = serde_json::to_string(&chat_completion_request).unwrap();
-                info!("sending request to llm agent: {}", body_str);
+                debug!("sending request to llm agent: {}", body_str);
                 self.set_http_request_body(0, self.request_body_size, body_str.as_bytes());
                 self.resume_http_request();
                 return;
@@ -799,7 +799,7 @@ impl StreamContext {
         };
 
         let json_resp = serde_json::to_string(&chat_completion_request).unwrap();
-        info!("plano => (default target) llm request: {}", json_resp);
+        debug!("plano => (default target) llm request: {}", json_resp);
         self.set_http_request_body(0, self.request_body_size, json_resp.as_bytes());
         self.resume_http_request();
     }

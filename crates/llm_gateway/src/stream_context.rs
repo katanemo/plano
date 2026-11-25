@@ -981,10 +981,9 @@ impl HttpContext for StreamContext {
                     Ok(deserialized) => deserialized,
                     Err(e) => {
                         warn!(
-                            "request_id={}: client request parse error: {} | body: {}",
+                            "request_id={}: client request parse error: {}",
                             self.request_identifier(),
-                            e,
-                            String::from_utf8_lossy(&body_bytes)
+                            e
                         );
                         self.send_server_error(
                             ServerError::LogicError(format!("Request parsing error: {}", e)),
