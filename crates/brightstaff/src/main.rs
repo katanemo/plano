@@ -350,18 +350,6 @@ async fn init_app_state(
 
     let signals_enabled = !overrides.disable_signals.unwrap_or(false);
 
-    let capture_message_preview = config
-        .tracing
-        .as_ref()
-        .and_then(|tracing| tracing.exporters.as_ref())
-        .is_some_and(|exporters| {
-            exporters.iter().any(|exporter| match exporter {
-                common::configuration::Exporter::Posthog(posthog) => {
-                    posthog.capture_messages.unwrap_or(false)
-                }
-            })
-        });
-
     let prompt_caching =
         common::configuration::EffectivePromptCaching::from_config(config.prompt_caching.as_ref())?;
 
@@ -429,7 +417,6 @@ async fn init_app_state(
         http_client: reqwest::Client::new(),
         filter_pipeline,
         signals_enabled,
-        capture_message_preview,
         prompt_caching,
         routing_budget,
         route_on_user_only,

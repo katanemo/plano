@@ -34,10 +34,6 @@ pub struct AppState {
     /// When false, agentic signal analysis is skipped on LLM responses to save CPU.
     /// Controlled by `overrides.disable_signals` in plano config.
     pub signals_enabled: bool,
-    /// True when a PostHog exporter has `capture_messages` enabled. The truncated
-    /// user message preview (`llm.user_message_preview`) is recorded on LLM spans
-    /// only when this is set or debug logging is enabled.
-    pub capture_message_preview: bool,
     /// Instance-wide automatic prompt-caching settings, resolved once from the
     /// top-level `prompt_caching` config. Disabled by default (opt-in).
     pub prompt_caching: EffectivePromptCaching,

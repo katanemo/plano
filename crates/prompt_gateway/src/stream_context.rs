@@ -137,9 +137,8 @@ impl StreamContext {
             Ok(arch_fc_response) => arch_fc_response,
             Err(e) => {
                 warn!(
-                    "error deserializing modelserver response: {}, body_size: {}",
-                    e,
-                    body_str.len()
+                    "error deserializing modelserver response: {}, body: {}",
+                    e, body_str
                 );
                 return self.send_server_error(ServerError::Deserialization(e), None);
             }
@@ -696,9 +695,9 @@ impl StreamContext {
                         Ok(chat_completion_response) => chat_completion_response,
                         Err(e) => {
                             warn!(
-                                "error deserializing default target response: {}, body_size: {}",
+                                "error deserializing default target response: {}, body str: {}",
                                 e,
-                                body.len()
+                                String::from_utf8(body).unwrap()
                             );
                             return self.send_server_error(ServerError::Deserialization(e), None);
                         }
@@ -743,9 +742,9 @@ impl StreamContext {
             Ok(chat_completions_resp) => chat_completions_resp,
             Err(e) => {
                 warn!(
-                    "error deserializing default target response: {}, body_size: {}",
+                    "error deserializing default target response: {}, body str: {}",
                     e,
-                    body.len()
+                    String::from_utf8(body).unwrap()
                 );
                 return self.send_server_error(ServerError::Deserialization(e), None);
             }

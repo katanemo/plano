@@ -940,7 +940,7 @@ impl ArchFunctionHandler {
         &self,
         request: ChatCompletionsRequest,
     ) -> Result<ChatCompletionsResponse> {
-        use tracing::{debug, error, info};
+        use tracing::{error, info};
 
         info!("processing chat completion request");
 
@@ -1075,7 +1075,7 @@ impl ArchFunctionHandler {
 
         let response_dict = self.parse_model_response(&model_response);
 
-        debug!(
+        info!(
             raw_response = %response_dict.raw_response,
             "arch-fc model response"
         );
@@ -1126,7 +1126,7 @@ impl ArchFunctionHandler {
                         let verification = self.verify_tool_calls(tools, &response_dict.tool_calls);
 
                         if verification.is_valid {
-                            debug!(
+                            info!(
                                 "tool calls extracted: {:?}",
                                 response_dict
                                     .tool_calls
@@ -1168,7 +1168,7 @@ impl ArchFunctionHandler {
                         }
                     }
                 } else {
-                    debug!(
+                    info!(
                         "tool calls extracted: {:?}",
                         response_dict
                             .tool_calls
@@ -1202,11 +1202,7 @@ impl ArchFunctionHandler {
                 }
             }
         } else {
-            error!(
-                response_len = model_response.len(),
-                "invalid model response"
-            );
-            debug!(response = %model_response, "invalid model response body");
+            error!(response = %model_response, "invalid model response");
             ResponseMessage {
                 role: Role::Assistant,
                 content: Some(String::new()),
@@ -1250,7 +1246,7 @@ impl ArchFunctionHandler {
             metadata: Some(metadata),
         };
 
-        debug!(response = ?chat_completion_response, "arch-fc response");
+        info!(response = ?chat_completion_response, "arch-fc response");
 
         Ok(chat_completion_response)
     }

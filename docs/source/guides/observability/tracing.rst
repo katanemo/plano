@@ -332,20 +332,6 @@ By default Plano does not send prompt content off-box. Set
 ``$ai_input``. Leave it ``false`` when prompt content must not leave your data
 plane.
 
-Note that enabling ``capture_messages`` also records the preview as the
-``llm.user_message_preview`` span attribute, so it is exported to every trace
-destination (including ``opentracing_grpc_endpoint``), not just PostHog.
-
-**Message previews in traces**
-
-By default no prompt content is recorded on spans. A truncated (50 character)
-preview of the latest user message is recorded as the
-``llm.user_message_preview`` span attribute only when Plano runs with
-``LOG_LEVEL=debug`` (or a PostHog exporter has ``capture_messages: true``).
-
-Plano also never logs prompt or response content at ``info`` level or above;
-request and response bodies are only emitted at ``debug``.
-
 **Multiple destinations**
 
 ``exporters`` is a list, so you can fan out to several backends (and combine
